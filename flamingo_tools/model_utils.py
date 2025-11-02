@@ -154,7 +154,7 @@ def get_default_tiling() -> Dict[str, Dict[str, int]]:
     else:
         tiling = {
             "tile": {"x": 96, "y": 96, "z": 16},
-            "halo": {"x": 16, "y": 16, "z": 4},
+            "halo": {"x": 16, "y": 16, "z": 8},
         }
         print(f"Determining default tiling for CPU: {tiling}")
 

@@ -1,82 +1,35 @@
 import copy
-import re
-from typing import Optional, Union
 
 import napari
-import torch
 
+from torch_em.util.prediction import predict_with_halo
+from torch_em.util.segmentation import watershed_from_center_and_boundary_distances
 from napari.utils.notifications import show_info
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QComboBox
 
 from .base_widget import BaseWidget
+from .util import _load_custom_model, _available_devices, _get_current_tiling
 from ..model_utils import get_model, get_model_registry, get_device, get_default_tiling
 
 
-def _load_custom_model(model_path: str, device: Optional[Union[str, torch.device]] = None) -> torch.nn.Module:
-    model_path = _clean_filepath(model_path)
-    if device is None:
-        device = get_device(device)
-    try:
-        model = torch.load(model_path, map_location=torch.device(device), weights_only=False)
-    except Exception as e:
-        print(e)
-        print("model path", model_path)
-        return None
-    return model
-
-
-def _available_devices():
-    available_devices = []
-    for i in ["cuda", "mps", "cpu"]:
-        try:
-            device = get_device(i)
-        except RuntimeError:
-            pass
-        else:
-            available_devices.append(device)
-    return available_devices
-
-
-def _get_current_tiling(tiling: dict, default_tiling: dict, model_type: str):
-    # get tiling values from qt objects
-    for k, v in tiling.items():
-        for k2, v2 in v.items():
-            if isinstance(v2, int):
-                continue
-            elif hasattr(v2, "value"):  # If it's a QSpinBox, extract the value
-                tiling[k][k2] = v2.value()
-            else:
-                raise TypeError(f"Unexpected type for tiling value: {type(v2)} at {k}/{k2}")
-    show_info(f"Using tiling: {tiling}")
-    return tiling
-
-
-def _clean_filepath(filepath):
-    """Cleans a given filepath by:
-    - Removing newline characters (\n)
-    - Removing escape sequences
-    - Stripping the 'file://' prefix if present
-
-    Args:
-        filepath (str): The original filepath
-
-    Returns:
-        str: The cleaned filepath
-    """
-    # Remove 'file://' prefix if present
-    if filepath.startswith("file://"):
-        filepath = filepath[7:]
-
-    # Remove escape sequences and newlines
-    filepath = re.sub(r'\\.', '', filepath)
-    filepath = filepath.replace('\n', '').replace('\r', '')
-
-    return filepath
-
-
-def _run_segmentation(image, model, model_type, tiling):
-    # return segmentation
-    pass
+# TODO Expose segmentation kwargs.
+def _run_segmentation(image, model, model_type, tiling, device):
+    block_shape = [tiling["tile"][ax] for ax in "zyx"]
+    halo = [tiling["halo"][ax] for ax in "zyx"]
+    prediction = predict_with_halo(
+        image, model, gpu_ids=[device], block_shape=block_shape, halo=halo,
+        tqdm_desc="Run prediction"
+    )
+    foreground_map, center_distances, boundary_distances = prediction
+    segmentation = watershed_from_center_and_boundary_distances(
+        center_distances, boundary_distances, foreground_map,
+        center_distance_threshold=0.5,
+        boundary_distance_threshold=0.5,
+        foreground_threshold=0.5,
+        distance_smoothing=1.6,
+        min_size=100,
+    )
+    return segmentation
 
 
 class SegmentationWidget(BaseWidget):
@@ -109,8 +62,11 @@ class SegmentationWidget(BaseWidget):
         model_widget = QWidget()
         title_label = QLabel("Select Model:")
 
-        # Exclude the models that are only offered through the CLI and not in the plugin.
         model_list = list(get_model_registry().urls.keys())
+
+        # Exclude the detection models.
+        segmentation_models = ["SGN", "IHC"]
+        model_list = [name for name in model_list if name in segmentation_models]
 
         models = ["- choose -"] + model_list
         self.model_selector = QComboBox()
@@ -154,7 +110,7 @@ class SegmentationWidget(BaseWidget):
 
         # Get the current tiling.
         self.tiling = _get_current_tiling(self.tiling, self.default_tiling, model_type)
-        segmentation = _run_segmentation(image, model=model, model_type=model_type, tiling=self.tiling)
+        segmentation = _run_segmentation(image, model=model, model_type=model_type, tiling=self.tiling, device=device)
 
         self.viewer.add_labels(segmentation, name=model_type)
         show_info(f"INFO: Segmentation of {model_type} added to layers.")
@@ -187,7 +143,6 @@ class SegmentationWidget(BaseWidget):
             ("halo_x", "halo_y", "halo_z"),
             (self.default_tiling["halo"]["x"], self.default_tiling["halo"]["y"], self.default_tiling["halo"]["z"]),
             min_val=0, max_val=512,
-            # tooltip=get_tooltip("embedding", "halo")
         )
         setting_values.layout().addLayout(layout)
 
