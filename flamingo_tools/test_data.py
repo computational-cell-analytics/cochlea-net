@@ -2,10 +2,12 @@ import os
 from typing import Tuple
 
 import imageio.v3 as imageio
+import pooch
 import requests
 from skimage.data import binary_blobs, cells3d
 from skimage.measure import label
 
+from .file_utils import get_cache_dir
 from .segmentation.postprocessing import compute_table_on_the_fly
 
 SEGMENTATION_URL = "https://owncloud.gwdg.de/index.php/s/kwoGRYiJRRrswgw/download"
@@ -93,13 +95,43 @@ def create_test_data(root: str, size: int = 256, n_channels: int = 2, n_tiles: i
             imageio.imwrite(out_path, data)
 
 
+def _sample_registry():
+    urls = {
+        "PV": "https://owncloud.gwdg.de/index.php/s/JVZCOpkILT70sdv/download",
+        "VGlut3": "https://owncloud.gwdg.de/index.php/s/LvGXh0xQR9IKvNk/download",
+        "CTBP2": "https://owncloud.gwdg.de/index.php/s/qaffCaF1sGpqlT3/download",
+    }
+    registry = {
+        "PV": "fbf50cc9119f2dd2bd4dac7d76b746b7d42cab33b94b21f8df304478dd51e632",
+        "VGlut3": "6a3af6ffce3d06588ffdc73df356ac64b83b53aaf6aabeabd49ef6d11d927e20",
+        "CTBP2": "8dcd5f1ebb35194f328788594e275f2452de0e28c85073578dac7100d83c45fc",
+    }
+    cache_dir = get_cache_dir()
+    data_registry = pooch.create(
+        path=os.path.join(cache_dir, "data"),
+        base_url="",
+        registry=registry,
+        urls=urls,
+    )
+    return data_registry
+
+
 def sample_data_pv():
-    pass
+    data_path = _sample_registry().fetch("PV")
+    data = imageio.imread(data_path, extension=".tif")
+    add_image_kwargs = {"name": "PV", "colormap": "gray"}
+    return [(data, add_image_kwargs)]
 
 
 def sample_data_vglut3():
-    pass
+    data_path = _sample_registry().fetch("VGlut3")
+    data = imageio.imread(data_path, extension=".tif")
+    add_image_kwargs = {"name": "VGlut3", "colormap": "gray"}
+    return [(data, add_image_kwargs)]
 
 
 def sample_data_ctbp2():
-    pass
+    data_path = _sample_registry().fetch("CTBP2")
+    data = imageio.imread(data_path, extension=".tif")
+    add_image_kwargs = {"name": "CTBP2", "colormap": "gray"}
+    return [(data, add_image_kwargs)]

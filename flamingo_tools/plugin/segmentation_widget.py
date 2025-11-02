@@ -9,8 +9,7 @@ from napari.utils.notifications import show_info
 from qtpy.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QComboBox
 
 from .base_widget import BaseWidget
-from .util import get_default_tiling, get_device
-from ..model_utils import get_model, get_model_registry
+from ..model_utils import get_model, get_model_registry, get_device, get_default_tiling
 
 
 def _load_custom_model(model_path: str, device: Optional[Union[str, torch.device]] = None) -> torch.nn.Module:

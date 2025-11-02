@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Union
+from typing import Dict, Optional, Union
 
 import pooch
 import torch
@@ -113,3 +113,49 @@ def get_model(model_type: str, device: Optional[Union[str, torch.device]] = None
     model = torch.load(model_path, weights_only=False)
     model.to(device)
     return model
+
+
+def get_default_tiling() -> Dict[str, Dict[str, int]]:
+    """Determine the tile shape and halo depending on the available VRAM.
+
+    Returns:
+        The default tiling settings for the available computational resources.
+    """
+    if torch.cuda.is_available():
+        # The default halo size.
+        halo = {"x": 64, "y": 64, "z": 16}
+
+        # Determine the GPU RAM and derive a suitable tiling.
+        vram = torch.cuda.get_device_properties(0).total_memory / 1e9
+
+        if vram >= 80:
+            tile = {"x": 640, "y": 640, "z": 80}
+        elif vram >= 40:
+            tile = {"x": 512, "y": 512, "z": 64}
+        elif vram >= 20:
+            tile = {"x": 352, "y": 352, "z": 48}
+        elif vram >= 10:
+            tile = {"x": 256, "y": 256, "z": 32}
+            halo = {"x": 64, "y": 64, "z": 8}  # Choose a smaller halo in z.
+        else:
+            raise NotImplementedError(f"Infererence with a GPU with {vram} GB VRAM is not supported.")
+
+        tiling = {"tile": tile, "halo": halo}
+        print(f"Determined tile size for CUDA: {tiling}")
+
+    elif torch.backends.mps.is_available():  # Check for Apple Silicon (MPS)
+        tile = {"x": 256, "y": 256, "z": 16}
+        halo = {"x": 16, "y": 16, "z": 4}
+        tiling = {"tile": tile, "halo": halo}
+        print(f"Determined tile size for MPS: {tiling}")
+
+    # I am not sure what is reasonable on a cpu. For now choosing very small tiling.
+    # (This will not work well on a CPU in any case.)
+    else:
+        tiling = {
+            "tile": {"x": 96, "y": 96, "z": 16},
+            "halo": {"x": 16, "y": 16, "z": 4},
+        }
+        print(f"Determining default tiling for CPU: {tiling}")
+
+    return tiling
