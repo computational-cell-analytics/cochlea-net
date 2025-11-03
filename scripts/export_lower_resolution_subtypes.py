@@ -14,6 +14,7 @@ COCHLEA_DICT = {
     "M_LR_000184_L": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000184_R": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
+    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
 }
 
 
@@ -39,6 +40,12 @@ STAIN_TO_TYPE = {
     # Prph is isolated.
     "Prph+": "Type II",
     "Prph-": "Type I",
+
+    # Combinations of CR and Ntng1
+    "CR+/Ntng1+": "Type Ib",
+    "CR+/Ntng1-": "Type Ia",
+    "CR-/Ntng1+": "Type Ic",
+    "CR-/Ntng1-": "inconclusive",
 }
 
 

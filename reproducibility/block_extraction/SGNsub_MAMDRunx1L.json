@@ -1,0 +1,55 @@
+[
+	{
+		"cochlea": "M_AMD_Runx1_L",
+		"image_channel": [
+			"CR",
+			"Ntng1",
+			"PV",
+			"PV_SGN_v2"
+		],
+		"segmentation_channel": "PV_SGN_v2",
+		"type": "sgn",
+		"n_blocks": 6,
+		"halo_size": [
+			256,
+			256,
+			50
+		],
+		"component_list": [
+			1
+		],
+		"crop_centers": [
+			[
+				945,
+				1155,
+				571
+			],
+			[
+				830,
+				888,
+				597
+			],
+			[
+				808,
+				966,
+				870
+			],
+			[
+				555,
+				1130,
+				840
+			],
+			[
+				357,
+				1024,
+				611
+			],
+			[
+				176,
+				748,
+				541
+			]
+		],
+		"max_edge_distance": 30
+	}
+]

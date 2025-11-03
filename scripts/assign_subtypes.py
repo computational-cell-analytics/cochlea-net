@@ -7,10 +7,12 @@ from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 # from skimage.segmentation import relabel_sequential
 
 COCHLEA_DICT = {
+    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
     "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"]},
     "M_LR_000184_L": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000184_R": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
+    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
     "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
 }

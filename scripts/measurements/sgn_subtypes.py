@@ -61,9 +61,15 @@ COCHLEAE_FOR_SUBTYPES = {
     "M_LR_000098_L": ["PV", "CR", "Ntng1"],
     "M_LR_N152_L": ["PV", "CR", "Ntng1"],
     "M_LR_000260_L": ["PV", "Prph", "Tuj1"],
+    "M_LR_N110_L": ["PV", "Calb1", "Ntng1"],
+    "M_LR_N110_R": ["PV", "Calb1", "Ntng1"],
+    "M_AMD_Runx1_L": ["PV", "CR", "Ntng1"],
 }
 
 COCHLEAE = {
+    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
+    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
+    "M_AMD_Runx1_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
     "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
     "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"]},
@@ -75,7 +81,8 @@ COCHLEAE = {
 
 
 REGULAR_COCHLEAE = [
-    "M_LR_000099_L", "M_LR_000184_R", "M_LR_000184_L", "M_LR_000098_L", "M_LR_N152_L", "M_LR_000260_L"
+    "M_LR_000099_L", "M_LR_000184_R", "M_LR_000184_L", "M_LR_000098_L", "M_LR_N152_L", "M_LR_000260_L",
+    "M_LR_N110_L", "M_LR_N110_R", "M_AMD_Runx1_L",
 ]
 
 # For custom thresholds.
@@ -89,6 +96,7 @@ THRESHOLDS = {
 # For consistent colors.
 ALL_COLORS = ["red", "blue", "orange", "yellow", "cyan", "magenta", "green", "purple", "gray", "black"]
 COLORS = {
+    "Type Ia": "#133374",
     "Type Ib": "#27339C",
     "Type Ib/Ic": "#67279C",
     "Type Ic": "#9C276F",
