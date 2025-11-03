@@ -35,11 +35,30 @@ def extract_block_from_s3(args):
             data[~mask] = 0
 
         coord_string = "-".join([str(c).zfill(4) for c in center])
-        out_path = os.path.join(args.output_folder, f"{args.cochlea}_{source}_scale{args.scale}_{coord_string}.tif")
 
-        if args.as_float:
-            data = data.astype("float32")
-        tifffile.imwrite(out_path, data, compression="zlib")
+        if args.mask_column:
+            sub_ids = np.unique(data)
+            table = table[table.label_id.isin(sub_ids)]
+            mask_column = table[args.mask_column]
+            mask_values = np.unique(mask_column.values)
+            for mask_value in mask_values:
+                out_path = os.path.join(
+                    args.output_folder, f"{args.cochlea}_{source}_scale{args.scale}_{coord_string}_mask{mask_value}.tif"
+                )
+
+                ids_in_mask = table[mask_column == mask_value].label_id
+                masked_data = np.isin(data, ids_in_mask)
+
+                if args.as_float:
+                    masked_data = masked_data.astype("float32")
+                tifffile.imwrite(out_path, masked_data, compression="zlib")
+
+        else:
+            out_path = os.path.join(args.output_folder, f"{args.cochlea}_{source}_scale{args.scale}_{coord_string}.tif")
+
+            if args.as_float:
+                data = data.astype("float32")
+            tifffile.imwrite(out_path, data, compression="zlib")
 
 
 def main():
@@ -54,6 +73,7 @@ def main():
     parser.add_argument("--scale", type=int, default=0)
     parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--component_ids", type=int, nargs="+")
+    parser.add_argument("--mask_column")
     args = parser.parse_args()
 
     extract_block_from_s3(args)
