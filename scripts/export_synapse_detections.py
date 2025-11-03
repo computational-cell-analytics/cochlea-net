@@ -23,19 +23,27 @@ def export_synapse_detections(
     radius: float,
     id_offset: int,
     filter_ihc_components: List[int],
+    position: str,
+    halo: List[int],
+    as_float: bool = False,
+    use_syn_ids: bool = False,
 ):
-    """Export synapse detections fro lower resolutions.
+    """Export synapse detections from S3..
 
     Args:
         cochlea: Cochlea name on S3 bucket.
         scales: Scale for export of lower resolution.
-        output_folder:
-        synapse_name:
+        output_folder: The output folder for saving the exported data.
+        synapse_name: The name of the synapse detection source.
         reference_ihcs: Name of IHC segmentation.
         max_dist: Maximal distance of synapse to IHC segmentation.
-        radius:
+        radius: The radius for writing the synapse points to the output volume.
         id_offset: Offset of label id of synapse output to have different colours for visualization.
         filter_ihc_components: Component label(s) for filtering IHC segmentation.
+        position: Optional position for extracting a crop from the data. Requires to also pass halo.
+        halo: Halo for extracting a crop from the data.
+        as_float: Whether to save the exported data as floating point values.
+        use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
     """
     s3 = create_s3_target()
 
@@ -79,17 +87,37 @@ def export_synapse_detections(
         coordinates = np.round(coordinates, 0).astype("int")
 
         ihc_ids = syn_table["matched_ihc"].values
+        syn_ids = syn_table["spot_id"].values
+
+        if position is not None:
+            assert halo is not None
+            center = json.loads(position)
+            assert len(halo) == len(center)
+            center = [int(ce / (resolution * (2 ** scale))) for ce in center[::-1]]
+            start = np.array([max(0, ce - ha) for ce, ha in zip(center, halo)])[None]
+            stop = np.array([min(sh, ce + ha) for ce, ha, sh in zip(center, halo, shape)])[None]
+
+            mask = ((coordinates >= start) & (coordinates < stop)).all(axis=1)
+            coordinates = coordinates[mask]
+            coordinates -= start
+
+            ihc_ids = ihc_ids[mask]
+            syn_ids = syn_ids[mask]
+
+            shape = tuple(int(sto - sta) for sta, sto in zip(start.squeeze(), stop.squeeze()))
 
         # Create the output.
         output = np.zeros(shape, dtype="uint16")
         mask = ball(radius).astype(bool)
 
-        for coord, matched_ihc in tqdm(
-            zip(coordinates, ihc_ids), total=len(coordinates), desc="Writing synapses to volume"
+        ids = syn_ids if use_syn_ids else ihc_ids
+
+        for coord, syn_id in tqdm(
+            zip(coordinates, ids), total=len(coordinates), desc="Writing synapses to volume"
         ):
             bb = tuple(slice(c - radius, c + radius + 1) for c in coord)
             try:
-                output[bb][mask] = matched_ihc + id_offset
+                output[bb][mask] = syn_id + id_offset
             except IndexError:
                 print("Index error for", coord)
                 continue
@@ -101,6 +129,10 @@ def export_synapse_detections(
             out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}.tif")
         else:
             out_path = os.path.join(out_folder, f"{synapse_name}.tif")
+
+        if as_float:
+            output = output.astype("float32")
+
         print("Writing synapses to", out_path)
         tifffile.imwrite(out_path, output, bigtiff=True, compression="zlib")
 
@@ -116,6 +148,10 @@ def main():
     parser.add_argument("--radius", type=int, default=3)
     parser.add_argument("--id_offset", type=int, default=0)
     parser.add_argument("--filter_ihc_components", nargs="+", type=int, default=[1])
+    parser.add_argument("--position", default=None)
+    parser.add_argument("--halo", default=None, nargs="+", type=int)
+    parser.add_argument("--as_float", action="store_true")
+    parser.add_argument("--use_syn_ids", action="store_true")
     args = parser.parse_args()
 
     export_synapse_detections(
@@ -123,6 +159,8 @@ def main():
         args.synapse_name, args.reference_ihcs,
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
+        position=args.position, halo=args.halo,
+        as_float=args.as_float, use_syn_ids=args.use_syn_ids,
     )
 
 
