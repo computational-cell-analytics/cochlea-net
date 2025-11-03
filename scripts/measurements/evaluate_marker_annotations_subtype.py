@@ -13,14 +13,15 @@ MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsh
 # The cochlea for the CHReef analysis.
 
 COCHLEAE = {
+    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"], "intensity": "ratio"},
     "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute"},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"], "intensity": "ratio"},
+    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
     "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
     "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
     "M_LR_000214_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1"], "intensity": "ratio"},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"], "intensity": "ratio"},
-
+    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
 }
 
 
@@ -135,7 +136,34 @@ def find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement, c
             "annotation_missing": annotator_missing,
         }
 
-    return intensity_dic
+    return intensity_dic, annotation_dics
+
+
+def get_annotation_table(annotation_dics, subtype):
+    rows = []
+    for annotation_dir, annotation_dic in annotation_dics.items():
+
+        annotator_dir = os.path.basename(annotation_dir)
+        annotator = annotator_dir.split("_")[1]
+        for center_str in annotation_dic["center_strings"]:
+            row = {"annotator" : annotator}
+            row["subtype"] = subtype
+            row["center_str"] = center_str
+            row["median_intensity"] = annotation_dic[center_str]["median_intensity"]
+            row["inbetween_ids"] = len(annotation_dic[center_str]["inbetween_ids"])
+            row["allweak_pos"] = len(annotation_dic[center_str]["allweak_pos"])
+            row["allweak_neg"] = len(annotation_dic[center_str]["allweak_neg"])
+            row["negexc_pos"] = len(annotation_dic[center_str]["negexc_pos"])
+            row["negexc_neg"] = len(annotation_dic[center_str]["negexc_neg"])
+
+            row["allweak_pos_mean"] = annotation_dic[center_str]["allweak_pos_mean"]
+            row["allweak_neg_mean"] = annotation_dic[center_str]["allweak_neg_mean"]
+            row["negexc_pos_mean"] = annotation_dic[center_str]["negexc_pos_mean"]
+            row["negexc_neg_mean"] = annotation_dic[center_str]["negexc_neg_mean"]
+            rows.append(row)
+
+    df = pd.DataFrame(rows)
+    return df
 
 
 def evaluate_marker_annotation(
@@ -181,7 +209,8 @@ def evaluate_marker_annotation(
         subtypes = COCHLEAE[cochlea]["subtype"]
         subtype_str = "_".join(subtypes)
         out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
-        if os.path.exists(out_path) and not force:
+        annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
+        if os.path.exists(out_path) and os.path.exists(annot_out) and not force:
             continue
 
         # Get the segmentation data and table.
@@ -198,6 +227,7 @@ def evaluate_marker_annotation(
         intensity_mode = COCHLEAE[cochlea]["intensity"]
 
         # iterate through subtypes
+        annot_table = None
         for subtype in subtypes:
             pattern = subtype
             if intensity_mode == "ratio":
@@ -218,8 +248,14 @@ def evaluate_marker_annotation(
             print(f"Evaluating data for cochlea {cochlea} in {cochlea_annotations}.")
 
             # Find the thresholds from the annotated blocks and save them if specified.
-            intensity_dic = find_thresholds(cochlea_annotations, cochlea, data_seg,
+            intensity_dic, annot_dic = find_thresholds(cochlea_annotations, cochlea, data_seg,
                                             table_measurement, column=column, pattern=pattern)
+
+            if annot_table is None:
+                annot_table = get_annotation_table(annot_dic, subtype)
+            else:
+                annot_table = pd.concat([annot_table, get_annotation_table(annot_dic, subtype)], ignore_index=True)
+
             if threshold_save_dir is not None:
                 os.makedirs(threshold_save_dir, exist_ok=True)
                 threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{subtype}_{seg_string}.json")
@@ -241,7 +277,11 @@ def evaluate_marker_annotation(
 
         # Save the table with positives / negatives for all SGNs.
         os.makedirs(output_dir, exist_ok=True)
-        table_seg.to_csv(out_path, sep="\t", index=False)
+
+        if not os.path.exists(out_path) or force:
+            table_seg.to_csv(out_path, sep="\t", index=False)
+        if not os.path.exists(annot_out) or force:
+            annot_table.to_csv(annot_out, sep="\t", index=False)
 
 
 def main():
