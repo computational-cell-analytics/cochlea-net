@@ -60,17 +60,15 @@ def get_model_registry() -> None:
         "SGN": "3058690b49015d6210a8e8414eb341c34189fee660b8fac438f1fdc41bdfff98",
         "IHC": "89afbcca08ed302aa6dfbaba5bf2530fc13339c05a604b6f2551d97cf5f12774",
         "Synapses": "2a42712b056f082b4794f15cf41b15678aab0bec1acc922ff9f0dc76abe6747e",
-        # TODO
-        # "SGN-lowres": "",
-        # "IHC-lowres": "",
+        "SGN-lowres": "6accba4b4c65158fccf25623dcd0fb3b14203305d033a0d443a307114ec5dd8c",
+        "IHC-lowres": "537f1d4afc5a582771b87adeccadfa5635e1defd13636702363992188ef5bdbd",
     }
     urls = {
         "SGN": "https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download",
         "IHC": "https://owncloud.gwdg.de/index.php/s/GBBJkPQFraz1ZzU/download",
         "Synapses": "https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download",
-        # TODO
-        # "SGN-lowres": "",
-        # "IHC-lowres": "",
+        "SGN-lowres": "https://owncloud.gwdg.de/index.php/s/8hwZjBVzkuYhHLm/download",
+        "IHC-lowres": "https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download",
     }
     cache_dir = get_cache_dir()
     models = pooch.create(

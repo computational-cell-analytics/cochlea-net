@@ -74,7 +74,7 @@ def create_image_data_and_segmentation(folder: str, size: int = 256) -> Tuple[st
     return image_path, segmentation_path, table_path
 
 
-# TODO add metadata
+# TODO add flamingo metadata
 def create_test_data(root: str, size: int = 256, n_channels: int = 2, n_tiles: int = 4) -> None:
     """Create test data in the flamingo data format.
 
@@ -100,11 +100,15 @@ def _sample_registry():
         "PV": "https://owncloud.gwdg.de/index.php/s/JVZCOpkILT70sdv/download",
         "VGlut3": "https://owncloud.gwdg.de/index.php/s/LvGXh0xQR9IKvNk/download",
         "CTBP2": "https://owncloud.gwdg.de/index.php/s/qaffCaF1sGpqlT3/download",
+        "PV-lowres": "",
+        "IHC-lowres": "",
     }
     registry = {
         "PV": "fbf50cc9119f2dd2bd4dac7d76b746b7d42cab33b94b21f8df304478dd51e632",
         "VGlut3": "6a3af6ffce3d06588ffdc73df356ac64b83b53aaf6aabeabd49ef6d11d927e20",
         "CTBP2": "8dcd5f1ebb35194f328788594e275f2452de0e28c85073578dac7100d83c45fc",
+        "PV-lowres": "",
+        "IHC-lowres": "",
     }
     cache_dir = get_cache_dir()
     data_registry = pooch.create(
@@ -134,4 +138,18 @@ def sample_data_ctbp2():
     data_path = _sample_registry().fetch("CTBP2")
     data = imageio.imread(data_path, extension=".tif")
     add_image_kwargs = {"name": "CTBP2", "colormap": "gray"}
+    return [(data, add_image_kwargs)]
+
+
+def sample_data_pv_lowres():
+    data_path = _sample_registry().fetch("PV-lowres")
+    data = imageio.imread(data_path, extension=".tif")
+    add_image_kwargs = {"name": "PV-lowres", "colormap": "gray"}
+    return [(data, add_image_kwargs)]
+
+
+def sample_data_ihc_lowres():
+    data_path = _sample_registry().fetch("IHC-lowres")
+    data = imageio.imread(data_path, extension=".tif")
+    add_image_kwargs = {"name": "IHC-lowres", "colormap": "gray"}
     return [(data, add_image_kwargs)]
