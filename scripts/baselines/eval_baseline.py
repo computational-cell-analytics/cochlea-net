@@ -19,12 +19,10 @@ def filter_seg(seg_arr: np.typing.ArrayLike, min_count: int = 3000, max_count: i
     Returns:
         Filtered segmentation
     """
-    segmentation_ids = np.unique(seg_arr)[1:]
-    seg_counts = [np.count_nonzero(seg_arr == seg_id) for seg_id in segmentation_ids]
-    seg_filtered = [idx for idx, seg_count in zip(segmentation_ids, seg_counts) if min_count <= seg_count <= max_count]
-    for s in segmentation_ids:
-        if s not in seg_filtered:
-            seg_arr[seg_arr == s] = 0
+    labels, counts = np.unique(seg_arr, return_counts=True)
+    valid = labels[(counts >= min_count) & (counts <= max_count)]
+    mask = np.isin(seg_arr, valid)
+    seg_arr[~mask] = 0
     return seg_arr
 
 
@@ -62,14 +60,19 @@ def eval_all_sgn():
                                   "final_consensus_annotations")
 
     baselines = [
+        "spiner2D",
         "cellpose3",
-        "cellpose-sam",
+        "cellpose-sam_2025-10",
         "distance_unet",
         "micro-sam",
-        "stardist"]
+        "stardist",
+    ]
 
     for baseline in baselines:
-        eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
+        if "spiner" in baseline:
+            eval_segmentation_spiner(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
+        else:
+            eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
 
 
 def eval_all_ihc():
@@ -80,9 +83,10 @@ def eval_all_ihc():
     annotation_dir = os.path.join(cochlea_dir, "AnnotatedImageCrops/F1ValidationIHCs/consensus_annotation")
     baselines = [
         "cellpose3",
-        "cellpose-sam",
-        "distance_unet_v3",
-        "micro-sam"]
+        # "cellpose-sam_2025-11",
+        "distance_unet_v4b",
+        "micro-sam",
+    ]
 
     for baseline in baselines:
         eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
@@ -98,10 +102,10 @@ def eval_segmentation(seg_dir, annotation_dir):
         basename = os.path.basename(seg)
         basename = ".".join(basename.split(".")[:-1])
         basename = "".join(basename.split("_seg")[0])
-        print(basename)
-        print("Annotation_dir", annotation_dir)
+        # print("Annotation_dir", annotation_dir)
         dic_out = os.path.join(seg_dir, f"{basename}_dic.json")
         if not os.path.isfile(dic_out):
+            print(basename)
 
             df_path = os.path.join(annotation_dir, f"{basename}.csv")
             df = pd.read_csv(df_path, sep=",")
@@ -110,6 +114,7 @@ def eval_segmentation(seg_dir, annotation_dir):
                 timer_dic = json.load(f)
 
             seg_arr = imageio.imread(seg)
+            print(f"shape {seg_arr.shape}")
             seg_filtered = filter_seg(seg_arr=seg_arr)
 
             seg_dic = compute_matches_for_annotated_slice(segmentation=seg_filtered,
@@ -123,7 +128,54 @@ def eval_segmentation(seg_dir, annotation_dir):
 
             seg_dicts.append(seg_dic)
         else:
-            print(f"Dictionary {dic_out} already exists")
+            print(f"Dictionary for {basename} already exists")
+
+    json_out = os.path.join(seg_dir, "eval_seg.json")
+    with open(json_out, "w") as f:
+        json.dump(seg_dicts, f, indent='\t', separators=(',', ': '))
+
+
+def eval_segmentation_spiner(seg_dir, annotation_dir):
+    print(f"Evaluating segmentation in directory {seg_dir}")
+    annots = [entry.path for entry in os.scandir(seg_dir)
+              if entry.is_file() and ".csv" in entry.path]
+
+    seg_dicts = []
+    for annot in annots:
+
+        basename = os.path.basename(annot)
+        basename = ".".join(basename.split(".")[:-1])
+        basename = "".join(basename.split("_annot")[0])
+        dic_out = os.path.join(seg_dir, f"{basename}_dic.json")
+        if not os.path.isfile(dic_out):
+
+            df_path = os.path.join(annotation_dir, f"{basename}.csv")
+            df = pd.read_csv(df_path, sep=",")
+
+            image_spiner = os.path.join(seg_dir, f"{basename}.tif")
+            img = imageio.imread(image_spiner)
+            seg_arr = np.zeros(img.shape)
+
+            df_annot = pd.read_csv(annot, sep=",")
+            for num, row in df_annot.iterrows():
+                x1 = int(row["x1"])
+                x2 = int(row["x2"])
+                y1 = int(row["y1"])
+                y2 = int(row["y2"])
+                seg_arr[x1:x2, y1:y2] = num + 1
+
+            seg_dic = compute_matches_for_annotated_slice(segmentation=seg_arr,
+                                                          annotations=df,
+                                                          matching_tolerance=5)
+            seg_dic["annotation_length"] = len(df)
+            seg_dic["crop_name"] = basename
+            seg_dic["time"] = None
+
+            eval_seg_dict(seg_dic, dic_out)
+
+            seg_dicts.append(seg_dic)
+        else:
+            print(f"Dictionary for {basename} already exists")
 
     json_out = os.path.join(seg_dir, "eval_seg.json")
     with open(json_out, "w") as f:
@@ -145,6 +197,10 @@ def print_accuracy(eval_dir):
         fp = len(d["fp"])
         fn = len(d["fn"])
         time = d["time"]
+        if time is None:
+            show_time = False
+        else:
+            show_time = True
 
         if tp + fp != 0:
             precision = tp / (tp + fp)
@@ -163,9 +219,13 @@ def print_accuracy(eval_dir):
         recall_list.append(recall)
         f1_score_list.append(f1_score)
         time_list.append(time)
-
-    names = ["Precision", "Recall", "F1 score", "Time"]
-    for num, lis in enumerate([precision_list, recall_list, f1_score_list, time_list]):
+    if show_time:
+        param_list = [precision_list, recall_list, f1_score_list, time_list]
+        names = ["Precision", "Recall", "F1 score", "Time"]
+    else:
+        param_list = [precision_list, recall_list, f1_score_list]
+        names = ["Precision", "Recall", "F1 score"]
+    for num, lis in enumerate(param_list):
         print(names[num], sum(lis) / len(lis))
 
 
@@ -176,8 +236,9 @@ def print_accuracy_sgn():
     cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     seg_dir = os.path.join(cochlea_dir, "predictions/val_sgn")
     baselines = [
+        "spiner2D",
         "cellpose3",
-        "cellpose-sam",
+        "cellpose-sam_2025-10",
         "distance_unet",
         "micro-sam",
         "stardist"]
@@ -194,8 +255,8 @@ def print_accuracy_ihc():
     seg_dir = os.path.join(cochlea_dir, "predictions/val_ihc")
     baselines = [
         "cellpose3",
-        "cellpose-sam",
-        "distance_unet_v3",
+        # "cellpose-sam_2025-11",
+        "distance_unet_v4b",
         "micro-sam"]
 
     for baseline in baselines:
@@ -204,9 +265,9 @@ def print_accuracy_ihc():
 
 
 def main():
-    eval_all_sgn()
+    # eval_all_sgn()
     eval_all_ihc()
-    print_accuracy_sgn()
+    #print_accuracy_sgn()
     print_accuracy_ihc()
 
 

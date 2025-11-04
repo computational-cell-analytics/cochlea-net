@@ -54,7 +54,7 @@ for i in trange(len(files)):
     timer_output = os.path.join(out_dir, f"{basename}_timer.json")
 
     masks, flows, styles = model.eval(img, batch_size=32, flow_threshold=flow_threshold,
-                                      cellprob_threshold=cellprob_threshold,
+                                      cellprob_threshold=cellprob_threshold, do_3D=True, z_axis=0,
                                       normalize={"tile_norm_blocksize": tile_norm_blocksize})
     io.imsave(out_path, masks)
 
