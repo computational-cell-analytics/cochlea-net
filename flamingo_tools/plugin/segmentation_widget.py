@@ -65,7 +65,7 @@ class SegmentationWidget(BaseWidget):
         model_list = list(get_model_registry().urls.keys())
 
         # Exclude the detection models.
-        segmentation_models = ["SGN", "IHC"]
+        segmentation_models = ["SGN", "IHC", "SGN-lowres", "IHC-lowres"]
         model_list = [name for name in model_list if name in segmentation_models]
 
         models = ["- choose -"] + model_list

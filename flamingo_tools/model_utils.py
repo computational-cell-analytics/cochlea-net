@@ -53,6 +53,7 @@ def get_device(device: Optional[Union[str, torch.device]] = None) -> Union[str, 
     return device
 
 
+# FIXME: SGN-lowres seems to be the wrong model and doesn't work well on the sample data.
 def get_model_registry() -> None:
     """Get the model registry for downloading pre-trained CochleaNet models.
     """

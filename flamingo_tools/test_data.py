@@ -100,15 +100,15 @@ def _sample_registry():
         "PV": "https://owncloud.gwdg.de/index.php/s/JVZCOpkILT70sdv/download",
         "VGlut3": "https://owncloud.gwdg.de/index.php/s/LvGXh0xQR9IKvNk/download",
         "CTBP2": "https://owncloud.gwdg.de/index.php/s/qaffCaF1sGpqlT3/download",
-        "PV-lowres": "",
-        "IHC-lowres": "",
+        "PV-lowres": "https://owncloud.gwdg.de/index.php/s/9BjuMIo9ulrqKVp/download",
+        "MYO-lowres": "https://owncloud.gwdg.de/index.php/s/aKJrQs1zkBtFBI9/download",
     }
     registry = {
         "PV": "fbf50cc9119f2dd2bd4dac7d76b746b7d42cab33b94b21f8df304478dd51e632",
         "VGlut3": "6a3af6ffce3d06588ffdc73df356ac64b83b53aaf6aabeabd49ef6d11d927e20",
         "CTBP2": "8dcd5f1ebb35194f328788594e275f2452de0e28c85073578dac7100d83c45fc",
-        "PV-lowres": "",
-        "IHC-lowres": "",
+        "PV-lowres": "325684d5a74eed356ac7e0d7720a727a58862f6d26c2884937eae7013f51bdc9",
+        "MYO-lowres": "386f0b66a1716268b6e80d694e0a5170fd06f5b6f7ad1698ea4a0bb0464a4a5c",
     }
     cache_dir = get_cache_dir()
     data_registry = pooch.create(
@@ -148,8 +148,8 @@ def sample_data_pv_lowres():
     return [(data, add_image_kwargs)]
 
 
-def sample_data_ihc_lowres():
-    data_path = _sample_registry().fetch("IHC-lowres")
+def sample_data_myo_lowres():
+    data_path = _sample_registry().fetch("MYO-lowres")
     data = imageio.imread(data_path, extension=".tif")
-    add_image_kwargs = {"name": "IHC-lowres", "colormap": "gray"}
+    add_image_kwargs = {"name": "MYO-lowres", "colormap": "gray"}
     return [(data, add_image_kwargs)]
