@@ -11,9 +11,9 @@ from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 def extract_block_from_s3(args):
     os.makedirs(args.output_folder, exist_ok=True)
 
-    resolution = 0.38 * (2 ** args.scale)
+    resolution = [res * (2 ** args.scale) for res in args.resolution]
     center = json.loads(args.position)
-    center = [int(ce / resolution) for ce in center[::-1]]
+    center = [int(ce / res) for ce, res in zip(center[::-1], resolution)]
 
     for source in args.sources:
         print("Extracting source:", source, "from", args.cochlea)
@@ -73,6 +73,7 @@ def main():
     parser.add_argument("--scale", type=int, default=0)
     parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--component_ids", type=int, nargs="+")
+    parser.add_argument("--resolution", type=float, nargs="+", default=[0.38] * 3)
     parser.add_argument("--mask_column")
     args = parser.parse_args()
 
