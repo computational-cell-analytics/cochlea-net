@@ -29,26 +29,25 @@ COCHLEAE = [
 ]
 
 
-def get_length_fraction_from_center(table, center_str):
+def get_length_fraction_from_center(table, center_str, halo_size=20):
     """Get 'length_fraction' parameter for center coordinate by averaging nearby segmentation instances.
     """
     center_coord = tuple([int(c) for c in center_str.split("-")])
     (cx, cy, cz) = center_coord
-    offset = 20
     subset = table[
-        (cx - offset < table["anchor_x"]) &
-        (table["anchor_x"] < cx + offset) &
-        (cy - offset < table["anchor_y"]) &
-        (table["anchor_y"] < cy + offset) &
-        (cz - offset < table["anchor_z"]) &
-        (table["anchor_z"] < cz + offset)
+        (cx - halo_size < table["anchor_x"]) &
+        (table["anchor_x"] < cx + halo_size) &
+        (cy - halo_size < table["anchor_y"]) &
+        (table["anchor_y"] < cy + halo_size) &
+        (cz - halo_size < table["anchor_z"]) &
+        (table["anchor_z"] < cz + halo_size)
     ]
     length_fraction = list(subset["length_fraction"])
     length_fraction = float(sum(length_fraction) / len(length_fraction))
     return length_fraction
 
 
-def apply_nearest_threshold(intensity_dic, table_seg, table_measurement):
+def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, halo_size=20):
     """Apply threshold to nearest segmentation instances.
     Crop centers are transformed into the "length fraction" parameter of the segmentation table.
     This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
@@ -56,7 +55,7 @@ def apply_nearest_threshold(intensity_dic, table_seg, table_measurement):
     # assign crop centers to length fraction of Rosenthal"s canal
     lf_intensity = {}
     for key in intensity_dic.keys():
-        length_fraction = get_length_fraction_from_center(table_seg, key)
+        length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
         intensity_dic[key]["length_fraction"] = length_fraction
         lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
 
@@ -94,13 +93,14 @@ def apply_nearest_threshold(intensity_dic, table_seg, table_measurement):
     return table_seg
 
 
-def find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement):
+def find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement, resolution=0.38):
     # Find the median intensities by averaging the individual annotations for specific crops
     annotation_dics = {}
     annotated_centers = []
     for annotation_dir in cochlea_annotations:
         print(f"Localizing threshold with median intensities for {os.path.basename(annotation_dir)}.")
-        annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg, table_measurement)
+        annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg, table_measurement,
+                                                     resolution=resolution)
         annotated_centers.extend(annotation_dic["center_strings"])
         annotation_dics[annotation_dir] = annotation_dic
 
@@ -168,6 +168,13 @@ def evaluate_marker_annotation(
     """
     input_key = "s0"
 
+    if marker_name == "rbOtof":
+        halo_size = 150
+        resolution = [1.887779, 1.887779, 3.0]
+    else:
+        halo_size = 20
+        resolution = 0.38
+
     if annotation_dirs is None:
         if "MARKER_DIR" in globals():
             marker_dir = MARKER_DIR
@@ -199,8 +206,9 @@ def evaluate_marker_annotation(
         with fs.open(table_path_s3, "r") as f:
             table_measurement = pd.read_csv(f, sep="\t")
 
-        # Find the threholds from the annotated blocks and save it if specified.
-        intensity_dic = find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement)
+        # Find the thresholds from the annotated blocks and save it if specified.
+        intensity_dic = find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement,
+                                        resolution=resolution)
         if threshold_save_dir is not None:
             os.makedirs(threshold_save_dir, exist_ok=True)
             threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")
@@ -208,7 +216,7 @@ def evaluate_marker_annotation(
                 json.dump(intensity_dic, f, sort_keys=True, indent=4)
 
         # Apply the threshold to all SGNs.
-        table_seg = apply_nearest_threshold(intensity_dic, table_seg, table_measurement)
+        table_seg = apply_nearest_threshold(intensity_dic, table_seg, table_measurement, halo_size=halo_size)
 
         # Save the table with positives / negatives for all SGNs.
         os.makedirs(output_dir, exist_ok=True)
@@ -224,12 +232,15 @@ def main():
     parser.add_argument("-o", "--output", type=str, required=True, help="Output directory.")
     parser.add_argument("-a", "--annotation_dirs", type=str, nargs="+", default=None,
                         help="Directories containing marker annotations.")
-    parser.add_argument("--threshold_save_dir", "-t")
+    parser.add_argument("-t", "--threshold_save_dir")
+    parser.add_argument("-s", "--seg_name", type=str, default="SGN_v2")
+    parser.add_argument("-m", "--marker_name", type=str, default="GFP")
     parser.add_argument("-f", "--force", action="store_true")
 
     args = parser.parse_args()
     evaluate_marker_annotation(
-        args.cochlea, args.output, args.annotation_dirs, threshold_save_dir=args.threshold_save_dir, force=args.force
+        args.cochlea, args.output, args.annotation_dirs, threshold_save_dir=args.threshold_save_dir,
+        seg_name=args.seg_name, marker_name=args.marker_name, force=args.force
     )
 
 

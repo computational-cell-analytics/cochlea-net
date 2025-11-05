@@ -4,7 +4,7 @@
 		"component_list": [
 			1
 		],
-		"segmentation_channel": "SGN_v2",
+		"segmentation_channel": "SGN_v2b",
 		"type": "sgn"
 	}
 ]									

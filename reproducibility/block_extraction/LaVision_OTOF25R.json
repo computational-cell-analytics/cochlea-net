@@ -1,0 +1,54 @@
+[
+	{
+		"cochlea": "LaVision-OTOF25R",
+		"image_channel": [
+			"CR",
+			"rbOtof",
+			"IHC_LOWRES-v3"
+		],
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"type": "ihc",
+		"resolution": [
+			1.887779,
+			1.887779,
+			3.0
+		],
+		"n_blocks": 3,
+		"max_edge_distance": 200,
+		"component_list": [
+			1
+		],
+		"halo_size": [
+			256,
+			256,
+			48
+		],
+		"crop_centers": [
+			[
+				2803,
+				2238,
+				1265
+			],
+			[
+				2781,
+				3351,
+				895
+			],
+			[
+				1105,
+				3380,
+				1020
+			],
+			[
+				1023,
+				2197,
+				1103
+			],
+			[
+				1858,
+				1507,
+				993
+			]
+		]
+	}
+]

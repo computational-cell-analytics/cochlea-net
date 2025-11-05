@@ -314,8 +314,8 @@ def measure_run_length_ihcs_multi_component(
             print(f"Graph consists of {len(components)} connected components.")
             if len(component_label) != len(components):
                 raise ValueError(f"Length of graph components {len(components)} "
-                                f"does not match number of component labels {len(component_label)}. "
-                                "Check max_edge_distance and post-processing.")
+                                 f"does not match number of component labels {len(component_label)}. "
+                                 "Check max_edge_distance and post-processing.")
 
             # Order connected components in order of component labels
             # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -409,6 +409,7 @@ def measure_run_length_ihcs_multi_component(
     path = np.concatenate(total_path, axis=0)
 
     return total_distance, path, path_dict
+
 
 def measure_run_length_ihcs(
     centroids: np.ndarray,
@@ -518,7 +519,7 @@ def measure_run_length_ihcs(
     return total_distance, path, path_dict
 
 
-def map_frequency(table: pd.DataFrame, animal: str = "mouse") -> pd.DataFrame:
+def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False) -> pd.DataFrame:
     """Map the frequency range of SGNs in the cochlea
     using Greenwood function f(x) = A * (10 **(ax) - K).
     Values for humans: a=2.1, k=0.88, A = 165.4 [kHz].
@@ -542,6 +543,7 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse") -> pd.DataFrame:
     elif animal == "gerbil":
         # freq_min = 0.0105 kHz
         # freq_max = 43.82 kHz
+        # values used by keppeler, PNAS 2021 Vol. 118 No. 18, https://doi.org/10.1073/pnas.2014472118
         var_A = 0.35
         var_a = 2.1
         var_k = 0.7
@@ -551,6 +553,17 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse") -> pd.DataFrame:
 
     table.loc[table['offset'] >= 0, 'frequency[kHz]'] = var_A * (10 ** (var_a * table["length_fraction"]) - var_k)
     table.loc[table['offset'] < 0, 'frequency[kHz]'] = 0
+
+    if otof and animal == "mouse":
+        # freq_min = 4.84 kHz
+        # freq_max = 78.8 kHz
+        # Mueller, Hearing Research 202 (2005) 63–73, https://doi.org/10.1016/j.heares.2004.08.011
+        # function has format f(x) = 10 ** (a * (k - (1-x)))
+        var_a = 100 / 82.5
+        var_k = 1.565
+        var_A = 1
+        table.loc[table['offset'] >= 0, 'frequency-mueller[kHz]'] = var_A * (10 ** (var_a * (var_k - (1 - table["length_fraction"])))) # noqa
+        table.loc[table['offset'] < 0, 'frequency-mueller[kHz]'] = 0
 
     return table
 
@@ -583,7 +596,7 @@ def get_centers_from_path(
     try:
         f = interp1d(cum_len, path, axis=0)  # fill_value="extrapolate"
         centers = f(target_s)
-    except ValueError as ve:
+    except ValueError:
         print("Using extrapolation to fill values.")
         f = interp1d(cum_len, path, axis=0, fill_value="extrapolate")
         centers = f(target_s)
@@ -724,7 +737,9 @@ def tonotopic_mapping(
     component_mapping: Optional[List[int]] = None,
     cell_type: str = "ihc",
     animal: str = "mouse",
+    max_edge_distance: float = 30,
     apex_higher: bool = True,
+    otof: bool = False,
 ) -> pd.DataFrame:
     """Tonotopic mapping of IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each IHC according to the position along the length of the cochlea.
@@ -749,6 +764,7 @@ def tonotopic_mapping(
     if cell_type == "ihc":
         total_distance, _, path_dict = measure_run_length_ihcs(
             centroids, component_label=component_label, apex_higher=apex_higher,
+            max_edge_distance=max_edge_distance
         )
 
     else:
@@ -784,6 +800,6 @@ def tonotopic_mapping(
 
     table.loc[:, "length[µm]"] = table["length_fraction"] * total_distance
 
-    table = map_frequency(table, animal=animal)
+    table = map_frequency(table, animal=animal, otof=otof)
 
     return table

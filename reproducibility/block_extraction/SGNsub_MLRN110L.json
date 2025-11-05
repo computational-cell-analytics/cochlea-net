@@ -1,0 +1,55 @@
+[
+	{
+		"cochlea": "M_LR_N110_L",
+		"image_channel": [
+			"Calb1",
+			"Ntng1",
+			"PV",
+			"SGN_v2"
+		],
+		"segmentation_channel": "SGN_v2",
+		"type": "sgn",
+		"n_blocks": 6,
+		"halo_size": [
+			256,
+			256,
+			50
+		],
+		"component_list": [
+			1
+		],
+		"crop_centers": [
+			[
+				653,
+				1124,
+				730
+			],
+			[
+				840,
+				887,
+				878
+			],
+			[
+				594,
+				611,
+				870
+			],
+			[
+				592,
+				600,
+				527
+			],
+			[
+				966,
+				560,
+				452
+			],
+			[
+				1213,
+				301,
+				584
+			]
+		],
+		"max_edge_distance": 30
+	}
+]

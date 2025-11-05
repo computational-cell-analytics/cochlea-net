@@ -1,0 +1,46 @@
+[
+	{
+		"cochlea": "LaVision-OTOF23R",
+		"image_channel": [
+			"CR",
+			"rbOtof",
+			"IHC_LOWRES-v3"
+		],
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"type": "ihc",
+		"resolution": [
+			1.887779,
+			1.887779,
+			3.0
+		],
+		"n_blocks": 3,
+		"max_edge_distance": 200,
+		"component_list": [
+			4,
+			18,
+			7
+		],
+		"halo_size": [
+			256,
+			256,
+			48
+		],
+		"crop_centers": [
+			[
+				1289,
+				1859,
+				247
+			],
+			[
+				2308,
+				3310,
+				642
+			],
+			[
+				1751,
+				1140,
+				710
+			]
+		]
+	}
+]

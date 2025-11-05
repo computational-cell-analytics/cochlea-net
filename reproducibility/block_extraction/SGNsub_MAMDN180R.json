@@ -1,0 +1,55 @@
+[
+	{
+		"cochlea": "M_AMD_N180_R",
+		"image_channel": [
+			"CR",
+			"CTBP2",
+			"Ntng1",
+			"SGN_merged"
+		],
+		"segmentation_channel": "SGN_merged",
+		"type": "sgn",
+		"n_blocks": 6,
+		"halo_size": [
+			256,
+			256,
+			50
+		],
+		"component_list": [
+			1
+		],
+		"crop_centers": [
+			[
+				849,
+				1071,
+				660
+			],
+			[
+				689,
+				847,
+				806
+			],
+			[
+				637,
+				730,
+				512
+			],
+			[
+				951,
+				656,
+				506
+			],
+			[
+				976,
+				449,
+				789
+			],
+			[
+				783,
+				169,
+				880
+			]
+		],
+		"max_edge_distance": 30
+	}
+]

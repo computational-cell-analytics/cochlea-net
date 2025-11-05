@@ -82,8 +82,8 @@ def repro_object_measures(
                     )
 
                 compute_object_measures(
-                    image_path=img_path,
-                    segmentation_path=seg_path,
+                    image_path=img_s3,
+                    segmentation_path=seg_s3,
                     segmentation_table_path=seg_table_s3,
                     output_table_path=output_table_path,
                     image_key=input_key,

@@ -1,12 +1,12 @@
 [
 	{
-		"cochlea": "M_AMD_Runx1_L",
+		"cochlea": "M_LR_N110_R",
 		"image_channel": [
 			"PV",
-			"CR",
+			"Calb1",
 			"Ntng1"
 		],
-		"segmentation_channel": "PV_SGN_v2",
+		"segmentation_channel": "SGN_v2",
 		"component_list": [
 			1
 		]

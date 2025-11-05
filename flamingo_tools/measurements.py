@@ -3,7 +3,7 @@ import os
 import warnings
 from concurrent import futures
 from functools import partial
-from typing import List, Optional, Tuple
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -25,7 +25,7 @@ import flamingo_tools.s3_utils as s3_utils
 
 def _measure_volume_and_surface(mask, resolution):
     # Use marching_cubes for 3D data
-    verts, faces, normals, _ = marching_cubes(mask, spacing=resolution)
+    verts, faces, normals, _ = marching_cubes(mask, spacing=(resolution,) * 3)
 
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
     surface = mesh.area
@@ -59,6 +59,9 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
         slice(max(bmin - bb_extension, 0), min(bmax + bb_extension, sh))
         for bmin, bmax, sh in zip(bb_min, bb_max, shape)
     )
+
+    if isinstance(resolution, float):
+        resolution = (resolution,) * 3
 
     center = (
         int(row.anchor_z.item() / resolution[0]),
@@ -192,7 +195,7 @@ def _regionprops_features(seg_id, table, image, segmentation, resolution, backgr
     return features
 
 
-def get_object_measures_from_table(arr_seg, table, keyword="median"):
+def get_object_measures_from_table(arr_seg, table):
     """Return object measurements for label IDs wthin array.
     """
     # iterate through segmentation ids in reference mask
@@ -202,11 +205,11 @@ def get_object_measures_from_table(arr_seg, table, keyword="median"):
     if len(object_ids) < len(ref_ids):
         warnings.warn(f"Not all IDs were found in measurement table. Using {len(object_ids)}/{len(ref_ids)}.")
 
-    measure_values = [table.at[table.index[table["label_id"] == label_id][0], keyword] for label_id in object_ids]
+    median_values = [table.at[table.index[table["label_id"] == label_id][0], "median"] for label_id in object_ids]
 
     measures = pd.DataFrame({
         "label_id": object_ids,
-        keyword: measure_values,
+        "median": median_values,
     })
     return measures
 
@@ -236,7 +239,7 @@ def compute_object_measures_impl(
     image: np.typing.ArrayLike,
     segmentation: np.typing.ArrayLike,
     n_threads: Optional[int] = None,
-    resolution: Optional[Tuple[float, float, float]] = (0.38, 0.38, 0.38),
+    resolution: float = 0.38,
     table: Optional[pd.DataFrame] = None,
     feature_set: str = "default",
     background_mask: Optional[np.typing.ArrayLike] = None,
@@ -307,7 +310,7 @@ def compute_object_measures(
     image_key: Optional[str] = None,
     segmentation_key: Optional[str] = None,
     n_threads: Optional[int] = None,
-    resolution: Optional[Tuple[float, float, float]] = (0.38, 0.38, 0.38),
+    resolution: Union[float, Tuple[float, ...]] = 0.38,
     force: bool = False,
     feature_set: str = "default",
     s3_flag: bool = False,
@@ -359,8 +362,8 @@ def compute_object_measures(
         table = table[table["component_labels"].isin(component_list)]
 
     # Then, open the volumes.
-    image = read_image_data(image_path, image_key)
-    segmentation = read_image_data(segmentation_path, segmentation_key)
+    image = read_image_data(image_path, image_key, from_s3=s3_flag)
+    segmentation = read_image_data(segmentation_path, segmentation_key, from_s3=s3_flag)
 
     measures = compute_object_measures_impl(
         image, segmentation, n_threads, resolution, table=table, feature_set=feature_set,
