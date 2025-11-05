@@ -163,6 +163,7 @@ def get_crop_parameters(file_negexc, file_allweak, center, data_seg, table, colu
     inbetween_ids, allweak_pos, negexc_neg, allweak_neg, negexc_pos = find_inbetween_ids(arr_negexc,
                                                                                          arr_allweak, roi_seg)
 
+    param_dic["seg_ids"] = list(np.unique(roi_seg)[1:])
     param_dic["inbetween_ids"] = inbetween_ids
     param_dic["allweak_pos"] = allweak_pos
     param_dic["allweak_neg"] = allweak_neg

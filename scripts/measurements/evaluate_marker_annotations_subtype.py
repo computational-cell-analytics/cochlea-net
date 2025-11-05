@@ -140,6 +140,8 @@ def find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement, c
 
 
 def get_annotation_table(annotation_dics, subtype):
+    """Create table containing information about SGNs within crops.
+    """
     rows = []
     for annotation_dir, annotation_dic in annotation_dics.items():
 
@@ -166,12 +168,29 @@ def get_annotation_table(annotation_dics, subtype):
     return df
 
 
+def get_object_measures(annotation_dics, intensity_dic, intensity_mode, subtype):
+    """Get information to create table containing object measure information.
+    """
+    om_dic = {}
+    center_strings = list(intensity_dic.keys())
+    om_dic["center_strings"] = center_strings
+    om_dic["subtype"] = subtype
+    om_dic["intensity_mode"] = intensity_mode
+    for center_str in center_strings:
+        crop_dic = {}
+        crop_dic["median_intensity"] = intensity_dic[center_str]["median_intensity"]
+        for _, annotation_dic in annotation_dics.items():
+            if center_str in list(annotation_dic.keys()):
+                crop_dic["seg_ids"] = [int(i) for i in annotation_dic[center_str]["seg_ids"]]
+
+        om_dic[center_str] = crop_dic
+    return om_dic
+
+
 def evaluate_marker_annotation(
     cochleae: List[str],
     output_dir: str,
     annotation_dirs: Optional[List[str]] = None,
-    seg_name: str = "SGN_v2",
-    marker_name: str = "Calb1",
     threshold_save_dir: Optional[str] = None,
     force: bool = False,
 ) -> None:
@@ -185,8 +204,6 @@ def evaluate_marker_annotation(
         cochleae: List of cochlea
         output_dir: Output directory for segmentation table with "marker_label" in format <cochlea>_<marker>_<seg>.tsv
         annotation_dirs: List of directories containing marker annotations by annotator(s).
-        seg_name: Identifier for segmentation.
-        marker_name: Identifier for marker stain.
         threshold_save_dir: Optional directory for saving the thresholds.
         force: Whether to overwrite already existing results.
     """
@@ -255,6 +272,11 @@ def evaluate_marker_annotation(
                 annot_table = get_annotation_table(annot_dic, subtype)
             else:
                 annot_table = pd.concat([annot_table, get_annotation_table(annot_dic, subtype)], ignore_index=True)
+
+            om_dic = get_object_measures(annot_dic, intensity_dic, intensity_mode, subtype)
+            om_out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype}_om.json")
+            with open(om_out_path, "w") as f:
+                json.dump(om_dic, f, sort_keys=True, indent=4)
 
             if threshold_save_dir is not None:
                 os.makedirs(threshold_save_dir, exist_ok=True)
