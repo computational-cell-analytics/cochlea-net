@@ -54,35 +54,45 @@ def frequency_mapping(frequencies, values, animal="mouse", transduction_efficien
 
 # Map from cochlea names to channels
 COCHLEAE_FOR_SUBTYPES = {
+    "M_LR_000098_L": ["PV", "CR", "Ntng1"],
     "M_LR_000099_L": ["PV", "Calb1", "Lypd1"],
-    # "M_LR_000214_L": ["PV", "CR", "Calb1"],
     "M_LR_000184_R": ["PV", "Prph"],
     "M_LR_000184_L": ["PV", "Prph"],
-    "M_LR_000098_L": ["PV", "CR", "Ntng1"],
-    "M_LR_N152_L": ["PV", "CR", "Ntng1"],
     "M_LR_000260_L": ["PV", "Prph", "Tuj1"],
     "M_LR_N110_L": ["PV", "Calb1", "Ntng1"],
     "M_LR_N110_R": ["PV", "Calb1", "Ntng1"],
+    "M_LR_N152_L": ["PV", "CR", "Ntng1"],
+    "M_AMD_N180_L": ["CR", "Ntng1"],
+    "M_AMD_N180_R": ["CR", "Ntng1"],
     "M_AMD_Runx1_L": ["PV", "CR", "Ntng1"],
 }
 
 COCHLEAE = {
-    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
-    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
-    "M_AMD_Runx1_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
     "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
     "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"]},
     "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b"},
     "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b"},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
-    # "M_LR_000214_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1"]},
+    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
+    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
+    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
+    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
+    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
+    "M_AMD_Runx1_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
+}
+
+GROUPINGS = {
+    "Type Ia;Type Ib;Type Ic": ["M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R"],
+    "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
+    "Type Ib;Type Ic": ["M_LR_N110_L", "M_LR_N110_R"],
+    "Type Ib;Type Ic;Type IbIc": ["M_LR_000099_L"],
 }
 
 
 REGULAR_COCHLEAE = [
-    "M_LR_000099_L", "M_LR_000184_R", "M_LR_000184_L", "M_LR_000098_L", "M_LR_N152_L", "M_LR_000260_L",
-    "M_LR_N110_L", "M_LR_N110_R", "M_AMD_Runx1_L",
+    "M_LR_000098_L", "M_LR_000099_L", "M_LR_000184_R", "M_LR_000184_L", "M_LR_000260_L",
+    "M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_L",
+    "M_AMD_N180_L", "M_AMD_N180_R",
 ]
 
 # For custom thresholds.
@@ -154,9 +164,15 @@ def stain_to_type(stain):
         "CR-/Ntng1+": "Type Ic",
         "CR-/Ntng1-": "inconclusive",
 
+        # Combinations of Calb1 and Ntng1
+        "Calb1+/Ntng1+": "Type Ib",
+        "Calb1+/Ntng1-": "inconclusive",
+        "Calb1-/Ntng1+": "Type Ic",
+        "Calb1-/Ntng1-": "inconclusive",
     }
 
     if stain_norm not in stain_to_type:
+        print(stain_norm)
         breakpoint()
         raise ValueError(f"Invalid stain combination: {stain_norm}")
 
@@ -497,79 +513,96 @@ def combined_analysis(results, show_plots):
 
         summary[cochlea] = dic
 
-    fig, axes = plt.subplots(len(summary), sharey=True, figsize=(8, 8))
-    for i, (cochlea, dic) in enumerate(summary.items()):
-        types = list(dic.keys())
-        ax = axes[i]
-        for cat in types:
-            frequency_mapped = dic[cat]
-            bin_labels = pd.unique(frequency_mapped.index)
-            x_positions = [i for i in range(len(bin_labels))]
-            values = frequency_mapped.values
-            if cat in COLORS.keys():
-                color = COLORS[cat]
+    for group, cochleae in GROUPINGS.items():
+        sub_dic = {c: summary[c] for c in cochleae if c in summary}
+
+        group_str = "-".join(("".join(group.split(" "))).split(";"))
+        save_path = f"./subtype_plots/tonotopic_mapping_{group_str}.png"
+
+        fig, axes = plt.subplots(len(sub_dic), sharey=True, figsize=(8, 8))
+        for i, (cochlea, dic) in enumerate(sub_dic.items()):
+            types = list(dic.keys())
+            if len(sub_dic) == 1:
+                ax = axes
             else:
-                color = COLORS["default"]
-            ax.scatter(x_positions, values, label=cat, color=color)
+                ax = axes[i]
+            for cat in types:
+                frequency_mapped = dic[cat]
+                bin_labels = pd.unique(frequency_mapped.index)
+                x_positions = [i for i in range(len(bin_labels))]
+                values = frequency_mapped.values
+                if cat in COLORS.keys():
+                    color = COLORS[cat]
+                else:
+                    color = COLORS["default"]
+                sc = ax.scatter(x_positions, values, label=cat, color=color)
 
-        main_ticks = range(len(bin_labels))
-        ax.set_xticks(main_ticks)
-        ax.set_xticklabels(bin_labels)
-        ax.set_title(cochlea)
-        ax.legend()
+            main_ticks = range(len(bin_labels))
+            ax.set_xticks(main_ticks)
+            ax.set_xticklabels(bin_labels)
+            ax.set_title(cochlea)
+            ax.set_ylabel("Fraction")
+            handles, labels = ax.get_legend_handles_labels()
 
-    ax.set_xlabel("Octave band (kHz)")
-    plt.tight_layout()
-    if show_plots:
-        plt.show()
-    else:
-        plt.savefig("./subtype_plots/overview_tonotopic_mapping.png")
-        plt.close()
+        ax.set_xlabel("Octave band (kHz)")
+        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(0.85, 0.5), title='Subtypes') #1.02
+
+        plt.tight_layout(rect=[0, 0, 0.85, 1])  # make space for legend
+        if show_plots:
+            plt.show()
+        else:
+            plt.savefig(save_path, bbox_inches='tight')
+            plt.close()
 
     #
     # Create the overview figure.
     #
-    summary, types = {}, []
-    for cochlea, result in results.items():
-        if cochlea == "M_LR_000214_L":  # One of the signals cannot be analyzed.
-            continue
 
-        classification = result["classification"]
-        classification = [cls[:cls.find(" (")] for cls in classification]
-        n_tot = len(classification)
+    for group, cochleae in GROUPINGS.items():
+        group_str = "-".join(("".join(group.split(" "))).split(";"))
+        save_path = f"./subtype_plots/{group_str}.png"
 
-        this_types = list(set(classification))
-        types.extend(this_types)
-        summary[cochlea] = {}
-        for stype in types:
-            n_type = len([cls for cls in classification if cls == stype])
-            type_ratio = float(n_type) / n_tot
-            summary[cochlea][stype] = type_ratio
+        summary, types = {}, []
+        for cochlea, result in results.items():
+            if cochlea not in cochleae:  # One of the signals cannot be analyzed.
+                continue
 
-    types = list(set(types))
-    types.sort()
-    df = pd.DataFrame(summary).fillna(0)  # missing values → 0
+            classification = result["classification"]
+            classification = [cls[:cls.find(" (")] for cls in classification]
+            n_tot = len(classification)
 
-    # Transpose → cochleae on x-axis, subtypes stacked
-    if len(types) == 6:
-        types = [types[2], types[3], types[4], types[5], types[0], types[1]]
-    print(types)
-    colors = [COLORS[t] for t in types]
+            this_types = list(set(classification))
+            types.extend(this_types)
+            summary[cochlea] = {}
+            for stype in types:
+                n_type = len([cls for cls in classification if cls == stype])
+                type_ratio = float(n_type) / n_tot
+                summary[cochlea][stype] = type_ratio
 
-    ax = df.T.plot(kind="bar", stacked=True, figsize=(8, 5), color=colors)
+        types = list(set(types))
+        types.sort()
+        df = pd.DataFrame(summary).fillna(0)  # missing values → 0
 
-    ax.set_ylabel("Fraction")
-    ax.set_xlabel("Cochlea")
-    ax.set_title("Subtype Fractions per Cochlea")
-    plt.legend(loc="lower right")
-    plt.xticks(rotation=0)
-    plt.tight_layout()
+        # Transpose → cochleae on x-axis, subtypes stacked
+        if len(types) == 6:
+            types = [types[2], types[3], types[4], types[5], types[0], types[1]]
+        print(types)
+        colors = [COLORS[t] for t in types]
 
-    if show_plots:
-        plt.show()
-    else:
-        plt.savefig("./subtype_plots/overview.png")
-        plt.close()
+        ax = df.T.plot(kind="bar", stacked=True, figsize=(8, 5), color=colors)
+
+        ax.set_ylabel("Fraction")
+        ax.set_xlabel("Cochlea")
+        ax.set_title("Subtype Fractions per Cochlea")
+        plt.legend(loc="lower right")
+        plt.xticks(rotation=0)
+        plt.tight_layout()
+
+        if show_plots:
+            plt.show()
+        else:
+            plt.savefig(save_path)
+            plt.close()
 
 
 def analyze_subtype_data_regular(show_plots=True):
@@ -586,11 +619,16 @@ def analyze_subtype_data_regular(show_plots=True):
         if cochlea not in REGULAR_COCHLEAE:
             continue
         channels = COCHLEAE_FOR_SUBTYPES[cochlea]
-
-        reference_channel = "PV"
+        if "PV" in channels:
+            reference_channel = "PV"
+            seg_name = "PV_SGN_v2"
+            stain_channels = channels[1:]
+        else:
+            assert "CR" in channels
+            reference_channel = "CR"
+            seg_name = "SGN_merged"
+            stain_channels = channels
         assert channels[0] == reference_channel
-
-        seg_name = "PV_SGN_v2"
 
         content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
         info = json.loads(content.read())
@@ -612,14 +650,21 @@ def analyze_subtype_data_regular(show_plots=True):
         table_folder = os.path.join(
             BUCKET_NAME, cochlea, seg_source["segmentation"]["tableData"]["tsv"]["relativePath"]
         )
+        print("table_folder", table_folder)
+
+        if "component_list" in list(COCHLEAE[cochlea].keys()):
+            component_list = COCHLEAE[cochlea]["component_list"]
+        else:
+            component_list = [1]
+
         table_content = s3.open(os.path.join(table_folder, "default.tsv"), mode="rb")
         table = pd.read_csv(table_content, sep="\t")
-        table = table[table.component_labels == 1]
+        table = table[table["component_labels"].isin(component_list)]
 
         print(cochlea)
         print(f"Length of table before filtering: {len(table)}")
         # filter subtype table
-        for chan in channels[1:]:
+        for chan in stain_channels:
             column = f"marker_{chan}"
             table = table.loc[table[column].isin([1, 2])]
             print(f"Length of table after filtering channel {chan}: {len(table)}")
@@ -635,7 +680,7 @@ def analyze_subtype_data_regular(show_plots=True):
         # 2.) Plot ratio histograms, including otsu threshold.
         ratios = {}
         classification = []
-        for chan in channels[1:]:
+        for chan in stain_channels:
             column = f"{chan}_ratio_{reference_channel}"
             # e.g. Calb1_ratio_PV
             column = f"marker_{chan}"
@@ -700,6 +745,8 @@ def export_for_annotation():
             continue
 
         channels = COCHLEAE_FOR_SUBTYPES[cochlea]
+        if "PV" not in channels:
+            continue
         reference_channel = "PV"
         assert channels[0] == reference_channel
         tab = pd.read_csv(ff, sep="\t")

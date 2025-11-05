@@ -12,6 +12,8 @@ COCHLEA_DICT = {
     "M_LR_000184_L": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000184_R": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
+    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
+    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
     "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
@@ -46,6 +48,12 @@ STAIN_TO_TYPE = {
     "CR+/Ntng1-": "Type Ia",
     "CR-/Ntng1+": "Type Ic",
     "CR-/Ntng1-": "inconclusive",
+
+    # Combinations of Calb1 and Ntng1
+    "Calb1+/Ntng1+": "Type Ib",
+    "Calb1+/Ntng1-": "inconclusive",
+    "Calb1-/Ntng1+": "Type Ic",
+    "Calb1-/Ntng1-": "inconclusive",
 }
 
 
@@ -110,14 +118,14 @@ def filter_subtypes(cochlea, seg_name, subtype, stains=None):
     if len(stain_dict) == 0:
         raise ValueError("The dictionary containing stain information must have at least one entry. Check parameters.")
 
-    subset = table_seg.copy()
-
+    label_ids_subtype = []
     for dic in stain_dict:
+        subset = table_seg.copy()
         for stain in dic.keys():
             expression_value = 1 if dic[stain] == "+" else 2
-            subset = subset.loc[subset[f"marker_{stain}"] == expression_value]
+            subset = subset[subset[f"marker_{stain}"] == expression_value]
 
-    label_ids_subtype = list(subset["label_id"])
+        label_ids_subtype.extend(list(subset["label_id"]))
     return label_ids_subtype
 
 
@@ -145,6 +153,7 @@ def export_lower_resolution(args):
     for subtype in subtypes:
 
         label_ids_subtype = filter_subtypes(cochlea, seg_name=seg_name, subtype=subtype, stains=subtype_stains)
+        print(f"Subtype '{subtype}' with {len(label_ids_subtype)} instances.")
         table.loc[table["label_id"].isin(label_ids_subtype), "subtype_label"] = subtype
 
     table.to_csv(out_path, sep="\t", index=False)

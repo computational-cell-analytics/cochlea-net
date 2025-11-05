@@ -13,15 +13,23 @@ MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsh
 # The cochlea for the CHReef analysis.
 
 COCHLEAE = {
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"], "intensity": "ratio"},
-    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute"},
-    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
     "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
+    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"], "intensity": "ratio"},
     "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
     "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
     "M_LR_000214_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1"], "intensity": "ratio"},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"], "intensity": "ratio"},
+    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"], "intensity": "ratio"},
+    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"], "intensity": "ratio"},
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
+    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute"},
+    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
+}
+
+CUSTOM_THRESHOLDS = {
+    "M_LR_000099_L": {"Lypd1": 0.65},
+    "M_LR_000184_L": {"Prph": 1},
+    "M_LR_000260_L": {"Prph": 0.7},
 }
 
 
@@ -44,7 +52,7 @@ def get_length_fraction_from_center(table, center_str):
     return length_fraction
 
 
-def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column="median", suffix="labels"):
+def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column="median", suffix="labels", custom_threshold=None):
     """Apply threshold to nearest segmentation instances.
     Crop centers are transformed into the "length fraction" parameter of the segmentation table.
     This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
@@ -54,7 +62,11 @@ def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column=
     for key in intensity_dic.keys():
         length_fraction = get_length_fraction_from_center(table_seg, key)
         intensity_dic[key]["length_fraction"] = length_fraction
-        lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
+        if custom_threshold is None:
+            lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
+        else:
+            print(f"Using custom threshold {custom_threshold} for crop {key}.")
+            lf_intensity[length_fraction] = {"threshold": custom_threshold}
 
     # get limits for checking marker thresholds
     lf_intensity = dict(sorted(lf_intensity.items()))
@@ -273,6 +285,7 @@ def evaluate_marker_annotation(
             else:
                 annot_table = pd.concat([annot_table, get_annotation_table(annot_dic, subtype)], ignore_index=True)
 
+            # create dictionary containing median intensity and segmentation ids for every crop
             om_dic = get_object_measures(annot_dic, intensity_dic, intensity_mode, subtype)
             om_out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype}_om.json")
             with open(om_out_path, "w") as f:
@@ -293,8 +306,13 @@ def evaluate_marker_annotation(
                     table_measurement = pd.read_csv(f, sep="\t")
 
             # Apply the threshold to all SGNs.
+            if CUSTOM_THRESHOLDS.get(cochlea, {}).get(subtype) is not None:
+                custom_threshold = CUSTOM_THRESHOLDS[cochlea][subtype]
+            else:
+                custom_threshold = None
             table_seg = apply_nearest_threshold(
                 intensity_dic, table_seg, table_measurement, column=column, suffix=subtype,
+                custom_threshold=custom_threshold
             )
 
         # Save the table with positives / negatives for all SGNs.
