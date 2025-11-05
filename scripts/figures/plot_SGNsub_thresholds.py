@@ -31,9 +31,12 @@ CUSTOM_THRESHOLDS = {
     "M_LR_000260_L": {"Prph": 0.7},
 }
 
+
 def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
     """Plot histograms for positive and negative populations of subtype markers based on thresholding.
     """
+    os.makedirs(output_dir, exist_ok=True)
+
     om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
     cochlea_str = "-".join(cochlea.split("_"))
     om_paths = [p for p in om_paths if cochlea_str in p]
@@ -44,8 +47,12 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
     for stain, json_file in zip(stains, om_paths):
         save_path = os.path.join(output_dir, f"{cochlea}_{stain}_thresholds.png")
 
-        with open(json_file, 'r') as myfile:
-            data = myfile.read()
+        try:
+            with open(json_file, "r") as myfile:
+                data = myfile.read()
+        except PermissionError as e:
+            print(e)
+            continue
         param_dicts = json.loads(data)
         center_strs = param_dicts["center_strings"]
         intensity_mode = param_dicts["intensity_mode"]
@@ -95,7 +102,7 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
             ax[num].legend()
             ax[num].set_title(center_str)
 
-        if rows  == 2:
+        if rows == 2:
             for num, center_str in enumerate(center_strs):
                 seg_ids = param_dicts[center_str]["seg_ids"]
                 threshold = CUSTOM_THRESHOLDS[cochlea][stain]
@@ -137,8 +144,8 @@ def main():
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
     parser.add_argument("--figure_dir", "-f", type=str, required=True, help="Output directory for plots.")
     parser.add_argument("-i", "--input_dir", type=str,
-                        default="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/Subtype_marker",
-                        help="Directory containing object measures of the cochleae.") #noqa
+                        default="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/Subtype_marker",  # noqa
+                        help="Directory containing object measures of the cochleae.") # noqa
 
     args = parser.parse_args()
     for cochlea in args.cochlea:
