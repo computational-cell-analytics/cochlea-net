@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS
 
 png_dpi = 300
 
@@ -25,14 +26,8 @@ COCHLEAE = {
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
 }
 
-CUSTOM_THRESHOLDS = {
-    "M_LR_000099_L": {"Lypd1": 0.65},
-    "M_LR_000184_L": {"Prph": 1},
-    "M_LR_000260_L": {"Prph": 0.7},
-}
 
-
-def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
+def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex=True):
     """Plot histograms for positive and negative populations of subtype markers based on thresholding.
     """
     os.makedirs(output_dir, exist_ok=True)
@@ -55,6 +50,7 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
             continue
         param_dicts = json.loads(data)
         center_strs = param_dicts["center_strings"]
+        center_strs.sort()
         intensity_mode = param_dicts["intensity_mode"]
         number_plots = len(center_strs)
         if number_plots == 0:
@@ -70,13 +66,13 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
             column = "median"
 
         # check for custom threshold
-        if CUSTOM_THRESHOLDS.get(cochlea, {}).get(stain) is not None:
+        if cochlea in CUSTOM_THRESHOLDS and stain in CUSTOM_THRESHOLDS[cochlea]:
             rows = 2
         else:
             rows = 1
 
         columns = number_plots
-        fig, axes = plt.subplots(rows, columns, figsize=(columns*4, rows*4), sharex=True)
+        fig, axes = plt.subplots(rows, columns, figsize=(columns*4, rows*4), sharex=sharex)
         ax = axes.flatten()
         table_path_s3, fs = get_s3_path(table_measurement_path)
         with fs.open(table_path_s3, "r") as f:
@@ -103,9 +99,13 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False):
             ax[num].set_title(center_str)
 
         if rows == 2:
+            threshold_dic = CUSTOM_THRESHOLDS[cochlea][stain]
             for num, center_str in enumerate(center_strs):
                 seg_ids = param_dicts[center_str]["seg_ids"]
-                threshold = CUSTOM_THRESHOLDS[cochlea][stain]
+                if isinstance(threshold_dic, (int, float)):
+                    threshold = threshold_dic
+                else:
+                    threshold = threshold_dic[center_str]["manual"]
 
                 subset = table_measurement[table_measurement["label_id"].isin(seg_ids)]
                 subset_neg = subset[(subset[column] < threshold)]
@@ -143,13 +143,14 @@ def main():
     )
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
     parser.add_argument("--figure_dir", "-f", type=str, required=True, help="Output directory for plots.")
+    parser.add_argument("--sharex", action="store_true", help="Shared x-axis of subplots.")
     parser.add_argument("-i", "--input_dir", type=str,
                         default="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/Subtype_marker",  # noqa
-                        help="Directory containing object measures of the cochleae.") # noqa
+                        help="Directory containing object measures of the cochleae.")
 
     args = parser.parse_args()
     for cochlea in args.cochlea:
-        plot_intensity_thresholds(args.input_dir, args.figure_dir, cochlea)
+        plot_intensity_thresholds(args.input_dir, args.figure_dir, cochlea, sharex=args.sharex)
 
 
 if __name__ == "__main__":

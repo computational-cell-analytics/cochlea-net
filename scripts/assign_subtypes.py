@@ -4,6 +4,7 @@ import os
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
+from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE
 # from skimage.segmentation import relabel_sequential
 
 COCHLEA_DICT = {
@@ -15,45 +16,8 @@ COCHLEA_DICT = {
     "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
     "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
+    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1"]},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
-}
-
-
-STAIN_TO_TYPE = {
-    # Combinations of Calb1 and CR:
-    "CR+/Calb1+": "Type Ib",
-    "CR-/Calb1+": "Type IbIc",  # Calb1 is expressed at Ic less than Lypd1 but more then CR
-    "CR+/Calb1-": "Type Ia",
-    "CR-/Calb1-": "Type II",
-
-    # Combinations of Calb1 and Lypd1:
-    "Calb1+/Lypd1+": "Type IbIc",
-    "Calb1+/Lypd1-": "Type Ib",
-    "Calb1-/Lypd1+": "Type Ic",
-    "Calb1-/Lypd1-": "inconclusive",  # Can be Type Ia or Type II
-
-    # Combinations of Prph and Tuj1:
-    "Prph+/Tuj1+": "Type II",
-    "Prph+/Tuj1-": "Type II",
-    "Prph-/Tuj1+": "Type I",
-    "Prph-/Tuj1-": "inconclusive",
-
-    # Prph is isolated.
-    "Prph+": "Type II",
-    "Prph-": "Type I",
-
-    # Combinations of CR and Ntng1
-    "CR+/Ntng1+": "Type Ib",
-    "CR+/Ntng1-": "Type Ia",
-    "CR-/Ntng1+": "Type Ic",
-    "CR-/Ntng1-": "inconclusive",
-
-    # Combinations of Calb1 and Ntng1
-    "Calb1+/Ntng1+": "Type Ib",
-    "Calb1+/Ntng1-": "inconclusive",
-    "Calb1-/Ntng1+": "Type Ic",
-    "Calb1-/Ntng1-": "inconclusive",
 }
 
 
@@ -129,14 +93,13 @@ def filter_subtypes(cochlea, seg_name, subtype, stains=None):
     return label_ids_subtype
 
 
-def export_lower_resolution(args):
+def export_lower_resolution(cochlea, output_folder, subtype_column="subtype_label"):
 
-    cochlea = args.cochlea
     subtype_stains = COCHLEA_DICT[cochlea]["subtype"]
     subtype_stains.sort()
     seg_name = COCHLEA_DICT[cochlea]["seg_data"]
 
-    out_path = os.path.join(args.output_folder, f"{cochlea}_subtypes.tsv")
+    out_path = os.path.join(output_folder, f"{cochlea}_subtypes.tsv")
 
     table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
     table_path_s3, fs = get_s3_path(table_seg_path)
@@ -149,23 +112,26 @@ def export_lower_resolution(args):
 
     # Subtype labels
     subtype_labels = ["None" for _ in range(len(table))]
-    table["subtype_label"] = subtype_labels
+    table[subtype_column] = subtype_labels
     for subtype in subtypes:
 
         label_ids_subtype = filter_subtypes(cochlea, seg_name=seg_name, subtype=subtype, stains=subtype_stains)
         print(f"Subtype '{subtype}' with {len(label_ids_subtype)} instances.")
-        table.loc[table["label_id"].isin(label_ids_subtype), "subtype_label"] = subtype
+        table.loc[table["label_id"].isin(label_ids_subtype), subtype_column] = subtype
 
     table.to_csv(out_path, sep="\t", index=False)
 
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cochlea", "-c", required=True)
-    parser.add_argument("--output_folder", "-o", required=True)
+    parser.add_argument("-c", "--cochlea", type=str, nargs="+", required=True, help="Cochlea(e) to process.")
+    parser.add_argument("-o", "--output_folder", required=True)
+    parser.add_argument("-s", "--subtype_column", default="subtype_label",
+                        help="Custom name for column in output which features subtypes.")
     args = parser.parse_args()
 
-    export_lower_resolution(args)
+    for cochlea in args.cochlea:
+        export_lower_resolution(cochlea, args.output_folder, args.subtype_column)
 
 
 if __name__ == "__main__":

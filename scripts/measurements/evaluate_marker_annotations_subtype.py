@@ -8,6 +8,7 @@ import pandas as pd
 from flamingo_tools.s3_utils import get_s3_path
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.segmentation.chreef_utils import localize_median_intensities, find_annotations
+from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS
 
 MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/SGN_subtypes"
 # The cochlea for the CHReef analysis.
@@ -24,12 +25,6 @@ COCHLEAE = {
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
     "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute"},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
-}
-
-CUSTOM_THRESHOLDS = {
-    "M_LR_000099_L": {"Lypd1": 0.65},
-    "M_LR_000184_L": {"Prph": 1},
-    "M_LR_000260_L": {"Prph": 0.7},
 }
 
 
@@ -52,7 +47,7 @@ def get_length_fraction_from_center(table, center_str):
     return length_fraction
 
 
-def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column="median", suffix="labels", custom_threshold=None):
+def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column="median", suffix="labels", threshold_dic=None):
     """Apply threshold to nearest segmentation instances.
     Crop centers are transformed into the "length fraction" parameter of the segmentation table.
     This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
@@ -62,9 +57,13 @@ def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column=
     for key in intensity_dic.keys():
         length_fraction = get_length_fraction_from_center(table_seg, key)
         intensity_dic[key]["length_fraction"] = length_fraction
-        if custom_threshold is None:
+        if threshold_dic is None:
             lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
         else:
+            if isinstance(threshold_dic, (int, float)):
+                custom_threshold = threshold_dic
+            else:
+                custom_threshold = threshold_dic[key]["manual"]
             print(f"Using custom threshold {custom_threshold} for crop {key}.")
             lf_intensity[length_fraction] = {"threshold": custom_threshold}
 
@@ -307,12 +306,13 @@ def evaluate_marker_annotation(
 
             # Apply the threshold to all SGNs.
             if CUSTOM_THRESHOLDS.get(cochlea, {}).get(subtype) is not None:
-                custom_threshold = CUSTOM_THRESHOLDS[cochlea][subtype]
+                custom_threshold_dic = CUSTOM_THRESHOLDS[cochlea][subtype]
             else:
-                custom_threshold = None
+                custom_threshold_dic = None
+
             table_seg = apply_nearest_threshold(
                 intensity_dic, table_seg, table_measurement, column=column, suffix=subtype,
-                custom_threshold=custom_threshold
+                threshold_dic=custom_threshold_dic,
             )
 
         # Save the table with positives / negatives for all SGNs.

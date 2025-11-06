@@ -9,6 +9,7 @@ from skimage.filters import threshold_otsu
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from flamingo_tools.measurements import compute_object_measures
+from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE
 
 
 # Define the animal specific octave bands.
@@ -95,14 +96,6 @@ REGULAR_COCHLEAE = [
     "M_AMD_N180_L", "M_AMD_N180_R",
 ]
 
-# For custom thresholds.
-THRESHOLDS = {
-    "M_LR_000214_L": {
-    },
-    "M_AMD_N62_L": {
-    },
-}
-
 # For consistent colors.
 ALL_COLORS = ["red", "blue", "orange", "yellow", "cyan", "magenta", "green", "purple", "gray", "black"]
 COLORS = {
@@ -135,48 +128,12 @@ def stain_to_type(stain):
         s1, s2 = sorted(stains)
         stain_norm = f"{s1}/{s2}"
 
-    stain_to_type = {
-        # Combinations of Calb1 and CR:
-        "CR+/Calb1+": "Type Ib",
-        "CR-/Calb1+": "Type Ib/Ic",  # Calb1 is expressed at Ic less than Lypd1 but more then CR
-        "CR+/Calb1-": "Type Ia",
-        "CR-/Calb1-": "Type II",
-
-        # Combinations of Calb1 and Lypd1:
-        "Calb1+/Lypd1+": "Type Ib/Ic",
-        "Calb1+/Lypd1-": "Type Ib",
-        "Calb1-/Lypd1+": "Type Ic",
-        "Calb1-/Lypd1-": "inconclusive",  # Can be Type Ia or Type II
-
-        # Combinations of Prph and Tuj1:
-        "Prph+/Tuj1+": "Type II",
-        "Prph+/Tuj1-": "Type II",
-        "Prph-/Tuj1+": "Type I",
-        "Prph-/Tuj1-": "inconclusive",
-
-        # Prph is isolated.
-        "Prph+": "Type II",
-        "Prph-": "Type I",
-
-        # Combinations of CR and Ntng1
-        "CR+/Ntng1+": "Type Ib",
-        "CR+/Ntng1-": "Type Ia",
-        "CR-/Ntng1+": "Type Ic",
-        "CR-/Ntng1-": "inconclusive",
-
-        # Combinations of Calb1 and Ntng1
-        "Calb1+/Ntng1+": "Type Ib",
-        "Calb1+/Ntng1-": "inconclusive",
-        "Calb1-/Ntng1+": "Type Ic",
-        "Calb1-/Ntng1-": "inconclusive",
-    }
-
-    if stain_norm not in stain_to_type:
+    if stain_norm not in STAIN_TO_TYPE:
         print(stain_norm)
         breakpoint()
         raise ValueError(f"Invalid stain combination: {stain_norm}")
 
-    return stain_to_type[stain_norm], stain_norm
+    return STAIN_TO_TYPE[stain_norm], stain_norm
 
 
 def check_processing_status():

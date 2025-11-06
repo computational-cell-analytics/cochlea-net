@@ -7,6 +7,7 @@ import tifffile
 import zarr
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
+from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE
 # from skimage.segmentation import relabel_sequential
 
 COCHLEA_DICT = {
@@ -15,37 +16,6 @@ COCHLEA_DICT = {
     "M_LR_000184_R": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-}
-
-
-STAIN_TO_TYPE = {
-    # Combinations of Calb1 and CR:
-    "CR+/Calb1+": "Type Ib",
-    "CR-/Calb1+": "Type IbIc",  # Calb1 is expressed at Ic less than Lypd1 but more then CR
-    "CR+/Calb1-": "Type Ia",
-    "CR-/Calb1-": "Type II",
-
-    # Combinations of Calb1 and Lypd1:
-    "Calb1+/Lypd1+": "Type IbIc",
-    "Calb1+/Lypd1-": "Type Ib",
-    "Calb1-/Lypd1+": "Type Ic",
-    "Calb1-/Lypd1-": "inconclusive",  # Can be Type Ia or Type II
-
-    # Combinations of Prph and Tuj1:
-    "Prph+/Tuj1+": "Type II",
-    "Prph+/Tuj1-": "Type II",
-    "Prph-/Tuj1+": "Type I",
-    "Prph-/Tuj1-": "inconclusive",
-
-    # Prph is isolated.
-    "Prph+": "Type II",
-    "Prph-": "Type I",
-
-    # Combinations of CR and Ntng1
-    "CR+/Ntng1+": "Type Ib",
-    "CR+/Ntng1-": "Type Ia",
-    "CR-/Ntng1+": "Type Ic",
-    "CR-/Ntng1-": "inconclusive",
 }
 
 
