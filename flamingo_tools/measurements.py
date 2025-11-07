@@ -158,7 +158,7 @@ def _default_object_features(
         # The radius passed is given in micrometer.
         # The resolution is given in micrometer per pixel.
         # So we have to divide by the resolution to obtain the radius in pixel.
-        radius_in_pixel = background_radius / resolution
+        radius_in_pixel = background_radius / resolution if isinstance(resolution, (float, int)) else resolution[1]
         measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm, median_only)
 
     # Do the volume and surface measurement.

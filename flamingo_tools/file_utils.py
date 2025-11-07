@@ -1,8 +1,10 @@
+import os
 import warnings
 from typing import Optional, Union
 
 import imageio.v3 as imageio
 import numpy as np
+import pooch
 import tifffile
 import zarr
 from elf.io import open_file
@@ -13,6 +15,18 @@ try:
     from zarr.abc.store import Store
 except ImportError:
     from zarr._storage.store import BaseStore as Store
+
+
+def get_cache_dir() -> str:
+    """Get the cache directory of CochleaNet.
+
+    The default cache directory is "$HOME/cochlea-net"
+
+    Returns:
+        The cache directory.
+    """
+    cache_dir = os.path.expanduser(pooch.os_cache("cochlea-net"))
+    return cache_dir
 
 
 def _parse_shape(metadata_file):

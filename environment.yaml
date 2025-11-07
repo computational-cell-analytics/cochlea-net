@@ -1,4 +1,4 @@
-name: flamingo
+name: cochlea-net
 
 channels:
   - conda-forge
@@ -6,6 +6,7 @@ channels:
 dependencies:
   - cluster_tools
   - scikit-image
+  - pip
   - pooch
   - pybdv
   - pytorch
@@ -13,5 +14,5 @@ dependencies:
   - torch_em
   - trimesh
   - z5py
-  # Don't install zarr v3, as we are not sure that it is compatible with MoBIE etc. yet
+  # Don't install zarr v3, which is not yet compatible with all dependencies.
   - zarr <3
