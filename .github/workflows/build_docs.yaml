@@ -6,7 +6,7 @@ on:
       - "doc/*.md"   # Trigger on changes to any markdown file
       - "flamigo_tools/**/*.py"   # Optionally include changes in Python files
     branches:
-      - main        # Run the workflow only on pushes to the main branch
+      - master        # Run the workflow only on pushes to the master branch
   workflow_dispatch:
 
 # security: restrict permissions for CI jobs.
