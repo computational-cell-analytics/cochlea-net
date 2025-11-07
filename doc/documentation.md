@@ -49,10 +49,20 @@ conda install -c conda-forge napari pyqt
 
 ## Usage
 
+TODO
+
 ### Napari Plugin
+
+TODO
 
 ### Command Line Interface
 
+TODO
+
 ### Available Models
 
+TODO
+
 ### Python Library
+
+TODO
