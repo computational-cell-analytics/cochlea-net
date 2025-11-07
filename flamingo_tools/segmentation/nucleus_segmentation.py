@@ -11,7 +11,7 @@ from skimage.measure import label
 from tqdm import tqdm
 
 from ..file_utils import read_image_data
-from ..measurements import _get_bounding_box
+from ..measurements import _get_bounding_box_and_center
 from .postprocessing import compute_table_on_the_fly
 
 
@@ -23,7 +23,7 @@ def _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threa
         table = compute_table_on_the_fly(segmentation, resolution=resolution)
 
     def segment_nucleus(seg_id):
-        bb = _get_bounding_box(table, seg_id, resolution, image.shape)
+        bb = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation=None)
         image_local, seg_local = image[bb], segmentation[bb]
         mask = seg_local == seg_id
 

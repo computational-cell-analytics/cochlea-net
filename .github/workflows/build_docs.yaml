@@ -31,6 +31,10 @@ jobs:
         cache-environment: true
         post-cleanup: 'all'
 
+    - name: Install napari
+      shell: bash -l {0}
+      run: pip install napari
+
     - name: Install package
       shell: bash -l {0}
       run: pip install -e .
