@@ -5,11 +5,12 @@ channels:
 
 dependencies:
   - cluster_tools
-  - scikit-image
+  - mobie_utils
   - pip
   - pooch
   - pybdv
   - pytorch
+  - scikit-image
   - s3fs
   - torch_em
   - trimesh
