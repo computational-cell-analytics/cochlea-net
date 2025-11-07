@@ -71,6 +71,7 @@ def eval_all_sgn():
     for baseline in baselines:
         if "spiner" in baseline:
             eval_segmentation_spiner(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
+            # eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir, filter=False)
         else:
             eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
 
@@ -92,7 +93,7 @@ def eval_all_ihc():
         eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
 
 
-def eval_segmentation(seg_dir, annotation_dir):
+def eval_segmentation(seg_dir, annotation_dir, filter=True):
     print(f"Evaluating segmentation in directory {seg_dir}")
     segs = [entry.path for entry in os.scandir(seg_dir) if entry.is_file() and ".tif" in entry.path]
 
@@ -109,20 +110,24 @@ def eval_segmentation(seg_dir, annotation_dir):
 
             df_path = os.path.join(annotation_dir, f"{basename}.csv")
             df = pd.read_csv(df_path, sep=",")
-            timer_file = os.path.join(seg_dir, f"{basename}_timer.json")
-            with open(timer_file) as f:
-                timer_dic = json.load(f)
 
             seg_arr = imageio.imread(seg)
             print(f"shape {seg_arr.shape}")
-            seg_filtered = filter_seg(seg_arr=seg_arr)
+            if filter:
+                seg_arr = filter_seg(seg_arr=seg_arr)
 
-            seg_dic = compute_matches_for_annotated_slice(segmentation=seg_filtered,
+            seg_dic = compute_matches_for_annotated_slice(segmentation=seg_arr,
                                                           annotations=df,
                                                           matching_tolerance=5)
             seg_dic["annotation_length"] = len(df)
             seg_dic["crop_name"] = basename
-            seg_dic["time"] = float(timer_dic["total_duration[s]"])
+            timer_file = os.path.join(seg_dir, f"{basename}_timer.json")
+            if os.path.isfile(timer_file):
+                with open(timer_file) as f:
+                    timer_dic = json.load(f)
+                seg_dic["time"] = float(timer_dic["total_duration[s]"])
+            else:
+                seg_dic["time"] = None
 
             eval_seg_dict(seg_dic, dic_out)
 
@@ -158,10 +163,10 @@ def eval_segmentation_spiner(seg_dir, annotation_dir):
 
             df_annot = pd.read_csv(annot, sep=",")
             for num, row in df_annot.iterrows():
-                x1 = int(row["x1"])
-                x2 = int(row["x2"])
-                y1 = int(row["y1"])
-                y2 = int(row["y2"])
+                x1 = int(row["y1"])
+                x2 = int(row["y2"])
+                y1 = int(row["x1"])
+                y2 = int(row["x2"])
                 seg_arr[x1:x2, y1:y2] = num + 1
 
             seg_dic = compute_matches_for_annotated_slice(segmentation=seg_arr,
@@ -265,9 +270,9 @@ def print_accuracy_ihc():
 
 
 def main():
-    # eval_all_sgn()
+    eval_all_sgn()
     eval_all_ihc()
-    #print_accuracy_sgn()
+    print_accuracy_sgn()
     print_accuracy_ihc()
 
 
