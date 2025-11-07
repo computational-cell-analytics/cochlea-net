@@ -33,7 +33,7 @@ jobs:
 
     - name: Install napari
       shell: bash -l {0}
-      run: pip install napari
+      run: pip install napari pyqt
 
     - name: Install package
       shell: bash -l {0}
