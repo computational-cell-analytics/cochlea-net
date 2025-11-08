@@ -51,7 +51,7 @@ jobs:
 
     - name: Generate Documentation
       shell: bash -l {0}
-      run: pdoc flamingo_tools/ -d google -o _site --html
+      run: pdoc flamingo_tools/ -d google -o _site
 
     - name: Verify Documentation Output
       run: ls -la _site/
