@@ -6,7 +6,7 @@ It was developed for imaging data from (clear-tissue) [flamingo microscopes](htt
 In addition to the analysis functionality, CochleaNet implements data pre-processing to convert data from flamingo microscopes into a format compatible with [BigStitcher](https://imagej.net/plugins/bigstitcher/) and to export image data and segmentation results to [ome.zarr](https://www.nature.com/articles/s41592-021-01326-w) and [MoBIE](https://mobie.github.io/).
 This functionality is applicable to any imaging data from flamingo microscopes, not only clear-tissue data or cochleae. We aim to also extend the segmentation and analysis functionality to other kinds of samples imaged in the flamingo in the future.
 
-For installation and usage instructions, check out [the documentation](TODO). For more details on the underlying methodology check out [our preprint](TODO).
+For installation and usage instructions, check out [the documentation](https://computational-cell-analytics.github.io/cochlea-net/). For more details on the underlying methodology check out [our preprint](TODO).
 
 <!---
 The `flamingo_tools` library implements functionality for:
