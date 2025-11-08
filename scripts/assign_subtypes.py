@@ -4,21 +4,8 @@ import os
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
-from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE
+from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 # from skimage.segmentation import relabel_sequential
-
-COCHLEA_DICT = {
-    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"]},
-    "M_LR_000184_L": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
-    "M_LR_000184_R": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
-    "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
-    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
-    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
-    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1"]},
-    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
-}
 
 
 def types_for_stain(stains):
@@ -93,45 +80,47 @@ def filter_subtypes(cochlea, seg_name, subtype, stains=None):
     return label_ids_subtype
 
 
-def export_lower_resolution(cochlea, output_folder, subtype_column="subtype_label"):
+def assign_subtypes(cochlea, output_folder, subtype_column="subtype_label"):
+    if "label_stains" in COCHLEAE[cochlea].keys():
+        for subtype_column, subtype_stains in COCHLEAE[cochlea]["label_stains"].items():
 
-    subtype_stains = COCHLEA_DICT[cochlea]["subtype"]
-    subtype_stains.sort()
-    seg_name = COCHLEA_DICT[cochlea]["seg_data"]
+            subtype_stains.sort()
+            if "output_seg" in list(COCHLEAE[cochlea].keys()):
+                seg_name = COCHLEAE[cochlea]["output_seg"]
+            else:
+                seg_name = COCHLEAE[cochlea]["seg_data"]
 
-    out_path = os.path.join(output_folder, f"{cochlea}_subtypes.tsv")
+            out_path = os.path.join(output_folder, f"{cochlea}_subtypes.tsv")
 
-    table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
-    table_path_s3, fs = get_s3_path(table_seg_path)
-    with fs.open(table_path_s3, "r") as f:
-        table = pd.read_csv(f, sep="\t")
+            table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
+            table_path_s3, fs = get_s3_path(table_seg_path)
+            with fs.open(table_path_s3, "r") as f:
+                table = pd.read_csv(f, sep="\t")
 
-    print(f"Subtype stains: {subtype_stains}.")
-    subtypes = types_for_stain(subtype_stains)
-    subtypes.sort()
+            print(f"Subtype stains: {subtype_stains}.")
+            subtypes = types_for_stain(subtype_stains)
+            subtypes.sort()
 
-    # Subtype labels
-    subtype_labels = ["None" for _ in range(len(table))]
-    table[subtype_column] = subtype_labels
-    for subtype in subtypes:
+            # Subtype labels
+            subtype_labels = ["None" for _ in range(len(table))]
+            table[subtype_column] = subtype_labels
+            for subtype in subtypes:
 
-        label_ids_subtype = filter_subtypes(cochlea, seg_name=seg_name, subtype=subtype, stains=subtype_stains)
-        print(f"Subtype '{subtype}' with {len(label_ids_subtype)} instances.")
-        table.loc[table["label_id"].isin(label_ids_subtype), subtype_column] = subtype
+                label_ids_subtype = filter_subtypes(cochlea, seg_name=seg_name, subtype=subtype, stains=subtype_stains)
+                print(f"Subtype '{subtype}' with {len(label_ids_subtype)} instances.")
+                table.loc[table["label_id"].isin(label_ids_subtype), subtype_column] = subtype
 
-    table.to_csv(out_path, sep="\t", index=False)
+            table.to_csv(out_path, sep="\t", index=False)
 
 
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", required=True, help="Cochlea(e) to process.")
     parser.add_argument("-o", "--output_folder", required=True)
-    parser.add_argument("-s", "--subtype_column", default="subtype_label",
-                        help="Custom name for column in output which features subtypes.")
     args = parser.parse_args()
 
     for cochlea in args.cochlea:
-        export_lower_resolution(cochlea, args.output_folder, args.subtype_column)
+        assign_subtypes(cochlea, args.output_folder)
 
 
 if __name__ == "__main__":

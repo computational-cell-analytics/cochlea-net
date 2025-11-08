@@ -8,23 +8,9 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path
-from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS
+from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
 
 png_dpi = 300
-
-COCHLEAE = {
-    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"], "intensity": "ratio"},
-    "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
-    "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
-    "M_LR_000214_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1"], "intensity": "ratio"},
-    "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"], "intensity": "ratio"},
-    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"], "intensity": "ratio"},
-    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"], "intensity": "ratio"},
-    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
-    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute"},
-    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
-}
 
 
 def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex=True):

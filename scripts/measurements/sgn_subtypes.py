@@ -9,7 +9,7 @@ from skimage.filters import threshold_otsu
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from flamingo_tools.measurements import compute_object_measures
-from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE
+from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 
 
 # Define the animal specific octave bands.
@@ -68,20 +68,6 @@ COCHLEAE_FOR_SUBTYPES = {
     "M_AMD_Runx1_L": ["PV", "CR", "Ntng1"],
 }
 
-COCHLEAE = {
-    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"]},
-    "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b"},
-    "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b"},
-    "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
-    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
-    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"]},
-    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "component_list": [1, 2]},
-    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
-    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"]},
-    "M_AMD_Runx1_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-}
-
 GROUPINGS = {
     "Type Ia;Type Ib;Type Ic": ["M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R"],
     "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
@@ -101,7 +87,7 @@ ALL_COLORS = ["red", "blue", "orange", "yellow", "cyan", "magenta", "green", "pu
 COLORS = {
     "Type Ia": "#133374",
     "Type Ib": "#27339C",
-    "Type Ib/Ic": "#67279C",
+    "Type IbIc": "#67279C",
     "Type Ic": "#9C276F",
     "inconclusive": "#9C8227",
 

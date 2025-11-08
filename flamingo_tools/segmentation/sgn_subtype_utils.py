@@ -1,5 +1,21 @@
 import os
 
+COCHLEAE = {
+    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype_stains": ["CR", "Ntng1"], "intensity": "ratio",
+                      "component_list": [1, 2]},
+    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype_stains": ["Calb1", "Lypd1"], "intensity": "ratio"},
+    "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype_stains": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
+    "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype_stains": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
+    "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype_stains": ["Prph"], "intensity": "ratio"},
+    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype_stains": ["Calb1", "Ntng1"], "intensity": "ratio"},
+    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype_stains": ["Calb1", "Ntng1"], "intensity": "ratio"},
+    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype_stains": ["CR", "Ntng1"], "intensity": "ratio",
+                    "component_list": [1, 2]},
+    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype_stains": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute",
+                     "label_stains": {"subtype_label": ["CR", "Ntng1"], "subtype_label_Lypd1": ["CR", "Lypd1"]}},
+    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype_stains": ["CR", "Ntng1"], "intensity": "absolute"},
+}
+
 CUSTOM_THRESHOLDS = {
     "M_LR_000098_L": {"Ntng1": {
         "0492-0500-0581": {"manual": 2, "annotations": 1.41},
@@ -63,7 +79,7 @@ STAIN_TO_TYPE = {
     "Prph+/Tuj1+": "Type II",
     "Prph+/Tuj1-": "Type II",
     "Prph-/Tuj1+": "Type I",
-    "Prph-/Tuj1-": "inconclusive",
+    "Prph-/Tuj1-": "Type I",
 
     # Prph is isolated.
     "Prph+": "Type II",

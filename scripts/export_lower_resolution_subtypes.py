@@ -7,16 +7,8 @@ import tifffile
 import zarr
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
-from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE
+from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 # from skimage.segmentation import relabel_sequential
-
-COCHLEA_DICT = {
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"]},
-    "M_LR_000184_L": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
-    "M_LR_000184_R": {"seg_data": "SGN_v2b", "subtype": ["Prph"]},
-    "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"]},
-    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"]},
-}
 
 
 def types_for_stain(stains):
@@ -124,10 +116,13 @@ def export_lower_resolution(args):
     for scale in args.scale:
         output_folder = os.path.join(args.output_folder, cochlea, f"scale{scale}")
         os.makedirs(output_folder, exist_ok=True)
-        if cochlea in COCHLEA_DICT.keys():
+        if cochlea in COCHLEAE.keys():
             if subtype_stains is None:
-                subtype_stains = COCHLEA_DICT[cochlea]["subtype"]
-            seg_name = COCHLEA_DICT[cochlea]["seg_data"]
+                subtype_stains = COCHLEAE[cochlea]["subtype_stains"]
+            if "output_seg" in list(COCHLEAE[cochlea].keys()):
+                seg_name = COCHLEAE[cochlea]["output_seg"]
+            else:
+                seg_name = COCHLEAE[cochlea]["seg_data"]
         else:
             raise ValueError(f"Cochlea {cochlea} is not in the dictionary. Check values.")
 

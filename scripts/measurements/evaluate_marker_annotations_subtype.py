@@ -8,24 +8,9 @@ import pandas as pd
 from flamingo_tools.s3_utils import get_s3_path
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.segmentation.chreef_utils import localize_median_intensities, find_annotations
-from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS
+from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
 
 MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/SGN_subtypes"
-# The cochlea for the CHReef analysis.
-
-COCHLEAE = {
-    "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
-    "M_LR_000099_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1", "Lypd1"], "intensity": "ratio"},
-    "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
-    "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
-    "M_LR_000214_L": {"seg_data": "PV_SGN_v2", "subtype": ["Calb1"], "intensity": "ratio"},
-    "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype": ["Prph", "Tuj1"], "intensity": "ratio"},
-    "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"], "intensity": "ratio"},
-    "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype": ["Calb1", "Ntng1"], "intensity": "ratio"},
-    "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype": ["CR", "Ntng1"], "intensity": "ratio"},
-    "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute"},
-    "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype": ["CR", "Ntng1"], "intensity": "absolute"},
-}
 
 
 def get_length_fraction_from_center(table, center_str):
@@ -160,7 +145,7 @@ def get_annotation_table(annotation_dics, subtype):
         annotator = annotator_dir.split("_")[1]
         for center_str in annotation_dic["center_strings"]:
             row = {"annotator" : annotator}
-            row["subtype"] = subtype
+            row["subtype_stains"] = subtype
             row["center_str"] = center_str
             row["median_intensity"] = annotation_dic[center_str]["median_intensity"]
             row["inbetween_ids"] = len(annotation_dic[center_str]["inbetween_ids"])
@@ -179,13 +164,13 @@ def get_annotation_table(annotation_dics, subtype):
     return df
 
 
-def get_object_measures(annotation_dics, intensity_dic, intensity_mode, subtype):
+def get_object_measures(annotation_dics, intensity_dic, intensity_mode, subtype_stain):
     """Get information to create table containing object measure information.
     """
     om_dic = {}
     center_strings = list(intensity_dic.keys())
     om_dic["center_strings"] = center_strings
-    om_dic["subtype"] = subtype
+    om_dic["subtype_stains"] = subtype_stain
     om_dic["intensity_mode"] = intensity_mode
     for center_str in center_strings:
         crop_dic = {}
@@ -234,8 +219,8 @@ def evaluate_marker_annotation(
 
         seg_string = "-".join(output_seg.split("_"))
         cochlea_str = "-".join(cochlea.split("_"))
-        subtypes = COCHLEAE[cochlea]["subtype"]
-        subtype_str = "_".join(subtypes)
+        stains = COCHLEAE[cochlea]["subtype_stain"]
+        subtype_str = "_".join(stains)
         out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
         annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
         if os.path.exists(out_path) and os.path.exists(annot_out) and not force:
@@ -256,13 +241,12 @@ def evaluate_marker_annotation(
 
         # iterate through subtypes
         annot_table = None
-        for subtype in subtypes:
-            pattern = subtype
+        for stain in stains:
             if intensity_mode == "ratio":
                 table_measurement_path = f"{cochlea}/tables/{data_name}/subtype_ratio.tsv"
-                column = f"{subtype}_ratio_PV"
+                column = f"{stain}_ratio_PV"
             elif intensity_mode == "absolute":
-                table_measurement_path = f"{cochlea}/tables/{data_name}/{subtype}_{seg_string}_object-measures.tsv"
+                table_measurement_path = f"{cochlea}/tables/{data_name}/{stain}_{seg_string}_object-measures.tsv"
                 column = "median"
             else:
                 raise ValueError("Choose either 'ratio' or 'median' as intensity mode.")
@@ -272,27 +256,27 @@ def evaluate_marker_annotation(
                 table_measurement = pd.read_csv(f, sep="\t")
 
             cochlea_annotations = [a for a in annotation_dirs
-                                   if len(find_annotations(a, cochlea, subtype)["center_strings"]) != 0]
+                                   if len(find_annotations(a, cochlea, stain)["center_strings"]) != 0]
             print(f"Evaluating data for cochlea {cochlea} in {cochlea_annotations}.")
 
             # Find the thresholds from the annotated blocks and save them if specified.
             intensity_dic, annot_dic = find_thresholds(cochlea_annotations, cochlea, data_seg,
-                                            table_measurement, column=column, pattern=pattern)
+                                            table_measurement, column=column, pattern=stain)
 
             if annot_table is None:
-                annot_table = get_annotation_table(annot_dic, subtype)
+                annot_table = get_annotation_table(annot_dic, stain)
             else:
-                annot_table = pd.concat([annot_table, get_annotation_table(annot_dic, subtype)], ignore_index=True)
+                annot_table = pd.concat([annot_table, get_annotation_table(annot_dic, stain)], ignore_index=True)
 
             # create dictionary containing median intensity and segmentation ids for every crop
-            om_dic = get_object_measures(annot_dic, intensity_dic, intensity_mode, subtype)
-            om_out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype}_om.json")
+            om_dic = get_object_measures(annot_dic, intensity_dic, intensity_mode, stain)
+            om_out_path = os.path.join(output_dir, f"{cochlea_str}_{stain}_om.json")
             with open(om_out_path, "w") as f:
                 json.dump(om_dic, f, sort_keys=True, indent=4)
 
             if threshold_save_dir is not None:
                 os.makedirs(threshold_save_dir, exist_ok=True)
-                threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{subtype}_{seg_string}.json")
+                threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{stain}_{seg_string}.json")
                 with open(threshold_out_path, "w") as f:
                     json.dump(intensity_dic, f, sort_keys=True, indent=4)
 
@@ -305,13 +289,13 @@ def evaluate_marker_annotation(
                     table_measurement = pd.read_csv(f, sep="\t")
 
             # Apply the threshold to all SGNs.
-            if CUSTOM_THRESHOLDS.get(cochlea, {}).get(subtype) is not None:
-                custom_threshold_dic = CUSTOM_THRESHOLDS[cochlea][subtype]
+            if CUSTOM_THRESHOLDS.get(cochlea, {}).get(stain) is not None:
+                custom_threshold_dic = CUSTOM_THRESHOLDS[cochlea][stain]
             else:
                 custom_threshold_dic = None
 
             table_seg = apply_nearest_threshold(
-                intensity_dic, table_seg, table_measurement, column=column, suffix=subtype,
+                intensity_dic, table_seg, table_measurement, column=column, suffix=stain,
                 threshold_dic=custom_threshold_dic,
             )
 
