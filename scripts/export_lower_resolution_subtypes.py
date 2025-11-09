@@ -104,7 +104,7 @@ def filter_subtypes(cochlea, segmentation, seg_name, subtype):
     filter_mask = np.isin(segmentation, label_ids_subtype)
     segmentation[filter_mask] = 1
 
-    segmentation = segmentation.astype("uint16")
+    segmentation = segmentation.astype("float32")
     return segmentation
 
 

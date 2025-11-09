@@ -27,7 +27,7 @@ def filter_component(fs, segmentation, cochlea, seg_name, components):
 
     filter_mask = ~np.isin(segmentation, keep_label_ids)
     segmentation[filter_mask] = 0
-    segmentation = segmentation.astype("uint16")
+    segmentation = segmentation.astype("float32")
     return segmentation
 
 
