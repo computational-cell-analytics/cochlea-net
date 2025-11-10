@@ -27,6 +27,7 @@ def main():
     parser.add_argument("--halo", default=None, type=str)
     parser.add_argument("--memory", action="store_true", help="Perform prediction in memory and save output as tif.")
     parser.add_argument("--time", action="store_true", help="Time prediction process.")
+    parser.add_argument("--no_masking", action="store_true", help="Do not mask input.")
     parser.add_argument("--seg_class", default=None, type=str,
                         help="Segmentation class to load parameters for masking input.")
     parser.add_argument("--center_distance_threshold", default=0.4, type=float,
@@ -69,6 +70,8 @@ def main():
     else:
         halo = tuple(json.loads(args.halo))
 
+    use_mask = ~args.no_masking
+
     if args.time:
         start = time.perf_counter()
 
@@ -77,6 +80,7 @@ def main():
             args.input, args.input_key, output_folder=None, model_path=args.model,
             scale=scale, min_size=min_size,
             block_shape=block_shape, halo=halo,
+            use_mask=use_mask,
             seg_class=args.seg_class,
             center_distance_threshold=args.center_distance_threshold,
             boundary_distance_threshold=args.boundary_distance_threshold,
@@ -94,6 +98,7 @@ def main():
             args.input, args.input_key, output_folder=args.output_folder, model_path=args.model,
             scale=scale, min_size=min_size,
             block_shape=block_shape, halo=halo,
+            use_mask=use_mask,
             seg_class=args.seg_class,
             center_distance_threshold=args.center_distance_threshold,
             boundary_distance_threshold=args.boundary_distance_threshold,
