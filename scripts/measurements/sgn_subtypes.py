@@ -9,7 +9,7 @@ from skimage.filters import threshold_otsu
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from flamingo_tools.measurements import compute_object_measures
-from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
+from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE, stain_to_type
 
 
 # Define the animal specific octave bands.
@@ -69,7 +69,7 @@ COCHLEAE_FOR_SUBTYPES = {
 }
 
 GROUPINGS = {
-    "Type Ia;Type Ib;Type Ic": ["M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R"],
+    "Type Ia;Type Ib;Type Ic": ["M_LR_000098_L", "M_LR_N152_L"],
     "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
     "Type Ib;Type Ic": ["M_LR_N110_L", "M_LR_N110_R"],
     "Type Ib;Type Ic;Type IbIc": ["M_LR_000099_L"],
@@ -86,40 +86,17 @@ REGULAR_COCHLEAE = [
 ALL_COLORS = ["red", "blue", "orange", "yellow", "cyan", "magenta", "green", "purple", "gray", "black"]
 COLORS = {
     "Type Ia": "#133374",
-    "Type Ib": "#27339C",
-    "Type IbIc": "#67279C",
-    "Type Ic": "#9C276F",
+    "Type Ib": "#67279C",
+    "Type IbIc": "#9C276F",
+    "Type Ic": "#9C3A27",
     "inconclusive": "#9C8227",
 
-    "Type I": "#9C3B27",
+    "Type I": "#279C47",  # #9C3B27
     "Type II": "#279C96",
     "default": "#279C47"
 }
 
 PLOT_OUT = "./subtype_plots"
-
-
-# Type Ia ; CR+ / Calb1- or Calb1- / Lypd1-
-# Type Ib: CR+ / Calb1+ or Calb1+ / Lypd1+
-# Type Ic: CR-/Calb1+ - or Calb1- / Lypd1+
-# Type II: CR-/Calb1- or Calb1- / Lypd1- or Prph+
-def stain_to_type(stain):
-    # Normalize the staining string.
-    stains = stain.replace(" ", "").split("/")
-    assert len(stains) in (1, 2)
-
-    if len(stains) == 1:
-        stain_norm = stain
-    else:
-        s1, s2 = sorted(stains)
-        stain_norm = f"{s1}/{s2}"
-
-    if stain_norm not in STAIN_TO_TYPE:
-        print(stain_norm)
-        breakpoint()
-        raise ValueError(f"Invalid stain combination: {stain_norm}")
-
-    return STAIN_TO_TYPE[stain_norm], stain_norm
 
 
 def check_processing_status():
@@ -478,7 +455,7 @@ def combined_analysis(results, show_plots):
                     color = COLORS[cat]
                 else:
                     color = COLORS["default"]
-                sc = ax.scatter(x_positions, values, label=cat, color=color)
+                ax.scatter(x_positions, values, label=cat, color=color)
 
             main_ticks = range(len(bin_labels))
             ax.set_xticks(main_ticks)
@@ -488,7 +465,7 @@ def combined_analysis(results, show_plots):
             handles, labels = ax.get_legend_handles_labels()
 
         ax.set_xlabel("Octave band (kHz)")
-        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(0.85, 0.5), title='Subtypes') #1.02
+        fig.legend(handles, labels, loc='center left', bbox_to_anchor=(0.85, 0.5), title='Subtypes')
 
         plt.tight_layout(rect=[0, 0, 0.85, 1])  # make space for legend
         if show_plots:

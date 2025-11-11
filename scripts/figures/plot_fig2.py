@@ -52,7 +52,6 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "marker": "o",
                 "runtime": 536.5,
                 "runtime_std": 148.4
-
             },
             "micro_sam": {
                 "label": "µSAM",
@@ -69,8 +68,8 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.607,
                 "f1-score": 0.186,
                 "marker": "v",
-                "runtime": None,
-                "runtime_std": None
+                "runtime": 167.9116359,
+                "runtime_std": 40.2,
             },
             "cellpose_sam": {
                 "label": "Cellpose-SAM",
@@ -78,8 +77,17 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.003,
                 "f1-score": 0.005,
                 "marker": "^",
-                "runtime": 167.9,
-                "runtime_std": 40.2
+                "runtime": 2232.007748,
+                "runtime_std": None,
+            },
+            "spiner2D": {
+                "label": "Spiner",
+                "precision": 0.373,
+                "recall": 0.340,
+                "f1-score": 0.326,
+                "marker": "*",
+                "runtime": None,
+                "runtime_std": None,
             },
             "distance_unet": {
                 "label": "CochleaNet",
@@ -107,8 +115,8 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.554,
                 "f1-score": 0.329,
                 "marker": "v",
-                "runtime": 30.1,
-                "runtime_std": 162.3
+                "runtime": 162.3493934,
+                "runtime_std": 30.1,
             },
             "cellpose_sam": {
                 "label": "Cellpose-SAM",
@@ -116,17 +124,17 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.025,
                 "f1-score": 0.047,
                 "marker": "^",
-                "runtime": None,
+                "runtime": 2137.944779,
                 "runtime_std": None
             },
             "distance_unet": {
                 "label": "CochleaNet",
-                "precision": 0.664,
-                "recall": 	0.661,
-                "f1-score": 0.659,
+                "precision": 0.693,
+                "recall": 	0.567,
+                "f1-score": 0.618,
                 "marker": "s",
-                "runtime": 65.7,
-                "runtime_std": 72.6
+                "runtime": 69.01,
+                "runtime_std": None
             },
         }
     }
@@ -166,21 +174,27 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     elif mode == "runtime":
+        if "Spiner" in labels:
+            labels.remove("Spiner")
+
         # Convert setting labels to numerical x positions
         offset = 0.08  # horizontal shift for scatter separation
+        x_pos = 1
         for num, key in enumerate(list(value_dict[segm].keys())):
             runtime = [value_dict[segm][key]["runtime"]]
+            if runtime[0] is None:
+                continue
             marker = value_dict[segm][key]["marker"]
-            x_pos = num + 1
-
             plt.scatter([x_pos], runtime, label="Runtime", color=COLOR_T, marker=marker, s=80)
+            x_pos = x_pos + 1
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels)+1)
         plt.xticks(x_pos, labels, fontsize=16)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Processing time [s]", fontsize=main_label_size)
-        plt.ylim(-0.1, 600)
+        plt.ylim(10, 2400)
+        plt.yscale('log')
         # plt.legend(loc="lower right", fontsize=legendsize)
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
@@ -441,14 +455,16 @@ def main():
 
     # Panel D: The number of SGNs, IHCs and average number of ribbon synapses per IHC
     fig_02d(save_path=os.path.join(args.figure_dir, f"fig_02d.{FILE_EXTENSION}"),
-               plot=args.plot, plot_average_ribbon_synapses=True)
+            plot=args.plot, plot_average_ribbon_synapses=True)
 
     # Supplementary Figure 2: Comparing other methods in terms of segmentation accuracy and runtime
     plot_legend_suppfig02(save_path=os.path.join(args.figure_dir, f"suppfig02_legend_colors.{FILE_EXTENSION}"))
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn.{FILE_EXTENSION}"), segm="SGN")
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc.{FILE_EXTENSION}"), segm="IHC")
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn_time.{FILE_EXTENSION}"), segm="SGN", mode="runtime")
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc_time.{FILE_EXTENSION}"), segm="IHC", mode="runtime")
+    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn_time.{FILE_EXTENSION}"),
+                segm="SGN", mode="runtime")
+    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc_time.{FILE_EXTENSION}"),
+                segm="IHC", mode="runtime")
 
 
 if __name__ == "__main__":
