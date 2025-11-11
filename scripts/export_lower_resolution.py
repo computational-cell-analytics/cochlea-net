@@ -171,7 +171,14 @@ def export_lower_resolution(args):
 
             if args.binarize:
                 data = (data > 0).astype("uint16")
-            tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
+
+            if args.ome_zarr:
+                out_path = os.path.join(output_folder, f"{channel}.ome.zarr")
+                output_key = "image"
+                f_out = zarr.open(out_path, mode="w")
+                f_out.create_dataset(output_key, data=data, compression="gzip")
+            else:
+                tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
 
 
 def main():
@@ -186,6 +193,7 @@ def main():
     parser.add_argument("--binarize", action="store_true")
     parser.add_argument("--filter_cochlea_channels", nargs="+", type=str, default=None)
     parser.add_argument("--filter_dilation_iterations", type=int, default=8)
+    parser.add_argument("--ome_zarr", action="store_true")
     args = parser.parse_args()
 
     export_lower_resolution(args)

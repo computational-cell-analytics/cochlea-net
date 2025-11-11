@@ -85,19 +85,41 @@ def filter_subtypes(cochlea, segmentation, seg_name, subtype):
     stains = [column.split("_")[1] for column in list(table_seg.columns) if "marker_" in column]
     stains.sort()
 
-    stain_dict = stain_expression_from_subtype(subtype, stains)
-    if len(stain_dict) == 0:
-        raise ValueError("The dictionary containing stain information must have at least one entry. Check parameters.")
+    if isinstance(subtype, str):
+        stain_dict = stain_expression_from_subtype(subtype, stains)
+        if len(stain_dict) == 0:
+            raise ValueError("The dictionary containing stain information must have at least one entry. "
+                             "Check parameters.")
 
-    subset = table_seg.copy()
+        subset = table_seg.copy()
 
-    for dic in stain_dict:
-        for stain in dic.keys():
-            expression_value = 1 if dic[stain] == "+" else 2
-            subset = subset.loc[subset[f"marker_{stain}"] == expression_value]
+        for dic in stain_dict:
+            for stain in dic.keys():
+                expression_value = 1 if dic[stain] == "+" else 2
+                subset = subset.loc[subset[f"marker_{stain}"] == expression_value]
 
-    label_ids_subtype = list(subset["label_id"])
-    print(f"subtype {subtype} with {len(label_ids_subtype)} instances")
+        label_ids_subtype = list(subset["label_id"])
+        print(f"subtype {subtype} with {len(label_ids_subtype)} instances")
+
+    else:
+        label_ids_subtype = []
+        for sub in subtype:
+            stain_dict = stain_expression_from_subtype(sub, stains)
+            if len(stain_dict) == 0:
+                raise ValueError("The dictionary containing stain information must have at least one entry. "
+                                 "Check parameters.")
+
+            subset = table_seg.copy()
+
+            for dic in stain_dict:
+                for stain in dic.keys():
+                    expression_value = 1 if dic[stain] == "+" else 2
+                    subset = subset.loc[subset[f"marker_{stain}"] == expression_value]
+
+            label_ids_subtype.extend(list(subset["label_id"]))
+
+        subtypes_str = "/".join(subtype)
+        print(f"subtypes {subtypes_str} with {len(label_ids_subtype)} instances")
 
     filter_mask = ~np.isin(segmentation, label_ids_subtype)
     segmentation[filter_mask] = 0
@@ -112,6 +134,7 @@ def export_lower_resolution(args):
 
     cochlea = args.cochlea
     subtype_stains = args.stains
+    force_overwrite = args.force
     # iterate through exporting lower resolutions
     for scale in args.scale:
         output_folder = os.path.join(args.output_folder, cochlea, f"scale{scale}")
@@ -129,18 +152,24 @@ def export_lower_resolution(args):
         print(f"Subtype stains: {subtype_stains}.")
         subtypes = types_for_stain(subtype_stains)
         subtypes.sort()
+        if "Type Ib" in subtypes and "Type Ic" in subtypes:
+            subtypes.append(["Type Ib", "Type Ic"])
 
         for subtype in subtypes:
+            if isinstance(subtype, str):
+                subtype_str = subtype.replace(" ", "")
+            else:
+                subtype_str = "".join([s.replace(" ", "") for s in subtype])
+
+            out_path = os.path.join(output_folder, f"{seg_name}_{subtype_str}.tif")
+            if os.path.exists(out_path) and not force_overwrite:
+                continue
 
             input_key = f"s{scale}"
             internal_path = os.path.join(cochlea, "images",  "ome-zarr", f"{seg_name}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             with zarr.open(s3_store, mode="r") as f:
                 data = f[input_key][:]
-
-            out_path = os.path.join(output_folder, f"{seg_name}_{subtype.replace(" ", "")}.tif")
-            if os.path.exists(out_path):
-                continue
 
             print("Data shape", data.shape)
 
@@ -155,6 +184,7 @@ def main():
     parser.add_argument("--scale", "-s", nargs="+", type=int, required=True)
     parser.add_argument("--output_folder", "-o", required=True)
     parser.add_argument("--stains", nargs="+", type=str, default=None)
+    parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
 
     export_lower_resolution(args)
