@@ -32,7 +32,8 @@ def get_length_fraction_from_center(table, center_str):
     return length_fraction
 
 
-def apply_nearest_threshold(intensity_dic, table_seg, table_measurement, column="median", suffix="labels", threshold_dic=None):
+def apply_nearest_threshold(intensity_dic, table_seg, table_measurement,
+                            column="median", suffix="labels", threshold_dic=None):
     """Apply threshold to nearest segmentation instances.
     Crop centers are transformed into the "length fraction" parameter of the segmentation table.
     This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
@@ -144,7 +145,7 @@ def get_annotation_table(annotation_dics, subtype):
         annotator_dir = os.path.basename(annotation_dir)
         annotator = annotator_dir.split("_")[1]
         for center_str in annotation_dic["center_strings"]:
-            row = {"annotator" : annotator}
+            row = {"annotator": annotator}
             row["subtype_stains"] = subtype
             row["center_str"] = center_str
             row["median_intensity"] = annotation_dic[center_str]["median_intensity"]
@@ -261,7 +262,7 @@ def evaluate_marker_annotation(
 
             # Find the thresholds from the annotated blocks and save them if specified.
             intensity_dic, annot_dic = find_thresholds(cochlea_annotations, cochlea, data_seg,
-                                            table_measurement, column=column, pattern=stain)
+                                                       table_measurement, column=column, pattern=stain)
 
             if annot_table is None:
                 annot_table = get_annotation_table(annot_dic, stain)

@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from matplotlib.lines import Line2D
+
 # Directory with synapse measurement tables
 SYNAPSE_DIR_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/synapses"
 # SYNAPSE_DIR_ROOT = "./synapses"
@@ -66,6 +68,20 @@ def export_legend(legend, filename="legend.png"):
     fig.canvas.draw()
     bbox = legend.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
     fig.savefig(filename, bbox_inches=bbox, dpi=png_dpi)
+
+
+def get_function_handle(color, marker):
+    """Get function handle for plotting external legend without plot.
+    """
+    return plt.plot([], [], marker=marker, color=color, ls="none")[0]
+    # fig6: f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
+    # fig4: f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
+    # f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
+    # f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
+
+
+def get_flatline_handle(color):
+    return Line2D([], [], lw=3, color=color)
 
 
 def prism_style():

@@ -1,5 +1,3 @@
-import os
-
 COCHLEAE = {
     "M_LR_000098_L": {"seg_data": "SGN_v2", "subtype_stains": ["CR", "Ntng1"], "intensity": "ratio",
                       "component_list": [1, 2]},
@@ -14,6 +12,17 @@ COCHLEAE = {
     "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype_stains": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute",
                      "label_stains": {"subtype_label": ["CR", "Ntng1"], "subtype_label_Lypd1": ["CR", "Lypd1"]}},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype_stains": ["CR", "Ntng1"], "intensity": "absolute"},
+}
+
+ALIAS = {
+    "M_LR_000184_L": "S01",
+    "M_LR_000184_R": "S02",
+    "M_LR_000260_L": "S03",
+    "M_LR_000098_L": "S04",
+    "M_LR_N152_L": "S05",
+    "M_LR_N110_L": "S06",
+    "M_LR_N110_R": "S07",
+    "M_LR_000099_L": "S08",
 }
 
 CUSTOM_THRESHOLDS = {
@@ -99,8 +108,27 @@ STAIN_TO_TYPE = {
 
     # Combinations of Calb1 and Ntng1
     "Calb1+/Ntng1+": "Type Ib",
-    "Calb1+/Ntng1-": "Type Ia",
+    "Calb1+/Ntng1-": "inconclusive",
     "Calb1-/Ntng1+": "Type Ic",
     "Calb1-/Ntng1-": "inconclusive",
 
 }
+
+
+def stain_to_type(stain):
+    # Normalize the staining string.
+    stains = stain.replace(" ", "").split("/")
+    assert len(stains) in (1, 2)
+
+    if len(stains) == 1:
+        stain_norm = stain
+    else:
+        s1, s2 = sorted(stains)
+        stain_norm = f"{s1}/{s2}"
+
+    if stain_norm not in STAIN_TO_TYPE:
+        print(stain_norm)
+        breakpoint()
+        raise ValueError(f"Invalid stain combination: {stain_norm}")
+
+    return STAIN_TO_TYPE[stain_norm], stain_norm

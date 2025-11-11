@@ -9,7 +9,8 @@ import numpy as np
 import pandas as pd
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
-from util import frequency_mapping, prism_style, prism_cleanup_axes, export_legend, custom_formatter_1
+from util import frequency_mapping, prism_style, prism_cleanup_axes
+from util import export_legend, custom_formatter_1, get_function_handle
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
@@ -214,8 +215,7 @@ def plot_legend(chreef_data, save_path, grouping="side_mono", use_alias=True,
     else:
         raise ValueError("Choose a correct 'grouping' parameter.")
 
-    f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
-    handles = [f(marker, color) for (color, marker) in zip(colors, markers)]
+    handles = [get_function_handle(c, m) for (c, m) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
 
     export_legend(legend, save_path)
@@ -240,8 +240,7 @@ def plot_legend_fig05e_gerbil(save_path):
     marker = ["o", "^"]
     label = ["G1L", "G1R"]
 
-    f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
-    handles = [f(m, c) for (c, m) in zip(color, marker)]
+    handles = [get_function_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()

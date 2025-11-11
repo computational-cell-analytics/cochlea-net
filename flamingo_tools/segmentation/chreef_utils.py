@@ -151,7 +151,7 @@ def find_inbetween_ids(
 
 
 def get_crop_parameters(file_negexc, file_allweak, center, data_seg, table, column="median",
-                         resolution=0.38):
+                        resolution=0.38):
     arr_negexc = tifffile.imread(file_negexc)
     arr_allweak = tifffile.imread(file_allweak)
     param_dic = {}
@@ -215,7 +215,7 @@ def localize_median_intensities(annotation_dir, cochlea, data_seg, table_measure
         file_pos = annotation_dic[center_str]["file_pos"]
         file_neg = annotation_dic[center_str]["file_neg"]
         param_dic = get_crop_parameters(file_neg, file_pos, center_coord, data_seg,
-                                                table_measure, column=column, resolution=resolution)
+                                        table_measure, column=column, resolution=resolution)
 
         median_intensity = param_dic["median_intensity"]
         if median_intensity is None:

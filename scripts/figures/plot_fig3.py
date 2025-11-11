@@ -14,7 +14,7 @@ from matplotlib import cm, colors
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
 from util import sliding_runlength_sum, frequency_mapping, SYNAPSE_DIR_ROOT
-from util import prism_style, prism_cleanup_axes, export_legend
+from util import prism_style, prism_cleanup_axes, export_legend, get_function_handle
 from flamingo_tools.segmentation.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
 INPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/frequency_mapping/M_LR_000227_R/scale3"
@@ -272,8 +272,7 @@ def plot_legend_fig03c(save_path):
     label = list(color_dict.keys())
     color = [color_dict[key] for key in color_dict.keys()]
 
-    f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
-    handles = [f(m, c) for (c, m) in zip(color, marker)]
+    handles = [get_function_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=2, framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
@@ -379,7 +378,6 @@ def fig_03c_octave(tonotopic_data, save_path, plot=False, use_alias=True, trendl
 
     # central line
     if trendline:
-        #mean, std = _get_trendline_params(y_values)
         x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict)
         trend_center, = ax.plot(
             x_sorted,
@@ -390,9 +388,6 @@ def fig_03c_octave(tonotopic_data, save_path, plot=False, use_alias=True, trendl
             linewidth=3,
             zorder=2
         )
-        # y_sorted_upper = np.array(mean) + np.array(std)
-        # y_sorted_lower = np.array(mean) - np.array(std)
-        # upper and lower standard deviation
         trend_upper, = ax.plot(
             x_sorted,
             y_sorted_upper,
@@ -795,7 +790,6 @@ def fig_03_subtype_tonotopic(save_path, grouping="Type Ia;Type Ib;Type Ic", coch
         classification = [stain_to_type(cls) for cls in classification]
         classification = [f"{stype} ({stain})" for stype, stain in classification]
 
-        unique_labels = set(classification)
         # 3.) Plot tonotopic mapping.
         freq = table["frequency[kHz]"].values
         assert len(freq) == len(classification)
@@ -819,16 +813,16 @@ def main():
     os.makedirs(args.figure_dir, exist_ok=True)
     tonotopic_data = get_tonotopic_data()
 
-#    # Panel C: Tonotopic mapping of SGNs and IHCs (rendering in napari + heatmap)
-#    cmap = "plasma"
-#    fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
-#            plot=args.plot, plot_napari=args.napari, cmap=cmap)
-#
-#    # Panel C: Spatial distribution of synapses across the cochlea (running sum per octave band)
-#    fig_03c_octave(tonotopic_data=tonotopic_data,
-#                   save_path=os.path.join(args.figure_dir, f"fig_03c_octave.{FILE_EXTENSION}"),
-#                   plot=args.plot, trendline=True)
-#    plot_legend_fig03c(save_path=os.path.join(args.figure_dir, f"fig_03c_legend.{FILE_EXTENSION}"))
+    # Panel C: Tonotopic mapping of SGNs and IHCs (rendering in napari + heatmap)
+    cmap = "plasma"
+    fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
+            plot=args.plot, plot_napari=args.napari, cmap=cmap)
+
+    # Panel C: Spatial distribution of synapses across the cochlea (running sum per octave band)
+    fig_03c_octave(tonotopic_data=tonotopic_data,
+                   save_path=os.path.join(args.figure_dir, f"fig_03c_octave.{FILE_EXTENSION}"),
+                   plot=args.plot, trendline=True)
+    plot_legend_fig03c(save_path=os.path.join(args.figure_dir, f"fig_03c_legend.{FILE_EXTENSION}"))
 
     grouping = "Type Ia;Type Ib;Type Ic"
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),
@@ -847,14 +841,6 @@ def main():
                              grouping=grouping, combine_IbIc=True)
     fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"figsupp_03_fraction_Ib-Ic.{FILE_EXTENSION}"),
                             grouping=grouping)
-
-#    grouping = "Type Ib;Type Ic;Type IbIc"
-#    fig_03_subtype_tonotopic(
-#        save_path=os.path.join(args.figure_dir, f"figsupp_03_tonotopic_Ib-Ic-Ibc.{FILE_EXTENSION}"),
-#        grouping=grouping,
-#    )
-#    fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"figsupp_03_fraction_Ib-Ic-Ibc.{FILE_EXTENSION}"),
-#                            grouping=grouping)
 
     # Panel D: Spatial distribution of SGN sub-types.
     # fig_03d_fraction(save_path=os.path.join(args.figure_dir, f"fig_03d_fraction.{FILE_EXTENSION}"), plot=args.plot)

@@ -9,7 +9,7 @@ import numpy as np
 from flamingo_tools.s3_utils import get_s3_path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE
-from util import prism_style, prism_cleanup_axes, export_legend
+from util import prism_style, prism_cleanup_axes, export_legend, get_function_handle
 
 png_dpi = 300
 FILE_EXTENSION = "png"
@@ -59,8 +59,7 @@ def plot_legend(save_path):
         labels.append(f"{alias[num]}R")
         markers.append(MARKER_LEFT)
         markers.append(MARKER_RIGHT)
-        f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
-    handles = [f(marker, color) for (color, marker) in zip(colors, markers)]
+    handles = [get_function_handle(color, marker) for (color, marker) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
 
     export_legend(legend, save_path)

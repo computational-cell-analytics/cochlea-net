@@ -5,9 +5,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from matplotlib.lines import Line2D
 
-from util import literature_reference_values, SYNAPSE_DIR_ROOT
+from util import literature_reference_values, get_function_handle, get_flatline_handle, SYNAPSE_DIR_ROOT
 from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter_2
 
 png_dpi = 300
@@ -32,8 +31,7 @@ def plot_legend_suppfig02(save_path):
     color = [COLOR_P, COLOR_R, COLOR_F, COLOR_T]
     label = ["Precision", "Recall", "F1-score", "Processing time"]
 
-    fl = lambda c: Line2D([], [], lw=3, color=c)
-    handles = [fl(c) for c in color]
+    handles = [get_flatline_handle(c) for c in color]
     legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
@@ -225,20 +223,18 @@ def plot_legend_fig02c(save_path, plot_mode="shapes"):
         marker = ["o", "s"]
         label = ["Manual", "Automatic"]
 
-        f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
-        handles = [f(m, c) for (c, m) in zip(color, marker)]
+        handles = [get_function_handle(c, m) for (c, m) in zip(color, marker)]
         legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
         export_legend(legend, save_path)
         legend.remove()
         plt.close()
 
-    elif plot_mode =="colors":
+    elif plot_mode == "colors":
         # Colors
         color = [COLOR_P, COLOR_R, COLOR_F]
         label = ["Precision", "Recall", "F1-score"]
 
-        fl = lambda c: Line2D([], [], lw=3, color=c)
-        handles = [fl(c) for c in color]
+        handles = [get_flatline_handle(c) for c in color]
         legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
         export_legend(legend, save_path)
         legend.remove()
@@ -378,7 +374,7 @@ def fig_02d(save_path, plot=False, plot_average_ribbon_synapses=False):
     lower_y, upper_y = literature_reference_values("SGN")
     ax[0].hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
     ax[0].text(1., lower_y + (upper_y - lower_y) * 0.2, "literature",
-                color=COLOR_LITERATURE, fontsize=main_label_size, ha="center")
+               color=COLOR_LITERATURE, fontsize=main_label_size, ha="center")
     ax[0].fill_between([xmin, xmax], lower_y, upper_y, color="C0", alpha=0.05, interpolate=True)
 
     ylim0 = 600
