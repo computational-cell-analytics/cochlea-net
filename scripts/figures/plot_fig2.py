@@ -6,7 +6,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-from util import literature_reference_values, get_function_handle, get_flatline_handle, SYNAPSE_DIR_ROOT
+from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT
 from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter_2
 
 png_dpi = 300
@@ -164,7 +164,7 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels)+1)
-        plt.xticks(x_pos, labels, fontsize=16)
+        plt.xticks(x_pos, labels, fontsize=main_tick_size)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
         plt.ylim(-0.1, 1)
@@ -223,7 +223,7 @@ def plot_legend_fig02c(save_path, plot_mode="shapes"):
         marker = ["o", "s"]
         label = ["Manual", "Automatic"]
 
-        handles = [get_function_handle(c, m) for (c, m) in zip(color, marker)]
+        handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
         legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
         export_legend(legend, save_path)
         legend.remove()
@@ -454,7 +454,7 @@ def main():
             plot=args.plot, plot_average_ribbon_synapses=True)
 
     # Supplementary Figure 2: Comparing other methods in terms of segmentation accuracy and runtime
-    plot_legend_suppfig02(save_path=os.path.join(args.figure_dir, f"suppfig02_legend_colors.{FILE_EXTENSION}"))
+    plot_legend_suppfig02(save_path=os.path.join(args.figure_dir, f"figsupp_02_legend_colors.{FILE_EXTENSION}"))
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn.{FILE_EXTENSION}"), segm="SGN")
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc.{FILE_EXTENSION}"), segm="IHC")
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn_time.{FILE_EXTENSION}"),

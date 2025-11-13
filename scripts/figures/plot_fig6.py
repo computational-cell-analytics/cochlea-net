@@ -8,7 +8,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
-from util import prism_cleanup_axes, prism_style, get_function_handle
+from util import prism_cleanup_axes, prism_style, get_marker_handle
 from util import frequency_mapping, export_legend
 
 FILE_EXTENSION = "png"
@@ -83,7 +83,7 @@ def plot_legend_fig06e(save_path):
     label = list(color_dict.keys())
     color = [color_dict[key] for key in color_dict.keys()]
 
-    handles = [get_function_handle(c, m) for (c, m) in zip(color, marker)]
+    handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=2, framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()

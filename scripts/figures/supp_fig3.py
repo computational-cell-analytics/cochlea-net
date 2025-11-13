@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import pandas as pd
@@ -8,11 +9,12 @@ import numpy as np
 
 from flamingo_tools.s3_utils import get_s3_path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE
-from util import prism_style, prism_cleanup_axes, export_legend, get_function_handle
+from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE, CUSTOM_THRESHOLDS
+from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle
 
 png_dpi = 300
 FILE_EXTENSION = "png"
+THRESHOLD_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/Subtype_marker"  # noqa
 
 COCHLEAE_DICT = {
     "M_LR_000184_L": {"alias": "S01"},
@@ -30,7 +32,114 @@ MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
 
-def plot_legend(save_path):
+def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=True, title_type="generic", rows=None):
+    """Plot histograms for positive and negative populations of subtype markers based on thresholding.
+    """
+    input_dir = THRESHOLD_DIR
+    os.makedirs(output_dir, exist_ok=True)
+
+    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
+    cochlea_str = "-".join(cochlea.split("_"))
+    om_paths = [p for p in om_paths if cochlea_str in p]
+    stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_om")[0] for p in om_paths]
+
+    data_name = COCHLEAE[cochlea]["seg_data"]
+    stain_str = " and ".join(stains)
+    print(f"Evaluating {cochlea} with stains {stain_str}.")
+    for stain, json_file in zip(stains, om_paths):
+        save_path = os.path.join(output_dir, f"{cochlea}_{stain}_thresholds.png")
+
+        try:
+            with open(json_file, "r") as myfile:
+                data = myfile.read()
+        except PermissionError as e:
+            print(e)
+            continue
+        param_dicts = json.loads(data)
+        center_strs = param_dicts["center_strings"]
+        center_strs.sort()
+        intensity_mode = param_dicts["intensity_mode"]
+        number_plots = len(center_strs)
+        if number_plots == 0:
+            print(f"No columns for cochlea {cochlea}.")
+            continue
+
+        seg_str = "-".join(data_name.split("_"))
+        if intensity_mode == "ratio":
+            table_measurement_path = f"{cochlea}/tables/{data_name}/subtype_ratio.tsv"
+            column = f"{stain}_ratio_PV"
+        elif intensity_mode == "absolute":
+            table_measurement_path = f"{cochlea}/tables/{data_name}/{stain}_{seg_str}_object-measures.tsv"
+            column = "median"
+
+        # check for custom threshold
+        if cochlea in CUSTOM_THRESHOLDS and stain in CUSTOM_THRESHOLDS[cochlea]:
+            threshold_type = "custom"
+        else:
+            threshold_type = "manual"
+
+        rows = 2
+        columns = number_plots // rows
+
+        main_label_size = 20
+        main_tick_size = 16
+        fig, axes = plt.subplots(rows, columns, figsize=(columns*2.5, rows*2.5), sharex=sharex, sharey=sharey)
+        plt.xlim([-0.1, 8])
+        ax = axes.flatten()
+        table_path_s3, fs = get_s3_path(table_measurement_path)
+        with fs.open(table_path_s3, "r") as f:
+            table_measurement = pd.read_csv(f, sep="\t")
+
+        for num, center_str in enumerate(center_strs):
+            seg_ids = param_dicts[center_str]["seg_ids"]
+            if threshold_type == "manual":
+                threshold = float(param_dicts[center_str]["median_intensity"][0])
+            else:
+                threshold_dic = CUSTOM_THRESHOLDS[cochlea][stain]
+                if isinstance(threshold_dic, (int, float)):
+                    threshold = threshold_dic
+                else:
+                    threshold = threshold_dic[center_str]["manual"]
+
+            subset = table_measurement[table_measurement["label_id"].isin(seg_ids)]
+            subset_neg = subset[(subset[column] < threshold)]
+            subset_pos = subset[(subset[column] > threshold)]
+            neg_values = list(subset_neg[column])
+            pos_values = list(subset_pos[column])
+
+            bins = np.linspace(min(neg_values + pos_values), max(neg_values + pos_values), 30)
+
+            ax[num].hist(pos_values, bins=bins, alpha=0.6,
+                         label='Positive', color='tab:blue')
+            ax[num].hist(neg_values, bins=bins, alpha=0.6,
+                         label='Negative', color='tab:orange')
+            if num % columns == 0:
+                ax[num].set_ylabel('Count', fontsize=main_label_size)
+            if rows == 1 or num >= columns:
+                ax[num].set_xlabel('Intensity', fontsize=main_label_size)
+            ax[num].tick_params(axis='x', labelsize=main_tick_size)
+            ax[num].tick_params(axis='y', labelsize=main_tick_size)
+            ax[num].legend()
+            if title_type == "center_str":
+                ax[num].set_title(center_str, fontsize=main_label_size)
+            else:
+                ax[num].set_title(f"Crop {str(num+1).zfill(1)}")
+
+        # alias = ALIAS[cochlea]
+        # fig.suptitle(f"{alias} - {stain}", fontsize=30)
+        plt.tight_layout()
+
+        if ".png" in save_path:
+            plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
+        else:
+            plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+        if plot:
+            plt.show()
+        else:
+            plt.close()
+
+
+def plot_legend_offset(save_path):
     """Plot common legend for supplementary figure 3.
 
     Args:
@@ -59,7 +168,7 @@ def plot_legend(save_path):
         labels.append(f"{alias[num]}R")
         markers.append(MARKER_LEFT)
         markers.append(MARKER_RIGHT)
-    handles = [get_function_handle(color, marker) for (color, marker) in zip(colors, markers)]
+    handles = [get_marker_handle(color, marker) for (color, marker) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
 
     export_legend(legend, save_path)
@@ -243,7 +352,10 @@ def main():
     supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_offset_{plot_type}.{FILE_EXTENSION}"),
                        plot_type=plot_type)
 
-    plot_legend(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend.{FILE_EXTENSION}"))
+    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_offset.{FILE_EXTENSION}"))
+
+    cochlea = "M_LR_N152_L"
+    supp_fig_03_thresholds(args.figure_dir, cochlea, plot=False, sharex=True, title_type="generic", rows=2)
 
 
 if __name__ == "__main__":

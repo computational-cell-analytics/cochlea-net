@@ -10,7 +10,7 @@ import pandas as pd
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import frequency_mapping, prism_style, prism_cleanup_axes
-from util import export_legend, custom_formatter_1, get_function_handle
+from util import export_legend, custom_formatter_1, get_marker_handle, get_trendline_handle
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
@@ -19,19 +19,19 @@ INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/
 # The cochlea for the CHReef analysis.
 COCHLEAE_DICT = {
     "M_LR_000143_L": {"alias": "M0L", "component": [1]},
-    "M_LR_000144_L": {"alias": "M05L", "component": [1]},
-    "M_LR_000145_L": {"alias": "M06L", "component": [1]},
-    "M_LR_000153_L": {"alias": "M07L", "component": [1, 2, 3]},
-    "M_LR_000155_L": {"alias": "M08L", "component": [1]},
-    "M_LR_000189_L": {"alias": "M09L", "component": [1]},
+    "M_LR_000144_L": {"alias": "M_05L", "component": [1]},
+    "M_LR_000145_L": {"alias": "M_06L", "component": [1]},
+    "M_LR_000153_L": {"alias": "M_07L", "component": [1, 2, 3]},
+    "M_LR_000155_L": {"alias": "M_08L", "component": [1]},
+    "M_LR_000189_L": {"alias": "M_09L", "component": [1]},
     "M_LR_000143_R": {"alias": "M0R", "component": [1]},
-    "M_LR_000144_R": {"alias": "M05R", "component": [1]},
-    "M_LR_000145_R": {"alias": "M06R", "component": [1]},
-    "M_LR_000153_R": {"alias": "M07R", "component": [1]},
-    "M_LR_000155_R": {"alias": "M08R", "component": [1]},
-    "M_LR_000189_R": {"alias": "M09R", "component": [1]},
-    "G_EK_000049_L": {"alias": "G1L", "component": [1, 3, 4, 5]},
-    "G_EK_000049_R": {"alias": "G1R", "component": [1, 2]},
+    "M_LR_000144_R": {"alias": "M_05R", "component": [1]},
+    "M_LR_000145_R": {"alias": "M_06R", "component": [1]},
+    "M_LR_000153_R": {"alias": "M_07R", "component": [1]},
+    "M_LR_000155_R": {"alias": "M_08R", "component": [1]},
+    "M_LR_000189_R": {"alias": "M_09R", "component": [1]},
+    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5]},
+    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2]},
 }
 
 COLORS_ANIMAL = {
@@ -215,9 +215,23 @@ def plot_legend(chreef_data, save_path, grouping="side_mono", use_alias=True,
     else:
         raise ValueError("Choose a correct 'grouping' parameter.")
 
-    handles = [get_function_handle(c, m) for (c, m) in zip(colors, markers)]
+    handles = [get_marker_handle(c, m) for (c, m) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
 
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
+
+
+def plot_legend_trendline(save_path):
+    labels = ["Injected", "Non-Injected"]
+    linestyles = ["dashed", "dotted"]
+    lw = 3
+    linewidth = [lw for _ in labels]
+    handlelength = lw * 1.5
+
+    handles = [get_trendline_handle(style, width) for (style, width) in zip(linestyles, linewidth)]
+    legend = plt.legend(handles, labels, loc=3, ncol=1, framealpha=1, handlelength=handlelength, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
     plt.close()
@@ -240,7 +254,7 @@ def plot_legend_fig05e_gerbil(save_path):
     marker = ["o", "^"]
     label = ["G1L", "G1R"]
 
-    handles = [get_function_handle(c, m) for (c, m) in zip(color, marker)]
+    handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
@@ -571,15 +585,15 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
-    sub_tick_label_size = 8
+    sub_tick_label_size = 12
     tick_label_size = 14
     yaxis_tick_size = 16
     label_size = 20
-    legend_size = 8
+
     if intensity:
         band_label_offset_y = 0.09
     else:
-        band_label_offset_y = 0.09
+        band_label_offset_y = 0.08
         if gerbil:
             ymin = 0.1
             ymax = 0.81
@@ -664,10 +678,18 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
                                    "side": side,
                                    }
 
+    xlim_left, xlim_right = ax.get_xlim()
     if trendlines:
         trendline_width = 3
         if not gerbil:
+            x_sorted_r, _, _, _ = _get_trendline_params(trend_dict, "R")
             x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "L")
+            min_x = min([min(x_sorted_r), min(x_sorted)])
+            max_x = max([max(x_sorted_r), max(x_sorted)])
+            x_sorted.insert(0, min_x)
+            x_sorted.append(max_x)
+            y_sorted.insert(0, y_sorted[0])
+            y_sorted.append(y_sorted[-1])
 
             if grouping == "animal":
                 color_trend_l = "gray"
@@ -684,10 +706,14 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
                 color=color_trend_l,
                 alpha=0.6,
                 linewidth=trendline_width,
-                zorder=2
+                zorder=2,
             )
 
             if trendline_std:
+                y_sorted_lower.insert(0, y_sorted_lower[0])
+                y_sorted_lower.append(y_sorted_lower[-1])
+                y_sorted_upper.insert(0, y_sorted_upper[0])
+                y_sorted_upper.append(y_sorted_upper[-1])
                 # upper and lower standard deviation
                 trend_l_upper, = ax.plot(
                     x_sorted,
@@ -710,6 +736,10 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
 
             # Trendline Non-Injected (Right)
             x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "R")
+            x_sorted.insert(0, min_x)
+            x_sorted.append(max_x)
+            y_sorted.insert(0, y_sorted[0])
+            y_sorted.append(y_sorted[-1])
             # central line
             trend_r, = ax.plot(
                 x_sorted,
@@ -722,6 +752,10 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
             )
 
             if trendline_std:
+                y_sorted_lower.insert(0, y_sorted_lower[0])
+                y_sorted_lower.append(y_sorted_lower[-1])
+                y_sorted_upper.insert(0, y_sorted_upper[0])
+                y_sorted_upper.append(y_sorted_upper[-1])
                 # upper and lower standard deviation
                 trend_r_upper, = ax.plot(
                     x_sorted,
@@ -742,23 +776,10 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
                 plt.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
                                  color=COLOR_RIGHT, alpha=0.05, interpolate=True)
 
-            # Trendline legend
-            trendline_legend = ax.legend(handles=[trend_l, trend_r], loc='lower center')
-            trendline_legend = ax.legend(
-                handles=[trend_l, trend_r],
-                labels=["Injected", "Non-Injected"],
-                loc="lower left",
-                fontsize=legend_size,
-                title="Trendlines"
-            )
-            # Add the legend manually to the Axes.
-            ax.add_artist(trendline_legend)
-
         else:
             x_sorted = [trend_dict[k]["x_sorted"] for k in trend_dict.keys() if trend_dict[k]["side"] == "L"][0]
             y_left = [values_left[0], values_left[0]]
             y_right = [values_right[0], values_right[0]]
-            xlim_left, xlim_right = ax.get_xlim()
             if grouping == "animal":
                 color_trend_l = "gray"
                 color_trend_r = "gray"
@@ -780,7 +801,6 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
             ax.text(xlim_left + x_offset, y_right[0] + y_offset, "mean",
                     color=color_trend_r, fontsize=tick_label_size, ha="center")
             x_sorted = [trend_dict[k]["x_sorted"] for k in trend_dict.keys() if trend_dict[k]["side"] == "R"][0]
-            plt.xlim(xlim_left, xlim_right)
             trend_r, = ax.plot(
                 [xlim_left, xlim_right],
                 y_right,
@@ -790,6 +810,7 @@ def fig_04e(chreef_data, save_path, plot, intensity=False, gerbil=False,
                 zorder=0
             )
 
+    plt.xlim(xlim_left, xlim_right)
     # Create combined tick positions & labels
     main_ticks = range(len(bin_labels))
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
@@ -850,6 +871,8 @@ def main():
     grouping = "animal"
     plot_legend(chreef_data, grouping=grouping,
                 save_path=os.path.join(args.figure_dir, f"fig_04_legend_{grouping}.{FILE_EXTENSION}"))
+
+    plot_legend_trendline(save_path=os.path.join(args.figure_dir, f"fig_04_legend_trendline.{FILE_EXTENSION}"))
 
     # C: The SGN count compared to reference values from literature and healthy
     # Maybe remove literature reference from plot?

@@ -57,21 +57,25 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
         if cochlea in CUSTOM_THRESHOLDS and stain in CUSTOM_THRESHOLDS[cochlea]:
             rows = 2
             row_types = ["threshold", "custom"]
+            columns = number_plots
             if custom_only:
-                rows = 1
+                rows = 2
                 row_types = ["custom"]
+                columns = number_plots // 2
+
         else:
             rows = 1
             row_types = ["threshold"]
+            columns = number_plots
 
-        columns = number_plots
-        fig, axes = plt.subplots(rows, columns, figsize=(columns*4, rows*4), sharex=sharex)
+        main_label_size = 20
+        main_tick_size = 16
+        fig, axes = plt.subplots(rows, columns, figsize=(columns*2.5, rows*2.5), sharex=sharex)
         ax = axes.flatten()
         table_path_s3, fs = get_s3_path(table_measurement_path)
         with fs.open(table_path_s3, "r") as f:
             table_measurement = pd.read_csv(f, sep="\t")
 
-        alias = ALIAS[cochlea]
         for enum, row_type in enumerate(row_types):
             if row_type == "threshold":
                 for num, center_str in enumerate(center_strs):
@@ -88,8 +92,8 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
 
                     ax[enum*columns + num].hist(pos_values, bins=bins, alpha=0.6, label='Positive', color='tab:blue')
                     ax[enum*columns + num].hist(neg_values, bins=bins, alpha=0.6, label='Negative', color='tab:orange')
-                    ax[enum*columns + num].set_ylabel('Count')
-                    ax[enum*columns + num].set_xlabel('Intensity')
+                    ax[enum*columns + num].set_ylabel('Count', fontsize=main_label_size)
+                    ax[enum*columns + num].set_xlabel('Intensity', fontsize=main_label_size)
                     ax[enum*columns + num].legend()
                     if title_type == "center_str":
                         ax[enum*columns + num].set_title(center_str)
@@ -116,16 +120,18 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
                                                 label='Positive', color='tab:blue')
                     ax[enum*columns + num].hist(neg_values, bins=bins, alpha=0.6,
                                                 label='Negative', color='tab:orange')
-                    ax[enum*columns + num].set_ylabel('Count')
-                    ax[enum*columns + num].set_xlabel('Intensity')
+                    ax[enum*columns + num].set_ylabel('Count', fontsize=main_label_size)
+                    ax[enum*columns + num].set_xlabel('Intensity', fontsize=main_label_size)
+                    ax[enum*columns + num].tick_params(axis='x', labelsize=main_tick_size)
+                    ax[enum*columns + num].tick_params(axis='y', labelsize=main_tick_size)
                     ax[enum*columns + num].legend()
                     if title_type == "center_str":
-                        ax[enum*columns + num].set_title(center_str)
+                        ax[enum*columns + num].set_title(center_str, fontsize=main_label_size)
                     else:
                         ax[enum*columns + num].set_title(f"Crop {str(num+1).zfill(1)}")
 
+        alias = ALIAS[cochlea]
         fig.suptitle(f"{alias} - {stain}", fontsize=30)
-
         plt.tight_layout()
 
         if ".png" in save_path:
