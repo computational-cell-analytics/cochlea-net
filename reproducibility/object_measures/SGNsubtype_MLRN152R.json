@@ -1,0 +1,14 @@
+[
+	{
+		"cochlea": "M_LR_N152_R",
+		"image_channel": [
+			"PV",
+			"Calb1",
+			"Ntng1"
+		],
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1
+		]
+	}
+]

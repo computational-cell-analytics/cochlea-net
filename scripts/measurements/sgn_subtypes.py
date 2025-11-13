@@ -60,9 +60,12 @@ COCHLEAE_FOR_SUBTYPES = {
     "M_LR_000184_R": ["PV", "Prph"],
     "M_LR_000184_L": ["PV", "Prph"],
     "M_LR_000260_L": ["PV", "Prph", "Tuj1"],
+    "M_LR_N98_R": ["PV", "CR", "Ntng1"],
     "M_LR_N110_L": ["PV", "Calb1", "Ntng1"],
     "M_LR_N110_R": ["PV", "Calb1", "Ntng1"],
+    "M_LR_N127_L": ["PV", "Prph", "Ntng1"],
     "M_LR_N152_L": ["PV", "CR", "Ntng1"],
+    "M_LR_N152_R": ["PV", "CR", "Ntng1"],
     "M_AMD_N180_L": ["CR", "Ntng1"],
     "M_AMD_N180_R": ["CR", "Ntng1"],
     "M_AMD_Runx1_L": ["PV", "CR", "Ntng1"],
@@ -78,7 +81,8 @@ GROUPINGS = {
 
 REGULAR_COCHLEAE = [
     "M_LR_000098_L", "M_LR_000099_L", "M_LR_000184_R", "M_LR_000184_L", "M_LR_000260_L",
-    "M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_L",
+    "M_LR_N98_R", "M_LR_N127_L",
+    "M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_L", "M_LR_N152_R",
     "M_AMD_N180_L", "M_AMD_N180_R",
 ]
 

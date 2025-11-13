@@ -5,24 +5,30 @@ COCHLEAE = {
     "M_LR_000184_L": {"seg_data": "SGN_v2", "subtype_stains": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
     "M_LR_000184_R": {"seg_data": "SGN_v2", "subtype_stains": ["Prph"], "output_seg": "SGN_v2b", "intensity": "ratio"},
     "M_LR_000260_L": {"seg_data": "SGN_v2", "subtype_stains": ["Prph"], "intensity": "ratio"},
+    "M_LR_N98_R": {"seg_data": "SGN_v2", "subtype_stains": ["CR", "Ntng1"], "intensity": "ratio"},
     "M_LR_N110_L": {"seg_data": "SGN_v2", "subtype_stains": ["Calb1", "Ntng1"], "intensity": "ratio"},
     "M_LR_N110_R": {"seg_data": "SGN_v2", "subtype_stains": ["Calb1", "Ntng1"], "intensity": "ratio"},
+    "M_LR_N127_L": {"seg_data": "SGN_v2", "subtype_stains": ["Ntng1", "Prph"], "intensity": "ratio"},
     "M_LR_N152_L": {"seg_data": "SGN_v2", "subtype_stains": ["CR", "Ntng1"], "intensity": "ratio",
                     "component_list": [1, 2]},
+    "M_LR_N152_R": {"seg_data": "SGN_v2", "subtype_stains": ["Calb1", "Ntng1"], "intensity": "ratio"},
     "M_AMD_N180_L": {"seg_data": "SGN_merged", "subtype_stains": ["CR", "Lypd1", "Ntng1"], "intensity": "absolute",
                      "label_stains": {"subtype_label": ["CR", "Ntng1"], "subtype_label_Lypd1": ["CR", "Lypd1"]}},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "subtype_stains": ["CR", "Ntng1"], "intensity": "absolute"},
 }
 
 ALIAS = {
-    "M_LR_000184_L": "S01",
-    "M_LR_000184_R": "S02",
-    "M_LR_000260_L": "S03",
-    "M_LR_000098_L": "S04",
-    "M_LR_N152_L": "S05",
-    "M_LR_N110_L": "S06",
-    "M_LR_N110_R": "S07",
-    "M_LR_000099_L": "S08",
+    "M_LR_000184_L": "M_10L",
+    "M_LR_000184_R": "M_10R",
+    "M_LR_000260_L": "M_11L",
+    "M_LR_000098_L": "M_12L",
+    "M_LR_N110_L": "M_13L",
+    "M_LR_N110_R": "M_13R",
+    "M_LR_N127_L": "M_14L",
+    "M_LR_N152_L": "M_15L",
+    "M_LR_000099_L": "M_00L",
+    "M_AMD_N180_L": "M_16L",
+    "M_AMD_N180_R": "M_16R",
 }
 
 CUSTOM_THRESHOLDS = {
