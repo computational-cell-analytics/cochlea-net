@@ -168,7 +168,8 @@ def _get_mapping(animal):
 
 
 def frequency_mapping(
-    frequencies, values, animal="mouse", transduction_efficiency=False, bin_edges=None, bin_labels=None
+    frequencies, values, animal="mouse", transduction_efficiency=False,
+    bin_edges=None, bin_labels=None, aggregation="mean",
 ):
     # Get the mapping of frequencies to octave bands for the given species.
     if bin_edges is None:
@@ -186,11 +187,8 @@ def frequency_mapping(
         num_tot = df[df["value"].isin([1, 2])].groupby("octave_band", observed=False).size()
         value_by_band = (num_pos / num_tot).reindex(bin_labels)
     else:  # Otherwise, aggregate the values over the octave band using the mean.
-        value_by_band = (
-            df.groupby("octave_band", observed=True)["value"]
-              .mean()
-              .reindex(bin_labels)   # keep octave order even if a bin is empty
-        )
+        aggregator = getattr(df.groupby("octave_band", observed=True)["value"], aggregation)
+        value_by_band = aggregator().reindex(bin_labels)  # keep octave order even if a bin is empty
     return value_by_band
 
 

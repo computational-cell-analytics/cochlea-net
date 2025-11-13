@@ -43,7 +43,7 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
     if dilation is not None and dilation > 0:
         bb_extension = dilation + 1
     else:
-        bb_extension = 1
+        bb_extension = 2
 
     bb_min = np.array([
         row.bb_min_z.item(), row.bb_min_y.item(), row.bb_min_x.item()
@@ -169,6 +169,21 @@ def _default_object_features(
     return measures
 
 
+def _morphology_features(seg_id, table, image, segmentation, resolution, **kwargs):
+    measures = {"label_id": seg_id}
+
+    bb, center = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation=0)
+    mask = segmentation[bb] == seg_id
+
+    # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
+    # resolution = (3.0, 0.76, 0.76)
+
+    volume, surface = _measure_volume_and_surface(mask, resolution)
+    measures["volume"] = volume
+    measures["surface"] = surface
+    return measures
+
+
 def _regionprops_features(seg_id, table, image, segmentation, resolution, background_mask=None, dilation=None):
     bb, _ = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
 
@@ -222,6 +237,7 @@ FEATURE_FUNCTIONS = {
     "skimage": _regionprops_features,
     "default_background_norm": partial(_default_object_features, background_radius=75, norm=np.divide),
     "default_background_subtract": partial(_default_object_features, background_radius=75, norm=np.subtract),
+    "morphology": _morphology_features,
 }
 """The different feature functions that are supported in `compute_object_measures` and
 that can be selected via the feature_set argument. Currently this supports:
