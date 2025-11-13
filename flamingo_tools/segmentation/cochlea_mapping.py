@@ -562,7 +562,15 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
         var_a = 100 / 82.5
         var_k = 1.565
         var_A = 1
-        table.loc[table['offset'] >= 0, 'frequency-mueller[kHz]'] = var_A * (10 ** (var_a * (var_k - (1 - table["length_fraction"])))) # noqa
+        # bring it into same format as previous equation:
+        # f(x) = 10 ** (a * (k - (1-x)))
+        # f(x) = 10 ** (ax - (-a * (k-1)))
+        # f(x) = 10 ** (ax - c) with c = (-a * (k-1))
+        var_a = 100 / 82.5
+        var_k = -0.684848485
+        var_A = 1
+        table.loc[table['offset'] >= 0, 'frequency[kHz]'] = var_A * (10 ** (var_a * table["length_fraction"]) - var_k)
+
         table.loc[table['offset'] < 0, 'frequency-mueller[kHz]'] = 0
 
     return table
