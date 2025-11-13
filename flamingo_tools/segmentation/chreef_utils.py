@@ -12,7 +12,7 @@ def coord_from_string(center_str):
     return tuple([int(c) for c in center_str.split("-")])
 
 
-def find_annotations(annotation_dir: str, cochlea: str) -> dict:
+def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> dict:
     """Create a dictionary for the analysis of ChReef annotations.
 
     Annotations should have format positive-negative_<cochlea>_crop_<coord>_allNegativeExcluded_thr<thr>.tif
@@ -31,7 +31,11 @@ def find_annotations(annotation_dir: str, cochlea: str) -> dict:
         center_str = crop_suffix.split("_")[0]
         return center_str
 
-    cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name]
+    if pattern is not None:
+        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name
+                         and pattern in entry.name]
+    else:
+        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name]
     dic = {"cochlea": cochlea}
     dic["cochlea_files"] = cochlea_files
     center_strings = list(set([extract_center_string(cochlea, name=f) for f in cochlea_files]))
@@ -69,6 +73,9 @@ def get_roi(coord: tuple, roi_halo: tuple, resolution: float = 0.38) -> Tuple[in
     # reverse dimensions for correct extraction
     coords.reverse()
     coords = np.array(coords)
+    if not isinstance(resolution, float):
+        assert len(resolution) == 3
+        resolution = np.array(resolution)[::-1]
     coords = coords / resolution
     coords = np.round(coords).astype(np.int32)
 
@@ -114,7 +121,7 @@ def find_overlapping_masks(
     with futures.ThreadPoolExecutor(n_threads) as pool:
         results = list(tqdm(pool.map(check_overlap, ref_ids), total=len(ref_ids)))
 
-    matching_ids = {r for r in results if r is not None}
+    matching_ids = [r for r in results if r is not None]
     return matching_ids
 
 
@@ -134,44 +141,72 @@ def find_inbetween_ids(
         A list of the ids that are in between the respective thresholds.
     """
     # negative annotation == 1, positive annotation == 2
-    negexc_negatives = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=1)
-    allweak_positives = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=2)
-    inbetween_ids = [int(i) for i in set(negexc_negatives).intersection(set(allweak_positives))]
-    return inbetween_ids, allweak_positives, negexc_negatives
+    negexc_neg = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=1)
+    allweak_pos = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=2)
+
+    negexc_pos = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=2)
+    allweak_neg = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=1)
+    inbetween_ids = [int(i) for i in set(negexc_neg).intersection(set(allweak_pos))]
+    return inbetween_ids, allweak_pos, negexc_neg, allweak_neg, negexc_pos
 
 
-def get_median_intensity(file_negexc, file_allweak, center, data_seg, table):
+def get_crop_parameters(file_negexc, file_allweak, center, data_seg, table, column="median",
+                        resolution=0.38):
     arr_negexc = tifffile.imread(file_negexc)
     arr_allweak = tifffile.imread(file_allweak)
+    param_dic = {}
 
     roi_halo = tuple([r // 2 for r in arr_negexc.shape])
-    roi = get_roi(center, roi_halo)
+    roi = get_roi(center, roi_halo, resolution=resolution)
 
     roi_seg = data_seg[roi]
-    inbetween_ids, allweak_positives, negexc_negatives = find_inbetween_ids(arr_negexc, arr_allweak, roi_seg)
+    inbetween_ids, allweak_pos, negexc_neg, allweak_neg, negexc_pos = find_inbetween_ids(arr_negexc,
+                                                                                         arr_allweak, roi_seg)
+
+    param_dic["seg_ids"] = list(np.unique(roi_seg)[1:])
+    param_dic["inbetween_ids"] = inbetween_ids
+    param_dic["allweak_pos"] = allweak_pos
+    param_dic["allweak_neg"] = allweak_neg
+    param_dic["negexc_neg"] = negexc_neg
+    param_dic["negexc_pos"] = negexc_pos
+
+    subset_allweak_pos = table[table["label_id"].isin(allweak_pos)]
+    subset_allweak_neg = table[table["label_id"].isin(allweak_neg)]
+    subset_negexc_neg = table[table["label_id"].isin(negexc_neg)]
+    subset_negexc_pos = table[table["label_id"].isin(negexc_pos)]
+    param_dic["allweak_pos_mean"] = float(subset_allweak_pos[column].mean())
+    param_dic["allweak_neg_mean"] = float(subset_allweak_neg[column].mean())
+    param_dic["negexc_neg_mean"] = float(subset_negexc_neg[column].mean())
+    param_dic["negexc_pos_mean"] = float(subset_negexc_pos[column].mean())
+
     if len(inbetween_ids) == 0:
-        if len(allweak_positives) == 0 and len(negexc_negatives) == 0:
-            return None
+        if len(allweak_pos) == 0 and len(negexc_neg) == 0:
+            param_dic["median_intensity"] = None
+            return param_dic
 
-        subset_positive = table[table["label_id"].isin(allweak_positives)]
-        subset_negative = table[table["label_id"].isin(negexc_negatives)]
-        lowest_positive = float(subset_positive["median"].min())
-        highest_negative = float(subset_negative["median"].max())
+        subset_positive = table[table["label_id"].isin(allweak_pos)]
+        subset_negative = table[table["label_id"].isin(negexc_neg)]
+        lowest_positive = float(subset_positive[column].min())
+        highest_negative = float(subset_negative[column].max())
         if np.isnan(lowest_positive) or np.isnan(highest_negative):
-            return None
+            param_dic["median_intensity"] = None
+            return param_dic
 
-        return np.average([lowest_positive, highest_negative])
+        param_dic["median_intensity"] = np.average([lowest_positive, highest_negative])
+        return param_dic
 
     subset = table[table["label_id"].isin(inbetween_ids)]
-    intensities = list(subset["median"])
+    intensities = list(subset[column])
+    param_dic["median_intensity"] = np.median(list(intensities))
 
-    return np.median(list(intensities))
+    return param_dic
 
 
-def localize_median_intensities(annotation_dir, cochlea, data_seg, table_measure):
+def localize_median_intensities(annotation_dir, cochlea, data_seg, table_measure, column="median", pattern=None,
+                                resolution=0.38):
     """Find median intensities in blocks and assign them to center positions of cropped block.
     """
-    annotation_dic = find_annotations(annotation_dir, cochlea)
+    annotation_dic = find_annotations(annotation_dir, cochlea, pattern=pattern)
     # center_keys = [key for key in annotation_dic["center_strings"] if key in annotation_dic.keys()]
 
     for center_str in annotation_dic["center_strings"]:
@@ -179,11 +214,14 @@ def localize_median_intensities(annotation_dir, cochlea, data_seg, table_measure
         print(f"Getting median intensities for {center_coord}.")
         file_pos = annotation_dic[center_str]["file_pos"]
         file_neg = annotation_dic[center_str]["file_neg"]
-        median_intensity = get_median_intensity(file_neg, file_pos, center_coord, data_seg, table_measure)
+        param_dic = get_crop_parameters(file_neg, file_pos, center_coord, data_seg,
+                                        table_measure, column=column, resolution=resolution)
 
+        median_intensity = param_dic["median_intensity"]
         if median_intensity is None:
             print(f"No threshold identified for {center_str}.")
 
-        annotation_dic[center_str]["median_intensity"] = median_intensity
+        for key in param_dic.keys():
+            annotation_dic[center_str][key] = param_dic[key]
 
     return annotation_dic

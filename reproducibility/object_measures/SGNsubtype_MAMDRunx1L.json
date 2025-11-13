@@ -2,6 +2,7 @@
 	{
 		"cochlea": "M_AMD_Runx1_L",
 		"image_channel": [
+			"PV",
 			"CR",
 			"Ntng1"
 		],

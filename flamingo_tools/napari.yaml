@@ -1,0 +1,58 @@
+name: cochlea_net
+display_name: CochleaNet
+
+# See https://napari.org/stable/plugins/manifest.html for valid categories.
+categories: ["Image Processing", "Annotation"]
+
+contributions:
+  commands:
+    # Commands for widgets.
+    - id: cochlea_net.segment
+      python_name: flamingo_tools.plugin.segmentation_widget:SegmentationWidget
+      title: Segmentation
+    - id: cochlea_net.detect
+      python_name: flamingo_tools.plugin.detection_widget:DetectionWidget
+      title: Detection
+
+    # Add a measurement widget?
+    # Add a labeling / classification widget?
+
+    # Commands for sample data.
+    - id: cochlea_net.sample_data_pv
+      python_name: flamingo_tools.test_data:sample_data_pv
+      title: Example parvalbumin (PV) data
+    - id: cochlea_net.sample_data_vglut3
+      python_name: flamingo_tools.test_data:sample_data_vglut3
+      title: Example VGlut3 data
+    - id: cochlea_net.sample_data_ctbp2
+      python_name: flamingo_tools.test_data:sample_data_ctbp2
+      title: Example CtBP2 data
+    - id: cochlea_net.sample_data_pv_lowres
+      python_name: flamingo_tools.test_data:sample_data_pv_lowres
+      title: Example PV lowres data
+    - id: cochlea_net.sample_data_myo_lowres
+      python_name: flamingo_tools.test_data:sample_data_myo_lowres
+      title: Example MYO lowres data
+
+  widgets:
+    - command: cochlea_net.segment
+      display_name: Segmentation
+    - command: cochlea_net.detect
+      display_name: Detection
+
+  sample_data:
+    - command: cochlea_net.sample_data_pv
+      display_name: Sample Data PV
+      key: cochlea-net-pv
+    - command: cochlea_net.sample_data_vglut3
+      display_name: Sample Data VGlut3
+      key: cochlea-net-vglut3
+    - command: cochlea_net.sample_data_ctbp2
+      display_name: Sample Data CtBP2
+      key: cochlea-net-ctbp2
+    - command: cochlea_net.sample_data_pv_lowres
+      display_name: Sample Data PV Lowres
+      key: cochlea-net-pv-lowres
+    - command: cochlea_net.sample_data_myo_lowres
+      display_name: Sample Data MYO Lowres
+      key: cochlea-net-myo-lowres

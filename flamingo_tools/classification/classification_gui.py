@@ -11,9 +11,12 @@ import numpy as np
 from joblib import dump
 from magicgui import magic_factory
 
-import micro_sam.sam_annotator.object_classifier as classifier_util
-from micro_sam.object_classification import project_prediction_to_segmentation
-from micro_sam.sam_annotator._widgets import _generate_message
+try:
+    import micro_sam.sam_annotator.object_classifier as classifier_util
+    from micro_sam.object_classification import project_prediction_to_segmentation
+    from micro_sam.sam_annotator._widgets import _generate_message
+except ImportError:
+    micro_sam = None
 
 from ..measurements import compute_object_measures_impl
 

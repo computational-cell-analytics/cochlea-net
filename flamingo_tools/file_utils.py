@@ -1,16 +1,32 @@
+import os
 import warnings
 from typing import Optional, Union
 
 import imageio.v3 as imageio
 import numpy as np
+import pooch
 import tifffile
 import zarr
 from elf.io import open_file
+
+from .s3_utils import get_s3_path
 
 try:
     from zarr.abc.store import Store
 except ImportError:
     from zarr._storage.store import BaseStore as Store
+
+
+def get_cache_dir() -> str:
+    """Get the cache directory of CochleaNet.
+
+    The default cache directory is "$HOME/cochlea-net"
+
+    Returns:
+        The cache directory.
+    """
+    cache_dir = os.path.expanduser(pooch.os_cache("cochlea-net"))
+    return cache_dir
 
 
 def _parse_shape(metadata_file):
@@ -67,7 +83,9 @@ def read_tif(file_path: str) -> Union[np.ndarray, np.memmap]:
     return x
 
 
-def read_image_data(input_path: Union[str, Store], input_key: Optional[str]) -> np.typing.ArrayLike:
+def read_image_data(
+    input_path: Union[str, Store], input_key: Optional[str], from_s3: bool = False
+) -> np.typing.ArrayLike:
     """Read flamingo image data, stored in various formats.
 
     Args:
@@ -76,10 +94,16 @@ def read_image_data(input_path: Union[str, Store], input_key: Optional[str]) -> 
             Access via S3 is only supported for a zarr container.
         input_key: The key (= internal path) for a zarr or n5 container.
             Set it to None if the data is stored in a tif file.
+        from_s3: Whether to read the data from S3.
 
     Returns:
         The data, loaded either as a numpy mem-map, a numpy array, or a zarr / n5 array.
     """
+    if from_s3:
+        assert input_key is not None
+        s3_store, fs = get_s3_path(input_path)
+        return zarr.open(s3_store, mode="r")[input_key]
+
     if input_key is None:
         input_ = read_tif(input_path)
     elif isinstance(input_path, str):

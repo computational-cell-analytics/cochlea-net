@@ -1,0 +1,74 @@
+name: Build and Deploy Docs
+
+on:
+  push:
+    paths:
+      - "doc/*.md"   # Trigger on changes to any markdown file
+      - "flamigo_tools/**/*.py"   # Optionally include changes in Python files
+    branches:
+      - master       # Run the workflow only on pushes to the master branch
+  workflow_dispatch:
+
+# security: restrict permissions for CI jobs.
+permissions:
+  contents: read
+  pages: write          # to publish to Pages
+  id-token: write       # to authenticate to Pages
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Build Documentation
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Code
+      uses: actions/checkout@v4
+
+    - name: Set up Micromamba
+      uses: mamba-org/setup-micromamba@v2
+      with:
+        micromamba-version: "latest"
+        environment-file: environment.yaml
+        init-shell: bash
+        cache-environment: true
+        post-cleanup: 'all'
+
+    - name: Install napari
+      shell: bash -l {0}
+      run: pip install napari pyqt5
+
+    - name: Install package
+      shell: bash -l {0}
+      run: pip install -e .
+
+    - name: Install pdoc
+      shell: bash -l {0}
+      run: pip install pdoc
+
+    - name: Generate Documentation
+      shell: bash -l {0}
+      run: pdoc flamingo_tools/ -d google -o _site
+
+    - name: Verify Documentation Output
+      run: ls -la _site/
+
+    - name: Upload Documentation Artifact
+      uses: actions/upload-pages-artifact@v3
+      with:
+        path: _site/
+
+  deploy:
+    name: Deploy Documentation
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

@@ -14,9 +14,68 @@
 		"segmentation_channel": "PV_SGN_v2",
 		"type": "sgn"
 	},
-    {
-        "cochlea": "M_LR_000214_L",
-        "segmentation_channel": "PV_SGN_v2",
-        "type": "sgn"
-    }
+	{
+		"cochlea": "M_LR_000214_L",
+		"segmentation_channel": "PV_SGN_v2",
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_AMD_N180_L",
+		"segmentation_channel": "SGN_merged",
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_AMD_N180_R",
+		"segmentation_channel": "SGN_merged",
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_N152_L",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1,
+			2
+		],
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000098_L",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1,
+			2
+		],
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_N110_L",
+		"segmentation_channel": "SGN_v2",
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_N110_R",
+		"segmentation_channel": "SGN_v2",
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_N152_R",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1
+		],
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_N98_R",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1
+		],
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_N127_L",
+		"segmentation_channel": "SGN_v2",
+		"type": "sgn"
+	}
 ]

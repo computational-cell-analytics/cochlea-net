@@ -82,8 +82,8 @@ def repro_object_measures(
                     )
 
                 compute_object_measures(
-                    image_path=img_path,
-                    segmentation_path=seg_path,
+                    image_path=img_s3,
+                    segmentation_path=seg_s3,
                     segmentation_table_path=seg_table_s3,
                     output_table_path=output_table_path,
                     image_key=input_key,
@@ -119,7 +119,7 @@ def main():
     args = parser.parse_args()
 
     repro_object_measures(
-        args.input, args.output,
+        args.input, args.output, args.force,
         args.s3_credentials, args.s3_bucket_name, args.s3_service_endpoint,
     )
 

@@ -1,0 +1,12 @@
+[	
+	{
+		"cochlea": "LaVision-OTOF25R",
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"component_list":
+		[
+			1
+		],
+		"max_edge_distance": 300,
+		"type": "ihc"
+	}
+]

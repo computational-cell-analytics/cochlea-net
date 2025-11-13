@@ -32,7 +32,6 @@ def repro_label_components(
     for dic in param_dicts:
         cochlea = dic["cochlea"]
         print(f"Labeling components for {cochlea}.")
-        unet_version = dic["unet_version"]
 
         threshold_erode = dic["threshold_erode"] if "threshold_erode" in dic else default_threshold_erode
         min_component_length = dic["min_component_length"] if "min_component_length" in dic else default_min_length

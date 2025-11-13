@@ -1,0 +1,19 @@
+[
+    {
+		"cochlea": "M_LR_000260_L",
+		"component_list": [
+			1
+		],
+		"segmentation_channel": "SGN_v2",
+		"type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000260_L",
+		"component_list": [
+			1
+		],
+		"segmentation_channel": "SGN_v2b",
+		"type": "sgn"
+	}
+
+]									

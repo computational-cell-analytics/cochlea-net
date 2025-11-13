@@ -1,15 +1,11 @@
 import argparse
-import json
 import os
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-from flamingo_tools.s3_utils import BUCKET_NAME
 from util import literature_reference_values_gerbil, prism_cleanup_axes, prism_style, SYNAPSE_DIR_ROOT
-
-from util import SYNAPSE_DIR_ROOT
 
 FILE_EXTENSION = "png"
 png_dpi = 300
@@ -21,6 +17,7 @@ MARKER_RIGHT = "^"
 COLOR_MEASUREMENT = "#9C7427"
 COLOR_LITERATURE = "#27339C"
 COLOR_UNTREATED = "#DB7B00"
+
 
 # Load the synapse counts for all IHCs from the relevant tables.
 def _load_ribbon_synapse_counts():

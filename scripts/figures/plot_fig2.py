@@ -5,9 +5,8 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
-from matplotlib.lines import Line2D
 
-from util import literature_reference_values, SYNAPSE_DIR_ROOT
+from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT
 from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter_2
 
 png_dpi = 300
@@ -32,8 +31,7 @@ def plot_legend_suppfig02(save_path):
     color = [COLOR_P, COLOR_R, COLOR_F, COLOR_T]
     label = ["Precision", "Recall", "F1-score", "Processing time"]
 
-    fl = lambda c: Line2D([], [], lw=3, color=c)
-    handles = [fl(c) for c in color]
+    handles = [get_flatline_handle(c) for c in color]
     legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
@@ -52,7 +50,6 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "marker": "o",
                 "runtime": 536.5,
                 "runtime_std": 148.4
-
             },
             "micro_sam": {
                 "label": "µSAM",
@@ -69,8 +66,8 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.607,
                 "f1-score": 0.186,
                 "marker": "v",
-                "runtime": None,
-                "runtime_std": None
+                "runtime": 167.9116359,
+                "runtime_std": 40.2,
             },
             "cellpose_sam": {
                 "label": "Cellpose-SAM",
@@ -78,8 +75,17 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.003,
                 "f1-score": 0.005,
                 "marker": "^",
-                "runtime": 167.9,
-                "runtime_std": 40.2
+                "runtime": 2232.007748,
+                "runtime_std": None,
+            },
+            "spiner2D": {
+                "label": "Spiner",
+                "precision": 0.373,
+                "recall": 0.340,
+                "f1-score": 0.326,
+                "marker": "*",
+                "runtime": None,
+                "runtime_std": None,
             },
             "distance_unet": {
                 "label": "CochleaNet",
@@ -107,8 +113,8 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.554,
                 "f1-score": 0.329,
                 "marker": "v",
-                "runtime": 30.1,
-                "runtime_std": 162.3
+                "runtime": 162.3493934,
+                "runtime_std": 30.1,
             },
             "cellpose_sam": {
                 "label": "Cellpose-SAM",
@@ -116,17 +122,17 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "recall": 0.025,
                 "f1-score": 0.047,
                 "marker": "^",
-                "runtime": None,
+                "runtime": 2137.944779,
                 "runtime_std": None
             },
             "distance_unet": {
                 "label": "CochleaNet",
-                "precision": 0.664,
-                "recall": 	0.661,
-                "f1-score": 0.659,
+                "precision": 0.693,
+                "recall": 	0.567,
+                "f1-score": 0.618,
                 "marker": "s",
-                "runtime": 65.7,
-                "runtime_std": 72.6
+                "runtime": 69.01,
+                "runtime_std": None
             },
         }
     }
@@ -158,7 +164,7 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels)+1)
-        plt.xticks(x_pos, labels, fontsize=16)
+        plt.xticks(x_pos, labels, fontsize=main_tick_size)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
         plt.ylim(-0.1, 1)
@@ -166,21 +172,27 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     elif mode == "runtime":
+        if "Spiner" in labels:
+            labels.remove("Spiner")
+
         # Convert setting labels to numerical x positions
         offset = 0.08  # horizontal shift for scatter separation
+        x_pos = 1
         for num, key in enumerate(list(value_dict[segm].keys())):
             runtime = [value_dict[segm][key]["runtime"]]
+            if runtime[0] is None:
+                continue
             marker = value_dict[segm][key]["marker"]
-            x_pos = num + 1
-
             plt.scatter([x_pos], runtime, label="Runtime", color=COLOR_T, marker=marker, s=80)
+            x_pos = x_pos + 1
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels)+1)
         plt.xticks(x_pos, labels, fontsize=16)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Processing time [s]", fontsize=main_label_size)
-        plt.ylim(-0.1, 600)
+        plt.ylim(10, 2400)
+        plt.yscale('log')
         # plt.legend(loc="lower right", fontsize=legendsize)
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
@@ -211,20 +223,18 @@ def plot_legend_fig02c(save_path, plot_mode="shapes"):
         marker = ["o", "s"]
         label = ["Manual", "Automatic"]
 
-        f = lambda m, c: plt.plot([], [], marker=m, color=c, ls="none")[0]
-        handles = [f(m, c) for (c, m) in zip(color, marker)]
+        handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
         legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
         export_legend(legend, save_path)
         legend.remove()
         plt.close()
 
-    elif plot_mode =="colors":
+    elif plot_mode == "colors":
         # Colors
         color = [COLOR_P, COLOR_R, COLOR_F]
         label = ["Precision", "Recall", "F1-score"]
 
-        fl = lambda c: Line2D([], [], lw=3, color=c)
-        handles = [fl(c) for c in color]
+        handles = [get_flatline_handle(c) for c in color]
         legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
         export_legend(legend, save_path)
         legend.remove()
@@ -364,7 +374,7 @@ def fig_02d(save_path, plot=False, plot_average_ribbon_synapses=False):
     lower_y, upper_y = literature_reference_values("SGN")
     ax[0].hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
     ax[0].text(1., lower_y + (upper_y - lower_y) * 0.2, "literature",
-                color=COLOR_LITERATURE, fontsize=main_label_size, ha="center")
+               color=COLOR_LITERATURE, fontsize=main_label_size, ha="center")
     ax[0].fill_between([xmin, xmax], lower_y, upper_y, color="C0", alpha=0.05, interpolate=True)
 
     ylim0 = 600
@@ -441,14 +451,16 @@ def main():
 
     # Panel D: The number of SGNs, IHCs and average number of ribbon synapses per IHC
     fig_02d(save_path=os.path.join(args.figure_dir, f"fig_02d.{FILE_EXTENSION}"),
-               plot=args.plot, plot_average_ribbon_synapses=True)
+            plot=args.plot, plot_average_ribbon_synapses=True)
 
     # Supplementary Figure 2: Comparing other methods in terms of segmentation accuracy and runtime
-    plot_legend_suppfig02(save_path=os.path.join(args.figure_dir, f"suppfig02_legend_colors.{FILE_EXTENSION}"))
+    plot_legend_suppfig02(save_path=os.path.join(args.figure_dir, f"figsupp_02_legend_colors.{FILE_EXTENSION}"))
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn.{FILE_EXTENSION}"), segm="SGN")
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc.{FILE_EXTENSION}"), segm="IHC")
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn_time.{FILE_EXTENSION}"), segm="SGN", mode="runtime")
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc_time.{FILE_EXTENSION}"), segm="IHC", mode="runtime")
+    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_sgn_time.{FILE_EXTENSION}"),
+                segm="SGN", mode="runtime")
+    supp_fig_02(save_path=os.path.join(args.figure_dir, f"figsupp_02_ihc_time.{FILE_EXTENSION}"),
+                segm="IHC", mode="runtime")
 
 
 if __name__ == "__main__":

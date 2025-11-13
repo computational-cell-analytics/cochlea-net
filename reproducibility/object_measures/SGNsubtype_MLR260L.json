@@ -1,0 +1,14 @@
+[
+	{
+		"cochlea": "M_LR_000260_L",
+		"image_channel": [
+			"Prph",
+			"PV",
+			"Tuj1"
+		],
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1
+		]
+	}
+]

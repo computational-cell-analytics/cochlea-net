@@ -1,0 +1,13 @@
+[
+	{
+		"cochlea": "M_AMD_N180_R",
+		"image_channel": [
+			"CR",
+			"Ntng1"
+		],
+		"segmentation_channel": "SGN_merged",
+		"component_list": [
+			1
+		]
+	}
+]

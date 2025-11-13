@@ -2,6 +2,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 
+from matplotlib.lines import Line2D
+
 # Directory with synapse measurement tables
 SYNAPSE_DIR_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/synapses"
 # SYNAPSE_DIR_ROOT = "./synapses"
@@ -49,6 +51,8 @@ prism_palette = [
 def custom_formatter_1(x, pos):
     if np.isclose(x, 1.0):
         return '1'  # no decimal
+    elif np.isclose(x, 0.0):
+        return '0'  # no decimal
     else:
         return f"{x:.1f}"
 
@@ -56,6 +60,8 @@ def custom_formatter_1(x, pos):
 def custom_formatter_2(x, pos):
     if np.isclose(x, 1.0):
         return '1'  # no decimal
+    elif np.isclose(x, 0.0):
+        return '0'  # no decimal
     else:
         return f"{x:.2f}"
 
@@ -66,6 +72,23 @@ def export_legend(legend, filename="legend.png"):
     fig.canvas.draw()
     bbox = legend.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
     fig.savefig(filename, bbox_inches=bbox, dpi=png_dpi)
+
+
+def get_marker_handle(color, marker):
+    """Get function handle for plotting external legend without plot.
+    """
+    return plt.plot([], [], marker=marker, color=color, ls="none")[0]
+
+
+def get_flatline_handle(color):
+    return Line2D([], [], lw=3, color=color)
+
+
+def get_trendline_handle(linestyle, linewidth):
+    return Line2D(
+        [], [], lw=3, color="gray", linestyle=linestyle,
+        alpha=0.6, linewidth=linewidth,
+    )
 
 
 def prism_style():
@@ -215,9 +238,9 @@ def literature_reference_values_gerbil(structure):
 def to_alias(cochlea_name):
     name_short = cochlea_name.replace("_", "").replace("0", "")
     name_to_alias = {
-        "MLR226L": "M01L",
-        "MLR226R": "M01R",
-        "MLR227L": "M02L",
-        "MLR227R": "M02R",
+        "MLR226L": "M_01L",
+        "MLR226R": "M_01R",
+        "MLR227L": "M_02L",
+        "MLR227R": "M_02R",
     }
     return name_to_alias[name_short]

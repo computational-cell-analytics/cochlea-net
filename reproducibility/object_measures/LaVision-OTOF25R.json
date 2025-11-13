@@ -1,0 +1,18 @@
+[
+	{
+		"cochlea": "LaVision-OTOF25R",
+		"image_channel": [
+			"CR",
+			"rbOtof"
+		],
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"component_list": [
+			1
+		],
+        "resolution" : [
+            1.887779,
+            1.887779,
+            3.0
+        ]
+	}
+]
