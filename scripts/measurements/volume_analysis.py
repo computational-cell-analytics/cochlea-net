@@ -97,7 +97,9 @@ def compute_ihc_volumes_lavision():
 
 def compare_sgn_volumes():
     cochleae_flamingo = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
+    alias_flamingo = ["M_01L", "M_01LR", "M_02L", "M_02R"]
     cochleae_lavision = ["LaVision-M02", "LaVision-M03"]
+    alias_lavision = ["LV_M_01", "LV_M_02"]
 
     folder_flamingo = "./data/volumes_flamingo"
     folder_lavision = "./data/volumes_lavision"
@@ -119,11 +121,11 @@ def compare_sgn_volumes():
     fig, axes = plt.subplots(2, sharey=True)
 
     ax = axes[0]
-    ax.boxplot(data_flamingo, tick_labels=cochleae_flamingo)
+    ax.boxplot(data_flamingo, tick_labels=alias_flamingo)
     ax.set_ylabel("SGN Volume [µm^3]")
 
     ax = axes[1]
-    ax.boxplot(data_lavision, tick_labels=cochleae_lavision)
+    ax.boxplot(data_lavision, tick_labels=alias_lavision)
     ax.set_ylabel("SGN Volume [µm^3]")
 
     plt.show()
@@ -131,7 +133,9 @@ def compare_sgn_volumes():
 
 def compare_ihc_volumes():
     cochleae_flamingo = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
+    alias_flamingo = ["M_01L", "M_01LR", "M_02L", "M_02R"]
     cochleae_lavision = ["LaVision-M02", "LaVision-M03"]
+    alias_lavision = ["LV_M_01", "LV_M_02"]
 
     folder_flamingo = "./data/ihc_volumes_flamingo"
     folder_lavision = "./data/ihc_volumes_lavision"
@@ -156,23 +160,23 @@ def compare_ihc_volumes():
     fig, axes = plt.subplots(2, sharey=True)
 
     ax = axes[0]
-    ax.boxplot(data_flamingo, tick_labels=cochleae_flamingo)
+    ax.boxplot(data_flamingo, tick_labels=alias_flamingo)
     ax.set_ylabel("IHC Volume [µm^3]")
 
     ax = axes[1]
-    ax.boxplot(data_lavision, tick_labels=cochleae_lavision)
+    ax.boxplot(data_lavision, tick_labels=alias_lavision)
     ax.set_ylabel("IHC Volume [µm^3]")
 
     plt.show()
 
 
 def main():
-    compute_sgn_volumes_flamingo()
-    compute_sgn_volumes_lavision()
-    # compare_sgn_volumes()
+    # compute_sgn_volumes_flamingo()
+    # compute_sgn_volumes_lavision()
+    compare_sgn_volumes()
 
-    compute_ihc_volumes_flamingo()
-    compute_ihc_volumes_lavision()
+    # compute_ihc_volumes_flamingo()
+    # compute_ihc_volumes_lavision()
     compare_ihc_volumes()
 
 

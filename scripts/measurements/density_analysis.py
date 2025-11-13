@@ -135,13 +135,15 @@ def check_implementation():
     analyze_cochlea(cochlea, plot=True)
 
 
-def compare_cochleae(cochleae, animal, plot_density=True, plot_tonotopy=True):
+def compare_cochleae(cochleae, animal, plot_density=True, plot_tonotopy=True, alias=None):
+    if alias is not None:
+        assert len(alias) == len(cochleae)
 
     if plot_density:
         plt.figure(figsize=(6, 3))
-        for cochlea in cochleae:
+        for i, cochlea in enumerate(cochleae):
             grid, density = analyze_cochlea(cochlea, plot=False)
-            plt.plot(grid, density, lw=2, label=cochlea)
+            plt.plot(grid, density, lw=2, label=cochlea if alias is None else alias[i])
 
         plt.xlabel("Length [µm]")
         plt.ylabel("Density [SGN/µm]")
@@ -163,7 +165,7 @@ def compare_cochleae(cochleae, animal, plot_density=True, plot_tonotopy=True):
 
             band_to_x = {band: i for i, band in enumerate(bin_labels)}
             x_positions = bin_labels.map(band_to_x)
-            ax.scatter(x_positions, binned_counts, marker="o", label=cochlea, s=80)
+            ax.scatter(x_positions, binned_counts, marker="o", s=80, label=cochlea if alias is None else alias[i])
 
         ax.set_xticks(range(len(bin_labels)))
         ax.set_xticklabels(bin_labels)
@@ -228,18 +230,19 @@ def compare_cochlea_groups(cochlea_groups, animal, plot_density=True, plot_tonot
         plt.show()
 
 
-# The visualization has to be improved to make plots understandable.
-def main():
-    # check_implementation()
-
+def density_analysis_gerbil():
     # Comparison for Gerbil.
-    # cochleae = ["G_EK_000233_L", "G_EK_000049_L", "G_EK_000049_R"]
-    # compare_cochleae(cochleae, animal="gerbil", plot_density=True)
+    cochleae = ["G_EK_000233_L", "G_EK_000049_L", "G_EK_000049_R"]
+    alias = ["G_1L", "G_2L", "G_2R"]
+    compare_cochleae(cochleae, animal="gerbil", plot_density=True, alias=alias)
 
+
+def density_analysis_mice():
     # Comparison for Mouse.
+    # This is for Aleyna's SFN talk.
+
     # NOTE: There is some problem with M_LR_000143_L and "M_LR_000153_L"
     # I have removed the corresponding pairs for now, but we should investigate and add back.
-
     # Healthy reference cochleae.
     reference_cochleae = [
         "M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R",
@@ -260,6 +263,13 @@ def main():
         },
         animal="mouse", plot_tonotopy=True, plot_density=True,
     )
+
+
+# The visualization has to be improved to make plots understandable.
+def main():
+    # check_implementation()
+    density_analysis_gerbil()
+    # density_analysis_mice()
 
 
 if __name__ == "__main__":
