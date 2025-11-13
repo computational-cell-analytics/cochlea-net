@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 import tifffile
 import zarr
+from elf.parallel import isin
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.segmentation.postprocessing import filter_cochlea_volume, filter_cochlea_volume_single
@@ -25,7 +26,8 @@ def filter_component(fs, segmentation, cochlea, seg_name, components):
     if max(keep_label_ids) > np.iinfo("uint16").max:
         warnings.warn(f"Label ID exceeds maximum of data type 'uint16': {np.iinfo('uint16').max}.")
 
-    filter_mask = ~np.isin(segmentation, keep_label_ids)
+    filter_mask = np.zeros(segmentation.shape, dtype="bool")
+    filter_mask = ~isin(segmentation, keep_label_ids, out=filter_mask, verbose=True, block_shape=(128, 128, 128))
     segmentation[filter_mask] = 0
     segmentation = segmentation.astype("float32")
     return segmentation
