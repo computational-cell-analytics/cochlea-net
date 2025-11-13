@@ -18,8 +18,8 @@ INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/
 
 # The cochlea for the CHReef analysis.
 COCHLEAE_DICT = {
-    "LaVision-OTOF23R": {"alias": "01", "component": [4, 18, 7], "color": "#9C5027"},
-    "LaVision-OTOF25R": {"alias": "02", "component": [1], "color": "#67279C"},
+    "LaVision-OTOF23R": {"alias": "LV_M_03", "component": [4, 18, 7], "color": "#9C5027"},
+    "LaVision-OTOF25R": {"alias": "LV_M_04", "component": [1], "color": "#67279C"},
 }
 
 
