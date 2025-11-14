@@ -282,6 +282,7 @@ def fig_04c(chreef_data, save_path, plot=False, grouping="side_mono", use_alias=
     main_label_size = 20
     sub_label_size = 16
     main_tick_size = 16
+    fontsize_untreated = 16
 
     offset = 0.08
     x_left = 1
@@ -349,8 +350,8 @@ def fig_04c(chreef_data, save_path, plot=False, grouping="side_mono", use_alias=
     c_untreated = COLOR_UNTREATED
 
     plt.hlines([lower_y, upper_y], xmin, xmax, colors=[c_untreated for _ in range(2)], zorder=-1)
-    plt.text((xmin + xmax) / 2, upper_y + 200, "untreated cochleae\n(95% confidence interval)",
-             color=c_untreated, fontsize=11, ha="center")
+    plt.text((xmin + xmax) / 2, upper_y + 200, "untreated cochleae\n95% CI",
+             color=c_untreated, fontsize=fontsize_untreated, ha="center")
     plt.fill_between([xmin, xmax], lower_y, upper_y, color=c_untreated, alpha=0.05, interpolate=True)
 
     plt.tight_layout()

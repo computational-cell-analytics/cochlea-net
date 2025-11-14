@@ -14,11 +14,14 @@ import pandas as pd
 from matplotlib import cm, colors
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
-from util import sliding_runlength_sum, frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1
+from util import sliding_runlength_sum, frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
 from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle, get_flatline_handle
 from flamingo_tools.segmentation.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
 INPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/frequency_mapping/M_LR_000227_R/scale3"
+MEYER_DATA = "/user/schilling40/u15000/flamingo-tools/scripts/figures/Meyer_et_al-selected.tsv"
+MEYER_COLOR = "black"
+MEYER_MARKER = "s"
 
 TYPE_TO_CHANNEL = {
     "Type-Ia": "CR",
@@ -90,7 +93,7 @@ COLORS = {
 LEGEND_LABEL = {
     "Type Ia": r"$\mathrm{Type}~\mathrm{I}_{\mathrm{a}}$",
     "Type Ib": r"$\mathrm{Type}~\mathrm{I}_{\mathrm{b}}$",
-    "Type Ib/Ic": r"$\mathrm{Type}~\mathrm{I}_{\mathrm{b}}/\mathrm{I}_{\mathrm{c}}$",
+    "Type Ib/Ic": r"$\mathrm{Type}~\mathrm{I}_{\mathrm{b/c}}$",
     "Type Ic": r"$\mathrm{Type}~\mathrm{I}_{\mathrm{c}}$",
 
 }
@@ -104,9 +107,10 @@ COCHLEAE_DICT = {
 }
 
 GROUPINGS = {
-    "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # , "M_AMD_N180_L", "M_AMD_N180_R"
+    "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N98_R", "M_LR_N152_L"],
+    # , "M_AMD_N180_L", "M_AMD_N180_R"
     "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
-    "Type Ib;Type Ic;inconclusive": ["M_LR_N110_L", "M_LR_N110_R"],
+    "Type Ib;Type Ic;inconclusive": ["M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_R"],
     "Type Ib;Type Ic;Type IbIc": ["M_LR_000099_L"],
 }
 
@@ -152,7 +156,7 @@ def get_tonotopic_data():
 
         # The relevant values for analysis.
         try:
-            values = table[["label_id", "length[µm]", "frequency[kHz]", "syn_per_IHC"]]
+            values = table[["label_id", "length[µm]", "length_fraction", "frequency[kHz]", "syn_per_IHC"]]
         except KeyError:
             print("Could not find the values for", cochlea, "it will be skippped.")
             continue
@@ -256,6 +260,95 @@ def fig_03a(save_path, plot, plot_napari, cmap="viridis", dark_mode=False):
         napari.run()
 
 
+def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True, plot=False, n_bins=10):
+    ihc_version = "ihc_counts_v4c"
+    main_label_size = 24
+    tick_size = 16
+    prism_style()
+    tables = glob(os.path.join(SYNAPSE_DIR_ROOT, ihc_version, "ihc_count_M_LR*.tsv"))
+    assert len(tables) == 4, len(tables)
+
+    result = {"cochlea": [], "runlength": [], "value": []}
+    color_dict = {}
+    marker_dict = {}
+    cochleae_length = []
+    for name, values in tonotopic_data.items():
+        if use_alias:
+            alias = COCHLEAE_DICT[name]["alias"]
+        else:
+            alias = name.replace("_", "").replace("0", "")
+
+        color_dict[alias] = COCHLEAE_DICT[name]["color"]
+        marker_dict[alias] = "o"
+        syn_count = values["syn_per_IHC"].values
+        length_fraction = values["length_fraction"].values
+        run_length = values["length[µm]"].values
+        cochleae_length.append(max(run_length))
+
+        # columns: "fraction_midpoint", "mean_syn_per_IHC"
+        avg_per_bin = average_by_fraction(length_fraction, syn_count, n_bins=n_bins)
+        fraction = avg_per_bin["fraction_midpoint"].values
+        syn_per_IHC = avg_per_bin["mean_syn_per_IHC"].values
+
+        result["cochlea"].extend([alias] * len(fraction))
+        result["runlength"].extend(fraction)
+        result["value"].extend(syn_per_IHC)
+
+    if os.path.isfile(MEYER_DATA):
+        table = pd.read_csv(MEYER_DATA, sep="\t")
+        table = table.reset_index()  # make sure indexes pair with number of rows
+        lf_meyer = []
+        syn_meyer = []
+        for index, row in table.iterrows():
+            if isinstance(row["Ribbons_Cell"], float):
+                lf_meyer.append(row["X__from_Apex"] / 100)
+                syn_meyer.append(row["Ribbons_Cell"])
+        avg_per_bin = average_by_fraction(lf_meyer, syn_meyer, n_bins=n_bins)
+        fraction = avg_per_bin["fraction_midpoint"].values
+        syn_per_IHC = avg_per_bin["mean_syn_per_IHC"].values
+
+        result["cochlea"].extend(["Meyer"] * len(fraction))
+        result["runlength"].extend(fraction)
+        result["value"].extend(syn_per_IHC)
+        color_dict["Meyer"] = MEYER_COLOR
+        marker_dict["Meyer"] = MEYER_MARKER
+
+    avg_length = sum(cochleae_length) / len(cochleae_length)
+    print(f"Average total length: {round(avg_length, 2)} µm")
+    print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
+
+    result = pd.DataFrame(result)
+    fig, ax = plt.subplots(figsize=(6.7, 5))
+
+    for num, (name, grp) in enumerate(result.groupby("cochlea")):
+        run_length = grp["runlength"]
+        syn_count_running = grp["value"]
+        if name == "Meyer":
+            ax.scatter(run_length, syn_count_running, label=name, facecolor='none',
+                       edgecolors=color_dict[name], marker=marker_dict[name])
+        else:
+            ax.scatter(run_length, syn_count_running, label=name,
+                       color=color_dict[name], marker=marker_dict[name])
+
+    ax.tick_params(axis='x', labelsize=tick_size)
+    ax.tick_params(axis='y', labelsize=tick_size)
+    ax.set_xlabel("Length fraction", fontsize=main_label_size)
+    ax.set_ylabel("Synapse per IHC", fontsize=main_label_size)
+    # ax.legend(title="cochlea")
+    plt.tight_layout()
+    prism_cleanup_axes(ax)
+
+    if ".png" in save_path:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
+    else:
+        plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
+
+    if plot:
+        plt.show()
+    else:
+        plt.close()
+
+
 def fig_03c_rl(tonotopic_data, save_path, use_alias=True, plot=False):
     ihc_version = "ihc_counts_v4c"
     width = 200
@@ -319,6 +412,34 @@ def plot_legend_fig03c(save_path, ncol=None):
         ncol = 2
 
     handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
+    legend = plt.legend(handles, label, loc=3, ncol=ncol, framealpha=1, frameon=False)
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
+
+
+def plot_legend_suppfig03(save_path, ncol=None):
+    """Legend for supplementary Figure showing synapses per IHC compared to values from Meyer
+    """
+    color_dict = {}
+    for key in COCHLEAE_DICT.keys():
+        color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
+
+    marker = ["o" for _ in color_dict]
+    label = list(color_dict.keys())
+
+    # add parameters for data from Meyer
+    edgecolors = [None for _ in color_dict]
+    color_dict["Meyer"] = MEYER_COLOR
+    marker.append(MEYER_MARKER)
+    label.append("Meyer et al.")
+    edgecolors.append(MEYER_COLOR)
+
+    color = [color_dict[key] for key in color_dict.keys()]
+    if ncol is None:
+        ncol = 2
+
+    handles = [get_marker_handle(c, m, e) for (c, m, e) in zip(color, marker, edgecolors)]
     legend = plt.legend(handles, label, loc=3, ncol=ncol, framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
@@ -692,7 +813,11 @@ def fig_03_subtype_fraction(save_path, grouping="Type Ia;Type Ib;Type Ic;Type II
     results = {}
 
     for cochlea in cochleae:
-        seg_name = COCHLEAE[cochlea]["seg_data"]
+        if "output_seg" in list(COCHLEAE[cochlea].keys()):
+            seg_name = COCHLEAE[cochlea]["output_seg"]
+        else:
+            seg_name = COCHLEAE[cochlea]["seg_data"]
+
         if "component_list" in list(COCHLEAE[cochlea].keys()):
             component_list = COCHLEAE[cochlea]["component_list"]
         else:
@@ -775,7 +900,11 @@ def fig_03_subtype_tonotopic(save_path, grouping="Type Ia;Type Ib;Type Ic;Type I
     results = {}
 
     for cochlea in cochleae:
-        seg_name = COCHLEAE[cochlea]["seg_data"]
+        if "output_seg" in list(COCHLEAE[cochlea].keys()):
+            seg_name = COCHLEAE[cochlea]["output_seg"]
+        else:
+            seg_name = COCHLEAE[cochlea]["seg_data"]
+
         if "component_list" in list(COCHLEAE[cochlea].keys()):
             component_list = COCHLEAE[cochlea]["component_list"]
         else:
@@ -853,6 +982,11 @@ def main():
     fig_03c_rl(tonotopic_data=tonotopic_data,
                save_path=os.path.join(args.figure_dir, f"fig_03c_rl.{FILE_EXTENSION}"), plot=args.plot)
 
+    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
+                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer.{FILE_EXTENSION}"),
+                            plot=args.plot, n_bins=25)
+    plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_legend.{FILE_EXTENSION}"), ncol=1)
+
     # Panel C: Spatial distribution of synapses across the cochlea (running sum per octave band)
     fig_03c_octave(tonotopic_data=tonotopic_data,
                    save_path=os.path.join(args.figure_dir, f"fig_03c_octave.{FILE_EXTENSION}"),
@@ -861,7 +995,7 @@ def main():
 
     grouping = "Type Ia;Type Ib/Ic;Type II"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_Ia-IbIc-II.{FILE_EXTENSION}"),
-                         grouping=grouping, ncol=1)
+                         grouping=grouping)
 
     grouping = "Type Ia;Type Ib;Type Ic;Type II"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
@@ -884,7 +1018,7 @@ def main():
                          grouping=grouping, ncol=1)
     grouping = "Type Ib;Type Ic;inconclusive"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_Ib-Ic-inconclusive.{FILE_EXTENSION}"),
-                         grouping=grouping)
+                         grouping=grouping, ncol=1)
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"figsupp_03_tonotopic_IbIc.{FILE_EXTENSION}"),
                              grouping=grouping, combine_IbIc=True)
     fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"figsupp_03_fraction_Ib-Ic.{FILE_EXTENSION}"),

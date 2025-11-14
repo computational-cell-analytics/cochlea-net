@@ -220,7 +220,8 @@ def evaluate_marker_annotation(
 
         seg_string = "-".join(output_seg.split("_"))
         cochlea_str = "-".join(cochlea.split("_"))
-        stains = COCHLEAE[cochlea]["subtype_stain"]
+        stains = COCHLEAE[cochlea]["subtype_stains"]
+        print(f"Cochlea {cochlea} with subtype stains {stains}.")
         subtype_str = "_".join(stains)
         out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
         annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")

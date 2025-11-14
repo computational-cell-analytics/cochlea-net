@@ -10,26 +10,45 @@ import numpy as np
 from flamingo_tools.s3_utils import get_s3_path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
 from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE, CUSTOM_THRESHOLDS
-from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle
+from util import prism_style, prism_cleanup_axes, export_legend, get_flatline_handle
+from flamingo_tools.segmentation.sgn_subtype_utils import ALIAS
 
 png_dpi = 300
 FILE_EXTENSION = "png"
 THRESHOLD_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/Subtype_marker"  # noqa
 
-COCHLEAE_DICT = {
-    "M_LR_000184_L": {"alias": "S01"},
-    "M_LR_000184_R": {"alias": "S02"},
-    "M_LR_000260_L": {"alias": "S03"},
+COLORS_OFFSET = {
+    "M_10L": "#9C5027",
+    "M_10R": "#279C52",
+    "M_11L": "#67279C",
 }
 
-COLORS_ANIMAL = {
-    "S01": "#9C5027",
-    "S02": "#279C52",
-    "S03": "#67279C",
+COLORS_THRESHOLD = {
+    "CR": {"Positive": "#E26F0B", "Negative": "#4177AA"},
+    "Ntng1": {"Positive": "#AA4D41", "Negative": "#41AA53"},
 }
 
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
+
+
+def plot_legend_threshold(save_path, stain, ncol=1):
+    """Plot common legend for subtype panels in Figure 3.
+
+    Args:
+        save_path: save path to save legend.
+    """
+    labels = ["Positive", "Negative"]
+    colors = [COLORS_THRESHOLD[stain][label] for label in labels]
+    if ncol is None:
+        ncol = len(labels)
+
+    # Colors
+    handles = [get_flatline_handle(c) for c in colors]
+    legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
 
 
 def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=True, title_type="generic", rows=None):
@@ -82,6 +101,7 @@ def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=
         columns = number_plots // rows
 
         main_label_size = 20
+        x_label_size = 16
         main_tick_size = 16
         fig, axes = plt.subplots(rows, columns, figsize=(columns*2.5, rows*2.5), sharex=sharex, sharey=sharey)
         plt.xlim([-0.1, 8])
@@ -110,16 +130,16 @@ def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=
             bins = np.linspace(min(neg_values + pos_values), max(neg_values + pos_values), 30)
 
             ax[num].hist(pos_values, bins=bins, alpha=0.6,
-                         label='Positive', color='tab:blue')
+                         label='Positive', color=COLORS_THRESHOLD[stain]["Positive"])
             ax[num].hist(neg_values, bins=bins, alpha=0.6,
-                         label='Negative', color='tab:orange')
+                         label='Negative', color=COLORS_THRESHOLD[stain]["Negative"])
             if num % columns == 0:
                 ax[num].set_ylabel('Count', fontsize=main_label_size)
             if rows == 1 or num >= columns:
-                ax[num].set_xlabel('Intensity', fontsize=main_label_size)
+                ax[num].set_xlabel('Intensity [a.u.]', fontsize=x_label_size)
             ax[num].tick_params(axis='x', labelsize=main_tick_size)
             ax[num].tick_params(axis='y', labelsize=main_tick_size)
-            ax[num].legend()
+            # ax[num].legend()
             if title_type == "center_str":
                 ax[num].set_title(center_str, fontsize=main_label_size)
             else:
@@ -139,7 +159,7 @@ def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=
             plt.close()
 
 
-def plot_legend_offset(save_path):
+def plot_legend_offset(save_path, ncol=None):
     """Plot common legend for supplementary figure 3.
 
     Args:
@@ -154,29 +174,32 @@ def plot_legend_offset(save_path):
     cochleae = [c for c in COCHLEAE.keys() if
                 len(COCHLEAE[c]["subtype_stains"]) == 1 and
                 "Prph" in COCHLEAE[c]["subtype_stains"]]
-    alias = [COCHLEAE_DICT[k]["alias"] for k in cochleae]
+    labels = [ALIAS[k] for k in cochleae]
+    colors = [COLORS_OFFSET[label] for label in labels]
+    if ncol is None:
+        ncol = len(labels)
 
-    colors = []
-    labels = []
-    markers = []
-    keys_animal = list(COLORS_ANIMAL.keys())
-    ncol = len(keys_animal)
-    for num in range(len(COLORS_ANIMAL)):
-        colors.append(COLORS_ANIMAL[keys_animal[num]])
-        colors.append(COLORS_ANIMAL[keys_animal[num]])
-        labels.append(f"{alias[num]}L")
-        labels.append(f"{alias[num]}R")
-        markers.append(MARKER_LEFT)
-        markers.append(MARKER_RIGHT)
-    handles = [get_marker_handle(color, marker) for (color, marker) in zip(colors, markers)]
+    # Colors
+    handles = [get_flatline_handle(c) for c in colors]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
-
     export_legend(legend, save_path)
     legend.remove()
     plt.close()
 
 
-def supp_fig_03_cm(save_path, plot=False):
+def supp_fig_03_cm(save_path, plot=False, include_typeii=False):
+    main_label_size = 32
+    color_tick_size = 24
+
+    if include_typeii:
+        subtypes = ["Type Ia", "Type Ib", "Type Ic", "Type II"]
+        text_size = 16
+        tick_size = 16
+    else:
+        subtypes = ["Type Ia", "Type Ib", "Type Ic"]
+        text_size = 20
+        tick_size = 20
+
     cochlea = "M_AMD_N180_L"
     seg_name = "SGN_merged"
     table_path = f"{cochlea}/tables/{seg_name}/default.tsv"
@@ -184,15 +207,61 @@ def supp_fig_03_cm(save_path, plot=False):
     with fs.open(table_path_s3, "r") as f:
         table = pd.read_csv(f, sep="\t")
 
-    subtypes = ["Type Ia", "Type Ib", "Type Ic"]
     subset = table[table["subtype_label"].isin(subtypes)]
+    if include_typeii:
+        subtypes = ["Type Ia", "Type Ib", "Type Ic", "indet."]
+        subset.loc[subset["subtype_label"] == "Type II", "subtype_label"] = "indet."
+        subset.loc[subset["subtype_label_Lypd1"] == "Type II", "subtype_label_Lypd1"] = "indet."
 
-    cm = confusion_matrix(subset['subtype_label'], subset['subtype_label_Lypd1'], labels=subtypes, normalize='true')
-    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=subtypes)
-    disp.plot(cmap='Blues', xticks_rotation=45, values_format=".2f")
-    # plt.title("Confusion Matrix: CR+Lypd1 vs CR+Ntng1 (True label)")
-    plt.xlabel("CR, Lypd1")
-    plt.ylabel("CR, Ntng1")
+    # --- Compute counts and normalized matrix ---
+    cm_counts = confusion_matrix(
+        subset['subtype_label'],
+        subset['subtype_label_Lypd1'],
+        labels=subtypes,
+        normalize=None
+    )
+    cm_norm = confusion_matrix(
+        subset['subtype_label'],
+        subset['subtype_label_Lypd1'],
+        labels=subtypes,
+        normalize='true'
+    )
+
+    # --- Plot normalized confusion matrix ---
+    disp = ConfusionMatrixDisplay(confusion_matrix=cm_norm, display_labels=subtypes)
+    disp.plot(cmap='Oranges', xticks_rotation=0, values_format=".2f")
+    disp.ax_.get_images()[0].set_clim(0, 1)
+
+    # --- Replace default annotations with normalized + counts ---
+    for i in range(cm_norm.shape[0]):
+        for j in range(cm_norm.shape[1]):
+            # Find the current text object and remove it
+            disp.text_[i, j].remove()
+            if cm_counts[i, j] != 0:
+                text_str = f"{cm_norm[i, j]:.2f}\nn={cm_counts[i, j]}"
+            else:
+                text_str = f"{cm_norm[i, j]:.2f}"
+            # Custom annotation
+            plt.text(
+                j, i,
+                text_str,
+                ha="center", va="center",
+                fontsize=text_size
+            )
+
+#    cm = confusion_matrix(subset['subtype_label'], subset['subtype_label_Lypd1'], labels=subtypes, normalize='true')
+#    disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=subtypes)
+#    disp.plot(cmap='Blues', xticks_rotation=0, values_format=".2f")
+#    for text in disp.text_.ravel():
+#        text.set_fontsize(text_size)
+
+    cbar = plt.gca().images[0].colorbar
+    cbar.ax.tick_params(labelsize=color_tick_size)
+
+    plt.xticks(fontsize=tick_size)
+    plt.yticks(fontsize=tick_size)
+    plt.xlabel("CR + Lypd1", fontsize=main_label_size)
+    plt.ylabel("CR + Ntng1", fontsize=main_label_size)
 
     if ".png" in save_path:
         plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
@@ -210,7 +279,6 @@ def supp_fig_03_offset(save_path, plot=False, plot_type="mean"):
                 len(COCHLEAE[c]["subtype_stains"]) == 1 and
                 "Prph" in COCHLEAE[c]["subtype_stains"]]
 
-    print(cochleae)
     dic = {}
     for cochlea in cochleae:
         offset_dic = {}
@@ -233,7 +301,7 @@ def supp_fig_03_offset(save_path, plot=False, plot_type="mean"):
         dic[cochlea] = offset_dic
 
     prism_style()
-    alias = [COCHLEAE_DICT[k]["alias"] for k in cochleae]
+    alias = [ALIAS[k] for k in cochleae]
 
     # Plot
     fig, ax = plt.subplots(figsize=(4, 5))
@@ -252,11 +320,11 @@ def supp_fig_03_offset(save_path, plot=False, plot_type="mean"):
         x_pos_inj = [x_left - len(values_left) // 2 * offset + offset * i for i in range(len(values_left))]
         x_pos_non = [x_right - len(values_right) // 2 * offset + offset * i for i in range(len(values_right))]
 
-        for num, key in enumerate(COLORS_ANIMAL.keys()):
+        for num, key in enumerate(COLORS_OFFSET.keys()):
             plt.scatter(x_pos_inj[num], values_left[num], label=f"{alias[num]}",
-                        color=COLORS_ANIMAL[key], marker=MARKER_LEFT, s=80, zorder=1)
+                        color=COLORS_OFFSET[key], marker=MARKER_LEFT, s=80, zorder=1)
             plt.scatter(x_pos_non[num], values_right[num],
-                        color=COLORS_ANIMAL[key], marker=MARKER_RIGHT, s=80, zorder=1)
+                        color=COLORS_OFFSET[key], marker=MARKER_RIGHT, s=80, zorder=1)
 
         # lines between cochleae of same animal
         for num, (left, right) in enumerate(zip(values_left, values_right)):
@@ -299,7 +367,7 @@ def supp_fig_03_offset(save_path, plot=False, plot_type="mean"):
             dist_left = dic[cochlea]["Type I"]
             dist_right = dic[cochlea]["Type II"]
 
-            color = list(COLORS_ANIMAL.values())[num % len(COLORS_ANIMAL)]
+            color = list(COLORS_OFFSET.values())[num % len(COLORS_OFFSET)]
             alias_name = alias[num] if num < len(alias) else f"C{num+1}"
 
             # random horizontal jitter so points don’t overlap
@@ -345,6 +413,8 @@ def main():
     os.makedirs(args.figure_dir, exist_ok=True)
 
     supp_fig_03_cm(save_path=os.path.join(args.figure_dir, f"figsupp_03_cm.{FILE_EXTENSION}"))
+    supp_fig_03_cm(save_path=os.path.join(args.figure_dir, f"figsupp_03_cm_with-indet.{FILE_EXTENSION}"),
+                   include_typeii=True)
     plot_type = "mean"
     supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_offset_{plot_type}.{FILE_EXTENSION}"),
                        plot_type=plot_type)
@@ -352,10 +422,16 @@ def main():
     supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_offset_{plot_type}.{FILE_EXTENSION}"),
                        plot_type=plot_type)
 
-    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_offset.{FILE_EXTENSION}"))
+    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_offset.{FILE_EXTENSION}"), ncol=1)
 
     cochlea = "M_LR_N152_L"
     supp_fig_03_thresholds(args.figure_dir, cochlea, plot=False, sharex=True, title_type="generic", rows=2)
+    stain = "CR"
+    plot_legend_threshold(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_{stain}.{FILE_EXTENSION}"),
+                          stain=stain, ncol=1)
+    stain = "Ntng1"
+    plot_legend_threshold(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_{stain}.{FILE_EXTENSION}"),
+                          stain=stain, ncol=1)
 
 
 if __name__ == "__main__":

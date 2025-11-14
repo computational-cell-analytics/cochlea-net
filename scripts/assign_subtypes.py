@@ -82,35 +82,39 @@ def filter_subtypes(cochlea, seg_name, subtype, stains=None):
 
 def assign_subtypes(cochlea, output_folder, subtype_column="subtype_label"):
     if "label_stains" in COCHLEAE[cochlea].keys():
-        for subtype_column, subtype_stains in COCHLEAE[cochlea]["label_stains"].items():
+        subtype_assign_dic = COCHLEAE[cochlea]["label_stains"]
+    else:
+        subtype_assign_dic = {subtype_column: COCHLEAE[cochlea]["subtype_stains"]}
 
-            subtype_stains.sort()
-            if "output_seg" in list(COCHLEAE[cochlea].keys()):
-                seg_name = COCHLEAE[cochlea]["output_seg"]
-            else:
-                seg_name = COCHLEAE[cochlea]["seg_data"]
+    for subtype_column, subtype_stains in subtype_assign_dic.items():
 
-            out_path = os.path.join(output_folder, f"{cochlea}_subtypes.tsv")
+        subtype_stains.sort()
+        if "output_seg" in list(COCHLEAE[cochlea].keys()):
+            seg_name = COCHLEAE[cochlea]["output_seg"]
+        else:
+            seg_name = COCHLEAE[cochlea]["seg_data"]
 
-            table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
-            table_path_s3, fs = get_s3_path(table_seg_path)
-            with fs.open(table_path_s3, "r") as f:
-                table = pd.read_csv(f, sep="\t")
+        out_path = os.path.join(output_folder, f"{cochlea}_subtypes.tsv")
 
-            print(f"Subtype stains: {subtype_stains}.")
-            subtypes = types_for_stain(subtype_stains)
-            subtypes.sort()
+        table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
+        table_path_s3, fs = get_s3_path(table_seg_path)
+        with fs.open(table_path_s3, "r") as f:
+            table = pd.read_csv(f, sep="\t")
 
-            # Subtype labels
-            subtype_labels = ["None" for _ in range(len(table))]
-            table[subtype_column] = subtype_labels
-            for subtype in subtypes:
+        print(f"Subtype stains: {subtype_stains}.")
+        subtypes = types_for_stain(subtype_stains)
+        subtypes.sort()
 
-                label_ids_subtype = filter_subtypes(cochlea, seg_name=seg_name, subtype=subtype, stains=subtype_stains)
-                print(f"Subtype '{subtype}' with {len(label_ids_subtype)} instances.")
-                table.loc[table["label_id"].isin(label_ids_subtype), subtype_column] = subtype
+        # Subtype labels
+        subtype_labels = ["None" for _ in range(len(table))]
+        table[subtype_column] = subtype_labels
+        for subtype in subtypes:
 
-            table.to_csv(out_path, sep="\t", index=False)
+            label_ids_subtype = filter_subtypes(cochlea, seg_name=seg_name, subtype=subtype, stains=subtype_stains)
+            print(f"Subtype '{subtype}' with {len(label_ids_subtype)} instances.")
+            table.loc[table["label_id"].isin(label_ids_subtype), subtype_column] = subtype
+
+        table.to_csv(out_path, sep="\t", index=False)
 
 
 def main():

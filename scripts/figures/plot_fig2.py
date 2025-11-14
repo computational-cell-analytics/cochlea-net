@@ -47,7 +47,7 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "precision": 0.706,
                 "recall": 0.630,
                 "f1-score": 0.628,
-                "marker": "o",
+                "marker": "*",
                 "runtime": 536.5,
                 "runtime_std": 148.4
             },
@@ -83,7 +83,7 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
                 "precision": 0.373,
                 "recall": 0.340,
                 "f1-score": 0.326,
-                "marker": "*",
+                "marker": "o",
                 "runtime": None,
                 "runtime_std": None,
             },
@@ -141,14 +141,16 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
     offset = 0.08  # horizontal shift for scatter separation
 
     # Plot
-    fig, ax = plt.subplots(figsize=(8, 5))
+    tick_rotation = 0
 
     main_label_size = 20
     main_tick_size = 16
+    marker_size = 200
 
     labels = [value_dict[segm][key]["label"] for key in value_dict[segm].keys()]
 
     if mode == "precision":
+        fig, ax = plt.subplots(figsize=(10, 5))
         # Convert setting labels to numerical x positions
         offset = 0.08  # horizontal shift for scatter separation
         for num, key in enumerate(list(value_dict[segm].keys())):
@@ -158,13 +160,16 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
             marker = value_dict[segm][key]["marker"]
             x_pos = num + 1
 
-            plt.scatter([x_pos - offset], precision, label="Precision manual", color=COLOR_P, marker=marker, s=80)
-            plt.scatter([x_pos],         recall, label="Recall manual", color=COLOR_R, marker=marker, s=80)
-            plt.scatter([x_pos + offset], f1score, label="F1-score manual", color=COLOR_F, marker=marker, s=80)
+            plt.scatter([x_pos - offset], precision, label="Precision manual",
+                        color=COLOR_P, marker=marker, s=marker_size)
+            plt.scatter([x_pos],         recall, label="Recall manual",
+                        color=COLOR_R, marker=marker, s=marker_size)
+            plt.scatter([x_pos + offset], f1score, label="F1-score manual",
+                        color=COLOR_F, marker=marker, s=marker_size)
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels)+1)
-        plt.xticks(x_pos, labels, fontsize=main_tick_size)
+        plt.xticks(x_pos, labels, fontsize=main_tick_size, rotation=tick_rotation)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
         plt.ylim(-0.1, 1)
@@ -172,6 +177,7 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     elif mode == "runtime":
+        fig, ax = plt.subplots(figsize=(8.5, 5))
         if "Spiner" in labels:
             labels.remove("Spiner")
 
@@ -183,18 +189,21 @@ def supp_fig_02(save_path, plot=False, segm="SGN", mode="precision"):
             if runtime[0] is None:
                 continue
             marker = value_dict[segm][key]["marker"]
-            plt.scatter([x_pos], runtime, label="Runtime", color=COLOR_T, marker=marker, s=80)
+            plt.scatter([x_pos], runtime, label="Runtime", color=COLOR_T, marker=marker, s=marker_size)
             x_pos = x_pos + 1
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels)+1)
-        plt.xticks(x_pos, labels, fontsize=16)
+        plt.xticks(x_pos, labels, fontsize=16, rotation=tick_rotation)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Processing time [s]", fontsize=main_label_size)
-        plt.ylim(10, 2400)
+        plt.ylim(10, 2600)
         plt.yscale('log')
         # plt.legend(loc="lower right", fontsize=legendsize)
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
+
+    else:
+        raise ValueError("Unsupported mode for plotting.")
 
     plt.tight_layout()
     prism_cleanup_axes(ax)
