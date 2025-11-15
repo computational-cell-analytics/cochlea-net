@@ -107,7 +107,7 @@ COCHLEAE_DICT = {
 }
 
 GROUPINGS = {
-    "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N98_R", "M_LR_N152_L"],
+    "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
     # , "M_AMD_N180_L", "M_AMD_N180_R"
     "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
     "Type Ib;Type Ic;inconclusive": ["M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_R"],
@@ -260,8 +260,24 @@ def fig_03a(save_path, plot, plot_napari, cmap="viridis", dark_mode=False):
         napari.run()
 
 
-def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True, plot=False, n_bins=10):
+def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True,
+                            plot=False, n_bins=10, top_axis=False, trendline=False, trendline_std=False,
+                            errorbar=True):
     ihc_version = "ihc_counts_v4c"
+    if trendline_std:
+        line_alphas = {
+            "center": 0.6,
+            "upper": 0.08,
+            "lower": 0.08,
+            "fill": 0.05,
+        }
+    else:
+        line_alphas = {
+            "center": 1,
+            "upper": 0.,
+            "lower": 0.,
+            "fill": 0.,
+        }
     main_label_size = 24
     tick_size = 16
     prism_style()
@@ -321,14 +337,94 @@ def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True, plot=Fals
     fig, ax = plt.subplots(figsize=(6.7, 5))
 
     for num, (name, grp) in enumerate(result.groupby("cochlea")):
-        run_length = grp["runlength"]
-        syn_count_running = grp["value"]
+        run_length = list(grp["runlength"])
+        syn_count = list(grp["value"])
+        # print(run_length.shape)
+        # print(syn_count.shape)
+        run_length = [r for num, r in enumerate(run_length) if not np.isnan(syn_count[num])]
+        syn_count = [s for s in syn_count if not np.isnan(s)]
         if name == "Meyer":
-            ax.scatter(run_length, syn_count_running, label=name, facecolor='none',
-                       edgecolors=color_dict[name], marker=marker_dict[name])
+            ax.plot(run_length, syn_count, label=name,
+                    markeredgecolor=color_dict[name],
+                    color=color_dict[name], marker='s', linestyle='solid', linewidth=2)
         else:
-            ax.scatter(run_length, syn_count_running, label=name,
+            ax.scatter(run_length, syn_count, label=name,
                        color=color_dict[name], marker=marker_dict[name])
+
+    # calculate mean and standard deviation
+    trend_dict = {}
+    for num, (name, grp) in enumerate(result.groupby("cochlea")):
+        if name == "Meyer":
+            continue
+        run_length = list(grp["runlength"])
+        syn_count = list(grp["value"])
+        for r, s in zip(run_length, syn_count):
+            if r in trend_dict:
+                trend_dict[r].append(s)
+            else:
+                trend_dict[r] = [s]
+
+    x_pos = [k for k in list(trend_dict.keys())]
+    center_line = [sum(val) / len(val) for _, val in trend_dict.items()]
+    val_std = [np.std(val) for _, val in trend_dict.items()]
+    lower_std = [mean - std for (mean, std) in zip(center_line, val_std)]
+    upper_std = [mean + std for (mean, std) in zip(center_line, val_std)]
+
+    if errorbar:
+        ax.errorbar(x_pos, center_line, val_std, linestyle='dashed', marker='D', color="#D63637", linewidth=1)
+
+    if trendline:
+        trend_center, = ax.plot(
+            x_pos,
+            center_line,
+            linestyle="dashed",
+            color="gray",
+            alpha=line_alphas["center"],
+            linewidth=3,
+            zorder=2
+        )
+        trend_upper, = ax.plot(
+            x_pos,
+            upper_std,
+            linestyle="solid",
+            color="gray",
+            alpha=line_alphas["upper"],
+            zorder=0
+        )
+        trend_lower, = ax.plot(
+            x_pos,
+            lower_std,
+            linestyle="solid",
+            color="gray",
+            alpha=line_alphas["lower"],
+            zorder=0
+        )
+        plt.fill_between(x_pos, lower_std, upper_std,
+                         color="gray", alpha=line_alphas["fill"], interpolate=True)
+
+    if top_axis:
+        # Create second x-axis
+        ax_top = ax.twiny()
+
+        # Frequencies for ticks (kHz → convert to kHz or Hz depending on preference)
+        freq_ticks = np.array([2, 4, 8, 16, 32, 64])  # kHz
+
+        # Given constants
+        var_A = 1.46
+        var_a = 1.77
+
+        # Inverse mapping length_fraction = log10(f/A) / a
+        length_positions = np.log10(freq_ticks / var_A) / var_a
+
+        # Set ticks on top axis
+        ax_top.set_xticks(length_positions)
+        ax_top.set_xticklabels([f"{f}" for f in freq_ticks], fontsize=tick_size)
+
+        # Label for the new axis
+        ax_top.set_xlabel("Frequency [kHz]", fontsize=main_label_size)
+
+        # Ensure both axes align well
+        ax_top.set_xlim(ax.get_xlim())
 
     ax.tick_params(axis='x', labelsize=tick_size)
     ax.tick_params(axis='y', labelsize=tick_size)
@@ -336,7 +432,7 @@ def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True, plot=Fals
     ax.set_ylabel("Synapse per IHC", fontsize=main_label_size)
     # ax.legend(title="cochlea")
     plt.tight_layout()
-    prism_cleanup_axes(ax)
+    # prism_cleanup_axes(ax)
 
     if ".png" in save_path:
         plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
@@ -428,18 +524,20 @@ def plot_legend_suppfig03(save_path, ncol=None):
     marker = ["o" for _ in color_dict]
     label = list(color_dict.keys())
 
+    # color_dict["mean"] = "#D63637"
+    # marker.append("D")
+    # label.append("Mean")
+
     # add parameters for data from Meyer
-    edgecolors = [None for _ in color_dict]
     color_dict["Meyer"] = MEYER_COLOR
     marker.append(MEYER_MARKER)
     label.append("Meyer et al.")
-    edgecolors.append(MEYER_COLOR)
 
     color = [color_dict[key] for key in color_dict.keys()]
     if ncol is None:
-        ncol = 2
+        ncol = len(label // 2)
 
-    handles = [get_marker_handle(c, m, e) for (c, m, e) in zip(color, marker, edgecolors)]
+    handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=ncol, framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
@@ -679,7 +777,7 @@ def plot_average_tonotopic_mapping(results, save_path, plot=False, combine_IbIc=
     ax.set_xticklabels(bin_labels)
     ax.tick_params(axis='x', labelsize=xtick_size)
     ax.tick_params(axis='y', labelsize=main_tick_size)
-    ax.set_xlabel("Octave band (kHz)", fontsize=main_label_size)
+    ax.set_xlabel("Octave band [kHz]", fontsize=main_label_size)
     ax.set_ylabel("Fraction", fontsize=main_label_size)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
@@ -985,7 +1083,21 @@ def main():
     fig_03c_length_fraction(tonotopic_data=tonotopic_data,
                             save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer.{FILE_EXTENSION}"),
                             plot=args.plot, n_bins=25)
-    plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_legend.{FILE_EXTENSION}"), ncol=1)
+#    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
+#                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_freq.{FILE_EXTENSION}"),
+#                            plot=args.plot, n_bins=25, top_axis=True)
+#    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
+#                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_freq_trend.{FILE_EXTENSION}"),
+#                            plot=args.plot, n_bins=25, top_axis=True, trendline=True, trendline_std=False)
+#    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
+#                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_freq_std.{FILE_EXTENSION}"),
+#                            plot=args.plot, n_bins=25, top_axis=True, trendline=True, trendline_std=True)
+    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
+                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_errorbar.{FILE_EXTENSION}"),
+                            plot=args.plot, n_bins=25, top_axis=True, errorbar=True)
+    # plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_lgnd1.{FILE_EXTENSION}"), ncol=1)
+    # plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_lgnd6.{FILE_EXTENSION}"), ncol=6)
+    plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_lgnd3.{FILE_EXTENSION}"), ncol=3)
 
     # Panel C: Spatial distribution of synapses across the cochlea (running sum per octave band)
     fig_03c_octave(tonotopic_data=tonotopic_data,
@@ -1007,7 +1119,7 @@ def main():
 
     grouping = "Type I;Type II"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_I-II.{FILE_EXTENSION}"),
-                         grouping=grouping, ncol=1)
+                         grouping=grouping)
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"figsupp_03_tonotopic_I-II.{FILE_EXTENSION}"),
                              grouping=grouping)
     fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"fig_03d_fraction_I-II.{FILE_EXTENSION}"),

@@ -381,7 +381,7 @@ def _plot_tonotopic_mapping(freq, classification, name, colors, show_plots):
     main_ticks = range(len(bin_labels))
     ax.set_xticks(main_ticks)
     ax.set_xticklabels(bin_labels)
-    ax.set_xlabel("Octave band (kHz)")
+    ax.set_xlabel("Octave band [kHz]")
     ax.legend()
     ax.set_title(name)
 
@@ -468,7 +468,7 @@ def combined_analysis(results, show_plots):
             ax.set_ylabel("Fraction")
             handles, labels = ax.get_legend_handles_labels()
 
-        ax.set_xlabel("Octave band (kHz)")
+        ax.set_xlabel("Octave band [kHz]")
         fig.legend(handles, labels, loc='center left', bbox_to_anchor=(0.85, 0.5), title='Subtypes')
 
         plt.tight_layout(rect=[0, 0, 0.85, 1])  # make space for legend

@@ -18,9 +18,9 @@ FILE_EXTENSION = "png"
 THRESHOLD_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/Subtype_marker"  # noqa
 
 COLORS_OFFSET = {
-    "M_10L": "#9C5027",
-    "M_10R": "#279C52",
-    "M_11L": "#67279C",
+    "M_10L": "#D63637",
+    "M_10R": "#237556",
+    "M_11L": "#5A36D6",
 }
 
 COLORS_THRESHOLD = {
@@ -422,7 +422,7 @@ def main():
     supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_offset_{plot_type}.{FILE_EXTENSION}"),
                        plot_type=plot_type)
 
-    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_offset.{FILE_EXTENSION}"), ncol=1)
+    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_offset.{FILE_EXTENSION}"))
 
     cochlea = "M_LR_N152_L"
     supp_fig_03_thresholds(args.figure_dir, cochlea, plot=False, sharex=True, title_type="generic", rows=2)
