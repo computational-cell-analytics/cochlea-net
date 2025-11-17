@@ -19,9 +19,9 @@ class TestCLI(unittest.TestCase):
     def tearDown(self):
         rmtree(self.folder)
 
-    def test_convert_flamingo(self):
+    def test_convert_data(self):
         out_path = os.path.join(self.folder, "converted_data.n5")
-        cmd = ["flamingo_tools.convert_flamingo", "-i", self.folder, "-o", out_path, "--metadata_pattern", ""]
+        cmd = ["flamingo_tools.convert_data", "-i", self.folder, "-o", out_path, "--metadata_pattern", ""]
         run(cmd)
 
         self.assertTrue(os.path.exists(out_path))

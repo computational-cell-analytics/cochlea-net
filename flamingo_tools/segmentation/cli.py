@@ -20,7 +20,7 @@ def run_segmentation():
     """
     parser = argparse.ArgumentParser(description="")
     parser.add_argument("-i", "--input_path", required=True, help="The path to the input data.")
-    parser.add_argument("-k", "--input_key", required=True, help="The key to the input data.")
+    parser.add_argument("-k", "--input_key", help="The key to the input data.")
     parser.add_argument("-o", "--output_folder", required=True)
     parser.add_argument("-m", "--model_type", required=True)
     parser.add_argument("-c", "--checkpoint_path")
@@ -43,14 +43,20 @@ def run_detection():
     """private
     """
     parser = argparse.ArgumentParser()
+    parser.add_argument("-i", "--input_path", required=True, help="The path to the input data.")
+    parser.add_argument("-k", "--input_key", help="The key to the input data.")
+    parser.add_argument("-o", "--output_folder", required=True)
     parser.add_argument("-m", "--model_type", default="Synapses")
+    parser.add_argument("--mask_path")
+    parser.add_argument("--mask_key")
+    parser.add_argument("-c", "--checkpoint_path")
     args = parser.parse_args()
     detection_models = ["Synapses"]
     if args.model_type not in detection_models:
         raise ValueError
     model_path = _get_model_path(args.model_type, args.checkpoint_path)
-    # TODO
     marker_detection(
         input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
+        mask_path=args.mask_path, mask_input_key=args.mask_key,
     )

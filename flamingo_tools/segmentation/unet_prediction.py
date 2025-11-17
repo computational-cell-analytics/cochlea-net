@@ -55,6 +55,21 @@ class SelectChannel(SimpleTransformationWrapper):
         return self._volume.ndim - 1
 
 
+def _get_device_and_tiling(block_shape, halo, input_):
+    have_cuda = torch.cuda.is_available()
+    if block_shape is None:
+        block_shape = (128, 128, 128) if have_cuda else getattr(input_, "chunks", (64, 64, 64))
+    if halo is None:
+        halo = (16, 32, 32)
+    if have_cuda:
+        print("Predict with GPU")
+        gpu_ids = [0]
+    else:
+        print("Predict with CPU")
+        gpu_ids = ["cpu"]
+    return gpu_ids, block_shape, halo
+
+
 def prediction_impl(
     input_path,
     input_key,
@@ -109,19 +124,6 @@ def prediction_impl(
         input_ = ResizedVolume(input_, shape=new_shape, order=3)
         image_mask = ResizedVolume(image_mask, new_shape, order=0)
 
-    have_cuda = torch.cuda.is_available()
-
-    if block_shape is None:
-        block_shape = (128, 128, 128) if have_cuda else input_.chunks
-    if halo is None:
-        halo = (16, 32, 32)
-    if have_cuda:
-        print("Predict with GPU")
-        gpu_ids = [0]
-    else:
-        print("Predict with CPU")
-        gpu_ids = ["cpu"]
-
     if mean is None or std is None:
         # Compute the global mean and standard deviation.
         n_threads = min(16, mp.cpu_count())
@@ -156,6 +158,7 @@ def prediction_impl(
 
     shape = input_.shape
     ndim = len(shape)
+    gpu_ids, block_shape, halo = _get_device_and_tiling(block_shape, halo, input_)
 
     blocking = nt.blocking([0] * ndim, shape, block_shape)
     n_blocks = blocking.numberOfBlocks
