@@ -62,7 +62,7 @@ def eval_all_sgn():
     baselines = [
         "spiner2D",
         "cellpose3",
-        "cellpose-sam_2025-10",
+        "cellpose-sam",
         "distance_unet",
         "micro-sam",
         "stardist",
@@ -84,7 +84,7 @@ def eval_all_ihc():
     annotation_dir = os.path.join(cochlea_dir, "AnnotatedImageCrops/F1ValidationIHCs/consensus_annotation")
     baselines = [
         "cellpose3",
-        # "cellpose-sam_2025-11",
+        "cellpose-sam",
         "distance_unet_v4b",
         "micro-sam",
     ]
@@ -94,6 +94,13 @@ def eval_all_ihc():
 
 
 def eval_segmentation(seg_dir, annotation_dir, filter=True):
+    """Evaluate 3D segmentation from baseline methods.
+
+    Args:
+        seg_dir: Directory containing segmentation output of baseline methods.
+        annotation_dir: Directory containing annotations in CSV format.
+        filter: Bool for filtering segmentation based on size. Per default size between 3000 and 50000 pixels.
+    """
     print(f"Evaluating segmentation in directory {seg_dir}")
     segs = [entry.path for entry in os.scandir(seg_dir) if entry.is_file() and ".tif" in entry.path]
 
@@ -141,6 +148,15 @@ def eval_segmentation(seg_dir, annotation_dir, filter=True):
 
 
 def eval_segmentation_spiner(seg_dir, annotation_dir):
+    """Evaluate 2D spiner segmentation: https://github.com/reubenrosenNCSU/cellannotation
+    The segmentation tool, which is used inside a browser, exports bounding boxes in the CSV format.
+    An instance segmentation is created based on the CSV data and used for evaluation.
+    The size filter is left out because the segmentation is only 2D and has limited sizes per default.
+
+    Args:
+        seg_dir: Directory containing segmentation output of baseline methods.
+        annotation_dir: Directory containing annotations in CSV format.
+    """
     print(f"Evaluating segmentation in directory {seg_dir}")
     annots = [entry.path for entry in os.scandir(seg_dir)
               if entry.is_file() and ".csv" in entry.path]
@@ -163,6 +179,7 @@ def eval_segmentation_spiner(seg_dir, annotation_dir):
 
             df_annot = pd.read_csv(annot, sep=",")
             for num, row in df_annot.iterrows():
+                # coordinate switch to account for image orientation in Python
                 x1 = int(row["y1"])
                 x2 = int(row["y2"])
                 y1 = int(row["x1"])
@@ -189,6 +206,10 @@ def eval_segmentation_spiner(seg_dir, annotation_dir):
 
 def print_accuracy(eval_dir):
     """Print 'Precision', 'Recall', and 'F1-score' for dictionaries in a given directory.
+    The directory is scanned for files containing ".dic.json" and evaluates segmentation accuracy and runtime.
+
+    Args:
+        eval_dir: Print average accuracy of dictionary files in evaluation directory.
     """
     eval_dicts = [entry.path for entry in os.scandir(eval_dir) if entry.is_file() and "dic.json" in entry.path]
     precision_list = []
@@ -224,6 +245,7 @@ def print_accuracy(eval_dir):
         recall_list.append(recall)
         f1_score_list.append(f1_score)
         time_list.append(time)
+
     if show_time:
         param_list = [precision_list, recall_list, f1_score_list, time_list]
         names = ["Precision", "Recall", "F1 score", "Time"]
@@ -243,7 +265,7 @@ def print_accuracy_sgn():
     baselines = [
         "spiner2D",
         "cellpose3",
-        "cellpose-sam_2025-10",
+        "cellpose-sam",
         "distance_unet",
         "micro-sam",
         "stardist"]
@@ -260,7 +282,7 @@ def print_accuracy_ihc():
     seg_dir = os.path.join(cochlea_dir, "predictions/val_ihc")
     baselines = [
         "cellpose3",
-        # "cellpose-sam_2025-11",
+        "cellpose-sam",
         "distance_unet_v4b",
         "micro-sam"]
 

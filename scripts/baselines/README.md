@@ -2,7 +2,7 @@
 
 Other networks/methods have been evaluated on SGN and IHC crops to compare the proposed method to the state of the art and justify the development of said method.
 Cellpose 3, Cellpose-SAM, micro-sam, and the distance U-Net were evaluated for both SGNs and IHCs.
-Additionally, Stardist was used for SGN segmentation.
+Additionally, Stardist and Spiner (2D) were used for the SGN segmentation.
 HCAT, a specialized tool for the segmentation of IHCs, was omitted because it is a purely 2D network and, therefore, does not fit the use case.
 
 ## Micro-sam
@@ -19,7 +19,7 @@ python -m pip install cellpose
 python -m pip install cellpose --upgrade
 ```
 
-The script is adaapted from the [example Jupyter notebook online](https://github.com/MouseLand/cellpose/blob/main/notebooks/run_Cellpose-SAM.ipynb).
+The script is adapted from the [example Jupyter notebook online](https://github.com/MouseLand/cellpose/blob/main/notebooks/run_Cellpose-SAM.ipynb).
 
 ## Cellpose 3
 
@@ -31,6 +31,12 @@ python -m pip install cellpose==3.1.1.2
 ```
 
 The script is adapted from the [example Jupyter notebook online](https://github.com/MouseLand/cellpose/blob/main/notebooks/run_cellpose3.ipynb).
+
+## Spiner
+
+The installation follows the instructions in the [Github repository](https://github.com/reubenrosenNCSU/cellannotation).
+It is the 2D implementation of Spiner: **Sp**iral gangl**i**on **n**euron profil**er**
+DOI: 10.1016/j.isci.2025.112929
 
 ## Stardist
 
