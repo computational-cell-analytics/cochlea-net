@@ -21,7 +21,7 @@ class TestCLI(unittest.TestCase):
 
     def test_convert_flamingo(self):
         out_path = os.path.join(self.folder, "converted_data.n5")
-        cmd = ["convert_flamingo", "-i", self.folder, "-o", out_path, "--metadata_pattern", ""]
+        cmd = ["flamingo_tools.convert_flamingo", "-i", self.folder, "-o", out_path, "--metadata_pattern", ""]
         run(cmd)
 
         self.assertTrue(os.path.exists(out_path))
