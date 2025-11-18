@@ -149,16 +149,15 @@ def prediction_impl(
     else:
         postprocess = None if output_channels > 1 else lambda x: x.squeeze()
 
+    gpu_ids, block_shape, halo = _get_device_and_tiling(block_shape, halo, input_)
+    shape = input_.shape
+    ndim = len(shape)
     if output_channels > 1:
         output_shape = (output_channels,) + input_.shape
         output_chunks = (1,) + block_shape
     else:
         output_shape = input_.shape
         output_chunks = block_shape
-
-    shape = input_.shape
-    ndim = len(shape)
-    gpu_ids, block_shape, halo = _get_device_and_tiling(block_shape, halo, input_)
 
     blocking = nt.blocking([0] * ndim, shape, block_shape)
     n_blocks = blocking.numberOfBlocks
