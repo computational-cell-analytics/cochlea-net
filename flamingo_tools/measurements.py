@@ -1,3 +1,6 @@
+"""Functionality for measuring morphology and fluorescence intensities of segmented cells.
+"""
+
 import multiprocessing as mp
 import os
 import warnings

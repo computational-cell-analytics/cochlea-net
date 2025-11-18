@@ -1,3 +1,6 @@
+"""Functionality for validating segmentation or detection results against ground-truth annotations.
+"""
+
 import os
 import re
 from collections import defaultdict

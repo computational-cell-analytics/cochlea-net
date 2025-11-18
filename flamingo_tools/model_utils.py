@@ -1,3 +1,6 @@
+"""Utility functionality for downloading CochleaNet models.
+"""
+
 import os
 from typing import Dict, Optional, Union
 

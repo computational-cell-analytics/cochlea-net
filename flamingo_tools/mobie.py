@@ -1,3 +1,6 @@
+"""Functionality for exporting data to a MoBIE project.
+"""
+
 import os
 import multiprocessing as mp
 import tempfile

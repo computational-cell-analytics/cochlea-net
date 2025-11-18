@@ -1,3 +1,6 @@
+"""Functionality for converting data from flamingo microscopes to other data formats.
+"""
+
 import multiprocessing as mp
 import os
 import re
