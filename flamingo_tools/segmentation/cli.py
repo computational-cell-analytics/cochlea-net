@@ -50,7 +50,7 @@ def _parse_segmentation_kwargs(extra_kwargs, model_type):
     if model_type.startswith("SGN"):
         default_kwargs = {
             "center_distance_threshold": 0.4,
-            "boundary_distance_threshold": None,
+            "boundary_distance_threshold": 0.5,
             "fg_threshold": 0.5,
             "distance_smoothing": 0.0,
             "seg_class": "sgn_low" if model_type == "SGN-lowres" else "sgn",
@@ -58,10 +58,10 @@ def _parse_segmentation_kwargs(extra_kwargs, model_type):
     else:
         assert model_type.startswith("IHC")
         default_kwargs = {
-            "center_distance_threshold": 0.4,
-            "boundary_distance_threshold": None,
+            "center_distance_threshold": 0.5,
+            "boundary_distance_threshold": 0.6,
             "fg_threshold": 0.5,
-            "distance_smoothing": 0.0,
+            "distance_smoothing": 0.6,
             "seg_class": "ihc",
         }
 

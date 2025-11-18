@@ -1,6 +1,6 @@
 # CochleaNet
 
-CochleaNet is a software tool for the analysis of cochleae imaged in light-sheet microscopy.
+CochleaNet is a tool for the analysis of cochleae imaged in light-sheet microscopy.
 Its main components are:
 - A deep neural network for segmenting spiral ganglion neurons (SGNs) from parvalbumin (PV) staining.
 - A deep neural network for segmenting inner hair cells (IHCs) from VGlut3 staining.
@@ -12,11 +12,12 @@ In addition, it contains functionality for data pre-processing and different kin
 - Analyzing SGN subtypes (based on additional fluorescent staining).
 - Visualizing segmentation results and derived analyses in [MoBIE](https://mobie.github.io/).
 
-The networks and analysis methods were primarily developed for high-resolution isotropic data from a [custom light-sheet microscope](https://www.biorxiv.org/content/10.1101/2025.02.21.639411v2.abstract).
-The networks will work best on the respective fluorescent stains they were trained on, but will work on similar stains. For example, we have successfully applied the network for SGN segmentation on a calretinin (CR) stain and the network for IHC segmentation on a myosin7a stain. 
+The networks and analysis methods were primarily developed for high-resolution isotropic data from a [custom light-sheet microscope](https://www.nature.com/articles/s41587-025-02882-8).
+The networks work best for the respective fluorescent stains they were trained on, but will work for similar stains.
+For example, we have successfully applied the network for SGN segmentation on a calretinin (CR) stain and the network for IHC segmentation on a Myosin VII A stain. 
 In addition, CochleaNet provides networks for the segmentation of SGNs and IHCs in anisotropic data from a [commercial light-sheet microscope](https://www.miltenyibiotec.com/DE-en/products/macs-imaging-and-spatial-biology/ultramicroscope-platform.html).
 
-For more information on CochleaNet, check out our [preprint](TODO).
+For more information on CochleaNet, check out our [preprint](https://doi.org/10.1101/2025.11.16.688700).
 
 ## Installation
 
@@ -54,20 +55,20 @@ CochleaNet can be used via:
 - The [command line interface](#command-line-interface): enables data conversion, model prediction, and selected analysis workflows for large image data.
 - The [python library](#python-library): implements CochleaNet's functionality and can be used to implement flexible prediction and data analysis workflows for large image data. 
 
-**Note: the napari plugin was not optimized for processing large data. For processing large image data use the CLI or python library.**
+**Note: the napari plugin was not optimized for processing large data. Please use the CLI or python library for processing large data.**
 
 ### Napari Plugin
 
-The napari plugin for segmentation (SGNs and IHCS) and detection (ribbon synapses) is available under `Plugins->CochleaNet->Segmentation/Detection` in napari:
+The plugins for segmentation (SGNs and IHCS) and detection (ribbon synapses) is available under `Plugins->CochleaNet->Segmentation/Detection` in napari:
 
-The segmentation plugin offers the choice of different models under `Select Model:` (see [Available Models](#available-models) for details). `Image data` enables to choose which image data (layer) the model is applied to. The segmentation is started by clicking the `Run Segmentation` button. After the segmentation has finished, a new segmentation layer with the result (here `IHC`) will be added:
+The segmentation plugin offers the choice of different models under `Select Model:` (see [Available Models](#available-models) for details). `Image data` enables the choice which image data (napari layer) the model is applied to.
+The segmentation is started by clicking the `Run Segmentation` button. After the segmentation has finished, a new segmentation layer with the result (here `IHC`) will be added:
 
-The detection model works similarly. It currently provides the model for synapse detection. The predictions are added as point layer (``):
+The detection model works similarly. It currently provides the model for synapse detection. The predictions are added as a point layer (``):
 
-TODO Video.
-For more information on how to use napari, check out the tutorials at [www.napari.org](TODO).
+For more information on how to use napari, check out the tutorials at [www.napari.org](https://napari.org/stable/).
 
-**To use the napari plugin you have to install `napari` and `pyqt` in your environment.** See [installation](#installation) for details.
+**To use the napari plugin you have to install `napari` and `pyqt` in your environment. See [installation](#installation) for details.**
 
 ### Command Line Interface
 

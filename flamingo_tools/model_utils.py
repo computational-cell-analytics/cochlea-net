@@ -59,14 +59,14 @@ def get_model_registry() -> None:
     """
     registry = {
         "SGN": "3058690b49015d6210a8e8414eb341c34189fee660b8fac438f1fdc41bdfff98",
-        "IHC": "89afbcca08ed302aa6dfbaba5bf2530fc13339c05a604b6f2551d97cf5f12774",
+        "IHC": "752dab7995b076ec4b8526b0539d1b33ade5de9251aaf6863d9bd8cc9cd036b6",
         "Synapses": "2a42712b056f082b4794f15cf41b15678aab0bec1acc922ff9f0dc76abe6747e",
         "SGN-lowres": "6accba4b4c65158fccf25623dcd0fb3b14203305d033a0d443a307114ec5dd8c",
         "IHC-lowres": "537f1d4afc5a582771b87adeccadfa5635e1defd13636702363992188ef5bdbd",
     }
     urls = {
         "SGN": "https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download",
-        "IHC": "https://owncloud.gwdg.de/index.php/s/GBBJkPQFraz1ZzU/download",
+        "IHC": "https://owncloud.gwdg.de/index.php/s/wB7d2MjV5LRTP06/download",
         "Synapses": "https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download",
         "SGN-lowres": "https://owncloud.gwdg.de/index.php/s/8hwZjBVzkuYhHLm/download",
         "IHC-lowres": "https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download",
@@ -148,12 +148,10 @@ def get_default_tiling() -> Dict[str, Dict[str, int]]:
         tiling = {"tile": tile, "halo": halo}
         print(f"Determined tile size for MPS: {tiling}")
 
-    # I am not sure what is reasonable on a cpu. For now choosing very small tiling.
-    # (This will not work well on a CPU in any case.)
     else:
         tiling = {
-            "tile": {"x": 96, "y": 96, "z": 16},
-            "halo": {"x": 16, "y": 16, "z": 8},
+            "tile": {"x": 64, "y": 64, "z": 64},
+            "halo": {"x": 32, "y": 32, "z": 16},
         }
         print(f"Determining default tiling for CPU: {tiling}")
 
