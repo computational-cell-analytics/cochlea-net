@@ -119,10 +119,10 @@ def run_prediction(
 def marker_detection(
     input_path: str,
     input_key: str,
-    mask_path: str,
+    mask_path: Optional[str],
     output_folder: str,
     model_path: str,
-    mask_input_key: str = "s4",
+    mask_input_key: Optional[str] = "s4",
     max_distance: float = 20,
     resolution: float = 0.38,
 ):
@@ -143,13 +143,12 @@ def marker_detection(
     # Best approach: load IHC segmentation at a low scale level, binarize it,
     # dilate it and use this as mask. It can be mapped back to the full resolution
     # with `elf.wrapper.ResizedVolume`.
-
     skip_masking = False
 
     mask_preprocess_key = "mask"
     output_file = os.path.join(output_folder, "mask.zarr")
 
-    if os.path.exists(output_file) and mask_preprocess_key in zarr.open(output_file, "r"):
+    if mask_path is None or (os.path.exists(output_file) and mask_preprocess_key in zarr.open(output_file, "r")):
         skip_masking = True
 
     if not skip_masking:
@@ -162,11 +161,6 @@ def marker_detection(
             f_out.create_dataset(mask_preprocess_key, data=arr_bin, compression="gzip")
 
     # 2.) Run inference and detection of maxima.
-    # This can be taken from 'scripts/synapse_marker_detection/run_prediction.py'
-    # (And the run prediction script should then be refactored).
-
-    block_shape = (64, 256, 256)
-    halo = (16, 64, 64)
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
     skip_prediction = False
@@ -183,11 +177,12 @@ def marker_detection(
     if not skip_prediction:
         prediction_impl(
             input_path, input_key, output_folder, model_path,
-            scale=None, block_shape=block_shape, halo=halo,
-            apply_postprocessing=False, output_channels=1,
+            scale=None, apply_postprocessing=False, output_channels=1,
+            block_shape=None, halo=None,
         )
 
     if not os.path.exists(detection_path):
+        block_shape = (64, 256, 256)
         input_ = zarr.open(output_path, "r")[prediction_key]
         detections = find_local_maxima(
             input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
@@ -200,25 +195,25 @@ def marker_detection(
         detections.to_csv(detection_path, index=False, sep="\t")
 
     else:
-        with open(detection_path, 'r') as f:
+        with open(detection_path, "r") as f:
             detections = pd.read_csv(f, sep="\t")
 
     # 3.) Map the detections to IHC and filter them based on a distance criterion.
     # Use the function 'map_and_filter_detections' from above.
-    input_ = read_image_data(mask_path, input_key)
+    if mask_path is not None:
+        input_ = read_image_data(mask_path, input_key)
+        detections_filtered = map_and_filter_detections(
+            segmentation=input_,
+            detections=detections,
+            max_distance=max_distance,
+            resolution=resolution,
+        )
 
-    detections_filtered = map_and_filter_detections(
-        segmentation=input_,
-        detections=detections,
-        max_distance=max_distance,
-        resolution=resolution,
-    )
-
-    # 4.) Add the filtered detections to MoBIE.
-    # IMPORTANT scale the coordinates with the resolution here.
-    detections_filtered["distance_to_ihc"] *= resolution
-    detections_filtered["x"] *= resolution
-    detections_filtered["y"] *= resolution
-    detections_filtered["z"] *= resolution
-    detection_path = os.path.join(output_folder, "synapse_detection_filtered.tsv")
-    detections_filtered.to_csv(detection_path, index=False, sep="\t")
+        # 4.) Add the filtered detections to MoBIE.
+        # IMPORTANT scale the coordinates with the resolution here.
+        detections_filtered["distance_to_ihc"] *= resolution
+        detections_filtered["x"] *= resolution
+        detections_filtered["y"] *= resolution
+        detections_filtered["z"] *= resolution
+        detection_path = os.path.join(output_folder, "synapse_detection_filtered.tsv")
+        detections_filtered.to_csv(detection_path, index=False, sep="\t")
