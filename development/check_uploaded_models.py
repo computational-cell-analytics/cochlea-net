@@ -8,7 +8,7 @@ import pandas as pd
 import zarr
 from flamingo_tools.test_data import _sample_registry
 
-view = False
+view = True
 data_dict = {
     "SGN": "PV",
     "IHC": "VGlut3",
@@ -18,7 +18,7 @@ data_dict = {
 }
 
 
-def check_segmentation_model(model_name):
+def check_segmentation_model(model_name, checkpoint_path=None):
     output_folder = f"result_{model_name}"
     os.makedirs(output_folder, exist_ok=True)
     input_path = os.path.join(output_folder, f"{model_name}.tif")
@@ -28,9 +28,10 @@ def check_segmentation_model(model_name):
 
     output_path = os.path.join(output_folder, "segmentation.zarr")
     if not os.path.exists(output_path):
-        subprocess.run(
-            ["flamingo_tools.run_segmentation", "-i", input_path, "-o", output_folder, "-m", model_name]
-        )
+        cmd = ["flamingo_tools.run_segmentation", "-i", input_path, "-o", output_folder, "-m", model_name]
+        if checkpoint_path is not None:
+            cmd.extend(["-c", checkpoint_path])
+        subprocess.run(cmd)
 
     if view:
         segmentation = zarr.open(output_path)["segmentation"][:]
@@ -68,24 +69,29 @@ def check_detection_model():
 def main():
     # SGN segmentation:
     # - Prediction works well on the CPU.
-    check_segmentation_model("SGN")
+    # - Prediction works well on the GPU.
+    # check_segmentation_model("SGN")
 
     # IHC segmentation:
-    # - Prediction does not work well on the CPU.
-    check_segmentation_model("IHC")
+    # - Prediction works well on the CPU.
+    # - Prediction works well on the GPU.
+    # check_segmentation_model("IHC")
 
+    # TODO: Update model.
     # SGN segmentation (lowres):
     # - Prediction does not work well on the CPU.
-    check_segmentation_model("SGN-lowres")
+    # - Prediction does not work well on the GPU.
+    check_segmentation_model("SGN-lowres", checkpoint_path="SGN-lowres.pt")
 
     # IHC segmentation (lowres):
-    # - The prediction seems to work (on the CPU), but a lot of merges.
-    # -> Update the segmentation params?
-    check_segmentation_model("IHC-lowres")
+    # - Prediction works well on the CPU.
+    # - Prediction works well on the GPU.
+    # check_segmentation_model("IHC-lowres")
 
     # Synapse detection:
     # - Prediction works well on the CPU.
-    check_detection_model()
+    # - Prediction works well on the GPU.
+    # check_detection_model()
 
 
 if __name__ == "__main__":
