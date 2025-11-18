@@ -74,10 +74,13 @@ def export_legend(legend, filename="legend.png"):
     fig.savefig(filename, bbox_inches=bbox, dpi=png_dpi)
 
 
-def get_marker_handle(color, marker):
+def get_marker_handle(color, marker, edgecolors=None):
     """Get function handle for plotting external legend without plot.
     """
-    return plt.plot([], [], marker=marker, color=color, ls="none")[0]
+    if edgecolors is None:
+        return plt.plot([], [], marker=marker, color=color, ls="none")[0]
+    else:
+        return plt.plot([], [], marker=marker, markerfacecolor='none', markeredgecolor=edgecolors, ls="none")[0]
 
 
 def get_flatline_handle(color):
@@ -209,6 +212,28 @@ def sliding_runlength_sum(run_length, values, width):
     return x, window_sum
 
 
+def average_by_fraction(length_fraction, syn_count, n_bins=10):
+    """Average syn_per_IHC within equally spaced fractional bins."""
+    # Define bins and labels
+    bins = np.linspace(0, 1, n_bins + 1)
+    labels = (bins[:-1] + bins[1:]) / 2  # midpoint of each bin
+
+    # Put data into a DataFrame for convenience
+    df = pd.DataFrame({
+        "fraction": length_fraction,
+        "syn_per_IHC": syn_count
+    })
+
+    # Bin the data
+    df["bin"] = pd.cut(df["fraction"], bins=bins, labels=labels, include_lowest=True)
+
+    # Compute mean per bin
+    avg_per_bin = df.groupby("bin", observed=False)["syn_per_IHC"].mean().reset_index()
+    avg_per_bin.columns = ["fraction_midpoint", "mean_syn_per_IHC"]
+
+    return avg_per_bin
+
+
 # For mouse
 def literature_reference_values(structure):
     if structure == "SGN":
@@ -225,11 +250,11 @@ def literature_reference_values(structure):
 # For gerbil
 def literature_reference_values_gerbil(structure):
     if structure == "SGN":
-        lower_bound, upper_bound = 24700, 28450
+        lower_bound, upper_bound = 22933, 26267
     elif structure == "IHC":
         lower_bound, upper_bound = 1081, 1081
     elif structure == "synapse":
-        lower_bound, upper_bound = 12.5, 25
+        lower_bound, upper_bound = 15.8, 25.6
     else:
         raise ValueError
     return lower_bound, upper_bound

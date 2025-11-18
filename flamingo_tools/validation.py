@@ -217,7 +217,7 @@ def compute_matches_for_annotated_slice(
         A dictionary with keys 'tp_objects', 'tp_annotations' 'fp' and 'fn', mapping to the respective ids.
     """
     assert segmentation.ndim in (2, 3)
-    coordinates = ["axis-0", "axis-1"] if segmentation.ndim == 2 else ["axis-0", "axis-1", "axis-2"]
+    coordinates = ["axis-1", "axis-2"] if segmentation.ndim == 2 else ["axis-0", "axis-1", "axis-2"]
     segmentation_ids = np.unique(segmentation)[1:]
 
     # Crop to the minimal enclosing bounding box of points and segmented objects.
