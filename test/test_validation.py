@@ -30,7 +30,7 @@ class TestValidation(unittest.TestCase):
 
         properties = ("label", "centroid")
         annotations = regionprops_table(segmentation, properties=properties)
-        annotations = pd.DataFrame(annotations).rename(columns={"centroid-0": "axis-0", "centroid-1": "axis-1"})
+        annotations = pd.DataFrame(annotations).rename(columns={"centroid-0": "axis-1", "centroid-1": "axis-2"})
         annotations = annotations.drop(columns="label")
 
         result = compute_scores_for_annotated_slice(segmentation, annotations)
