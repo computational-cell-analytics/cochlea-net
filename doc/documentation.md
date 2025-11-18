@@ -60,7 +60,8 @@ CochleaNet can be used via:
 ### Napari Plugin
 
 The plugins for segmentation (SGNs and IHCS) and detection (ribbon synapses) is available under `Plugins->CochleaNet->Segmentation/Detection` in napari:
-<img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-selection.png" alt="The CochleaNet plugins available in napari." width="256">
+
+<img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-selection.png" alt="The CochleaNet plugins available in napari." width="384">
 
 
 The segmentation plugin offers the choice of different models under `Select Model:` (see [Available Models](#available-models) for details). `Image data` enables the choice which image data (napari layer) the model is applied to.
