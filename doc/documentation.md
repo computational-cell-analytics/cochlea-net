@@ -60,7 +60,7 @@ CochleaNet can be used via:
 ### Napari Plugin
 
 The plugins for segmentation (SGNs and IHCS) and detection (ribbon synapses) is available under `Plugins->CochleaNet->Segmentation/Detection` in napari:
-<img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-selection.png" alt="The CochleaNet plugins available in napari.">
+<img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-selection.png" alt="The CochleaNet plugins available in napari." width="256">
 
 
 The segmentation plugin offers the choice of different models under `Select Model:` (see [Available Models](#available-models) for details). `Image data` enables the choice which image data (napari layer) the model is applied to.
@@ -78,11 +78,13 @@ For more information on how to use napari, check out the tutorials at [www.napar
 
 The command line interface provides the following commands:
 
-`flamingo_tools.convert_data`: Convert data from a flamingo microscope into the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md) (compatible with  [BigStitcher](https://imagej.net/plugins/bigstitcher/)) or into [ome.zarr format](https://ngff.openmicroscopy.org/). You can use this command as follows:
+`flamingo_tools.convert_data`: Convert data from a flamingo microscope. You can use this command as follows:
 ```bash
 flamingo_tools.convert_data -i /path/to/data -o /path/to/output.n5 --file_ext .tif
 ```
-Use `--file_ext .raw` instead if the data is stored in raw files. By default, the data will be exported to the n5 format. It can be opened with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5` or with BigStitcher as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
+Use `--file_ext .raw` if the data is stored in raw files. The the output data format is determined by the extension of the output path you specify (`-o`):
+- If you specify `.n5` the data will be exported to the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md). It can be opened with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5` or with [BigStitcher](https://imagej.net/plugins/bigstitcher/) as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
+- If you specify `.ome.zarr` the data will be exported to the [ome.zarr format](https://ngff.openmicroscopy.org/).
 
 `flamingo_tools.run_segmentation`: To segment cells in volumetric light microscopy data.
 
@@ -93,10 +95,10 @@ For more information on any of the command run `flamingo_tools.<COMMAND> -h` (e.
 ### Python Library
 
 CochleaNet's functionality is implemented in the `flamingo_tools` python library. It implements:
-- `measurements`: functionality to measure morphological attributes and intensity statistics for segmented cells.
-- `mobie`: functionality to export flamingo image data or segmentation results to a MoBIE project.
-- `segmentation`: functionality to apply segmentation and detection models to large volumetric image data.
-- `training`: functionality to train segmentation and detection networks.
+- `flamingo_tools.measurements`: functionality to measure morphological attributes and intensity statistics for segmented cells.
+- `flamingo_tools.mobie`: functionality to export flamingo image data or segmentation results to a MoBIE project.
+- `flamingo_tools.segmentation`: functionality to apply segmentation and detection models to large volumetric image data.
+- `flamingo_tools.training`: functionality to train segmentation and detection networks.
 
 
 ## Available Models
