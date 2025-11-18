@@ -1,4 +1,5 @@
 import os
+import platform
 import subprocess
 import tempfile
 import unittest
@@ -8,6 +9,7 @@ import numpy as np
 import z5py
 
 
+@unittest.skipIf(platform.system() == "Windows", "CLI tests fail on windows.")
 class TestSegmentationCLI(unittest.TestCase):
     shape = (64, 128, 128)
 

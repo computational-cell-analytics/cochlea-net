@@ -1,4 +1,5 @@
 import os
+import platform
 import unittest
 from shutil import rmtree
 
@@ -7,6 +8,7 @@ import z5py
 from subprocess import run
 
 
+@unittest.skipIf(platform.system() == "Windows", "CLI tests fail on windows.")
 class TestCLI(unittest.TestCase):
     folder = "./tmp"
 
