@@ -1,0 +1,70 @@
+[
+	{
+		"cochlea": "M_LR_000143_L",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn",
+		"max_edge_distance": 70
+	},
+	{
+		"cochlea": "M_LR_000144_L",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn",
+		"max_edge_distance": 50
+	},
+	{
+		"cochlea": "M_LR_000145_L",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000153_L",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn",
+		"component_list": [
+			1,
+			2,
+			3
+		]
+	},
+	{
+		"cochlea": "M_LR_000155_L",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000189_L",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000143_R",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn",
+		"max_edge_distance": 50
+	},
+	{
+		"cochlea": "M_LR_000144_R",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000145_R",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000153_R",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000155_R",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	},
+	{
+		"cochlea": "M_LR_000189_R",
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn"
+	}
+]

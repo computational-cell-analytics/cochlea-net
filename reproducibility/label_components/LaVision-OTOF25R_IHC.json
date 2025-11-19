@@ -1,0 +1,77 @@
+[
+	{
+		"cochlea": "LaVision-OTOF25R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"component_list": [
+			1,
+			2
+		],
+		"custom_dic": {
+			"min_size_global": 500,
+			"missing_ids": [
+				4800,
+				4832
+			],
+			"label_dicts": {
+				"1": {
+					"label_params": [
+						{
+							"min_size": 500,
+							"max_edge_distance": 65,
+							"min_component_length": 5
+						},
+						{
+							"min_size": 400,
+							"max_edge_distance": 45,
+							"min_component_length": 5
+						},
+						{
+							"min_size": 400,
+							"max_edge_distance": 40,
+							"min_component_length": 5
+						},
+						{
+							"min_size": 400,
+							"max_edge_distance": 50,
+							"min_component_length": 5
+						}
+					],
+					"components": [
+						[
+							18,
+							22
+						],
+						[
+							1,
+							45,
+							83
+						],
+						[
+							18,
+							39
+						],
+						[
+							77,
+							66
+						]
+					]
+				},
+				"2": {
+					"label_params": [
+						{
+							"min_size": 500,
+							"max_edge_distance": 65,
+							"min_component_length": 5
+						}
+					],
+					"components": [
+						[
+						16
+						]
+					]
+				}
+			}
+		}
+	}
+]

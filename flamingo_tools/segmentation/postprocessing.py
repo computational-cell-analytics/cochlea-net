@@ -524,6 +524,7 @@ def label_components_ihc(
     min_size: int = 1000,
     min_component_length: int = 50,
     max_edge_distance: float = 30,
+    min_nn_100_distance: float = None,
 ) -> List[int]:
     """Label components using graph connected components.
 
@@ -532,6 +533,7 @@ def label_components_ihc(
         min_size: Minimal number of pixels for filtering small instances.
         min_component_length: Minimal length for filtering out connected components.
         max_edge_distance: Maximal distance in micrometer between points to create edges for connected components.
+        min_nn_100_distance: Minimal value for average distance to 100 nearest neighbors.
 
     Returns:
         List of component label for each point in dataframe. 0 - background, then in descending order of size
@@ -540,6 +542,14 @@ def label_components_ihc(
     # First, apply the size filter.
     entries_filtered = table[table.n_pixels < min_size]
     table = table[table.n_pixels >= min_size]
+
+    keyword = "distance_nn100"
+    if min_nn_100_distance is not None:
+        distance_avg = nearest_neighbor_distance(table, n_neighbors=100)
+        table.loc[:, keyword] = list(distance_avg)
+        entries_filtered_01 = table[table[keyword] < min_nn_100_distance]
+        table = table[table[keyword] >= min_nn_100_distance]
+        entries_filtered = pd.concat([entries_filtered, entries_filtered_01], ignore_index=True)
 
     components = components_ihc(table, min_component_length=min_component_length,
                                 max_edge_distance=max_edge_distance)
