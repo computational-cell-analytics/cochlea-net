@@ -21,8 +21,8 @@ def export_synapses():
 
 
 def export_sgn_lowres():
-    path = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/SGN/cochlea_distance_unet_sgn-low-res-v4"  # noqa
-    model = load_model(path, device="cpu")
+    path = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/SGN/cochlea_distance_unet_sgn-low-res-v5"  # noqa
+    model = load_model(path, device="cpu", name="latest")
     torch.save(model, "SGN-lowres.pt")
 
 

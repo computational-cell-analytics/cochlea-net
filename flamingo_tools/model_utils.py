@@ -64,14 +64,14 @@ def get_model_registry() -> None:
         "SGN": "3058690b49015d6210a8e8414eb341c34189fee660b8fac438f1fdc41bdfff98",
         "IHC": "752dab7995b076ec4b8526b0539d1b33ade5de9251aaf6863d9bd8cc9cd036b6",
         "Synapses": "2a42712b056f082b4794f15cf41b15678aab0bec1acc922ff9f0dc76abe6747e",
-        "SGN-lowres": "6accba4b4c65158fccf25623dcd0fb3b14203305d033a0d443a307114ec5dd8c",
+        "SGN-lowres": "2c773792f0ef6022c7d052c452071cf7bf45dfce6b498b408ad6cd1cc3a30d35",
         "IHC-lowres": "537f1d4afc5a582771b87adeccadfa5635e1defd13636702363992188ef5bdbd",
     }
     urls = {
         "SGN": "https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download",
         "IHC": "https://owncloud.gwdg.de/index.php/s/wB7d2MjV5LRTP06/download",
         "Synapses": "https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download",
-        "SGN-lowres": "https://owncloud.gwdg.de/index.php/s/8hwZjBVzkuYhHLm/download",
+        "SGN-lowres": "https://owncloud.gwdg.de/index.php/s/OS7985CKaTTBT5g/download",
         "IHC-lowres": "https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download",
     }
     cache_dir = get_cache_dir()

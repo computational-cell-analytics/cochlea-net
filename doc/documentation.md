@@ -87,11 +87,18 @@ Use `--file_ext .raw` if the data is stored in raw files. The the output data fo
 - If you specify `.n5` the data will be exported to the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md). It can be opened with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5` or with [BigStitcher](https://imagej.net/plugins/bigstitcher/) as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
 - If you specify `.ome.zarr` the data will be exported to the [ome.zarr format](https://ngff.openmicroscopy.org/).
 
-`flamingo_tools.run_segmentation`: To segment cells in volumetric light microscopy data.
+`flamingo_tools.run_segmentation`: To segment cells in volumetric light microscopy data. You can use this command as follows:
+```bash
+flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -m SGN
+```
+Here, `-m` determines which model is used. See also [available models](#available-models).
+To use a custom trained model you can use the argument `--checkpoint_path` (`-c`).
 
-`flamingo_tools.run_detection`: To detect synapses in volumetric light microscopy data.
+`flamingo_tools.run_detection`: To detect synapses in volumetric light microscopy data. The command is used similarly to `flamingo_tools.run_segmentation`.
 
 For more information on any of the command run `flamingo_tools.<COMMAND> -h` (e.g. `flamingo_tools.run_segmentation -h`) in your terminal.
+
+We will add additional command line functionality soon.
 
 ### Python Library
 

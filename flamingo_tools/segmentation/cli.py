@@ -19,6 +19,8 @@ def _parse_kwargs(extra_kwargs, **default_kwargs):
     def _convert_argval(value):
         # The values for the parsed arguments need to be in the expected input structure as provided.
         # i.e. integers and floats should be in their original types.
+        if value is None or value == "None":
+            return None
         try:
             return int(value)
         except ValueError:
@@ -47,13 +49,21 @@ def _parse_kwargs(extra_kwargs, **default_kwargs):
 
 
 def _parse_segmentation_kwargs(extra_kwargs, model_type):
-    if model_type.startswith("SGN"):
+    if model_type == "SGN":
         default_kwargs = {
             "center_distance_threshold": 0.4,
             "boundary_distance_threshold": 0.5,
             "fg_threshold": 0.5,
             "distance_smoothing": 0.0,
-            "seg_class": "sgn_low" if model_type == "SGN-lowres" else "sgn",
+            "seg_class": "sgn",
+        }
+    elif model_type == "SGN-lowres":
+        default_kwargs = {
+            "center_distance_threshold": None,
+            "boundary_distance_threshold": 0.5,
+            "fg_threshold": 0.5,
+            "distance_smoothing": 0.0,
+            "seg_class": "sgn_low",
         }
     else:
         assert model_type.startswith("IHC")
