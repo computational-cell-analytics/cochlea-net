@@ -18,17 +18,23 @@ data_dict = {
 }
 
 
-def check_segmentation_model(model_name, checkpoint_path=None):
+def check_segmentation_model(model_name, checkpoint_path=None, input_path=None, check_prediction=False, **kwargs):
     output_folder = f"result_{model_name}"
     os.makedirs(output_folder, exist_ok=True)
-    input_path = os.path.join(output_folder, f"{model_name}.tif")
-    if not os.path.exists(input_path):
-        data_path = _sample_registry().fetch(data_dict[model_name])
-        copyfile(data_path, input_path)
+    if input_path is None:
+        input_path = os.path.join(output_folder, f"{model_name}.tif")
+        if not os.path.exists(input_path):
+            data_path = _sample_registry().fetch(data_dict[model_name])
+            copyfile(data_path, input_path)
 
     output_path = os.path.join(output_folder, "segmentation.zarr")
     if not os.path.exists(output_path):
-        cmd = ["flamingo_tools.run_segmentation", "-i", input_path, "-o", output_folder, "-m", model_name]
+        cmd = [
+            "flamingo_tools.run_segmentation", "-i", input_path, "-o", output_folder, "-m", model_name,
+            "--disable_masking", "--min_size", "5",
+        ]
+        for name, val in kwargs.items():
+            cmd.extend([f"--{name}", str(val)])
         if checkpoint_path is not None:
             cmd.extend(["-c", checkpoint_path])
         subprocess.run(cmd)
@@ -38,6 +44,9 @@ def check_segmentation_model(model_name, checkpoint_path=None):
         image = imageio.imread(input_path)
         v = napari.Viewer()
         v.add_image(image)
+        if check_prediction:
+            prediction = zarr.open(os.path.join(output_folder, "predictions.zarr"))["prediction"][:]
+            v.add_image(prediction)
         v.add_labels(segmentation, name=f"{model_name}-segmentation")
         napari.run()
 
@@ -77,11 +86,13 @@ def main():
     # - Prediction works well on the GPU.
     # check_segmentation_model("IHC")
 
-    # TODO: Update model.
     # SGN segmentation (lowres):
-    # - Prediction does not work well on the CPU.
-    # - Prediction does not work well on the GPU.
-    check_segmentation_model("SGN-lowres", checkpoint_path="SGN-lowres.pt")
+    # - Prediction works well on the CPU.
+    # - Prediction works well on the GPU.
+    check_segmentation_model(
+        "SGN-lowres",
+        # boundary_distance_threshold=0.5, center_distance_threshold=None,
+    )
 
     # IHC segmentation (lowres):
     # - Prediction works well on the CPU.
