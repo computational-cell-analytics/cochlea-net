@@ -557,7 +557,7 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
     if otof and animal == "mouse":
         # freq_min = 4.84 kHz
         # freq_max = 78.8 kHz
-        # Mueller, Hearing Research 202 (2005) 63–73, https://doi.org/10.1016/j.heares.2004.08.011
+        # Mueller, Hearing Research 202 (2005) 63-73, https://doi.org/10.1016/j.heares.2004.08.011
         # function has format f(x) = 10 ** (a * (k - (1-x)))
         var_a = 100 / 82.5
         var_k = 1.565

@@ -32,7 +32,10 @@ def _load_ribbon_synapse_counts():
     return syn_counts
 
 
-def fig_05c(save_path, plot=False):
+def fig_05c(
+    save_path: str,
+    plot: bool = False,
+):
     """Box plot showing the counts for SGN and IHC per gerbil cochlea in comparison to literature values.
     """
     main_tick_size = 20
@@ -131,7 +134,10 @@ def fig_05c(save_path, plot=False):
         plt.close()
 
 
-def fig_05d(save_path, plot=False):
+def fig_05d(
+    save_path: str,
+    plot: bool = False,
+):
     """Box plot showing the SGN counts of ChReef treated cochleae compared to healthy ones.
     """
     prism_style()

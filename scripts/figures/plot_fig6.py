@@ -3,6 +3,7 @@ import json
 import numpy as np
 import os
 import pickle
+from typing import Optional
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -74,7 +75,11 @@ def get_otof_data():
         return pickle.load(f)
 
 
-def plot_legend_fig06e(save_path):
+def plot_legend_fig06e(
+    save_path: str,
+):
+    """Legend for OTOF cochleae.
+    """
     color_dict = {}
     for key in COCHLEAE_DICT.keys():
         color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
@@ -135,7 +140,24 @@ def _get_trendline_params(trend_dict):
     return x_values, y_values_center, y_values_upper, y_values_lower
 
 
-def fig_06e_octave(otof_data, save_path, plot=False, use_alias=True, trendline_mode=None, mapping="default"):
+def fig_06e_octave(
+    otof_data: dict,
+    save_path: str,
+    plot: bool = False,
+    use_alias: bool = True,
+    trendline_mode: Optional[str] = None,
+    mapping: str = "mueller",
+):
+    """Expression efficiency for OTOF cochleae per octave band.
+
+    Args:
+        otof_data: Dictionary containing data of OTOF cochleae.
+        save_path: Output path for figure.
+        plot:
+        use_alias: Use alias for animal name.
+        trendline_mode: Mode for trendline- either "filled", "mean", or None.
+        mapping: Function for tonotopic mapping, either "default" or "mueller".
+    """
     prism_style()
     label_size = 20
     tick_label_size = 14
@@ -158,7 +180,7 @@ def fig_06e_octave(otof_data, save_path, plot=False, use_alias=True, trendline_m
             # We need custom bin edges and bin labels in this case.
             bin_edges = [0, 8, 12, 16, 24, np.inf]
             bin_labels = [
-                "4-8", "8-12", "12–16", "16-24", "24-32"
+                "4-8", "8-12", "12-16", "16-24", "24-32"
             ]
             assert len(bin_edges) == len(bin_labels) + 1
         else:
@@ -294,7 +316,7 @@ def fig_06d(save_path, plot=False):
 
 def main():
     parser = argparse.ArgumentParser(description="Generate plots for Fig 6 of the cochlea paper.")
-    parser.add_argument("-f", "--figure_dir", type=str, help="Output directory for plots.", default="./panels")
+    parser.add_argument("-f", "--figure_dir", type=str, help="Output directory for plots.", default="./panels/fig6")
     args = parser.parse_args()
     plot = False
 

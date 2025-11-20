@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import pickle
+from typing import List, Optional
 
 import imageio.v3 as imageio
 from glob import glob
@@ -11,14 +12,16 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
+import zarr
 from matplotlib import cm, colors
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
-from util import sliding_runlength_sum, frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
+from util import frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
 from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle, get_flatline_handle
 from flamingo_tools.segmentation.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
 INPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/frequency_mapping/M_LR_000227_R/scale3"
+SYNAPSE_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/synapses"
 MEYER_DATA = "/user/schilling40/u15000/flamingo-tools/scripts/figures/Meyer_et_al-selected.tsv"
 MEYER_COLOR = "black"
 MEYER_MARKER = "s"
@@ -33,48 +36,6 @@ TYPE_TO_CHANNEL = {
 FILE_EXTENSION = "png"
 
 png_dpi = 300
-
-
-# Define the animal specific octave bands.
-def _get_mapping(animal):
-    if animal == "mouse":
-        bin_edges = [0, 2, 4, 8, 16, 32, 64, np.inf]
-        bin_labels = [
-            "<2", "2–4", "4–8", "8–16", "16–32", "32–64", ">64"
-        ]
-    elif animal == "gerbil":
-        bin_edges = [0, 0.5, 1, 2, 4, 8, 16, 32, np.inf]
-        bin_labels = [
-            "<0.5", "0.5–1", "1–2", "2–4", "4–8", "8–16", "16–32", ">32"
-        ]
-    else:
-        raise ValueError
-    assert len(bin_edges) == len(bin_labels) + 1
-    return bin_edges, bin_labels
-
-
-def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficiency=False):
-    # Get the mapping of frequencies to octave bands for the given species.
-    bin_edges, bin_labels = _get_mapping(animal)
-
-    # Construct the data frame with octave bands.
-    df = pd.DataFrame({"freq_khz": frequencies, "value": values})
-    df["octave_band"] = pd.cut(
-        df["freq_khz"], bins=bin_edges, labels=bin_labels, right=False
-    )
-
-    if transduction_efficiency:  # We compute the transduction efficiency per band.
-        num_pos = df[df["value"] == 1].groupby("octave_band", observed=False).size()
-        num_tot = df[df["value"].isin([1, 2])].groupby("octave_band", observed=False).size()
-        value_by_band = (num_pos / num_tot).reindex(bin_labels)
-    else:  # Otherwise, aggregate the values over the octave band using the mean.
-        value_by_band = (
-            df.groupby("octave_band", observed=True)["value"]
-              .sum()
-              .reindex(bin_labels)   # keep octave order even if a bin is empty
-        )
-    return value_by_band
-
 
 COLORS = {
     "Type Ia": "#859cc8",
@@ -115,6 +76,50 @@ GROUPINGS = {
 }
 
 
+# Define the animal specific octave bands.
+def _get_mapping(animal):
+    if animal == "mouse":
+        bin_edges = [0, 2, 4, 8, 16, 32, 64, np.inf]
+        bin_labels = [
+            "<2", "2-4", "4-8", "8-16", "16-32", "32-64", ">64"
+        ]
+    elif animal == "gerbil":
+        bin_edges = [0, 0.5, 1, 2, 4, 8, 16, 32, np.inf]
+        bin_labels = [
+            "<0.5", "0.5-1", "1-2", "2-4", "4-8", "8-16", "16-32", ">32"
+        ]
+    else:
+        raise ValueError
+    assert len(bin_edges) == len(bin_labels) + 1
+    return bin_edges, bin_labels
+
+
+def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficiency=False):
+    """Frequency mapping for tonotopic mapping of subtypes.
+    """
+    # TODO: Unify frequency mapping methods
+    # Get the mapping of frequencies to octave bands for the given species.
+    bin_edges, bin_labels = _get_mapping(animal)
+
+    # Construct the data frame with octave bands.
+    df = pd.DataFrame({"freq_khz": frequencies, "value": values})
+    df["octave_band"] = pd.cut(
+        df["freq_khz"], bins=bin_edges, labels=bin_labels, right=False
+    )
+
+    if transduction_efficiency:  # We compute the transduction efficiency per band.
+        num_pos = df[df["value"] == 1].groupby("octave_band", observed=False).size()
+        num_tot = df[df["value"].isin([1, 2])].groupby("octave_band", observed=False).size()
+        value_by_band = (num_pos / num_tot).reindex(bin_labels)
+    else:  # Otherwise, aggregate the values over the octave band using the mean.
+        value_by_band = (
+            df.groupby("octave_band", observed=True)["value"]
+              .sum()
+              .reindex(bin_labels)   # keep octave order even if a bin is empty
+        )
+    return value_by_band
+
+
 def get_tonotopic_data():
     s3 = create_s3_target()
     source_name = "IHC_v4c"
@@ -144,7 +149,7 @@ def get_tonotopic_data():
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         ihc_dir = f"ihc_counts_{ihc_version}"
-        synapse_dir = f"/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/synapses/{ihc_dir}"
+        synapse_dir = f"{SYNAPSE_DIR}/{ihc_dir}"
         tab_path = os.path.join(synapse_dir, f"ihc_count_{cochlea}.tsv")
         syn_tab = pd.read_csv(tab_path, sep="\t")
         syn_ids = syn_tab["label_id"].values
@@ -170,6 +175,8 @@ def get_tonotopic_data():
 
 
 def _plot_colormap(vol, title, plot, save_path, cmap="viridis", dark_mode=False):
+    """Color map for the tonotopic mapping visualized in Figure 3a.
+    """
     # Base style
     matplotlib.rcParams.update({
         "font.size": 24,
@@ -234,7 +241,107 @@ def _plot_colormap(vol, title, plot, save_path, cmap="viridis", dark_mode=False)
     plt.close()
 
 
-def fig_03a(save_path, plot, plot_napari, cmap="viridis", dark_mode=False):
+def fig_01a(
+    cmap_tonotopic: str = "plasma",
+    cmap_syn_per_ihc: str = "cividis",
+    syn_per_IHC_table: Optional[str] = None,
+):
+    """Visualize small representations of tonotopic mapping, SGN and IHC segmentation,
+    and synapses per IHC used for panel `a` in Figure 1.
+
+    Args:
+        cmap_tonotopic: Color map for tonotopic mapping.
+        cmap_syn_per_ihc: Color map for visualizing synapses per IHC.
+        syn_per_IHC_table: File path to segmentation table with "syn_per_IHC" column
+    """
+    path_sgn = os.path.join(INPUT_ROOT, "frequencies_SGN_v2.tif")
+    path_ihc = os.path.join(INPUT_ROOT, "frequencies_IHC_v4c.tif")
+    sgn = imageio.imread(path_sgn)
+    ihc = imageio.imread(path_ihc)
+
+    if syn_per_IHC_table is None:
+        cochlea = "M_LR_000227_R"
+        seg_name = "IHC_v4c"
+        s3_path = f"{cochlea}/tables/{seg_name}/default.tsv"
+        table_path, fs = get_s3_path(s3_path)
+        with fs.open(table_path, 'r') as f:
+            syn_per_IHC_table = pd.read_csv(f, sep="\t")
+
+    # Show the image in napari for rendering.
+    import napari
+    from napari.utils import Colormap
+
+    # ---Tonotopic mapping---
+    mpl_cmap = plt.get_cmap(cmap_tonotopic)
+    # Sample it into an array of RGBA values
+    colors = mpl_cmap(np.linspace(0, 1, 256))
+    # Wrap into napari Colormap
+    napari_cmap = Colormap(colors, name=f"{cmap_tonotopic}_custom")
+
+    # ---SGN segmentation
+    sgn_mono = sgn.copy()
+    sgn_mono[sgn_mono > 0] = 2
+    sgn_mono = sgn_mono.astype(np.uint32)
+
+    # ---IHC segmentation---
+    ihc_mono = ihc.copy()
+    ihc_mono[ihc_mono > 0] = 3
+    ihc_mono = ihc_mono.astype(np.uint32)
+
+    # ---Synapses per IHC---
+    # new color map
+    mpl_cmap = plt.get_cmap(cmap_syn_per_ihc)
+    colors = mpl_cmap(np.linspace(0, 1, 256))
+    syn_cmap = Colormap(colors, name=f"{cmap_syn_per_ihc}_custom")
+
+    # Create a lookup dictionary: {label_id: syn_per_IHC_value}
+    column = "syn_per_IHC"
+    subset = syn_per_IHC_table[syn_per_IHC_table["component_labels"] == 1][["label_id", column]].dropna()
+    lookup = dict(zip(subset["label_id"].astype(int), subset[column].astype(float)))
+
+    # load IHC segmentation
+    internal_path = os.path.join(cochlea, "images",  "ome-zarr", f"{seg_name}.ome.zarr")
+    input_key = "s3"
+    s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME)
+    with zarr.open(s3_store, mode="r") as f:
+        ihc_syn = f[input_key][:].astype("uint16")
+
+    # Copy the array and replace "label id" with "syn_per_IHC"
+    syn_arr = ihc_syn.copy().astype(np.uint32)
+    max_label = int(ihc_syn.max())
+    lut = np.zeros(max_label + 1, dtype=np.uint32)
+    for k, v in lookup.items():
+        if k <= max_label:
+            lut[k] = v
+    syn_arr = lut[syn_arr]
+    syn_arr = syn_arr.astype(np.uint32)
+
+    v = napari.Viewer()
+    v.add_image(ihc, colormap=napari_cmap)
+    v.add_image(sgn, colormap=napari_cmap)
+    v.add_image(syn_arr, colormap=syn_cmap, name="syn_per_IHC")
+    v.add_labels(sgn_mono, name="SGN")
+    v.add_labels(ihc_mono, name="IHC")
+    napari.run()
+
+
+def fig_03a(
+    save_path: str,
+    plot: bool = False,
+    plot_napari: bool = False,
+    cmap: str = "viridis",
+    dark_mode: bool = True,
+):
+    """Plot color map for Figure 3a.
+    Visualize tonotopic mapping in napari to create screenshot used for Figure 3a.
+
+    Args:
+        save_path: Save path for color map.
+        plot: Plot figures.
+        plot_napari: Visualization in napari.
+        cmap: Color map.
+        dark_mode: Toggle black background for color map.
+    """
     path_ihc = os.path.join(INPUT_ROOT, "frequencies_IHC_v4c.tif")
     path_sgn = os.path.join(INPUT_ROOT, "frequencies_SGN_v2.tif")
     sgn = imageio.imread(path_sgn)
@@ -260,9 +367,30 @@ def fig_03a(save_path, plot, plot_napari, cmap="viridis", dark_mode=False):
         napari.run()
 
 
-def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True,
-                            plot=False, n_bins=10, top_axis=False, trendline=False, trendline_std=False,
-                            errorbar=True):
+def supp_fig_03a_meyer(
+    tonotopic_data: dict,
+    save_path: str,
+    use_alias: bool = True,
+    plot: bool = False,
+    n_bins: int = 10,
+    top_axis: bool = False,
+    trendline: bool = False,
+    trendline_std: bool = False,
+    errorbar: bool = False,
+):
+    """Plot Supplementary Figure 3a.
+
+    Args:
+        tonotopic_data: Dictionary of tonotopic data.
+        save_path: Save path for figure.
+        use_alias: Use cochleae aliases.
+        plot: Plot figure.
+        n_bins: Number of bins to divide the run length into.
+        top_axis: Plot top x-axis as frequency range.
+        trendline: Visualize trendline as average of each bin.
+        trendline_std_ Visualize standard deviation of trendline.
+        errorbar: Use errorbar for visualizing mean and stdev.
+    """
     ihc_version = "ihc_counts_v4c"
     if trendline_std:
         line_alphas = {
@@ -445,58 +573,16 @@ def fig_03c_length_fraction(tonotopic_data, save_path, use_alias=True,
         plt.close()
 
 
-def fig_03c_rl(tonotopic_data, save_path, use_alias=True, plot=False):
-    ihc_version = "ihc_counts_v4c"
-    width = 200
-    prism_style()
-    tables = glob(os.path.join(SYNAPSE_DIR_ROOT, ihc_version, "ihc_count_M_LR*.tsv"))
-    assert len(tables) == 4, len(tables)
+def plot_legend_fig03c(
+    save_path: str,
+    ncol: Optional[int] = None,
+):
+    """Plot the legend of Figure 3c showing synapses per IHC over the octave band.
 
-    result = {"cochlea": [], "runlength": [], "value": []}
-    color_dict = {}
-    for name, values in tonotopic_data.items():
-        if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
-        color_dict[alias] = COCHLEAE_DICT[name]["color"]
-        syn_count = values["syn_per_IHC"].values
-        run_length = values["length[µm]"].values
-
-        run_length, syn_count_running = sliding_runlength_sum(run_length, syn_count, width=width)
-
-        result["cochlea"].extend([alias] * len(run_length))
-        result["runlength"].extend(list(run_length))
-        result["value"].extend(list(syn_count_running))
-
-    result = pd.DataFrame(result)
-    fig, ax = plt.subplots(figsize=(8, 4))
-
-    for num, (name, grp) in enumerate(result.groupby("cochlea")):
-        run_length = grp["runlength"]
-        syn_count_running = grp["value"]
-        ax.plot(run_length, syn_count_running, label=name, color=color_dict[name])
-
-    ax.set_xlabel("Length [µm]")
-    ax.set_ylabel("Synapse Count")
-    ax.set_title(f"Ribbon Syn. per IHC: Runnig sum @ {width} µm")
-    ax.legend(title="cochlea")
-    plt.tight_layout()
-    prism_cleanup_axes(ax)
-
-    if ".png" in save_path:
-        plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
-    else:
-        plt.savefig(save_path, bbox_inches='tight', pad_inches=0)
-
-    if plot:
-        plt.show()
-    else:
-        plt.close()
-
-
-def plot_legend_fig03c(save_path, ncol=None):
+    Args:
+        save_path: File path for figure.
+        ncol: Number of columns for legend.
+    """
     color_dict = {}
     for key in COCHLEAE_DICT.keys():
         color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
@@ -514,8 +600,15 @@ def plot_legend_fig03c(save_path, ncol=None):
     plt.close()
 
 
-def plot_legend_suppfig03(save_path, ncol=None):
-    """Legend for supplementary Figure showing synapses per IHC compared to values from Meyer
+def plot_legend_supp_fig03a(
+    save_path: str,
+    ncol: Optional[int] = None,
+):
+    """Legend for supplementary Figure showing synapses per IHC compared to values from Meyer.
+
+    Args:
+        save_path: File path for figure.
+        ncol: Number of columns for legend.
     """
     color_dict = {}
     for key in COCHLEAE_DICT.keys():
@@ -589,7 +682,22 @@ def _get_trendline_params(trend_dict):
     return x_values, y_values_center, y_values_upper, y_values_lower
 
 
-def fig_03c_octave(tonotopic_data, save_path, plot=False, use_alias=True, trendline=False):
+def fig_03c_octave(
+    tonotopic_data: dict,
+    save_path: str,
+    plot: bool = False,
+    use_alias: bool = True,
+    trendline: bool = False,
+):
+    """Figure showing synapses per IHC over the octave band.
+
+    Args:
+        tonotopic_data: Dictionary of tonotopic data.
+        save_path: Save path for figure.
+        use_alias: Use cochleae aliases.
+        plot: Plot figure.
+        trendline: Visualize trendline of averages.
+    """
     ihc_version = "ihc_counts_v4c"
     prism_style()
     tables = glob(os.path.join(SYNAPSE_DIR_ROOT, ihc_version, "ihc_count_M_LR*.tsv"))
@@ -692,11 +800,21 @@ def fig_03c_octave(tonotopic_data, save_path, plot=False, use_alias=True, trendl
         plt.close()
 
 
-def plot_average_tonotopic_mapping(results, save_path, plot=False, combine_IbIc=False):
+def plot_average_tonotopic_mapping(
+    results: dict,
+    save_path: str,
+    plot: bool = False,
+    combine_IbIc: bool = False,
+):
+    """Create the average tonotopic mapping for multiple cochleae.
+
+    Args:
+        results: Dictionary containing classification and frequencies for cochleae.
+        save_path:
+        plot: Plot figure.
+        combine_IbIc: Combine subtypes Ib and Ic for the analysis.
+    """
     prism_style()
-    #
-    # Create the average tonotopic mapping for multiple cochleae.
-    #
     main_label_size = 28
     main_tick_size = 20
     xtick_size = 16
@@ -798,10 +916,18 @@ def plot_average_tonotopic_mapping(results, save_path, plot=False, combine_IbIc=
         plt.close()
 
 
-def plot_subtype_fraction(results, save_path, plot=False):
-    #
-    # Create the average tonotopic mapping for multiple cochleae.
-    #
+def plot_subtype_fraction(
+    results: dict,
+    save_path: str,
+    plot: bool = False,
+):
+    """Create bar plots for multiple cochleae visualizing the fraction of subtypes.
+
+    Args:
+        results: Dictionary containing classification and frequencies for cochleae.
+        save_path:
+        plot: Plot figure.
+    """
     prism_style()
     main_label_size = 28
     main_tick_size = 20
@@ -889,8 +1015,6 @@ def plot_subtype_fraction(results, save_path, plot=False):
     # ax.legend(handles[::-1], labels[::-1], title="Subtype", loc="lower right")
 
     ax.set_ylabel("Fraction", fontsize=main_label_size)
-    # ax.set_xlabel("Cochlea", fontsize=main_label_size)
-    # ax.set_title("Subtype Fractions per Cochlea", fontsize=main_label_size)
 
     plt.yticks(fontsize=main_tick_size)
     plt.xticks(rotation=0, fontsize=main_tick_size)
@@ -904,12 +1028,18 @@ def plot_subtype_fraction(results, save_path, plot=False):
         plt.close()
 
 
-def fig_03_subtype_fraction(save_path, grouping="Type Ia;Type Ib;Type Ic;Type II", cochleae=None):
-    if cochleae is None:
-        cochleae = GROUPINGS[grouping]
+def get_subtype_data(
+    cochleae: List[str],
+):
+    """Create dictionary containing subtype classifications and frequencies for multiple cochleae.
 
+    Args:
+        cochleae: List of cochleae.
+
+    Returns:
+        Dictionary containing classification and frequencies for each cochlea.
+    """
     results = {}
-
     for cochlea in cochleae:
         if "output_seg" in list(COCHLEAE[cochlea].keys()):
             seg_name = COCHLEAE[cochlea]["output_seg"]
@@ -967,14 +1097,64 @@ def fig_03_subtype_fraction(save_path, grouping="Type Ia;Type Ib;Type Ic;Type II
         assert len(freq) == len(classification)
 
         results[cochlea] = {"classification": classification, "frequencies": freq}
+    return results
+
+
+def fig_03_subtype_fraction(
+    save_path: str,
+    grouping: str = "Type Ia;Type Ib;Type Ic;Type II",
+    cochleae: Optional[List[str]] = None,
+):
+    """Create bar plots for multiple cochleae visualizing the fraction of subtypes.
+
+    Args:
+        results: Dictionary containing classification and frequencies for cochleae.
+        save_path:
+        plot: Plot figure.
+        grouping: String identifier for pre-set groups of cochleae with common staining.
+        cochleae: List of cochleae for analysis.
+    """
+    if cochleae is None:
+        cochleae = GROUPINGS[grouping]
+
+    results = get_subtype_data(cochleae)
     plot_subtype_fraction(results, save_path)
 
 
-def plot_legend_subtypes(save_path, grouping, ncol=None):
-    """Plot common legend for subtype panels in Figure 3.
+def fig_03_subtype_tonotopic(
+    save_path: str,
+    grouping: str = "Type Ia;Type Ib;Type Ic;Type II",
+    cochleae: Optional[List[str]] = None,
+    combine_IbIc: bool = False,
+):
+    """Create the average tonotopic mapping for multiple cochleae.
 
     Args:
-        save_path: save path to save legend.
+        results: Dictionary containing classification and frequencies for cochleae.
+        save_path:
+        plot: Plot figure.
+        grouping: String identifier for pre-set groups of cochleae with common staining.
+        cochleae: List of cochleae for analysis.
+        combine_IbIc: Combine subtypes Ib and Ic for the analysis.
+    """
+    if cochleae is None:
+        cochleae = GROUPINGS[grouping]
+
+    results = get_subtype_data(cochleae)
+    plot_average_tonotopic_mapping(results, save_path, combine_IbIc=combine_IbIc)
+
+
+def plot_legend_subtypes(
+    save_path: str,
+    grouping: str,
+    ncol: Optional[int] = None,
+):
+    """Plot common legend for subtype panels in Figure 3 and Supplementary Figure 3.
+
+    Args:
+        save_path: File path to output.
+        grouping: String for identification of subtypes. Subtypes are separated by ";"
+        ncol: Number of columns for legend.
     """
     subtypes = grouping.split(";")
     labels = [LEGEND_LABEL.get(label, label) for label in subtypes]
@@ -990,78 +1170,6 @@ def plot_legend_subtypes(save_path, grouping, ncol=None):
     plt.close()
 
 
-def fig_03_subtype_tonotopic(save_path, grouping="Type Ia;Type Ib;Type Ic;Type II", cochleae=None,
-                             combine_IbIc=False):
-    if cochleae is None:
-        cochleae = GROUPINGS[grouping]
-
-    results = {}
-
-    for cochlea in cochleae:
-        if "output_seg" in list(COCHLEAE[cochlea].keys()):
-            seg_name = COCHLEAE[cochlea]["output_seg"]
-        else:
-            seg_name = COCHLEAE[cochlea]["seg_data"]
-
-        if "component_list" in list(COCHLEAE[cochlea].keys()):
-            component_list = COCHLEAE[cochlea]["component_list"]
-        else:
-            component_list = [1]
-
-        if "label_stains" in list(COCHLEAE[cochlea].keys()):
-            stain_channels = COCHLEAE[cochlea]["label_stains"]["subtype_label"]
-        else:
-            stain_channels = COCHLEAE[cochlea]["subtype_stains"]
-
-        s3_path = f"{cochlea}/tables/{seg_name}/default.tsv"
-        table_path, fs = get_s3_path(s3_path)
-        with fs.open(table_path, 'r') as f:
-            table = pd.read_csv(f, sep="\t")
-        table = table[table["component_labels"].isin(component_list)]
-
-        # filter subtype table
-        for chan in stain_channels:
-            column = f"marker_{chan}"
-            table = table.loc[table[column].isin([1, 2])]
-
-        classification = []
-        for chan in stain_channels:
-            column = f"marker_{chan}"
-            subset = table.loc[table[column].isin([1, 2])]
-            marker = list(subset[column])
-            chan_classification = []
-            for m in marker:
-                if m == 1:
-                    chan_classification.append(f"{chan}+")
-                elif m == 2:
-                    chan_classification.append(f"{chan}-")
-            classification.append(chan_classification)
-
-        # Unify the classification and assign colors
-        assert len(classification) in (1, 2)
-        if len(classification) == 2:
-            cls1, cls2 = classification[0], classification[1]
-            assert len(cls1) == len(cls2)
-            classification = [f"{c1} / {c2}" for c1, c2 in zip(cls1, cls2)]
-        else:
-            classification = classification[0]
-
-        classification = [stain_to_type(cls) for cls in classification]
-        classification = [f"{stype} ({stain})" for stype, stain in classification]
-
-        # 3.) Plot tonotopic mapping.
-        freq = table["frequency[kHz]"].values
-        assert len(freq) == len(classification)
-
-        results[cochlea] = {"classification": classification, "frequencies": freq}
-    plot_average_tonotopic_mapping(results, save_path, combine_IbIc=combine_IbIc)
-
-
-# TODO
-def fig_03d_octave(save_path, plot):
-    pass
-
-
 def main():
     parser = argparse.ArgumentParser(description="Generate plots for Fig 3 of the cochlea paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.", default="./panels/fig3")
@@ -1074,30 +1182,17 @@ def main():
 
     # Panel A: Tonotopic mapping of SGNs and IHCs (rendering in napari + heatmap)
     cmap = "plasma"
+    if args.napari:
+        fig_01a()
+
     fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
             plot=args.plot, plot_napari=args.napari, cmap=cmap, dark_mode=True)
 
-    fig_03c_rl(tonotopic_data=tonotopic_data,
-               save_path=os.path.join(args.figure_dir, f"fig_03c_rl.{FILE_EXTENSION}"), plot=args.plot)
-
-    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
-                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer.{FILE_EXTENSION}"),
-                            plot=args.plot, n_bins=25)
-#    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
-#                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_freq.{FILE_EXTENSION}"),
-#                            plot=args.plot, n_bins=25, top_axis=True)
-#    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
-#                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_freq_trend.{FILE_EXTENSION}"),
-#                            plot=args.plot, n_bins=25, top_axis=True, trendline=True, trendline_std=False)
-#    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
-#                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_freq_std.{FILE_EXTENSION}"),
-#                            plot=args.plot, n_bins=25, top_axis=True, trendline=True, trendline_std=True)
-    fig_03c_length_fraction(tonotopic_data=tonotopic_data,
-                            save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_errorbar.{FILE_EXTENSION}"),
-                            plot=args.plot, n_bins=25, top_axis=True, errorbar=True)
-    # plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_lgnd1.{FILE_EXTENSION}"), ncol=1)
-    # plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_lgnd6.{FILE_EXTENSION}"), ncol=6)
-    plot_legend_suppfig03(save_path=os.path.join(args.figure_dir, f"figsupp_03_meyer_lgnd3.{FILE_EXTENSION}"), ncol=3)
+    supp_fig_03a_meyer(tonotopic_data=tonotopic_data,
+                       save_path=os.path.join(args.figure_dir, f"supp_fig_03a_meyer_trend.{FILE_EXTENSION}"),
+                       plot=args.plot, n_bins=25, top_axis=True, trendline=True)
+    plot_legend_supp_fig03a(save_path=os.path.join(args.figure_dir, f"supp_fig_03a_meyer_lgnd3.{FILE_EXTENSION}"),
+                            ncol=3)
 
     # Panel C: Spatial distribution of synapses across the cochlea (running sum per octave band)
     fig_03c_octave(tonotopic_data=tonotopic_data,
@@ -1105,39 +1200,40 @@ def main():
                    plot=args.plot, trendline=True)
     plot_legend_fig03c(save_path=os.path.join(args.figure_dir, f"fig_03c_legend.{FILE_EXTENSION}"), ncol=1)
 
-    grouping = "Type Ia;Type Ib/Ic;Type II"
-    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_Ia-IbIc-II.{FILE_EXTENSION}"),
-                         grouping=grouping)
-
     grouping = "Type Ia;Type Ib;Type Ic;Type II"
-    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03e_legend_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
                          grouping=grouping, ncol=1)
-    fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),
-                             grouping=grouping, combine_IbIc=True)
-    fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"fig_03_fraction_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
+    fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
                             grouping=grouping)
+    fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),
+                             grouping=grouping, combine_IbIc=True)
+
+    grouping = "Type Ia;Type Ib/Ic;Type II"
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03f_legend_Ia-IbIc-II.{FILE_EXTENSION}"),
+                         grouping=grouping)
 
     grouping = "Type I;Type II"
-    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_I-II.{FILE_EXTENSION}"),
-                         grouping=grouping)
-    fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"figsupp_03_tonotopic_I-II.{FILE_EXTENSION}"),
-                             grouping=grouping)
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03d_legend_I-II_vertical.{FILE_EXTENSION}"),
+                         grouping=grouping, ncol=1)
     fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"fig_03d_fraction_I-II.{FILE_EXTENSION}"),
                             grouping=grouping)
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"supp_fig_03b_legend_I-II.{FILE_EXTENSION}"),
+                         grouping=grouping)
+    fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"supp_fig_03b_tonotopic_I-II.{FILE_EXTENSION}"),
+                             grouping=grouping)
 
     grouping = "Type Ib/Ic;inconclusive"
-    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_IbIc-inconclusive.{FILE_EXTENSION}"),
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir,
+                                                f"supp_fig_03f_legend_IbIc-inconclusive.{FILE_EXTENSION}"),
                          grouping=grouping, ncol=1)
     grouping = "Type Ib;Type Ic;inconclusive"
-    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03_legend_Ib-Ic-inconclusive.{FILE_EXTENSION}"),
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir,
+                                                f"supp_fig_03g_legend_Ib-Ic-inconclusive.{FILE_EXTENSION}"),
                          grouping=grouping, ncol=1)
-    fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"figsupp_03_tonotopic_IbIc.{FILE_EXTENSION}"),
+    fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"supp_fig_03f_tonotopic_IbIc.{FILE_EXTENSION}"),
                              grouping=grouping, combine_IbIc=True)
-    fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"figsupp_03_fraction_Ib-Ic.{FILE_EXTENSION}"),
+    fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"supp_fig_03g_fraction_Ib-Ic.{FILE_EXTENSION}"),
                             grouping=grouping)
-
-    # Panel D: Spatial distribution of SGN sub-types.
-    fig_03d_octave(save_path=os.path.join(args.figure_dir, f"fig_03d_octave.{FILE_EXTENSION}"), plot=args.plot)
 
 
 if __name__ == "__main__":

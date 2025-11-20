@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from typing import List, Optional
 
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -32,11 +33,17 @@ MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
 
-def plot_legend_threshold(save_path, stain, ncol=1):
-    """Plot common legend for subtype panels in Figure 3.
+def plot_legend_threshold(
+    save_path: str,
+    stain: str,
+    ncol: int = 1,
+):
+    """Plot common legend for stain thresholds in Supplementary Figure 3.
 
     Args:
-        save_path: save path to save legend.
+        save_path: Path to save legend.
+        stain: Stain for thresholding.
+        ncol: Number of columns in legend.
     """
     labels = ["Positive", "Negative"]
     colors = [COLORS_THRESHOLD[stain][label] for label in labels]
@@ -51,22 +58,39 @@ def plot_legend_threshold(save_path, stain, ncol=1):
     plt.close()
 
 
-def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=True, title_type="generic", rows=None):
+def supp_fig_03_thresholds(
+    save_paths: List[str],
+    cochlea: str,
+    plot: bool = False,
+    sharex: bool = True,
+    sharey: bool = True,
+    title_type: str = "generic",
+    rows: Optional[int] = None,
+):
     """Plot histograms for positive and negative populations of subtype markers based on thresholding.
+
+    Args:
+        save_paths: List of save_paths for figures.
+        cochlea:
+        plot:
+        sharex: Shared x-axis for all subplots.
+        sharey: Shared y-axis for all subplots.
+        title_type: Type for showing subplot titles. Either "generic" - Crop x - or "center_str".
+        rows: Number of rows for subplots.
     """
     input_dir = THRESHOLD_DIR
-    os.makedirs(output_dir, exist_ok=True)
 
     om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
     cochlea_str = "-".join(cochlea.split("_"))
     om_paths = [p for p in om_paths if cochlea_str in p]
     stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_om")[0] for p in om_paths]
 
+    assert len(save_paths) == len(stains)
+
     data_name = COCHLEAE[cochlea]["seg_data"]
     stain_str = " and ".join(stains)
     print(f"Evaluating {cochlea} with stains {stain_str}.")
-    for stain, json_file in zip(stains, om_paths):
-        save_path = os.path.join(output_dir, f"{cochlea}_{stain}_thresholds.png")
+    for stain, json_file, save_path in zip(stains, om_paths, save_paths):
 
         try:
             with open(json_file, "r") as myfile:
@@ -159,17 +183,15 @@ def supp_fig_03_thresholds(output_dir, cochlea, plot=False, sharex=True, sharey=
             plt.close()
 
 
-def plot_legend_offset(save_path, ncol=None):
-    """Plot common legend for supplementary figure 3.
+def plot_legend_offset(
+    save_path: str,
+    ncol: Optional[int] = None,
+):
+    """Plot common legend for Supplementary Figure 3c.
 
     Args:
-        chreef_data: Data of ChReef cochleae.
-        save_path: save path to save legend.
-        grouping: Grouping for cochleae.
-            "side_mono" for division in Injected and Non-Injected.
-            "side_multi" for division per cochlea.
-            "animal" for division per animal.
-        use_alias: Use alias.
+        save_path: Path to save legend.
+        ncol: Number of columns for legend.
     """
     cochleae = [c for c in COCHLEAE.keys() if
                 len(COCHLEAE[c]["subtype_stains"]) == 1 and
@@ -187,7 +209,18 @@ def plot_legend_offset(save_path, ncol=None):
     plt.close()
 
 
-def supp_fig_03_cm(save_path, plot=False, include_typeii=False):
+def supp_fig_03_cm(
+    save_path: str,
+    plot: bool = False,
+    include_typeii: bool = False,
+):
+    """Plot confusion matrix for CR+Lypd1 and CR+Ntng1 for assigning subtypes.
+
+    Args:
+        save_path: Path for saving figure.
+        plot:
+        include_typeii: Include boxes for Type Ic and inconclusives.
+    """
     main_label_size = 32
     color_tick_size = 24
 
@@ -274,7 +307,18 @@ def supp_fig_03_cm(save_path, plot=False, include_typeii=False):
         plt.close()
 
 
-def supp_fig_03_offset(save_path, plot=False, plot_type="mean"):
+def supp_fig_03_offset(
+    save_path: str,
+    plot: bool = False,
+    plot_type: str = "mean",
+):
+    """Plot Supplementary Figure 3c for showcasing offset between Type I and Type II subtypes.
+
+    Args:
+        save_path: Path for saving figure.
+        plot:
+        plot_type: Plot mode. Either "mean" for mean offset or "points" for point cloud representation.
+    """
     cochleae = [c for c in COCHLEAE.keys() if
                 len(COCHLEAE[c]["subtype_stains"]) == 1 and
                 "Prph" in COCHLEAE[c]["subtype_stains"]]
@@ -412,25 +456,25 @@ def main():
 
     os.makedirs(args.figure_dir, exist_ok=True)
 
-    supp_fig_03_cm(save_path=os.path.join(args.figure_dir, f"figsupp_03_cm.{FILE_EXTENSION}"))
-    supp_fig_03_cm(save_path=os.path.join(args.figure_dir, f"figsupp_03_cm_with-indet.{FILE_EXTENSION}"),
-                   include_typeii=True)
     plot_type = "mean"
-    supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_offset_{plot_type}.{FILE_EXTENSION}"),
+    supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"supp_fig_03c_offset_{plot_type}.{FILE_EXTENSION}"),
                        plot_type=plot_type)
     plot_type = "points"
-    supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_offset_{plot_type}.{FILE_EXTENSION}"),
+    supp_fig_03_offset(save_path=os.path.join(args.figure_dir, f"supp_fig_03c_offset_{plot_type}.{FILE_EXTENSION}"),
                        plot_type=plot_type)
 
-    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_offset.{FILE_EXTENSION}"))
+    plot_legend_offset(save_path=os.path.join(args.figure_dir, f"supp_fig_03c_legend_offset.{FILE_EXTENSION}"))
 
     cochlea = "M_LR_N152_L"
-    supp_fig_03_thresholds(args.figure_dir, cochlea, plot=False, sharex=True, title_type="generic", rows=2)
+    supp_fig_03_thresholds(save_paths=[os.path.join(args.figure_dir, f"supp_fig_03d_CR.{FILE_EXTENSION}"),
+                                       os.path.join(args.figure_dir, f"supp_fig_03e_Ntng1.{FILE_EXTENSION}")],
+                           cochlea=cochlea, plot=False, sharex=True, title_type="generic", rows=2)
+
     stain = "CR"
-    plot_legend_threshold(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_{stain}.{FILE_EXTENSION}"),
+    plot_legend_threshold(save_path=os.path.join(args.figure_dir, f"supp_fig_03d_legend_{stain}.{FILE_EXTENSION}"),
                           stain=stain, ncol=1)
     stain = "Ntng1"
-    plot_legend_threshold(save_path=os.path.join(args.figure_dir, f"figsupp_03_legend_{stain}.{FILE_EXTENSION}"),
+    plot_legend_threshold(save_path=os.path.join(args.figure_dir, f"supp_fig_03e_legend_{stain}.{FILE_EXTENSION}"),
                           stain=stain, ncol=1)
 
 
