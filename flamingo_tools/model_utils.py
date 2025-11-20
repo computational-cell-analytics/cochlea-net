@@ -117,6 +117,51 @@ def get_model(model_type: str, device: Optional[Union[str, torch.device]] = None
     return model
 
 
+def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, float]]:
+    """Get the default settings for instance segmentation post-processing for a given model.
+
+    Args:
+        model_type: The model. One of 'SGN', 'SGN-lowres', 'IHC', 'IHC-lowres'.
+
+    Returns:
+        Dictionary with the default segmentation settings.
+    """
+    all_default_kwargs = {
+        "SGN": {
+            "center_distance_threshold": 0.4,
+            "boundary_distance_threshold": 0.5,
+            "fg_threshold": 0.5,
+            "distance_smoothing": 0.0,
+            "seg_class": "sgn",
+        },
+        "SGN-lowres": {
+            "center_distance_threshold": None,
+            "boundary_distance_threshold": 0.5,
+            "fg_threshold": 0.5,
+            "distance_smoothing": 0.0,
+            "seg_class": "sgn_low",
+        },
+        "IHC": {
+            "center_distance_threshold": 0.5,
+            "boundary_distance_threshold": 0.6,
+            "fg_threshold": 0.5,
+            "distance_smoothing": 0.6,
+            "seg_class": "ihc",
+        },
+        "IHC-lowres": {
+            "center_distance_threshold": 0.5,
+            "boundary_distance_threshold": 0.6,
+            "fg_threshold": 0.5,
+            "distance_smoothing": 0.6,
+            "seg_class": "ihc",
+        },
+    }
+    if model_type not in all_default_kwargs:
+        raise ValueError(f"Invalid model: {model_type}. Choose one of {list(all_default_kwargs.keys())}.")
+    default_kwargs = all_default_kwargs[model_type]
+    return default_kwargs
+
+
 def get_default_tiling() -> Dict[str, Dict[str, int]]:
     """Determine the tile shape and halo depending on the available VRAM.
 
