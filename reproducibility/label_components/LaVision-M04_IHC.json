@@ -1,0 +1,63 @@
+[
+	{
+		"cochlea": "LaVision-M04",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"component_list": [
+			1
+		],
+		"custom_dic": {
+			"min_size_global": 500,
+			"missing_ids": [
+				428,
+				650,
+				1128,
+				2121,
+				4653,
+				121,
+				122,
+				123,
+				735,
+				745,
+				725,
+				925,
+				4285,
+				4286,
+				4282,
+				4412,
+				4413,
+				4405,
+				4402,
+				4464,
+				4513,
+				4511,
+				4512,
+				4510
+			],
+			"label_dicts": {
+				"1": {
+					"label_params": [
+						{
+							"min_size": 500,
+							"max_edge_distance": 55,
+							"min_component_length": 10
+						}
+					],
+					"components": [
+						[
+							2,
+							23,
+							58,
+							1,
+							5,
+							9,
+							37,
+							13,
+							7
+						]
+					]
+				}
+			}
+		}
+	}
+]

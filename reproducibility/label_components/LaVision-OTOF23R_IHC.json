@@ -1,0 +1,15 @@
+[
+	{
+		"cochlea": "LaVision-OTOF23R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"component_list": [
+			4,
+			18,
+			7
+		],
+		"min_size": 20,
+		"max_edge_distance": 50,
+		"min_component_length": 20
+	}
+]

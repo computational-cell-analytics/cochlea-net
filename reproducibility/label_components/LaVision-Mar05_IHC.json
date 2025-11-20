@@ -1,0 +1,18 @@
+[
+	{
+		"cochlea": "LaVision-Mar05",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"component_list": [
+			1,
+			2,
+			3,
+			11,
+			5,
+			9
+		],
+		"min_size": 20,
+		"max_edge_distance": 50,
+		"min_component_length": 20
+	}
+]

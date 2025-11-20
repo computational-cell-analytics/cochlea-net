@@ -1,0 +1,55 @@
+[
+	{
+		"cochlea": "G_LR_000233_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v6",
+		"component_list": [
+			1
+		],
+		"custom_dic": {
+			"min_size_global": 10000,
+			"label_dicts": {
+				"1": {
+					"label_params": [
+						{
+							"min_size": 10000,
+							"max_edge_distance": 25,
+							"min_component_length": 200,
+							"min_nn_100_distance": 75
+						},
+						{
+							"min_size": 10000,
+							"max_edge_distance": 23,
+							"min_component_length": 50,
+							"min_nn_100_distance": 70
+						},
+						{
+							"min_size": 12000,
+							"max_edge_distance": 23,
+							"min_component_length": 20,
+							"min_nn_100_distance": 65
+						}
+					],
+					"components": [
+						[
+							1,
+							2,
+							5
+						],
+						[
+							8,
+							9
+						],
+						[
+							2,
+							7,
+							8,
+							11,
+							58
+						]
+					]
+				}
+			}
+		}
+	}
+]
