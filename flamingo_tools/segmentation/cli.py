@@ -4,7 +4,7 @@ import argparse
 
 from .unet_prediction import run_unet_prediction
 from .synapse_detection import marker_detection
-from ..model_utils import get_model_path
+from ..model_utils import get_model_path, get_default_segmentation_settings
 
 
 def _get_model_path(model_type, checkpoint_path=None):
@@ -49,32 +49,7 @@ def _parse_kwargs(extra_kwargs, **default_kwargs):
 
 
 def _parse_segmentation_kwargs(extra_kwargs, model_type):
-    if model_type == "SGN":
-        default_kwargs = {
-            "center_distance_threshold": 0.4,
-            "boundary_distance_threshold": 0.5,
-            "fg_threshold": 0.5,
-            "distance_smoothing": 0.0,
-            "seg_class": "sgn",
-        }
-    elif model_type == "SGN-lowres":
-        default_kwargs = {
-            "center_distance_threshold": None,
-            "boundary_distance_threshold": 0.5,
-            "fg_threshold": 0.5,
-            "distance_smoothing": 0.0,
-            "seg_class": "sgn_low",
-        }
-    else:
-        assert model_type.startswith("IHC")
-        default_kwargs = {
-            "center_distance_threshold": 0.5,
-            "boundary_distance_threshold": 0.6,
-            "fg_threshold": 0.5,
-            "distance_smoothing": 0.6,
-            "seg_class": "ihc",
-        }
-
+    default_kwargs = get_default_segmentation_settings(model_type)
     kwargs = _parse_kwargs(extra_kwargs, **default_kwargs)
     return kwargs
 

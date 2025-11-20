@@ -9,25 +9,27 @@ from qtpy.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QComboBox
 
 from .base_widget import BaseWidget
 from .util import _load_custom_model, _available_devices, _get_current_tiling
-from ..model_utils import get_model, get_model_registry, get_device, get_default_tiling
+from ..model_utils import (
+    get_model, get_model_registry, get_device, get_default_tiling, get_default_segmentation_settings
+)
 
 
-# TODO Expose segmentation kwargs.
-def _run_segmentation(image, model, model_type, tiling, device):
+def _run_segmentation(image, model, model_type, tiling, device, min_size):
     block_shape = [tiling["tile"][ax] for ax in "zyx"]
     halo = [tiling["halo"][ax] for ax in "zyx"]
     prediction = predict_with_halo(
         image, model, gpu_ids=[device], block_shape=block_shape, halo=halo,
         tqdm_desc="Run prediction"
     )
+    settings = get_default_segmentation_settings(model_type)
+    foreground_threshold = settings.pop("fg_threshold", 0.5)
+    settings.pop("seg_class", None)
+    settings = {name: 1.0 if val is None else val for name, val in settings.items()}
     foreground_map, center_distances, boundary_distances = prediction
     segmentation = watershed_from_center_and_boundary_distances(
         center_distances, boundary_distances, foreground_map,
-        center_distance_threshold=0.5,
-        boundary_distance_threshold=0.5,
-        foreground_threshold=0.5,
-        distance_smoothing=1.6,
-        min_size=100,
+        min_size=min_size, foreground_threshold=foreground_threshold,
+        **settings,
     )
     return segmentation
 
@@ -110,7 +112,9 @@ class SegmentationWidget(BaseWidget):
 
         # Get the current tiling.
         self.tiling = _get_current_tiling(self.tiling, self.default_tiling, model_type)
-        segmentation = _run_segmentation(image, model=model, model_type=model_type, tiling=self.tiling, device=device)
+        segmentation = _run_segmentation(
+            image, model=model, model_type=model_type, tiling=self.tiling, device=device, min_size=self.min_size
+        )
 
         self.viewer.add_labels(segmentation, name=model_type)
         show_info(f"INFO: Segmentation of {model_type} added to layers.")
@@ -119,6 +123,11 @@ class SegmentationWidget(BaseWidget):
         setting_values = QWidget()
         # setting_values.setToolTip(get_tooltip("embedding", "settings"))
         setting_values.setLayout(QVBoxLayout())
+
+        # Create UI for the min-size parameter.
+        self.min_size = 100
+        self.min_size_menu, layout = self._add_int_param("min_size", self.min_size, 0, 10000)
+        setting_values.layout().addLayout(layout)
 
         # Create UI for the device.
         device = "auto"
