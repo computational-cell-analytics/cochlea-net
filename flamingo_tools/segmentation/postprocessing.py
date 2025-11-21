@@ -363,85 +363,26 @@ def graph_connected_components(coords: dict, max_edge_distance: float, min_compo
 
 def components_sgn(
     table: pd.DataFrame,
-    keyword: str = "distance_nn100",
-    threshold_erode: Optional[float] = None,
     min_component_length: int = 50,
     max_edge_distance: float = 30,
-    iterations_erode: int = 0,
-    postprocess_threshold: Optional[float] = None,
-    postprocess_components: Optional[List[int]] = None,
 ) -> List[List[int]]:
     """Eroding the SGN segmentation.
 
     Args:
         table: Dataframe of segmentation table.
-        keyword: Keyword of the dataframe column for erosion.
-        threshold_erode: Threshold of column value after erosion step with spatial statistics.
         min_component_length: Minimal length for filtering out connected components.
         max_edge_distance: Maximal distance in micrometer between points to create edges for connected components.
-        iterations_erode: Number of iterations for erosion.
-        postprocess_threshold: Post-process graph connected components by searching for points closer than threshold.
-        postprocess_components: Post-process specific graph connected components ([0] for largest component only).
 
     Returns:
         Subgraph components as lists of label_ids of dataframe.
     """
-    if keyword not in table:
-        distance_avg = nearest_neighbor_distance(table, n_neighbors=100)
-        table.loc[:, keyword] = list(distance_avg)
-
     centroids = list(zip(table["anchor_x"], table["anchor_y"], table["anchor_z"]))
     labels = [int(i) for i in list(table["label_id"])]
-
-    distance_nn = list(table[keyword])
-    distance_nn.sort()
-
-    if len(table) < 20000:
-        min_cells = None
-        average_dist = int(distance_nn[int(len(table) * 0.8)])
-        threshold = threshold_erode if threshold_erode is not None else average_dist
-    else:
-        min_cells = 20000
-        threshold = threshold_erode if threshold_erode is not None else 40
-
-    if iterations_erode != 0 and iterations_erode is not None:
-        print(f"Using threshold of {threshold} micrometer for eroding segmentation with keyword {keyword}.")
-        new_subset = erode_subset(table.copy(), iterations=iterations_erode,
-                                  threshold=threshold, min_cells=min_cells, keyword=keyword)
-    else:
-        new_subset = table.copy()
-
-    # create graph from coordinates of eroded subset
-    centroids_subset = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
-    labels_subset = [int(i) for i in list(new_subset["label_id"])]
     coords = {}
-    for index, element in zip(labels_subset, centroids_subset):
+    for index, element in zip(labels, centroids):
         coords[index] = element
 
     components, _ = graph_connected_components(coords, max_edge_distance, min_component_length)
-
-    # add original coordinates closer to eroded component than threshold
-    if postprocess_threshold is not None:
-        if postprocess_components is None:
-            pp_components = components
-        else:
-            pp_components = [components[i] for i in postprocess_components]
-
-        add_coords = []
-        for label_id, centr in zip(labels, centroids):
-            if label_id not in labels_subset:
-                add_coord = []
-                for comp_index, component in enumerate(pp_components):
-                    for comp_label in component:
-                        dist = math.dist(centr, centroids[comp_label - 1])
-                        if dist <= postprocess_threshold:
-                            add_coord.append([comp_index, label_id])
-                            break
-                if len(add_coord) != 0:
-                    add_coords.append(add_coord)
-        if len(add_coords) != 0:
-            for c in add_coords:
-                components[c[0][0]].append(c[0][1])
 
     return components
 
@@ -449,24 +390,16 @@ def components_sgn(
 def label_components_sgn(
     table: pd.DataFrame,
     min_size: int = 1000,
-    threshold_erode: Optional[float] = None,
     min_component_length: int = 50,
     max_edge_distance: float = 30,
-    iterations_erode: int = 0,
-    postprocess_threshold: Optional[float] = None,
-    postprocess_components: Optional[List[int]] = None,
 ) -> List[int]:
     """Label SGN components using graph connected components.
 
     Args:
         table: Dataframe of segmentation table.
         min_size: Minimal number of pixels for filtering small instances.
-        threshold_erode: Threshold of column value after erosion step with spatial statistics.
         min_component_length: Minimal length for filtering out connected components.
         max_edge_distance: Maximal distance in micrometer between points to create edges for connected components.
-        iterations_erode: Number of iterations for erosion.
-        postprocess_threshold: Post-process graph connected components by searching for points closer than threshold.
-        postprocess_components: Post-process specific graph connected components ([0] for largest component only).
 
     Returns:
         List of component label for each point in dataframe. 0 - background, then in descending order of size
@@ -476,10 +409,8 @@ def label_components_sgn(
     entries_filtered = table[table.n_pixels < min_size]
     table = table[table.n_pixels >= min_size]
 
-    components = components_sgn(table, threshold_erode=threshold_erode, min_component_length=min_component_length,
-                                max_edge_distance=max_edge_distance, iterations_erode=iterations_erode,
-                                postprocess_threshold=postprocess_threshold,
-                                postprocess_components=postprocess_components)
+    components = components_sgn(table, min_component_length=min_component_length,
+                                max_edge_distance=max_edge_distance)
 
     # add size-filtered objects to have same initial length
     table = pd.concat([table, entries_filtered], ignore_index=True)
