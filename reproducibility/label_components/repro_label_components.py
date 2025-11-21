@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from typing import Optional
+from typing import List, Optional
 
 import pandas as pd
 from flamingo_tools.s3_utils import get_s3_path
@@ -67,86 +67,117 @@ def label_custom_components(tsv_table, custom_dict):
     return tsv_table
 
 
-def repro_label_components(
-    ddict: dict,
-    output_dir: str,
+def _load_json_as_list(ddict_path: str) -> List[dict]:
+    with open(ddict_path, "r") as f:
+        data = json.loads(f.read())
+    # ensure the result is always a list
+    return data if isinstance(data, list) else [data]
+
+
+def label_components_single(
+    table_path: str,
+    out_path: str,
+    cell_type: str = "sgn",
+    component_list: List[int] = [1],
+    max_edge_distance: float = 30,
+    min_component_length: int = 50,
+    min_size: int = 1000,
+    s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
+    custom_dic: Optional[dict] = None,
+    **_
 ):
-    default_cell_type = "sgn"
-    default_component_list = [1]
-    default_iterations_erode = None
-    default_max_edge_distance = 30
-    default_min_length = 50
-    default_min_size = 1000
-    default_seg_channel = "SGN_v2"
-    default_threshold_erode = None
-
-    with open(ddict, "r") as myfile:
-        data = myfile.read()
-    param_dicts = json.loads(data)
-
-    for dic in param_dicts:
-        cochlea = dic["cochlea"]
-        print(f"\n{cochlea}")
-
-        cell_type = dic.get("cell_type", default_cell_type)
-        component_list = dic.get("component_list", default_component_list)
-        iterations_erode = dic.get("iterations_erode", default_iterations_erode)
-        max_edge_distance = dic.get("max_edge_distance", default_max_edge_distance)
-        min_component_length = dic.get("min_component_length", default_min_length)
-        min_size = dic.get("min_size", default_min_size)
-        table_name = dic.get("segmentation_channel", default_seg_channel)
-        threshold_erode = dic.get("threshold_erode", default_threshold_erode)
-
-        s3_path = os.path.join(f"{cochlea}", "tables", table_name, "default.tsv")
-        tsv_path, fs = get_s3_path(s3_path, bucket_name=s3_bucket_name,
+    """Process a single cochlea using one set of parameters or a custom_dic.
+    """
+    if s3:
+        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
                                    service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
+    with fs.open(tsv_path, "r") as f:
+        table = pd.read_csv(f, sep="\t")
 
-        if "custom_dic" in list(dic.keys()):
-            print(len(table[table["component_labels"] == 1]))
-            tsv_table = label_custom_components(table, dic["custom_dic"])
+    if custom_dic is not None:
+        tsv_table = label_custom_components(table, custom_dic)
+    else:
+        if cell_type == "sgn":
+            tsv_table = label_components_sgn(table, min_size=min_size,
+                                             min_component_length=min_component_length,
+                                             max_edge_distance=max_edge_distance)
+        elif cell_type == "ihc":
+            tsv_table = label_components_ihc(table, min_size=min_size,
+                                             min_component_length=min_component_length,
+                                             max_edge_distance=max_edge_distance)
         else:
-            if cell_type == "sgn":
-                tsv_table = label_components_sgn(table, min_size=min_size,
-                                                 threshold_erode=threshold_erode,
-                                                 min_component_length=min_component_length,
-                                                 max_edge_distance=max_edge_distance,
-                                                 iterations_erode=iterations_erode)
-            elif cell_type == "ihc":
-                tsv_table = label_components_ihc(table, min_size=min_size,
-                                                 min_component_length=min_component_length,
-                                                 max_edge_distance=max_edge_distance)
+            raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
+
+    custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
+    print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
+    if component_list == [1]:
+        print(f"Largest component has {custom_comp} {cell_type.upper()}s.")
+    else:
+        for comp in component_list:
+            num_instances = len(tsv_table[tsv_table["component_labels"] == comp])
+            print(f"Component {comp} has {num_instances} instances.")
+        print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
+
+    tsv_table.to_csv(out_path, sep="\t", index=False)
+
+
+def repro_label_components(
+    output_path: str,
+    table_path: Optional[str] = None,
+    ddict: Optional[str] = None,
+    **kwargs
+):
+    """Wrapper function for labeling connected components using a segmentation table.
+    The function is used to distinguish between a passed parameter dictionary in JSON format
+    and the explicit setting of parameters.
+    """
+    if ddict is None:
+        label_components_single(table_path, output_path, **kwargs)
+    else:
+        param_dicts = _load_json_as_list(ddict)
+        for params in param_dicts:
+
+            cochlea = params["cochlea"]
+            print(f"\n{cochlea}")
+            seg_channel = params["segmentation_channel"]
+            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
+
+            if os.path.isdir(output_path):
+                cochlea_str = "-".join(cochlea.split("_"))
+                table_str = "-".join(seg_channel.split("_"))
+                save_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
             else:
-                raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
-
-        custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
-        print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
-        if component_list == [1]:
-            print(f"Largest component has {custom_comp} {cell_type.upper()}s.")
-        else:
-            for comp in component_list:
-                print(f"Component {comp} has {len(tsv_table[tsv_table["component_labels"] == comp])} instances.")
-            print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
-
-        cochlea_str = "-".join(cochlea.split("_"))
-        table_str = "-".join(table_name.split("_"))
-        os.makedirs(output_dir, exist_ok=True)
-        out_path = os.path.join(output_dir, "_".join([cochlea_str, f"{table_str}.tsv"]))
-
-        tsv_table.to_csv(out_path, sep="\t", index=False)
+                save_path = output_path
+            label_components_single(table_path=table_path, out_path=save_path, **params)
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Script to label segmentation using a segmentation table and graph connected components.")
 
-    parser.add_argument("-i", "--input", type=str, required=True, help="Input JSON dictionary.")
-    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory.")
+    parser.add_argument("-o", "--output", type=str, required=True,
+                        help="Output path. Either directory or specific file.")
 
+    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
+    parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
+
+    parser.add_argument("--cell_type", type=str, default="sgn",
+                        help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
+
+    # options for post-processing
+    parser.add_argument("--min_size", type=int, default=1000,
+                        help="Minimal number of pixels for filtering small instances.")
+    parser.add_argument("--min_component_length", type=int, default=50,
+                        help="Minimal length for filtering out connected components.")
+    parser.add_argument("--max_edge_distance", type=float, default=30,
+                        help="Maximal distance in micrometer between points to create edges for connected components.")
+    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of connected components.")
+
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
     parser.add_argument("--s3_credentials", type=str, default=None,
                         help="Input file containing S3 credentials. "
                         "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
@@ -158,8 +189,18 @@ def main():
     args = parser.parse_args()
 
     repro_label_components(
-        args.input, args.output,
-        args.s3_credentials, args.s3_bucket_name, args.s3_service_endpoint,
+        output_path=args.output,
+        table_path=args.input,
+        ddict=args.json,
+        cell_type=args.cell_type,
+        component_list=args.components,
+        max_edge_distance=args.max_edge_distance,
+        min_component_length=args.min_component_length,
+        min_size=args.min_size,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
 
 
