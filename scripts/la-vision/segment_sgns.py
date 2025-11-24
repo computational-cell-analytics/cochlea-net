@@ -3,7 +3,7 @@ from subprocess import run
 
 import pandas as pd
 from flamingo_tools.segmentation import run_unet_prediction
-from flamingo_tools.segmentation.postprocessing import label_components_sgn
+from flamingo_tools.postprocessing.label_components import label_components_sgn
 from mobie import add_segmentation
 from mobie.metadata import add_remote_project_metadata
 

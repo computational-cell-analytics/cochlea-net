@@ -5,7 +5,7 @@ from typing import List, Optional
 
 import pandas as pd
 from flamingo_tools.s3_utils import get_s3_path
-from flamingo_tools.segmentation.postprocessing import label_components_sgn, label_components_ihc
+from flamingo_tools.postprocessing.label_components import label_components_sgn, label_components_ihc
 
 
 def label_custom_components(tsv_table, custom_dict):

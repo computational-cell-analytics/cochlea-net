@@ -5,7 +5,7 @@ from typing import Optional
 
 import pandas as pd
 from flamingo_tools.s3_utils import get_s3_path
-from flamingo_tools.segmentation.cochlea_mapping import tonotopic_mapping
+from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping
 
 
 def repro_tonotopic_mapping(

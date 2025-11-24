@@ -3,7 +3,7 @@ import argparse
 import pandas as pd
 
 import flamingo_tools.s3_utils as s3_utils
-from flamingo_tools.segmentation.cochlea_mapping import tonotopic_mapping
+from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping
 
 
 def main():

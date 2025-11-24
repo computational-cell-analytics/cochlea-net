@@ -10,9 +10,8 @@ import numpy as np
 
 from flamingo_tools.s3_utils import get_s3_path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE, CUSTOM_THRESHOLDS
+from flamingo_tools.postprocessing.sgn_subtype_utils import ALIAS, COCHLEAE, CUSTOM_THRESHOLDS
 from util import prism_style, prism_cleanup_axes, export_legend, get_flatline_handle
-from flamingo_tools.segmentation.sgn_subtype_utils import ALIAS
 
 png_dpi = 300
 FILE_EXTENSION = "png"

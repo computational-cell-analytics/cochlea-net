@@ -22,7 +22,7 @@ from scipy.ndimage import binary_dilation
 from tqdm import tqdm
 
 from .file_utils import read_image_data
-from .segmentation.postprocessing import compute_table_on_the_fly
+from .postprocessing.label_components import compute_table_on_the_fly
 import flamingo_tools.s3_utils as s3_utils
 
 

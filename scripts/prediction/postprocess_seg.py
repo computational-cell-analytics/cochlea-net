@@ -6,8 +6,8 @@ import zarr
 
 import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.segmentation import filter_segmentation
-from flamingo_tools.segmentation.postprocessing import nearest_neighbor_distance, local_ripleys_k, neighbors_in_radius
-from flamingo_tools.segmentation.postprocessing import label_components_sgn
+from flamingo_tools.postprocessing.label_components import nearest_neighbor_distance, local_ripleys_k, neighbors_in_radius
+from flamingo_tools.postprocessing.label_components import label_components_sgn
 
 
 # TODO needs updates

@@ -7,7 +7,7 @@ import pandas as pd
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.interpolate import interp1d
 
-from flamingo_tools.segmentation.postprocessing import downscaled_centroids
+from flamingo_tools.postprocessing.label_components import downscaled_centroids
 
 
 def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -> Tuple[float, float]:
