@@ -528,6 +528,7 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
     Args:
         table: Dataframe containing the segmentation.
         animal: Select the Greenwood function parameters specific to a species. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
     Returns:
         Dataframe containing frequency in an additional column 'frequency[kHz]'.
@@ -757,6 +758,10 @@ def tonotopic_mapping(
         component_label: List of component labels to evaluate.
         components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         cell_type: Cell type of segmentation.
+        animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
+        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
+        apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
     Returns:
         Table with tonotopic label for cells.

@@ -170,15 +170,15 @@ def filter_segmentation(
     In addition, objects smaller than a given size are filtered out.
 
     Args:
-        segmentation: Dataset containing the segmentation
-        output_path: Output path for postprocessed segmentation
-        spatial_statistics: Function to calculate density measure for elements of segmentation
-        threshold: Distance in micrometer to check for neighbors
-        min_size: Minimal number of pixels for filtering small instances
-        table: Dataframe of segmentation table
-        resolution: Resolution of segmentation in micrometer
-        output_key: Output key for postprocessed segmentation
-        spatial_statistics_kwargs: Arguments for spatial statistics function
+        segmentation: Dataset containing the segmentation.
+        output_path: Output path for postprocessed segmentation.
+        spatial_statistics: Function to calculate density measure for elements of segmentation.
+        threshold: Distance in micrometer to check for neighbors.
+        min_size: Minimal number of pixels for filtering small instances.
+        table: Dataframe of segmentation table.
+        resolution: Resolution of segmentation in micrometer.
+        output_key: Output key for postprocessed segmentation.
+        spatial_statistics_kwargs: Arguments for spatial statistics function.
 
     Returns:
         The number of objects before filtering.

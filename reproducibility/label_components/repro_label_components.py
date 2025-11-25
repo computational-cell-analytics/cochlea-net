@@ -77,6 +77,7 @@ def _load_json_as_list(ddict_path: str) -> List[dict]:
 def label_components_single(
     table_path: str,
     out_path: str,
+    force_overwrite: bool = False,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
     max_edge_distance: float = 30,
@@ -89,45 +90,81 @@ def label_components_single(
     custom_dic: Optional[dict] = None,
     **_
 ):
-    """Process a single cochlea using one set of parameters or a custom_dic.
+    """Process a single cochlea using one set of parameters or a custom dictionary.
+    The cochlea is analyzed using graph-connected components
+    to label segmentation instances that are closer than a given maximal edge distance.
+    This process acts on an input segmentation table to which a "component_labels" column is added.
+    Each entry in this column refers to the index of a connected component.
+    The largest connected component has an index of 1; the others follow in decreasing order.
+
+    Args:
+        table_path: File path to segmentation table.
+        out_path: Output path to segmentation table with new column "component_labels".
+        force_overwrite: Forcefully overwrite existing output path.
+        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
+        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
+        min_component_length: Minimal length of nodes of connected component. Filtered out if lower.
+        min_size: Minimal number of pixels for filtering small instances.
+        s3: Use S3 bucket.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+        custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
+            results into final components.
     """
+    if os.path.isdir(out_path):
+        raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
+
     if s3:
         tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
                                    service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-    with fs.open(tsv_path, "r") as f:
-        table = pd.read_csv(f, sep="\t")
-
-    if custom_dic is not None:
-        tsv_table = label_custom_components(table, custom_dic)
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
     else:
-        if cell_type == "sgn":
-            tsv_table = label_components_sgn(table, min_size=min_size,
-                                             min_component_length=min_component_length,
-                                             max_edge_distance=max_edge_distance)
-        elif cell_type == "ihc":
-            tsv_table = label_components_ihc(table, min_size=min_size,
-                                             min_component_length=min_component_length,
-                                             max_edge_distance=max_edge_distance)
+        table = pd.read_csv(table_path, sep="\t")
+
+    # overwrite input file
+    if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
+        force_overwrite = True
+
+    if os.path.isfile(out_path) and not force_overwrite:
+        print(f"Skipping {out_path}. Table already exists.")
+
+    else:
+        if custom_dic is not None:
+            # use multiple post-processing configurations
+            tsv_table = label_custom_components(table, custom_dic)
         else:
-            raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
+            if cell_type == "sgn":
+                tsv_table = label_components_sgn(table, min_size=min_size,
+                                                 min_component_length=min_component_length,
+                                                 max_edge_distance=max_edge_distance)
+            elif cell_type == "ihc":
+                tsv_table = label_components_ihc(table, min_size=min_size,
+                                                 min_component_length=min_component_length,
+                                                 max_edge_distance=max_edge_distance)
+            else:
+                raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
 
-    custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
-    print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
-    if component_list == [1]:
-        print(f"Largest component has {custom_comp} {cell_type.upper()}s.")
-    else:
-        for comp in component_list:
-            num_instances = len(tsv_table[tsv_table["component_labels"] == comp])
-            print(f"Component {comp} has {num_instances} instances.")
-        print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
+        custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
+        print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
+        if component_list == [1]:
+            print(f"Largest component has {custom_comp} {cell_type.upper()}s.")
+        else:
+            for comp in component_list:
+                num_instances = len(tsv_table[tsv_table["component_labels"] == comp])
+                print(f"Component {comp} has {num_instances} instances.")
+            print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
 
-    tsv_table.to_csv(out_path, sep="\t", index=False)
+        tsv_table.to_csv(out_path, sep="\t", index=False)
 
 
-def repro_label_components(
+def wrapper_label_components(
     output_path: str,
     table_path: Optional[str] = None,
     ddict: Optional[str] = None,
+    s3: bool = False,
     **kwargs
 ):
     """Wrapper function for labeling connected components using a segmentation table.
@@ -135,7 +172,7 @@ def repro_label_components(
     and the explicit setting of parameters.
     """
     if ddict is None:
-        label_components_single(table_path, output_path, **kwargs)
+        label_components_single(table_path, output_path, s3=s3, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
@@ -151,7 +188,8 @@ def repro_label_components(
                 save_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
             else:
                 save_path = output_path
-            label_components_single(table_path=table_path, out_path=save_path, **params)
+            label_components_single(table_path=table_path, out_path=save_path, s3=s3,
+                                    **params)
 
 
 def main():
@@ -159,15 +197,14 @@ def main():
         description="Script to label segmentation using a segmentation table and graph connected components.")
 
     parser.add_argument("-o", "--output", type=str, required=True,
-                        help="Output path. Either directory or specific file.")
-
+                        help="Output path. Either directory (for --json) or specific file otherwise.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
+    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for post-processing
+    parser.add_argument("--cell_type", type=str, default="sgn",
+                        help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
     parser.add_argument("--min_size", type=int, default=1000,
                         help="Minimal number of pixels for filtering small instances.")
     parser.add_argument("--min_component_length", type=int, default=50,
@@ -188,7 +225,7 @@ def main():
 
     args = parser.parse_args()
 
-    repro_label_components(
+    wrapper_label_components(
         output_path=args.output,
         table_path=args.input,
         ddict=args.json,
@@ -197,6 +234,7 @@ def main():
         max_edge_distance=args.max_edge_distance,
         min_component_length=args.min_component_length,
         min_size=args.min_size,
+        force_overwrite=args.force,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

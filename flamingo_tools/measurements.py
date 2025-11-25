@@ -28,7 +28,7 @@ import flamingo_tools.s3_utils as s3_utils
 
 def _measure_volume_and_surface(mask, resolution):
     # Use marching_cubes for 3D data
-    verts, faces, normals, _ = marching_cubes(mask, spacing=(resolution,) * 3)
+    verts, faces, normals, _ = marching_cubes(mask, spacing=resolution)
 
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
     surface = mesh.area
@@ -166,6 +166,8 @@ def _default_object_features(
 
     # Do the volume and surface measurement.
     if not median_only:
+        if isinstance(resolution, float):
+            resolution = (resolution,) * 3
         volume, surface = _measure_volume_and_surface(mask, resolution)
         measures["volume"] = volume
         measures["surface"] = surface
@@ -181,6 +183,8 @@ def _morphology_features(seg_id, table, image, segmentation, resolution, **kwarg
     # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
     # resolution = (3.0, 0.76, 0.76)
 
+    if isinstance(resolution, float):
+        resolution = (resolution,) * 3
     volume, surface = _measure_volume_and_surface(mask, resolution)
     measures["volume"] = volume
     measures["surface"] = surface
