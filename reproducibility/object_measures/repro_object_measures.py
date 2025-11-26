@@ -1,13 +1,10 @@
 import argparse
 import json
 import os
-from multiprocessing import cpu_count
 from typing import List, Optional
 
-import numpy as np
-import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.s3_utils import MOBIE_FOLDER
-from flamingo_tools.measurements import compute_object_measures, compute_sgn_background_mask
+from flamingo_tools.measurements import object_measures_single
 
 
 def _load_json_as_list(ddict_path: str) -> List[dict]:
@@ -15,88 +12,6 @@ def _load_json_as_list(ddict_path: str) -> List[dict]:
         data = json.loads(f.read())
     # ensure the result is always a list
     return data if isinstance(data, list) else [data]
-
-
-def object_measures_single(
-    table_path: str,
-    seg_path: str,
-    image_paths: List[str],
-    out_paths: List[str],
-    force_overwrite: bool = False,
-    component_list: List[int] = [1],
-    background_mask: Optional[np.typing.ArrayLike] = None,
-    resolution: List[float] = [0.38, 0.38, 0.38],
-    s3: bool = False,
-    s3_credentials: Optional[str] = None,
-    s3_bucket_name: Optional[str] = None,
-    s3_service_endpoint: Optional[str] = None,
-    **_
-):
-    input_key = "s0"
-
-    if not isinstance(resolution, float):
-        if len(resolution) == 1:
-            resolution = resolution * 3
-        assert len(resolution) == 3
-        resolution = np.array(resolution)[::-1]
-    else:
-        resolution = (resolution,) * 3
-
-    for (img_path, out_path) in zip(image_paths, out_paths):
-        n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
-
-        # overwrite input file
-        if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
-            force_overwrite = True
-
-        if os.path.isfile(out_path) and not force_overwrite:
-            print(f"Skipping {out_path}. Table already exists.")
-
-        else:
-            if background_mask is None:
-                feature_set = "default"
-                dilation = None
-                median_only = False
-            else:
-                print("Using background mask for calculating object measures.")
-                feature_set = "default_background_subtract"
-                dilation = 4
-                median_only = True
-
-                if s3:
-                    img_path, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
-                                                        service_endpoint=s3_service_endpoint,
-                                                        credential_file=s3_credentials)
-                    seg_path, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
-                                                        service_endpoint=s3_service_endpoint,
-                                                        credential_file=s3_credentials)
-
-                mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
-                background_mask = compute_sgn_background_mask(
-                    image_path=img_path,
-                    segmentation_path=seg_path,
-                    image_key=input_key,
-                    segmentation_key=input_key,
-                    n_threads=n_threads,
-                    cache_path=mask_cache_path,
-                )
-
-            compute_object_measures(
-                image_path=img_path,
-                segmentation_path=seg_path,
-                segmentation_table_path=table_path,
-                output_table_path=out_path,
-                image_key=input_key,
-                segmentation_key=input_key,
-                feature_set=feature_set,
-                s3_flag=s3,
-                component_list=component_list,
-                dilation=dilation,
-                median_only=median_only,
-                background_mask=background_mask,
-                n_threads=n_threads,
-                resolution=resolution,
-            )
 
 
 def wrapper_object_measures(
@@ -122,12 +37,12 @@ def wrapper_object_measures(
         force_overwrite: Forcefully overwrite existing output path.
         s3: Use S3 bucket.
     """
-    out_paths = [os.path.realpath(o) for o in out_paths]
     if ddict is None:
         object_measures_single(table_path, seg_path, image_paths, out_paths, force_overwrite=force_overwrite,
                                s3=s3, **kwargs)
 
     else:
+        out_paths = [os.path.realpath(o) for o in out_paths]
         param_dicts = _load_json_as_list(ddict)
         for num, params in enumerate(param_dicts):
             cochlea = params["cochlea"]
