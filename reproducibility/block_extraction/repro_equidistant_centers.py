@@ -54,7 +54,7 @@ def repro_equidistant_centers(
         with fs.open(tsv_path, 'r') as f:
             table = pd.read_csv(f, sep="\t")
 
-        cell_type = update_dic(dic, "type", default_cell_type)
+        cell_type = update_dic(dic, "cell_type", default_cell_type)
         component_list = update_dic(dic, "component_list", default_component_list)
         _ = update_dic(dic, "halo_size", default_halo_size)
         n_blocks = update_dic(dic, "n_blocks", default_n_blocks)

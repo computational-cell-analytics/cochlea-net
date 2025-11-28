@@ -2,21 +2,21 @@
 	{
 		"cochlea": "M_LR_000226_L",
 		"segmentation_channel": "IHC_v4c",
-		"type": "ihc"
+		"cell_type": "ihc"
 	},
 	{
 		"cochlea": "M_LR_000226_R",
 		"segmentation_channel": "IHC_v4c",
-		"type": "ihc"
+		"cell_type": "ihc"
 	},
 	{
 		"cochlea": "M_LR_000227_L",
 		"segmentation_channel": "IHC_v4c",
-		"type": "ihc"
+		"cell_type": "ihc"
 	},
 	{
 		"cochlea": "M_LR_000227_R",
 		"segmentation_channel": "IHC_v4c",
-		"type": "ihc"
+		"cell_type": "ihc"
 	}
 ]

@@ -8,7 +8,7 @@
 			"SGN_merged"
 		],
 		"segmentation_channel": "SGN_merged",
-		"type": "sgn",
+		"cell_type": "sgn",
 		"n_blocks": 6,
 		"halo_size": [
 			256,
