@@ -9,7 +9,7 @@ from skimage.filters import threshold_otsu
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from flamingo_tools.measurements import compute_object_measures
-from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE, stain_to_type
+from flamingo_tools.postprocessing.sgn_subtype_utils import COCHLEAE, stain_to_type
 
 
 # Define the animal specific octave bands.

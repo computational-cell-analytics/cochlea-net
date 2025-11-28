@@ -4,7 +4,7 @@ from typing import Optional, List
 
 import pandas as pd
 
-import flamingo_tools.segmentation.postprocessing as postprocessing
+import flamingo_tools.postprocessing.label_components as postprocessing
 import flamingo_tools.s3_utils as s3_utils
 
 

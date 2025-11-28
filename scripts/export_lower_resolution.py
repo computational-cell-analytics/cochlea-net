@@ -10,7 +10,7 @@ import zarr
 from elf.parallel import isin
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
-from flamingo_tools.segmentation.postprocessing import filter_cochlea_volume, filter_cochlea_volume_single
+from flamingo_tools.postprocessing.label_components import filter_cochlea_volume, filter_cochlea_volume_single
 # from skimage.segmentation import relabel_sequential
 
 

@@ -7,7 +7,7 @@
 			"IHC_LOWRES-v3"
 		],
 		"segmentation_channel": "IHC_LOWRES-v3",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"resolution": [
 			1.887779,
 			1.887779,

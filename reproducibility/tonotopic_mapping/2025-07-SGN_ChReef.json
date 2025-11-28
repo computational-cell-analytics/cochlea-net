@@ -3,17 +3,17 @@
 		"cochlea": "M_LR_000143_L",
 		"segmentation_channel": "SGN_v2",
 		"apex_position": "apex_lower",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000144_L",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000145_L",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
     {
         "cochlea": "M_LR_000153_L",
@@ -23,47 +23,47 @@
             3
         ],
         "segmentation_channel": "SGN_v2",
-        "type": "sgn"
+        "cell_type": "sgn"
     },
 	{
 		"cochlea": "M_LR_000155_L",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000189_L",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000143_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000144_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000145_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000153_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000155_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000189_R",
 		"segmentation_channel": "SGN_v2",
 		"apex_position": "apex_lower",
-		"type": "sgn"
+		"cell_type": "sgn"
 	}
 ]

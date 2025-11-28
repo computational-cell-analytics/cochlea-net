@@ -18,7 +18,7 @@ from matplotlib import cm, colors
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
 from util import frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
 from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle, get_flatline_handle
-from flamingo_tools.segmentation.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
+from flamingo_tools.postprocessing.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
 INPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/frequency_mapping/M_LR_000227_R/scale3"
 SYNAPSE_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/synapses"

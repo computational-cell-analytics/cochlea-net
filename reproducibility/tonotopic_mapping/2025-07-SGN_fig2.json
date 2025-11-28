@@ -2,21 +2,21 @@
 	{
 		"cochlea": "M_LR_000226_L",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000226_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000227_L",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000227_R",
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	}
 ]

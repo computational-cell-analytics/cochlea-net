@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path
-from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE, ALIAS
+from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE, ALIAS
 
 png_dpi = 300
 

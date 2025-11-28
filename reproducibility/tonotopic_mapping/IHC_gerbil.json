@@ -1,0 +1,12 @@
+[
+	{
+		"cochlea": "G_EK_000233_L",
+		"segmentation_channel": "IHC_v6",
+		"cell_type": "ihc"
+	},
+	{
+		"cochlea": "G_LR_000233_R",
+		"segmentation_channel": "IHC_v6",
+		"cell_type": "ihc"
+	}
+]

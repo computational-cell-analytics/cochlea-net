@@ -10,7 +10,7 @@
 		"component_list": [
 			2
 		],
-		"type": "sgn",
+		"cell_type": "sgn",
 		"halo_size": [
 			256,
 			256,

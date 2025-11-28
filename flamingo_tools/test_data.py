@@ -10,7 +10,7 @@ from skimage.data import binary_blobs, cells3d
 from skimage.measure import label
 
 from .file_utils import get_cache_dir
-from .segmentation.postprocessing import compute_table_on_the_fly
+from .postprocessing.label_components import compute_table_on_the_fly
 
 SEGMENTATION_URL = "https://owncloud.gwdg.de/index.php/s/kwoGRYiJRRrswgw/download"
 

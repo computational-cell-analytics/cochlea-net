@@ -1,4 +1,5 @@
 import math
+import os
 from typing import List, Optional, Tuple
 
 import networkx as nx
@@ -7,7 +8,8 @@ import pandas as pd
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.interpolate import interp1d
 
-from flamingo_tools.segmentation.postprocessing import downscaled_centroids
+from flamingo_tools.postprocessing.label_components import downscaled_centroids
+from flamingo_tools.s3_utils import get_s3_path
 
 
 def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -> Tuple[float, float]:
@@ -528,6 +530,7 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
     Args:
         table: Dataframe containing the segmentation.
         animal: Select the Greenwood function parameters specific to a species. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
     Returns:
         Dataframe containing frequency in an additional column 'frequency[kHz]'.
@@ -749,14 +752,18 @@ def tonotopic_mapping(
     apex_higher: bool = True,
     otof: bool = False,
 ) -> pd.DataFrame:
-    """Tonotopic mapping of IHCs by supplying a table with component labels.
-    The mapping assigns a tonotopic label to each IHC according to the position along the length of the cochlea.
+    """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
+    The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
 
     Args:
         table: Dataframe of segmentation table.
         component_label: List of component labels to evaluate.
         components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         cell_type: Cell type of segmentation.
+        animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
+        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
+        apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
     Returns:
         Table with tonotopic label for cells.
@@ -811,3 +818,74 @@ def tonotopic_mapping(
     table = map_frequency(table, animal=animal, otof=otof)
 
     return table
+
+
+def tonotopic_mapping_single(
+    table_path: str,
+    out_path: str,
+    force_overwrite: bool = False,
+    cell_type: str = "sgn",
+    animal: str = "mouse",
+    otof: bool = False,
+    apex_position: str = "apex_higher",
+    component_list: List[int] = [1],
+    component_mapping: Optional[List[int]] = None,
+    max_edge_distance: float = 30,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    **_
+):
+    """Tonotopic mapping of a single cochlea.
+    Each segmentation instance within a given component list is assigned a frequency[kHz], a run length and an offset.
+    The components used for the mapping itself can be a subset of the component list to adapt to broken components
+    along the Rosenthal's canal.
+    If the cochlea is broken in the direction of the Rosenthal's canal, the components have to be provided in a
+    continuous order which reflects the positioning within 3D.
+    The frequency is calculated using the Greenwood function using animal specific parameters.
+    The orientation of the mapping can be reversed using the apex position in reference to the y-coordinate.
+
+    Args:
+        table_path: File path to segmentation table.
+        out_path: Output path to segmentation table with new column "component_labels".
+        force_overwrite: Forcefully overwrite existing output path.
+        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
+        animal: Animal for species specific frequency mapping. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+        apex_position: Identify position of apex and base. Apex is set to node with higher y-value per default.
+        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
+        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
+        s3: Use S3 bucket.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+    """
+    if os.path.isdir(out_path):
+        raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
+
+    if s3:
+        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
+                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table = pd.read_csv(table_path, sep="\t")
+
+    apex_higher = (apex_position == "apex_higher")
+
+    # overwrite input file
+    if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
+        force_overwrite = True
+
+    if os.path.isfile(out_path) and not force_overwrite:
+        print(f"Skipping {out_path}. Table already exists.")
+
+    else:
+        table = tonotopic_mapping(table, component_label=component_list, animal=animal,
+                                  cell_type=cell_type, component_mapping=component_mapping,
+                                  apex_higher=apex_higher, max_edge_distance=max_edge_distance,
+                                  otof=otof)
+
+        table.to_csv(out_path, sep="\t", index=False)
