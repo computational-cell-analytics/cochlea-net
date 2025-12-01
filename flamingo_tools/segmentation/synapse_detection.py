@@ -182,8 +182,8 @@ def marker_detection(
         )
 
     if not os.path.exists(detection_path):
-        block_shape = (64, 256, 256)
         input_ = zarr.open(output_path, "r")[prediction_key]
+        block_shape = (min(64, input_.shape[0]), min(input_.shape[1], 256), min(input_.shape[2], 256))
         detections = find_local_maxima(
             input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
         )
