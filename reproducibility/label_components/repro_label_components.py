@@ -25,7 +25,7 @@ def wrapper_label_components(
     and the explicit setting of parameters.
     """
     if ddict is None:
-        label_components_single(table_path, output_path, s3=s3, **kwargs)
+        label_components_single(table_path, out_path=output_path, s3=s3, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
@@ -64,7 +64,7 @@ def main():
                         help="Minimal length for filtering out connected components.")
     parser.add_argument("--max_edge_distance", type=float, default=30,
                         help="Maximal distance in micrometer between points to create edges for connected components.")
-    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")

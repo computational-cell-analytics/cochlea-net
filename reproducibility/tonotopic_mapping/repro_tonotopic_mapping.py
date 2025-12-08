@@ -36,7 +36,7 @@ def wrapper_tonotopic_mapping(
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
     """
     if ddict is None:
-        tonotopic_mapping_single(table_path, output_path, animal=animal, ototf=otof, force_overwrite=force_overwrite,
+        tonotopic_mapping_single(table_path, out_path=output_path, animal=animal, ototf=otof, force_overwrite=force_overwrite,
                                  s3=s3, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
@@ -82,7 +82,7 @@ def main():
 
     # options for tonotopic mapping
     parser.add_argument("--animal", type=str, default="mouse",
-                        help="Animyl type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
+                        help="Animal type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
     parser.add_argument("--otof", action="store_true", help="Use frequency mapping for OTOF cochleae.")
     parser.add_argument("--apex_position", type=str, default="apex_higher",
                         help="Use frequency mapping for OTOF cochleae.")
@@ -92,7 +92,7 @@ def main():
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
     parser.add_argument("--max_edge_distance", type=float, default=30,
                         help="Maximal distance in micrometer between points to create edges for connected components.")
-    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")

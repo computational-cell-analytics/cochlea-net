@@ -25,7 +25,7 @@ def label_components():
                         help="Minimal length for filtering out connected components.")
     parser.add_argument("--max_edge_distance", type=float, default=30,
                         help="Maximal distance in micrometer between points to create edges for connected components.")
-    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -41,7 +41,7 @@ def label_components():
 
     label_components_single(
         table_path=args.input,
-        output_path=args.output,
+        out_path=args.output,
         cell_type=args.cell_type,
         component_list=args.components,
         max_edge_distance=args.max_edge_distance,
@@ -66,7 +66,7 @@ def tonotopic_mapping():
 
     # options for tonotopic mapping
     parser.add_argument("--animal", type=str, default="mouse",
-                        help="Animyl type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
+                        help="Animal type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
     parser.add_argument("--otof", action="store_true", help="Use frequency mapping for OTOF cochleae.")
     parser.add_argument("--apex_position", type=str, default="apex_higher",
                         help="Use frequency mapping for OTOF cochleae.")
@@ -76,7 +76,7 @@ def tonotopic_mapping():
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
     parser.add_argument("--max_edge_distance", type=float, default=30,
                         help="Maximal distance in micrometer between points to create edges for connected components.")
-    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -92,7 +92,7 @@ def tonotopic_mapping():
 
     tonotopic_mapping_single(
         table_path=args.input,
-        output_path=args.output,
+        out_path=args.output,
         force_overwrite=args.force,
         animal=args.animal,
         otof=args.otof,
@@ -122,7 +122,7 @@ def object_measures():
     parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for object measures
-    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
     parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Resolution of input in micrometer.")
     parser.add_argument("--bg_mask", action="store_true", help="Use background mask for calculating object measures.")

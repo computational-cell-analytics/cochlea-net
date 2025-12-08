@@ -99,7 +99,7 @@ def main():
     parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for object measures
-    parser.add_argument("-c", "--components", type=str, nargs="+", default=[1], help="List of components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
     parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Resolution of input in micrometer.")
     parser.add_argument("--bg_mask", action="store_true", help="Use background mask for calculating object measures.")
