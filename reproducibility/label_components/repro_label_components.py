@@ -17,6 +17,7 @@ def wrapper_label_components(
     output_path: str,
     table_path: Optional[str] = None,
     ddict: Optional[str] = None,
+    use_napari: bool = False,
     s3: bool = False,
     **kwargs
 ):
@@ -25,7 +26,7 @@ def wrapper_label_components(
     and the explicit setting of parameters.
     """
     if ddict is None:
-        label_components_single(table_path, out_path=output_path, s3=s3, **kwargs)
+        label_components_single(table_path, out_path=output_path, use_napari=use_napari, s3=s3, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
@@ -41,7 +42,7 @@ def wrapper_label_components(
                 save_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
             else:
                 save_path = output_path
-            label_components_single(table_path=table_path, out_path=save_path, s3=s3,
+            label_components_single(table_path=table_path, out_path=save_path, s3=s3, use_napari=use_napari,
                                     **params)
 
 
@@ -65,6 +66,7 @@ def main():
     parser.add_argument("--max_edge_distance", type=float, default=30,
                         help="Maximal distance in micrometer between points to create edges for connected components.")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("--napari", action="store_true", help="Use napari viewer to visualize result.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -88,6 +90,7 @@ def main():
         min_component_length=args.min_component_length,
         min_size=args.min_size,
         force_overwrite=args.force,
+        use_napari=args.napari,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

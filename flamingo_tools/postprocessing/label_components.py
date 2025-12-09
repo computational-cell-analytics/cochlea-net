@@ -750,6 +750,7 @@ def label_components_single(
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
     custom_dic: Optional[dict] = None,
+    use_napari: bool = False,
     **_
 ):
     """Process a single cochlea using one set of parameters or a custom dictionary.
@@ -774,6 +775,7 @@ def label_components_single(
         s3_service_endpoint:
         custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
             results into final components.
+        use_napari: Visualize component labels with napari viewer.
     """
     if os.path.isdir(out_path):
         raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
@@ -820,3 +822,17 @@ def label_components_single(
             print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
 
         tsv_table.to_csv(out_path, sep="\t", index=False)
+
+        if use_napari:
+            import napari
+            scale_factor = 20
+            centroids = list(zip(tsv_table["anchor_x"], tsv_table["anchor_y"], tsv_table["anchor_z"]))
+            component_labels = list(tsv_table["component_labels"])
+            array_downscaled = downscaled_centroids(centroids=centroids, scale_factor=scale_factor,
+                                                    component_labels=component_labels, downsample_mode="components")
+            image_downscaled = downscaled_centroids(centroids, scale_factor=scale_factor,
+                                                    downsample_mode="accumulated")
+            viewer = napari.Viewer()
+            viewer.add_image(image_downscaled, name='3D Volume')
+            viewer.add_labels(array_downscaled, name="components")
+            napari.run()
