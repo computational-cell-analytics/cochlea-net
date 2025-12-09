@@ -37,7 +37,7 @@ def map_and_filter_detections(
     points = detections[["z", "y", "x"]].values.astype("int")
 
     # Set the block shape (this could also be exposed as a parameter; it should not matter much though).
-    block_shape = (64, 256, 256)
+    block_shape = (128, 128, 128)
 
     # Determine the halo. We set it to 2 pixels + the max-distance in pixels, to ensure all distances
     # that are smaller than the max distance are measured.
@@ -83,10 +83,6 @@ def run_prediction(
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
     """
-    if block_shape is None:
-        block_shape = (64, 256, 256)
-    if halo is None:
-        halo = (16, 64, 64)
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
     skip_prediction = False
