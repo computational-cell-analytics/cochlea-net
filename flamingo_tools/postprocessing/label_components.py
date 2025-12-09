@@ -1,5 +1,6 @@
 import math
 import multiprocessing as mp
+import os
 from concurrent import futures
 from typing import Callable, List, Optional, Tuple
 
@@ -10,6 +11,7 @@ import networkx as nx
 import pandas as pd
 
 from elf.io import open_file
+from flamingo_tools.s3_utils import get_s3_path
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.sparse import csr_matrix
 from scipy.spatial import distance
@@ -170,15 +172,15 @@ def filter_segmentation(
     In addition, objects smaller than a given size are filtered out.
 
     Args:
-        segmentation: Dataset containing the segmentation
-        output_path: Output path for postprocessed segmentation
-        spatial_statistics: Function to calculate density measure for elements of segmentation
-        threshold: Distance in micrometer to check for neighbors
-        min_size: Minimal number of pixels for filtering small instances
-        table: Dataframe of segmentation table
-        resolution: Resolution of segmentation in micrometer
-        output_key: Output key for postprocessed segmentation
-        spatial_statistics_kwargs: Arguments for spatial statistics function
+        segmentation: Dataset containing the segmentation.
+        output_path: Output path for postprocessed segmentation.
+        spatial_statistics: Function to calculate density measure for elements of segmentation.
+        threshold: Distance in micrometer to check for neighbors.
+        min_size: Minimal number of pixels for filtering small instances.
+        table: Dataframe of segmentation table.
+        resolution: Resolution of segmentation in micrometer.
+        output_key: Output key for postprocessed segmentation.
+        spatial_statistics_kwargs: Arguments for spatial statistics function.
 
     Returns:
         The number of objects before filtering.
@@ -363,85 +365,26 @@ def graph_connected_components(coords: dict, max_edge_distance: float, min_compo
 
 def components_sgn(
     table: pd.DataFrame,
-    keyword: str = "distance_nn100",
-    threshold_erode: Optional[float] = None,
     min_component_length: int = 50,
     max_edge_distance: float = 30,
-    iterations_erode: int = 0,
-    postprocess_threshold: Optional[float] = None,
-    postprocess_components: Optional[List[int]] = None,
 ) -> List[List[int]]:
     """Eroding the SGN segmentation.
 
     Args:
         table: Dataframe of segmentation table.
-        keyword: Keyword of the dataframe column for erosion.
-        threshold_erode: Threshold of column value after erosion step with spatial statistics.
         min_component_length: Minimal length for filtering out connected components.
         max_edge_distance: Maximal distance in micrometer between points to create edges for connected components.
-        iterations_erode: Number of iterations for erosion.
-        postprocess_threshold: Post-process graph connected components by searching for points closer than threshold.
-        postprocess_components: Post-process specific graph connected components ([0] for largest component only).
 
     Returns:
         Subgraph components as lists of label_ids of dataframe.
     """
-    if keyword not in table:
-        distance_avg = nearest_neighbor_distance(table, n_neighbors=100)
-        table.loc[:, keyword] = list(distance_avg)
-
     centroids = list(zip(table["anchor_x"], table["anchor_y"], table["anchor_z"]))
     labels = [int(i) for i in list(table["label_id"])]
-
-    distance_nn = list(table[keyword])
-    distance_nn.sort()
-
-    if len(table) < 20000:
-        min_cells = None
-        average_dist = int(distance_nn[int(len(table) * 0.8)])
-        threshold = threshold_erode if threshold_erode is not None else average_dist
-    else:
-        min_cells = 20000
-        threshold = threshold_erode if threshold_erode is not None else 40
-
-    if iterations_erode != 0 and iterations_erode is not None:
-        print(f"Using threshold of {threshold} micrometer for eroding segmentation with keyword {keyword}.")
-        new_subset = erode_subset(table.copy(), iterations=iterations_erode,
-                                  threshold=threshold, min_cells=min_cells, keyword=keyword)
-    else:
-        new_subset = table.copy()
-
-    # create graph from coordinates of eroded subset
-    centroids_subset = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
-    labels_subset = [int(i) for i in list(new_subset["label_id"])]
     coords = {}
-    for index, element in zip(labels_subset, centroids_subset):
+    for index, element in zip(labels, centroids):
         coords[index] = element
 
     components, _ = graph_connected_components(coords, max_edge_distance, min_component_length)
-
-    # add original coordinates closer to eroded component than threshold
-    if postprocess_threshold is not None:
-        if postprocess_components is None:
-            pp_components = components
-        else:
-            pp_components = [components[i] for i in postprocess_components]
-
-        add_coords = []
-        for label_id, centr in zip(labels, centroids):
-            if label_id not in labels_subset:
-                add_coord = []
-                for comp_index, component in enumerate(pp_components):
-                    for comp_label in component:
-                        dist = math.dist(centr, centroids[comp_label - 1])
-                        if dist <= postprocess_threshold:
-                            add_coord.append([comp_index, label_id])
-                            break
-                if len(add_coord) != 0:
-                    add_coords.append(add_coord)
-        if len(add_coords) != 0:
-            for c in add_coords:
-                components[c[0][0]].append(c[0][1])
 
     return components
 
@@ -449,24 +392,16 @@ def components_sgn(
 def label_components_sgn(
     table: pd.DataFrame,
     min_size: int = 1000,
-    threshold_erode: Optional[float] = None,
     min_component_length: int = 50,
     max_edge_distance: float = 30,
-    iterations_erode: int = 0,
-    postprocess_threshold: Optional[float] = None,
-    postprocess_components: Optional[List[int]] = None,
 ) -> List[int]:
     """Label SGN components using graph connected components.
 
     Args:
         table: Dataframe of segmentation table.
         min_size: Minimal number of pixels for filtering small instances.
-        threshold_erode: Threshold of column value after erosion step with spatial statistics.
         min_component_length: Minimal length for filtering out connected components.
         max_edge_distance: Maximal distance in micrometer between points to create edges for connected components.
-        iterations_erode: Number of iterations for erosion.
-        postprocess_threshold: Post-process graph connected components by searching for points closer than threshold.
-        postprocess_components: Post-process specific graph connected components ([0] for largest component only).
 
     Returns:
         List of component label for each point in dataframe. 0 - background, then in descending order of size
@@ -476,10 +411,8 @@ def label_components_sgn(
     entries_filtered = table[table.n_pixels < min_size]
     table = table[table.n_pixels >= min_size]
 
-    components = components_sgn(table, threshold_erode=threshold_erode, min_component_length=min_component_length,
-                                max_edge_distance=max_edge_distance, iterations_erode=iterations_erode,
-                                postprocess_threshold=postprocess_threshold,
-                                postprocess_components=postprocess_components)
+    components = components_sgn(table, min_component_length=min_component_length,
+                                max_edge_distance=max_edge_distance)
 
     # add size-filtered objects to have same initial length
     table = pd.concat([table, entries_filtered], ignore_index=True)
@@ -742,3 +675,164 @@ def filter_cochlea_volume(
         combined_dilated[combined_dilated > 0] = 1
 
     return combined_dilated
+
+
+def label_custom_components(tsv_table, custom_dict):
+    """Label IHC components using multiple post-processing configurations and combine the
+    results into final components.
+    The function applies successive post-processing steps defined in a `custom_dic`
+    configuration. Each entry under `label_dicts` specifies:
+    - `label_params`: a list of parameter sets. The segmentation is processed once for
+    each parameter set (e.g., {"min_size": 500, "max_edge_distance": 65, "min_component_length": 5}).
+    - `components`: lists of label IDs to extract from each corresponding post-processing run.
+    Label IDs collected from all runs are merged to form the final component (e.g., key "1").
+    Global filtering is applied using `min_size_global`, and any `missing_ids`
+    (e.g., 4800 or 4832) are added explicitly to the final component.
+    Example `custom_dic` structure:
+    {
+        "min_size_global": 500,
+        "missing_ids": [4800, 4832],
+        "label_dicts": {
+            "1": {
+                "label_params": [
+                    {"min_size": 500, "max_edge_distance": 65, "min_component_length": 5},
+                    {"min_size": 400, "max_edge_distance": 45, "min_component_length": 5}
+                ],
+                "components": [[18, 22], [1, 45, 83]]
+            }
+        }
+    }
+
+    Args:
+        tsv_table: Pandas dataframe of the MoBIE segmentation table.
+        custom_dict: Custom dictionary featuring post-processing parameters.
+
+    Returns:
+        Pandas dataframe featuring labeled components.
+    """
+    min_size = custom_dict["min_size_global"]
+    component_labels = [0 for _ in range(len(tsv_table))]
+    tsv_table.loc[:, "component_labels"] = component_labels
+    for custom_comp, label_dict in custom_dict["label_dicts"].items():
+        label_params = label_dict["label_params"]
+        label_components = label_dict["components"]
+
+        combined_label_ids = []
+        for comp, other_kwargs in zip(label_components, label_params):
+            tsv_table_tmp = label_components_ihc(tsv_table.copy(), **other_kwargs)
+            label_ids = list(tsv_table_tmp.loc[tsv_table_tmp["component_labels"].isin(comp), "label_id"])
+            combined_label_ids.extend(label_ids)
+            print(f"{comp}", len(combined_label_ids))
+
+        combined_label_ids = list(set(combined_label_ids))
+
+        tsv_table.loc[tsv_table["label_id"].isin(combined_label_ids), "component_labels"] = int(custom_comp)
+
+    tsv_table.loc[tsv_table["n_pixels"] < min_size, "component_labels"] = 0
+    if "missing_ids" in list(custom_dict.keys()):
+        for m in custom_dict["missing_ids"]:
+            tsv_table.loc[tsv_table["label_id"] == m, "component_labels"] = 1
+
+    return tsv_table
+
+
+def label_components_single(
+    table_path: str,
+    out_path: str,
+    force_overwrite: bool = False,
+    cell_type: str = "sgn",
+    component_list: List[int] = [1],
+    max_edge_distance: float = 30,
+    min_component_length: int = 50,
+    min_size: int = 1000,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    custom_dic: Optional[dict] = None,
+    use_napari: bool = False,
+    **_
+):
+    """Process a single cochlea using one set of parameters or a custom dictionary.
+    The cochlea is analyzed using graph-connected components
+    to label segmentation instances that are closer than a given maximal edge distance.
+    This process acts on an input segmentation table to which a "component_labels" column is added.
+    Each entry in this column refers to the index of a connected component.
+    The largest connected component has an index of 1; the others follow in decreasing order.
+
+    Args:
+        table_path: File path to segmentation table.
+        out_path: Output path to segmentation table with new column "component_labels".
+        force_overwrite: Forcefully overwrite existing output path.
+        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
+        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
+        min_component_length: Minimal length of nodes of connected component. Filtered out if lower.
+        min_size: Minimal number of pixels for filtering small instances.
+        s3: Use S3 bucket.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+        custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
+            results into final components.
+        use_napari: Visualize component labels with napari viewer.
+    """
+    if os.path.isdir(out_path):
+        raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
+
+    if s3:
+        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
+                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table = pd.read_csv(table_path, sep="\t")
+
+    # overwrite input file
+    if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
+        force_overwrite = True
+
+    if os.path.isfile(out_path) and not force_overwrite:
+        print(f"Skipping {out_path}. Table already exists.")
+
+    else:
+        if custom_dic is not None:
+            # use multiple post-processing configurations
+            tsv_table = label_custom_components(table, custom_dic)
+        else:
+            if cell_type == "sgn":
+                tsv_table = label_components_sgn(table, min_size=min_size,
+                                                 min_component_length=min_component_length,
+                                                 max_edge_distance=max_edge_distance)
+            elif cell_type == "ihc":
+                tsv_table = label_components_ihc(table, min_size=min_size,
+                                                 min_component_length=min_component_length,
+                                                 max_edge_distance=max_edge_distance)
+            else:
+                raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
+
+        custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
+        print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
+        if component_list == [1]:
+            print(f"Largest component has {custom_comp} {cell_type.upper()}s.")
+        else:
+            for comp in component_list:
+                num_instances = len(tsv_table[tsv_table["component_labels"] == comp])
+                print(f"Component {comp} has {num_instances} instances.")
+            print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
+
+        tsv_table.to_csv(out_path, sep="\t", index=False)
+
+        if use_napari:
+            import napari
+            scale_factor = 20
+            centroids = list(zip(tsv_table["anchor_x"], tsv_table["anchor_y"], tsv_table["anchor_z"]))
+            component_labels = list(tsv_table["component_labels"])
+            array_downscaled = downscaled_centroids(centroids=centroids, scale_factor=scale_factor,
+                                                    component_labels=component_labels, downsample_mode="components")
+            image_downscaled = downscaled_centroids(centroids, scale_factor=scale_factor,
+                                                    downsample_mode="accumulated")
+            viewer = napari.Viewer()
+            viewer.add_image(image_downscaled, name='3D Volume')
+            viewer.add_labels(array_downscaled, name="components")
+            napari.run()

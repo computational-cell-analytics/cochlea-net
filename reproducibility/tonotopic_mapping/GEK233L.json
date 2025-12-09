@@ -1,11 +1,8 @@
 [
     {
-		"cochlea": "G_EK_000049_L",
+		"cochlea": "G_EK_000233_L",
 		"component_list": [
-			1,
-			3,
-			4,
-			5
+			1
 		],
 		"segmentation_channel": "SGN_v2",
 		"cell_type": "sgn"

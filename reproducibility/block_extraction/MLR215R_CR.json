@@ -6,7 +6,7 @@
 			"IHC_v4b"
 		],
 		"segmentation_channel": "IHC_v4b",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"n_blocks": 6,
 		"halo_size": [
 			256,

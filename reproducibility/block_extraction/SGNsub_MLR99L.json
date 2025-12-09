@@ -8,7 +8,7 @@
 			"PV_SGN_v2"
 		],
 		"segmentation_channel": "PV_SGN_v2",
-		"type": "sgn",
+		"cell_type": "sgn",
 		"n_blocks": 6,
 		"halo_size": [
 			256,

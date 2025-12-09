@@ -6,28 +6,10 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
+from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
+
 
 OUTPUT_FOLDER = "./ihc_counts"
-
-COCHLEAE = [
-    "M_LR_000226_L",
-    "M_LR_000226_R",
-    "M_LR_000227_L",
-    "M_LR_000227_R",
-    "G_EK_000233_L",
-    "G_LR_000233_R",
-
-]
-
-
-SYNAPSE_DICT = {
-    "M_LR_000226_L": {"synapse_table_name": "synapse_v3_ihc_v4c", "ihc_table_name": "IHC_v4c"},
-    "M_LR_000226_R": {"synapse_table_name": "synapse_v3_ihc_v4c", "ihc_table_name": "IHC_v4c"},
-    "M_LR_000227_L": {"synapse_table_name": "synapse_v3_ihc_v4c", "ihc_table_name": "IHC_v4c"},
-    "M_LR_000227_R": {"synapse_table_name": "synapse_v3_ihc_v4c", "ihc_table_name": "IHC_v4c"},
-    "G_EK_000233_L": {"synapse_table_name": "synapse_v3_ihc_v6", "ihc_table_name": "IHC_v6"},
-    "G_LR_000233_R": {"synapse_table_name": "synapse_v3_ihc_v6", "ihc_table_name": "IHC_v6"},
-}
 
 
 def check_project(cochleae, output_folder, plot=False, save_ihc_table=False, max_dist=None):
@@ -37,12 +19,12 @@ def check_project(cochleae, output_folder, plot=False, save_ihc_table=False, max
         if cochlea in SYNAPSE_DICT.keys():
             synapse_table_name = SYNAPSE_DICT[cochlea]["synapse_table_name"]
             ihc_table_name = SYNAPSE_DICT[cochlea]["ihc_table_name"]
+            component_id = SYNAPSE_DICT[cochlea].get("component_list", [1])
 
         else:
-            synapse_table_name = "synapse_v3_ihc_v4c"
-            ihc_table_name = "IHC_v4c"
-
-        component_id = [1]
+            synapse_table_name = "synapse_v3_ihc_v4b"
+            ihc_table_name = "IHC_v4b"
+            component_id = [1]
 
         if cochlea == "M_AMD_OTOF1_L":
             synapse_table_name = "synapse_v3_ihc_v4b"
@@ -132,7 +114,8 @@ def main():
         description="Assign each segmentation instance a marker based on annotation thresholds."
     )
 
-    parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
+    parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=list(SYNAPSE_DICT.keys()),
+                        help="Cochlea(e) to process.")
     parser.add_argument("-o", "--output", type=str, default=OUTPUT_FOLDER, help="Output directory.")
 
     args = parser.parse_args()

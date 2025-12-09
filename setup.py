@@ -13,7 +13,10 @@ setup(
             "flamingo_tools.convert_data = flamingo_tools.data_conversion:convert_lightsheet_to_bdv_cli",
             "flamingo_tools.run_segmentation = flamingo_tools.segmentation.cli:run_segmentation",
             "flamingo_tools.run_detection = flamingo_tools.segmentation.cli:run_detection",
-            # TODO: MoBIE conversion, tonotopic mapping
+            "flamingo_tools.label_components = flamingo_tools.postprocessing.cli:label_components",
+            "flamingo_tools.tonotopic_mapping = flamingo_tools.postprocessing.cli:tonotopic_mapping",
+            "flamingo_tools.object_measures = flamingo_tools.postprocessing.cli:object_measures",
+            # TODO: MoBIE conversion
         ],
         "napari.manifest": [
             "cochlea_net = flamingo_tools:napari.yaml",

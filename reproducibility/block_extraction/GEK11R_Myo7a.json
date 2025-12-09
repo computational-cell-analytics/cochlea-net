@@ -6,7 +6,7 @@
 			"IHC_resized_v4b"
 		],
 		"segmentation_channel": "IHC_resized_v4b",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"halo_size": [
 			256,
 			256,

@@ -5,14 +5,7 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
-
-COCHLEAE = {
-    "M_LR_000226_L": {"seg_name": "IHC_v4c", "component_list": [1]},
-    "M_LR_000226_R": {"seg_name": "IHC_v4c", "component_list": [1]},
-    "M_LR_000227_L": {"seg_name": "IHC_v4c", "component_list": [1]},
-    "M_LR_000227_R": {"seg_name": "IHC_v4c", "component_list": [1]},
-    "M_AMD_OTOF1_L": {"seg_name": "IHC_v4b", "component_list": [3, 11]},
-}
+from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 OUT_DIR = f"{COCHLEA_DIR}/mobie_project/cochlea-lightsheet/tables/syn_per_ihc"
@@ -28,9 +21,9 @@ def add_syn_per_ihc(args):
 
     for cochlea in args.cochlea:
         if args.seg_version is None:
-            seg_version = COCHLEAE[cochlea]["seg_name"]
+            seg_version = SYNAPSE_DICT[cochlea]["ihc_table_name"]
         else:
-            seg_version = args.seg_version
+            seg_version = "IHC_v4b"
 
         print(f"Evaluating cochlea {cochlea}.")
 
@@ -38,9 +31,9 @@ def add_syn_per_ihc(args):
         syn_per_ihc_dir = f"{COCHLEA_DIR}/predictions/synapses/ihc_counts_{ihc_version}"
 
         if args.component_list is None:
-            component_list = COCHLEAE[cochlea]["component_list"]
+            component_list = SYNAPSE_DICT[cochlea].get("component_list", [1])
         else:
-            component_list = args.component_list
+            component_list = [1]
 
         s3_path = os.path.join(f"{cochlea}", "tables", seg_version, "default.tsv")
         tsv_path, fs = get_s3_path(s3_path, bucket_name=BUCKET_NAME,
@@ -50,6 +43,10 @@ def add_syn_per_ihc(args):
 
         # synapse_table
         syn_path = os.path.join(syn_per_ihc_dir, f"ihc_count_{cochlea}.tsv")
+        if not os.path.isfile(syn_path):
+            print(f"Skipping cochlea {cochlea}. Synapse table {syn_path} does not exist.")
+            continue
+
         with open(syn_path, 'r') as f:
             syn_table = pd.read_csv(f, sep="\t")
 
@@ -81,7 +78,8 @@ def add_syn_per_ihc(args):
 def main():
 
     parser = argparse.ArgumentParser()
-    parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
+    parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=list(SYNAPSE_DICT.keys()),
+                        help="Cochlea(e) to process.")
     parser.add_argument("-o", "--output_folder", type=str, default=None, help="Path to output folder.")
     parser.add_argument("-s", "--seg_version", type=str, default=None, help="Path to output folder.")
     parser.add_argument("--ihc_syn", action="store_true", help="Consider only IHC with synapses.")

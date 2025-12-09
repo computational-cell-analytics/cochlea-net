@@ -7,8 +7,8 @@ import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.segmentation.chreef_utils import localize_median_intensities, find_annotations
-from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
+from flamingo_tools.postprocessing.chreef_utils import localize_median_intensities, find_annotations
+from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
 
 MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/SGN_subtypes"
 

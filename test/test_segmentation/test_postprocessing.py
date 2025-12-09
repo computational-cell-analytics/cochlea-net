@@ -17,7 +17,7 @@ class TestPostprocessing(unittest.TestCase):
         return seg
 
     def _test_postprocessing(self, spatial_statistics, threshold, **spatial_statistics_kwargs):
-        from flamingo_tools.segmentation.postprocessing import filter_segmentation
+        from flamingo_tools.postprocessing.label_components import filter_segmentation
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             example_seg = self._create_example_seg(tmp_dir)
@@ -33,22 +33,22 @@ class TestPostprocessing(unittest.TestCase):
             self.assertEqual(filtered_seg.shape, example_seg.shape)
 
     def test_nearest_neighbor_distance(self):
-        from flamingo_tools.segmentation.postprocessing import nearest_neighbor_distance
+        from flamingo_tools.postprocessing.label_components import nearest_neighbor_distance
 
         self._test_postprocessing(nearest_neighbor_distance, threshold=5)
 
     def test_local_ripleys_k(self):
-        from flamingo_tools.segmentation.postprocessing import local_ripleys_k
+        from flamingo_tools.postprocessing.label_components import local_ripleys_k
 
         self._test_postprocessing(local_ripleys_k, threshold=0.5)
 
     def test_neighbors_in_radius(self):
-        from flamingo_tools.segmentation.postprocessing import neighbors_in_radius
+        from flamingo_tools.postprocessing.label_components import neighbors_in_radius
 
         self._test_postprocessing(neighbors_in_radius, threshold=5)
 
     def test_compute_table_on_the_fly(self):
-        from flamingo_tools.segmentation.postprocessing import compute_table_on_the_fly
+        from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly
         from flamingo_tools.test_data import get_test_volume_and_segmentation
 
         with tempfile.TemporaryDirectory() as tmp_dir:
