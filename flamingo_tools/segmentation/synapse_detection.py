@@ -33,8 +33,8 @@ def map_and_filter_detections(
     Returns:
         The filtered dataframe with the detections mapped to the segmentation.
     """
-    # Get the point coordinates.
-    points = detections[["z", "y", "x"]].values.astype("int")
+    # Get the point coordinates in pixel by scaling with resolution, rounding, and conversion to integers
+    points = detections[["z", "y", "x"]].mul(1 / resolution).round().values.astype("int")
 
     # Set the block shape (this could also be exposed as a parameter; it should not matter much though).
     block_shape = (128, 128, 128)
@@ -43,7 +43,7 @@ def map_and_filter_detections(
     # that are smaller than the max distance are measured.
     halo = (2 + int(np.ceil(max_distance / resolution)),) * 3
 
-    # Map the detections to the obejcts in the (IHC) segmentation.
+    # Map the detections to the objects in the (IHC) segmentation.
     object_ids, object_distances = map_points_to_objects(
         segmentation=segmentation,
         points=points,
@@ -58,10 +58,10 @@ def map_and_filter_detections(
 
     # Add matched ids and distances to the dataframe.
     detections["matched_ihc"] = object_ids
-    detections["distance_to_ihc"] = object_distances
+    detections["distance_to_ihc"] = object_distances * resolution
 
     # Filter the dataframe by the max distance.
-    detections = detections[detections.distance_to_ihc < max_distance]
+    detections = detections[detections.distance_to_ihc <= max_distance]
     return detections
 
 
@@ -72,6 +72,7 @@ def run_prediction(
     model_path: str,
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
+    resolution: float = 0.38,
 ):
     """Run prediction for synapse detection.
 
@@ -82,6 +83,7 @@ def run_prediction(
         model_path: Path to model for synapse detection.
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
+        resolution: The resolution / voxel size of the data in micrometer.
     """
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
@@ -109,6 +111,12 @@ def run_prediction(
             [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
         )
         detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
+
+        # scale coordinates
+        detections["x"] *= resolution
+        detections["y"] *= resolution
+        detections["z"] *= resolution
+
         detections.to_csv(detection_path, index=False, sep="\t")
 
 
@@ -119,7 +127,7 @@ def marker_detection(
     output_folder: str,
     model_path: str,
     mask_input_key: Optional[str] = "s4",
-    max_distance: float = 20,
+    max_distance: float = 3,
     resolution: float = 0.38,
 ):
     """Streamlined workflow for marker detection, mapping, and filtering.
@@ -131,7 +139,7 @@ def marker_detection(
         output_folder: Output folder for synapse segmentation and marker detection.
         model_path: Path to model for synapse detection.
         mask_input_key: Key to undersampled IHC segmentation for masking input for synapse detection.
-        max_distance: The maximal distance for a valid match of synapse markers to IHCs.
+        max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
         resolution: The resolution / voxel size of the data in micrometer.
     """
 
@@ -188,6 +196,12 @@ def marker_detection(
             [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
         )
         detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
+
+        # scale coordinates
+        detections["x"] *= resolution
+        detections["y"] *= resolution
+        detections["z"] *= resolution
+
         detections.to_csv(detection_path, index=False, sep="\t")
 
     else:
@@ -205,11 +219,6 @@ def marker_detection(
             resolution=resolution,
         )
 
-        # 4.) Add the filtered detections to MoBIE.
-        # IMPORTANT scale the coordinates with the resolution here.
-        detections_filtered["distance_to_ihc"] *= resolution
-        detections_filtered["x"] *= resolution
-        detections_filtered["y"] *= resolution
-        detections_filtered["z"] *= resolution
+        # Save the result in mobie compatible format.
         detection_path = os.path.join(output_folder, "synapse_detection_filtered.tsv")
         detections_filtered.to_csv(detection_path, index=False, sep="\t")
