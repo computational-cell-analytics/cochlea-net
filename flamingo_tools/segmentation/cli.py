@@ -136,7 +136,6 @@ def run_detection():
         "The result is stored in the file 'synapse_detection.tsv'. "
         "In case detections are assigned to segmentation masks and filtered (via '--mask_path' and '--mask_key'), "
         "the corresponding results are stored in 'synapse_detection_filtered.tsv'."
-
     )
     parser.add_argument(
         "-m", "--model_type", default="Synapses",
