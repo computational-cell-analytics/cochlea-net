@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=mobie_image
-#SBATCH -t 02:00:00             # estimated time, adapt to your needs
+#SBATCH -t 01:30:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=martin.schilling@med.uni-goettingen.de # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 

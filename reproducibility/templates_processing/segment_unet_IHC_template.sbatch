@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=segment-unet-SGN
-#SBATCH --time 06:00:00             # for gerbil up to ~30 hours
+#SBATCH --time 12:00:00             # for gerbil up to ~30 hours
 
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A nim00007
@@ -44,11 +44,13 @@ export DISTANCE_SMOOTHING=0.6
 
 echo "Output directory: ${OUTPUT_FOLDER}"
 
-cmd_array=(	'import sys,os;'
-	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
-	'import unet_prediction;'
-	'unet_prediction.run_unet_segmentation_slurm(output_folder=os.environ["OUTPUT_FOLDER"],'
-	'min_size=os.environ["MIN_SIZE"])')
+cmd_array=( 'import sys,os;'
+    'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
+    'import unet_prediction;'
+    'unet_prediction.run_unet_segmentation_slurm(output_folder=os.environ["OUTPUT_FOLDER"],'
+    'center_distance_threshold=os.environ["CENTER_DISTANCE_THRESHOLD"],'
+    'boundary_distance_threshold=os.environ["BOUNDARY_DISTANCE_THRESHOLD"],'
+    'distance_smoothing=os.environ["DISTANCE_SMOOTHING"],'
+    'min_size=os.environ["MIN_SIZE"])')
 cmd="${cmd_array[*]}"
 python -c "$cmd"
-

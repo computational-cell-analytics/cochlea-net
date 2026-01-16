@@ -23,7 +23,7 @@ SPOT_NAME=$3
 
 MOBIE_PROJECT="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
 
-echo "Adding spot data ""$DATA"" to MoBIE project""$MOBIE_PROJECT"" as ""$SPOT_NAME"
+echo "Adding spot data ""$TABLE_PATH"" to MoBIE project""$MOBIE_PROJECT"" as ""$SPOT_NAME"
 
 mobie.add_spots --input_table "$TABLE_PATH" --root "$MOBIE_PROJECT" \
 	--dataset_name "$COCHLEA" --name "$SPOT_NAME"

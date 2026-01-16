@@ -7,5 +7,4 @@ COCHLEA=$1
 SYNAPSE=$2
 
 rclone --progress copyto "$MOBIE_DIR"/"$COCHLEA"/dataset.json cochlea-lightsheet:cochlea-lightsheet/"$COCHLEA"/dataset.json
-rclone --progress copyto "$MOBIE_DIR"/"$COCHLEA"/tables/"$SYNAPSE" cochlea-lightsheet:cochlea-lightsheet/"$COCHLEA"/tables/"$SYNAPSE"
-
+rclone --progress copyto "$MOBIE_DIR"/"$COCHLEA"/tables/"$SYNAPSE"/default.tsv cochlea-lightsheet:cochlea-lightsheet/"$COCHLEA"/tables/"$SYNAPSE"/default.tsv

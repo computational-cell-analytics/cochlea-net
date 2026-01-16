@@ -152,11 +152,11 @@ def run_detection():
         "synapses that are more distant than 'max_distance' will be removed from the result."
     )
     parser.add_argument(
-        "--mask_key",
+        "--mask_key", default="s4",
         help="The key to the mask data. Refers to an internal data path, see '--input_key' ('-k') for details."
     )
     parser.add_argument(
-        "--max_distance", type=float, default=2.0,
+        "--max_distance", type=float, default=3.0,
         help="The maximal distance (in microns) for matching synapses to segmented cells. "
         "Synapses with a larger distance will be filtered from the result."
     )

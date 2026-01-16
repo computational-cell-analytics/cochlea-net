@@ -26,6 +26,8 @@ def label_components():
     parser.add_argument("--max_edge_distance", type=float, default=30,
                         help="Maximal distance in micrometer between points to create edges for connected components.")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("--napari", action="store_true",
+                        help="Use napari image viewer for visualizing labeled components.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -52,6 +54,7 @@ def label_components():
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
         s3_service_endpoint=args.s3_service_endpoint,
+        use_napari=args.napari,
     )
 
 

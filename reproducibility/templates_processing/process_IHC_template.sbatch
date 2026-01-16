@@ -1,19 +1,15 @@
 #!/bin/bash
-#SBATCH --job-name=synapse-detect
-#SBATCH -t 16:00:00             # estimated time, adapt to your needs
-#SBATCH --mail-user=martin.schilling@med.uni-goettingen.de # change this to your mailaddress
-#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+#SBATCH --job-name=process-unet-IHC
+#SBATCH -t 18:00:00             # for gerbil up to ~3 hours
 
 #SBATCH -p grete:shared         # the partition
 #SBATCH -G A100:1               # For requesting 1 A100 GPU.
-#SBATCH -A nim00007
-#SBATCH -c 3
+#SBATCH -c 12
 #SBATCH --mem 400G
 #SBATCH --constraint=inet		# for downloading models
 
 source ~/.bashrc
 micromamba activate micro-sam_gpu
-#micromamba activate sam
 
 # Print out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -22,6 +18,10 @@ echo "Working directory: $PWD"
 echo "Current node: ${SLURM_NODELIST}"
 
 # Run the script
+
+# get path to flamingo_tools repository based on the location of this script, only works for calling bash script directly
+#SCRIPT_REPO="$( cd "$( dirname  "$( dirname "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" )" )" >/dev/null 2>&1 && pwd )"
+
 SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
 cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
@@ -34,19 +34,14 @@ INPUT_KEY=$2
 # output folder
 OUTPUT_FOLDER=$3
 
-export DATA
-export INPUT_KEY
-export OUTPUT_FOLDER
-MODEL_TYPE="Synapses"
-
-echo "Detecting synapses"
-echo "$DATA"
+MODEL_TYPE="IHC"
 
 if ! [[ -f $OUTPUT_FOLDER ]] ; then
 	mkdir -p "$OUTPUT_FOLDER"
 fi
 
-flamingo_tools.run_detection  --input_path "$DATA" \
+flamingo_tools.run_segmentation  --input_path "$DATA" \
     --input_key "$INPUT_KEY" \
     --output_folder "$OUTPUT_FOLDER" \
-    --model_type "$MODEL_TYPE"
+    --model_type "$MODEL_TYPE" \
+    --min_size 1000
