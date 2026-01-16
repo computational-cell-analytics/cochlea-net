@@ -1,12 +1,12 @@
 #!/bin/bash
-#SBATCH --job-name=apply-unet-IHC
-#SBATCH -t 00:20:00             # for gerbil up to ~3 hours
+#SBATCH --job-name=process-unet-IHC
+#SBATCH -t 18:00:00             # for gerbil up to ~3 hours
 
 #SBATCH -p grete:shared         # the partition
 #SBATCH -G A100:1               # For requesting 1 A100 GPU.
-#SBATCH -c 1
-#SBATCH --mem 24G
-#SBATCH -a 0-9
+#SBATCH -c 12
+#SBATCH --mem 400G
+#SBATCH --constraint=inet		# for downloading models
 
 source ~/.bashrc
 micromamba activate micro-sam_gpu
@@ -34,25 +34,14 @@ INPUT_KEY=$2
 # output folder
 OUTPUT_FOLDER=$3
 
-# The default v4 model
-export MODEL=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/IHC/v4_cochlea_distance_unet_IHC_supervised_2025-07-14
-export PREDICTION_INSTANCES=10
+MODEL_TYPE="IHC"
 
-export DATA
-export INPUT_KEY
-export OUTPUT_FOLDER
+if ! [[ -f $OUTPUT_FOLDER ]] ; then
+	mkdir -p "$OUTPUT_FOLDER"
+fi
 
-echo "Input data: ${DATA}"
-echo "Output directory: ${OUTPUT_FOLDER}"
-echo "Model: ${MODEL}"
-
-cmd_array=(	'import sys,os;'
-	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
-	'import unet_prediction;'
-	'unet_prediction.run_unet_prediction_slurm(input_path=os.environ["DATA"],'
-	'output_folder=os.environ["OUTPUT_FOLDER"],model_path=os.environ["MODEL"],'
-	'input_key=os.environ["INPUT_KEY"],'
-	'prediction_instances=os.environ["PREDICTION_INSTANCES"])')
-cmd="${cmd_array[*]}"
-python -c "$cmd"
-
+flamingo_tools.run_segmentation  --input_path "$DATA" \
+    --input_key "$INPUT_KEY" \
+    --output_folder "$OUTPUT_FOLDER" \
+    --model_type "$MODEL_TYPE" \
+    --min_size 1000

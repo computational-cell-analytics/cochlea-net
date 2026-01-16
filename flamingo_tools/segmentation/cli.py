@@ -136,7 +136,6 @@ def run_detection():
         "The result is stored in the file 'synapse_detection.tsv'. "
         "In case detections are assigned to segmentation masks and filtered (via '--mask_path' and '--mask_key'), "
         "the corresponding results are stored in 'synapse_detection_filtered.tsv'."
-
     )
     parser.add_argument(
         "-m", "--model_type", default="Synapses",
@@ -153,11 +152,11 @@ def run_detection():
         "synapses that are more distant than 'max_distance' will be removed from the result."
     )
     parser.add_argument(
-        "--mask_key",
+        "--mask_key", default="s4",
         help="The key to the mask data. Refers to an internal data path, see '--input_key' ('-k') for details."
     )
     parser.add_argument(
-        "--max_distance", type=float, default=2.0,
+        "--max_distance", type=float, default=3.0,
         help="The maximal distance (in microns) for matching synapses to segmented cells. "
         "Synapses with a larger distance will be filtered from the result."
     )

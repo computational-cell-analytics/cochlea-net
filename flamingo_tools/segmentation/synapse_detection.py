@@ -187,7 +187,7 @@ def marker_detection(
 
     if not os.path.exists(detection_path):
         input_ = zarr.open(output_path, "r")[prediction_key]
-        block_shape = (min(64, input_.shape[0]), min(input_.shape[1], 256), min(input_.shape[2], 256))
+        block_shape = tuple(input_.chunks)
         detections = find_local_maxima(
             input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
         )
@@ -211,7 +211,7 @@ def marker_detection(
     # 3.) Map the detections to IHC and filter them based on a distance criterion.
     # Use the function 'map_and_filter_detections' from above.
     if mask_path is not None:
-        input_ = read_image_data(mask_path, input_key)
+        input_ = read_image_data(mask_path, mask_input_key)
         detections_filtered = map_and_filter_detections(
             segmentation=input_,
             detections=detections,

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=segment-unet-SGN
-#SBATCH --time 10:00:00             # for gerbil up to ~30 hours
+#SBATCH --time 06:00:00             # for gerbil up to ~30 hours
 
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A nim00007
@@ -8,8 +8,7 @@
 #SBATCH --mem 400G
 
 source ~/.bashrc
-# micromamba activate micro-sam_gpu
-micromamba activate sam
+micromamba activate micro-sam_gpu
 
 # Print out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -17,17 +16,21 @@ echo "Home directory: ${HOME}"
 echo "Working directory: $PWD"
 echo "Current node: ${SLURM_NODELIST}"
 
-# SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
-SCRIPT_REPO=/user/pape41/u12086/Work/my_projects/flamingo-tools
+# Run the script
+
+# get path to flamingo_tools repository based on the location of this script, only works for calling bash script directly
+#SCRIPT_REPO="$( cd "$( dirname  "$( dirname "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" )" )" >/dev/null 2>&1 && pwd )"
+
+SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
 cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
-# name of cochlea, as it appears in MoBIE and the NHR
-COCHLEA=$1
-# segmentation name, as it appears in MoBIE, e.g. SGN_v2 or Calb1_SGN_v2
-SEG_NAME=$2
-
 export SCRIPT_DIR=$SCRIPT_REPO/scripts
-export OUTPUT_FOLDER=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/"$COCHLEA"/"$SEG_NAME"
+
+# directory containing prediction.zarr
+OUTPUT_FOLDER=$1
+
+export OUTPUT_FOLDER
+
 export MIN_SIZE=1000
 export BOUNDARY_DISTANCE_THRESHOLD=0.5
 

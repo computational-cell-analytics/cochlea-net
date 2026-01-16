@@ -12,7 +12,7 @@ For IHC segmentation run:
 - apply_unet_IHC_template.sbatch
 - segment_unet_IHC_template.sbatch
 
-After this, run the following to add segmentation to MoBIE, create component labelings and upload to S3:
+After this, run the following to add segmentation to MoBIE, create component labels and upload to S3:
 - templates_transfer/mobie_segmentation_template.sbatch
 - templates_transfer/sync_mobie.py
 - label_components/repro_label_components.py
