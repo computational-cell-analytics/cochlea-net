@@ -211,7 +211,7 @@ def marker_detection(
     # 3.) Map the detections to IHC and filter them based on a distance criterion.
     # Use the function 'map_and_filter_detections' from above.
     if mask_path is not None:
-        input_ = read_image_data(mask_path, mask_input_key)
+        input_ = read_image_data(mask_path, input_key)
         detections_filtered = map_and_filter_detections(
             segmentation=input_,
             detections=detections,
