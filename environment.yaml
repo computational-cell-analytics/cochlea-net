@@ -4,7 +4,7 @@ channels:
   - conda-forge
 
 dependencies:
-  - cluster_tools
+  - cluster_tools >=0.5.1
   - mobie_utils
   - pip
   - pooch
