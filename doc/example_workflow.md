@@ -209,6 +209,8 @@ sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/detect_synapse_marker_
 
 Templates for the transfer into the MoBIE data format can be found in `reproducibility/templates_transfer`.
 Both, the scripts as well as the command line usage require the installation of [MoBIE utils](https://github.com/mobie/mobie-utils-python).
+When installing MoBIE utils, you should change the dependencies in the `environment.yaml` file from `cluster_tools >=0.4.4` to `cluster_tools >=0.5.1` and add `zarr < 3`.
+Otherwise, the addition of image data in N5 format does not work correctly.
 Those scripts are designed for the usage with Slurm ([GWDG Doc](https://docs.hpc.gwdg.de/how_to_use/slurm/index.html)) and need some adjustments by the user, e.g. the activation of the working environment, the location of the MoBIE project, and the mail address.
 
 ### Image data
