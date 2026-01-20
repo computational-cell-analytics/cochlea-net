@@ -32,6 +32,10 @@ SYNAPSE_DICT = {
                      "component_list": [2, 5, 3, 6]},
     "M_AMD_N129_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
                      "component_list": [4, 2, 6]},
+    "M_AMD_N162_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
+                     "component_list": [7, 3, 1, 5]},
+    "M_AMD_N162_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
+                     "component_list": [3]},
 
     # PELCODISCO2
     "M_AMD_N88_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
@@ -64,4 +68,6 @@ SYNAPSE_DICT = {
                        "component_list": [5, 2, 4, 3]},
     "M_AMD_000088_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
     "M_AMD_000088_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
+    "M_AMD_N163_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
+    "M_AMD_N163_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
 }
