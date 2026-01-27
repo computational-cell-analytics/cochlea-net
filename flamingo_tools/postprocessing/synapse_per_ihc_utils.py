@@ -54,6 +54,10 @@ SYNAPSE_DICT = {
                     "component_list": [2, 1, 3]},
     "M_AMD_N97_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
                     "component_list": [2, 5]},
+    "M_AMD_000103_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
+                       "component_list": [2]},
+    "M_AMD_000103_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
+                       "component_list": [12, 3, 5, 8, 4, 19, 6, 11, 16]},
 
     # vfDISCO
     "M_LR_000248_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
@@ -70,4 +74,10 @@ SYNAPSE_DICT = {
     "M_AMD_000088_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
     "M_AMD_N163_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
     "M_AMD_N163_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b"},
+
+    # fDISCO
+    "M_AMD_000111_R": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
+                       "component_list": [1, 3]},
+    "M_AMD_000112_L": {"synapse_table_name": "synapse_v3_ihc_v4b", "ihc_table_name": "IHC_v4b",
+                       "component_list": [1, 2]},
 }

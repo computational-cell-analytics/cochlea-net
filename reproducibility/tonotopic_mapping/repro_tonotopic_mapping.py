@@ -36,8 +36,8 @@ def wrapper_tonotopic_mapping(
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
     """
     if ddict is None:
-        tonotopic_mapping_single(table_path, out_path=output_path, animal=animal, ototf=otof, force_overwrite=force_overwrite,
-                                 s3=s3, **kwargs)
+        tonotopic_mapping_single(table_path, out_path=output_path, animal=animal, ototf=otof,
+                                 force_overwrite=force_overwrite, s3=s3, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
