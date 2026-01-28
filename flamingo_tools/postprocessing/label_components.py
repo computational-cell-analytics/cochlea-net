@@ -738,7 +738,7 @@ def label_custom_components(tsv_table, custom_dict):
 
 def label_components_single(
     table_path: str,
-    out_path: str,
+    out_path: Optional[str] = None,
     force_overwrite: bool = False,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
@@ -777,6 +777,13 @@ def label_components_single(
             results into final components.
         use_napari: Visualize component labels with napari viewer.
     """
+    # overwrite input segmentation table with labeled version
+    if out_path is None:
+        if s3:
+            raise ValueError("Set an output path when accessing remote data.")
+        out_path = table_path
+        force_overwrite = True
+
     if os.path.isdir(out_path):
         raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
 

@@ -36,7 +36,11 @@ def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -
     return u, v
 
 
-def central_path_edt_graph(mask: np.ndarray, start: Tuple[int], end: Tuple[int]) -> np.ndarray:
+def central_path_edt_graph(
+    mask: np.ndarray,
+    start: Tuple[int],
+    end: Tuple[int],
+) -> Optional[np.ndarray]:
     """Find the central path within a binary mask between a start and an end coordinate.
 
     Args:
@@ -45,7 +49,7 @@ def central_path_edt_graph(mask: np.ndarray, start: Tuple[int], end: Tuple[int])
         end: End coordinate.
 
     Returns:
-        Coordinates of central path.
+        Coordinates of central path or None if no path exists.
     """
     dt = distance_transform_edt(mask)
     G = nx.Graph()
@@ -66,6 +70,8 @@ def central_path_edt_graph(mask: np.ndarray, start: Tuple[int], end: Tuple[int])
                         G.add_edge(u, v, weight=w)
     s = idx_to_node(*start)
     t = idx_to_node(*end)
+    if not nx.has_path(G, source=s, target=t):
+        return None
     path = nx.shortest_path(G, source=s, target=t, weight="weight")
     coords = [(p//(shape[1]*shape[2]),
                (p//shape[2]) % shape[1],
@@ -129,9 +135,10 @@ def measure_run_length_sgns_multi_component(
     """
     total_path = []
     print(f"Evaluating {len(centroids_components)} components.")
-    # 1) Process centroids for each component
-    for centroids in centroids_components:
-        mask = downscaled_centroids(centroids, scale_factor=scale_factor, downsample_mode="capped")
+
+    def _find_central_path_through_downscaled_mask(centroids, downscaling_factor):
+        # Check for the existence of and the shortest path between the most distant nodes in the downscaled volume.
+        mask = downscaled_centroids(centroids, scale_factor=downscaling_factor, downsample_mode="capped")
         mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
         mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
         pts = np.argwhere(mask == 1)
@@ -146,7 +153,21 @@ def measure_run_length_sgns_multi_component(
         end_voxel = tuple(pts[proj.argmax()])
 
         # get central path and total distance
-        path = central_path_edt_graph(mask, start_voxel, end_voxel)
+        return central_path_edt_graph(mask, start_voxel, end_voxel)
+
+    # 1) Process centroids for each component
+    for centroids in centroids_components:
+        # get central path and total distance
+        path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
+
+        # Use larger downscaling factor to have connected components in downscaled volume.
+        while path is None:
+            scale_factor = 2 * scale_factor
+            print(f"Not all components are fully connected in downscaled volume. Trying scale factor {scale_factor}.")
+            if scale_factor > 100:
+                raise ValueError("Downscaling for tonotopic mapping not possible.")
+            path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
+
         path = path * scale_factor
         path = moving_average_3d(path, window=5)
         total_path.append(path)
@@ -862,6 +883,13 @@ def tonotopic_mapping_single(
         s3_bucket_name:
         s3_service_endpoint:
     """
+    # overwrite input segmentation table with labeled version
+    if out_path is None:
+        if s3:
+            raise ValueError("Set an output path when accessing remote data.")
+        out_path = table_path
+        force_overwrite = True
+
     if os.path.isdir(out_path):
         raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
 

@@ -12,19 +12,21 @@ def label_components():
         description="Script to label segmentation using a segmentation table and graph connected components.")
 
     parser.add_argument("-i", "--input", type=str, required=True, help="Input path to segmentation table.")
-    parser.add_argument("-o", "--output", type=str, required=True,
-                        help="Output path. Either directory (for --json) or specific file otherwise.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output path for segmentation table. Default: Overwrite input table.")
     parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
+                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("--min_size", type=int, default=1000,
-                        help="Minimal number of pixels for filtering small instances.")
+                        help="Minimal number of pixels for filtering small instances. Default: 1000")
     parser.add_argument("--min_component_length", type=int, default=50,
-                        help="Minimal length for filtering out connected components.")
-    parser.add_argument("--max_edge_distance", type=float, default=30,
-                        help="Maximal distance in micrometer between points to create edges for connected components.")
+                        help="Minimal length for filtering out connected components. Default: 50")
+    parser.add_argument(
+        "--max_edge_distance", type=float, default=30,
+        help="Maximal distance in micrometer between points to create edges for connected components. Default: 30",
+    )
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true",
                         help="Use napari image viewer for visualizing labeled components.")

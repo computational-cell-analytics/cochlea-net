@@ -39,6 +39,8 @@ def wrapper_tonotopic_mapping(
         tonotopic_mapping_single(table_path, out_path=output_path, animal=animal, ototf=otof,
                                  force_overwrite=force_overwrite, s3=s3, **kwargs)
     else:
+        if output_path is None:
+            raise ValueError("Specify an output path when supplying a JSON dictionary.")
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
 
@@ -74,8 +76,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument("-o", "--output", type=str, required=True,
-                        help="Output path. Either directory or specific file.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output path. Directory (for --json) or specific file. Default: Overwrite input table.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
     parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
@@ -84,8 +86,10 @@ def main():
     parser.add_argument("--animal", type=str, default="mouse",
                         help="Animal type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
     parser.add_argument("--otof", action="store_true", help="Use frequency mapping for OTOF cochleae.")
-    parser.add_argument("--apex_position", type=str, default="apex_higher",
-                        help="Use frequency mapping for OTOF cochleae.")
+    parser.add_argument(
+        "--apex_position", type=str, default="apex_higher",
+        help="Apex is set to node with higher y-value. Use 'apex_lower' to reverse default mapping.",
+    )
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",
