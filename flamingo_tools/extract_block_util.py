@@ -13,15 +13,14 @@ import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.file_utils import read_image_data
 
 
-def extract_block(
+def extract_block_single(
     input_path: str,
     coords: List[int],
-    output_dir: Optional[str] = None,
+    output_path: Optional[str] = None,
     input_key: Optional[str] = None,
     output_key: Optional[str] = None,
     resolution: Union[float, Tuple[float, float, float]] = 0.38,
     roi_halo: List[int] = [128, 128, 64],
-    tif: bool = False,
     s3: Optional[bool] = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -34,11 +33,10 @@ def extract_block(
     Args:
         input_path: Input folder in n5 / ome-zarr format.
         coords: Center coordinates of extracted 3D volume.
-        output_dir: Output directory for saving output as <basename>_crop.n5. Default: input directory.
+        output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
         input_key: Input key for data in input file.
-        output_key: Output key for data in n5 output or used as suffix for tif output.
+        output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
         roi_halo: ROI halo of extracted 3D volume.
-        tif: Flag for tif output
         s3: Flag for considering input_path for S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
@@ -67,20 +65,14 @@ def extract_block(
     input_dir = input_path.split(basename)[0]
     input_dir = os.path.abspath(input_dir)
 
-    if output_dir == "":
-        output_dir = input_dir
-    os.makedirs(output_dir, exist_ok=True)
-
-    if tif:
+    if os.path.isdir(output_path):
         if output_key is None:
             output_name = basename + "_crop_" + coord_string + "_" + image_prefix + ".tif"
         else:
-            output_name = basename + "_" + image_prefix + "_crop_" + coord_string + "_" + output_key + ".tif"
+            output_key = "raw" if output_key is None else output_key
+            output_name = os.path.join(output_path, basename + "_crop_" + coord_string + ".n5")
 
-        output_file = os.path.join(output_dir, output_name)
-    else:
-        output_key = "raw" if output_key is None else output_key
-        output_file = os.path.join(output_dir, basename + "_crop_" + coord_string + ".n5")
+        output_path = os.path.join(output_path, output_name)
 
     coords = np.array(coords).astype("float")
     if not isinstance(resolution, float):
@@ -106,8 +98,8 @@ def extract_block(
             kwargs.update({"order": 0, "anti_aliasing": False})
         data_roi = rescale(data_roi, scale_factor, **kwargs).astype(data_roi.dtype)
 
-    if tif:
-        imageio.imwrite(output_file, data_roi, compression="zlib")
+    if output_key is None:
+        imageio.imwrite(output_path, data_roi, compression="zlib")
     else:
-        f_out = zarr.open(output_file, mode="w")
+        f_out = zarr.open(output_path, mode="w")
         f_out.create_dataset(output_key, data=data_roi, compression="gzip")

@@ -1,4 +1,4 @@
-from flamingo_tools.extract_block_util import extract_block
+from flamingo_tools.extract_block_util import extract_block_single
 
 
 positions_with_signal = [
@@ -15,7 +15,7 @@ halo = [256, 256, 64]
 
 
 for pos in positions_with_signal + positions_without_signal:
-    extract_block(
+    extract_block_single(
         input_path="M_LR_000099_L/images/ome-zarr/PV.ome.zarr",
         coords=pos,
         output_dir="./MLR99L_for_DA",

@@ -56,7 +56,7 @@ def repro_equidistant_centers(
 
         cell_type = update_dic(dic, "cell_type", default_cell_type)
         component_list = update_dic(dic, "component_list", default_component_list)
-        _ = update_dic(dic, "halo_size", default_halo_size)
+        _ = update_dic(dic, "roi_halo", default_halo_size)
         n_blocks = update_dic(dic, "n_blocks", default_n_blocks)
         max_edge_distance = update_dic(dic, "max_edge_distance", default_max_edge_distance)
 

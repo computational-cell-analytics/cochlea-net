@@ -13,7 +13,7 @@
 			5
 		],
 		"cell_type": "sgn",
-		"halo_size": [
+		"roi_halo": [
 			256,
 			256,
 			50
