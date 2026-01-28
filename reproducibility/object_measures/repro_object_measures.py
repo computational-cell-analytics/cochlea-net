@@ -124,6 +124,8 @@ def main():
         ddict=args.json,
         force_overwrite=args.force,
         s3=args.s3,
+        component_list=args.components,
+        resolution=args.resolution,
     )
 
 

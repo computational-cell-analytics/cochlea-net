@@ -595,6 +595,7 @@ def object_measures_single(
                 segmentation_key=input_key,
                 feature_set=feature_set,
                 s3_flag=s3,
+                force=force_overwrite,
                 component_list=component_list,
                 dilation=dilation,
                 median_only=median_only,
