@@ -13,10 +13,11 @@ setup(
             "flamingo_tools.convert_data = flamingo_tools.data_conversion:convert_lightsheet_to_bdv_cli",
             "flamingo_tools.run_segmentation = flamingo_tools.segmentation.cli:run_segmentation",
             "flamingo_tools.run_detection = flamingo_tools.segmentation.cli:run_detection",
+            "flamingo_tools.equidistant_centers = flamingo_tools.postprocessing.cli:equidistant_centers",
             "flamingo_tools.extract_block = flamingo_tools.postprocessing.cli:extract_block",
             "flamingo_tools.label_components = flamingo_tools.postprocessing.cli:label_components",
-            "flamingo_tools.tonotopic_mapping = flamingo_tools.postprocessing.cli:tonotopic_mapping",
             "flamingo_tools.object_measures = flamingo_tools.postprocessing.cli:object_measures",
+            "flamingo_tools.tonotopic_mapping = flamingo_tools.postprocessing.cli:tonotopic_mapping",
             # TODO: MoBIE conversion
         ],
         "napari.manifest": [

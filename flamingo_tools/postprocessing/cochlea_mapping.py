@@ -1,3 +1,4 @@
+import json
 import math
 import os
 from typing import List, Optional, Tuple
@@ -917,3 +918,65 @@ def tonotopic_mapping_single(
                                   otof=otof)
 
         table.to_csv(out_path, sep="\t", index=False)
+
+
+def equidistant_centers_single(
+    table_path: str,
+    output_path: str,
+    n_blocks: int = 10,
+    cell_type: str = "sgn",
+    component_list: List[int] = [1],
+    max_edge_distance: float = 30,
+    force_overwrite: bool = False,
+    offset_blocks: bool = True,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    **_
+):
+    """Find equidistant centers within the central path of the Rosenthal's canal.
+
+    Args:
+        table_path: File path to segmentation table.
+        output_path: Output path to JSON file with center coordinates.
+        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
+        force_overwrite: Forcefully overwrite existing output path.
+        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
+        force_overwrite: Forcefully overwrite existing output path.
+        offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
+        s3: Use S3 bucket.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+    """
+    # overwrite input segmentation table with labeled version
+    if output_path is None:
+        raise ValueError("Set an output path for the JSON dictionary.")
+
+    if s3:
+        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
+                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table_path = os.path.realpath(table_path)
+        table = pd.read_csv(table_path, sep="\t")
+
+    if os.path.isfile(output_path) and not force_overwrite:
+        print(f"Skipping {output_path}. Table already exists.")
+
+    else:
+        centers = equidistant_centers(
+            table, component_label=component_list, cell_type=cell_type,
+            n_blocks=n_blocks, max_edge_distance=max_edge_distance, offset_blocks=offset_blocks,
+        )
+        centers = [[round(c) for c in center] for center in centers]
+
+        dic = {}
+        dic["seg_table"] = table_path
+        dic["crop_centers"] = centers
+
+        with open(output_path, "w") as f:
+            json.dump(dic, f, indent='\t', separators=(',', ': '))
