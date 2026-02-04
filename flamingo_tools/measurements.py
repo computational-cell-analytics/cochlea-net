@@ -512,7 +512,7 @@ def object_measures_single(
     out_paths: List[str],
     force_overwrite: bool = False,
     component_list: List[int] = [1],
-    background_mask: Optional[np.typing.ArrayLike] = None,
+    background_mask: Optional[str] = None,
     resolution: List[float] = [0.38, 0.38, 0.38],
     s3: bool = False,
     s3_credentials: Optional[str] = None,
@@ -562,7 +562,7 @@ def object_measures_single(
                 feature_set = "default"
                 dilation = None
                 median_only = False
-            else:
+            elif background_mask in ["yes", "Yes"]:
                 print("Using background mask for calculating object measures.")
                 feature_set = "default_background_subtract"
                 dilation = 4
@@ -585,6 +585,8 @@ def object_measures_single(
                     n_threads=n_threads,
                     cache_path=mask_cache_path,
                 )
+            else:
+                print("Calculating object measures without background mask.")
 
             compute_object_measures(
                 image_path=img_path,

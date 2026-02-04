@@ -2,11 +2,13 @@
 """
 import argparse
 import json
+import os
 
 from .label_components import label_components_single
 from .cochlea_mapping import tonotopic_mapping_single, equidistant_centers_single
 from flamingo_tools.measurements import object_measures_single
 from flamingo_tools.extract_block_util import extract_block_single
+from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 
 def equidistant_centers():
@@ -64,11 +66,17 @@ def extract_block():
     parser.add_argument('-i', '--input', type=str, default=None, help="Input path to data in n5/ome-zarr/TIF format.")
     parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
+    # options for file naming
+    parser.add_argument("--dataset_name", type=str, default=None,
+                        help="Name of dataset/cochlea, e.g. M_AMD_N75_L. Used as prefix in output name.")
+    parser.add_argument("--image_channel", type=str, default=None,
+                        help="Name of image channel/stain, e.g. PV. Used as suffix in output name.")
+
     # options for block etraction
     parser.add_argument("-c", "--coords", type=int, nargs="+", default=[],
                         help="3D coordinate as center of extracted block [µm].")
-    parser.add_argument("--json_coords", type=str, default=None,
-                        help="JSON file with 3D coordinates of parameter 'crop_centers'.")
+    parser.add_argument("--json_info", type=str, default=None,
+                        help="JSON file with crop information.")
     parser.add_argument('-k', "--input_key", type=str, default=None,
                         help="Input key for data in input file with n5/OME-ZARR format.")
     parser.add_argument("--output_key", type=str, default=None,
@@ -90,30 +98,45 @@ def extract_block():
 
     args = parser.parse_args()
 
-    if args.json_coords is not None:
+    if args.json_info is not None:
         with open(args.json_coords, "r") as f:
-            data = json.loads(f.read())
-            coord_list = data["crop_centers"]
-            for coords in coord_list:
-                extract_block_single(
-                    input_path=args.input,
-                    coords=coords,
-                    output_path=args.output,
-                    input_key=args.input_key,
-                    output_key=args.output_key,
-                    resolution=args.resolution,
-                    roi_halo=args.roi_halo,
-                    s3=args.s3,
-                    s3_credentials=args.s3_credentials,
-                    s3_bucket_name=args.s3_bucket_name,
-                    s3_service_endpoint=args.s3_service_endpoint,
-                )
+            params = json.loads(f.read())
+            cochlea = params["cochlea"]
+            if isinstance(params["image_channel"], list):
+                image_channels = params["image_channel"]
+            else:
+                image_channels = [params["image_channel"]]
+
+            for image_channel in image_channels:
+                if args.s3:
+                    input_path = os.path.join(cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+                else:
+                    input_path = os.path.join(MOBIE_FOLDER, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+
+                for coords in params["crop_centers"]:
+                    extract_block_single(
+                        input_path=input_path,
+                        coords=coords,
+                        output_path=args.output,
+                        dataset_name=cochlea,
+                        channel_name=image_channel,
+                        input_key=args.input_key,
+                        output_key=args.output_key,
+                        resolution=args.resolution,
+                        roi_halo=args.roi_halo,
+                        s3=args.s3,
+                        s3_credentials=args.s3_credentials,
+                        s3_bucket_name=args.s3_bucket_name,
+                        s3_service_endpoint=args.s3_service_endpoint,
+                    )
 
     else:
         extract_block_single(
             input_path=args.input,
             coords=args.coords,
             output_path=args.output,
+            dataset_name=args.dataset_name,
+            channel_name=args.channel_name,
             input_key=args.input_key,
             output_key=args.output_key,
             resolution=args.resolution,

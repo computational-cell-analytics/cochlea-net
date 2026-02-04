@@ -43,9 +43,12 @@ def wrapper_extract_block(
                 image_channels = [params["image_channel"]]
 
             for image_channel in image_channels:
-                input_path = os.path.join(cochlea, "images", "ome-zarr", image_channel + ".ome.zarr")
+                input_path = os.path.join(cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
                 for coords in params["crop_centers"]:
-                    extract_block_single(input_path, coords, output_path, input_key=input_key, s3=s3, **params)
+                    extract_block_single(
+                        input_path, coords, output_path, dataset_name=cochlea, channel_name=image_channel,
+                        input_key=input_key, s3=s3, **params,
+                    )
 
 
 def main():

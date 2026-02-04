@@ -44,7 +44,7 @@ def wrapper_object_measures(
     else:
         out_paths = [os.path.realpath(o) for o in out_paths]
         param_dicts = _load_json_as_list(ddict)
-        for num, params in enumerate(param_dicts):
+        for params in param_dicts:
             cochlea = params["cochlea"]
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
@@ -64,13 +64,16 @@ def wrapper_object_measures(
                 out_paths_tmp = out_paths.copy()
 
             if s3:
-                image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr" for ch in image_channels]
-                seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
-                seg_table = f"{cochlea}/tables/{seg_channel}/default.tsv"
+                image_paths = [os.path.join(f"{cochlea}", "images", "ome-zarr", f"{ch}.ome.zarr")
+                               for ch in image_channels]
+                seg_path = os.path.join(f"{cochlea}", "images", "ome-zarr", f"{seg_channel}.ome.zarr")
+                seg_table = os.path.join(f"{cochlea}", "tables", f"{seg_channel}", "default.tsv")
             else:
-                image_paths = [f"{MOBIE_FOLDER}/{cochlea}/images/ome-zarr/{ch}.ome.zarr" for ch in image_channels]
-                seg_path = f"{MOBIE_FOLDER}/{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
-                seg_table = f"{MOBIE_FOLDER}/{cochlea}/tables/{seg_channel}/default.tsv"
+                image_paths = [os.path.join(f"{MOBIE_FOLDER}", f"{cochlea}", "images", "ome-zarr", f"{ch}.ome.zarr")
+                               for ch in image_channels]
+                seg_path = os.path.join(f"{MOBIE_FOLDER}", f"{cochlea}", "images", "ome-zarr",
+                                        f"{seg_channel}.ome.zarr")
+                seg_table = os.path.join(f"{MOBIE_FOLDER}", f"{cochlea}", "tables", f"{seg_channel}", "default.tsv")
 
             object_measures_single(
                 table_path=seg_table,
@@ -123,9 +126,13 @@ def main():
         seg_path=args.seg_path,
         ddict=args.json,
         force_overwrite=args.force,
-        s3=args.s3,
         component_list=args.components,
         resolution=args.resolution,
+        background_mask=args.bg_mask,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
 
 

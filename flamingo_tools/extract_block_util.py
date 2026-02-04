@@ -17,6 +17,8 @@ def extract_block_single(
     input_path: str,
     coords: List[int],
     output_path: Optional[str] = None,
+    dataset_name: Optional[str] = None,
+    channel_name: Optional[str] = None,
     input_key: Optional[str] = None,
     output_key: Optional[str] = None,
     resolution: Union[float, Tuple[float, float, float]] = 0.38,
@@ -33,6 +35,7 @@ def extract_block_single(
     Args:
         input_path: Input folder in n5 / ome-zarr format.
         coords: Center coordinates of extracted 3D volume.
+        output_dir: Output directory for saving output as <basename>_crop.n5. Default: input directory.
         output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
@@ -52,25 +55,27 @@ def extract_block_single(
     coords.reverse()
     roi_halo.reverse()
 
-    input_content = list(filter(None, input_path.split("/")))
-
     if s3:
-        image_name = input_content[-1].split(".")[0]
-        image_prefix = image_name
-        basename = input_content[0]
-    else:
-        basename = "".join(input_content[-1].split(".")[:-1])
-        image_prefix = basename.split("_")[-1]
+        # MoBIE format <cochlea>/images/ome-zarr/<stain>.ome.zarr
+        input_content = list(filter(None, os.path.normpath(input_path).split(os.path.sep)))
+        channel_name = input_content[-1].split(".")[0] if channel_name is None else channel_name
+        dataset_name = input_content[0] if dataset_name is None else dataset_name
 
-    input_dir = input_path.split(basename)[0]
-    input_dir = os.path.abspath(input_dir)
+    # get components of output file
+    prefix = ""
+    suffix = ""
+    if dataset_name is not None:
+        dataset_str = "-".join(dataset_name.split("_"))
+        prefix = f"{dataset_str}_"
+    if channel_name is not None:
+        channel_str = "-".join(channel_name.split("_"))
+        suffix = f"_{channel_str}"
 
     if os.path.isdir(output_path):
         if output_key is None:
-            output_name = basename + "_crop_" + coord_string + "_" + image_prefix + ".tif"
+            output_name = f"{prefix}crop_{coord_string}{suffix}.tif"
         else:
-            output_key = "raw" if output_key is None else output_key
-            output_name = os.path.join(output_path, basename + "_crop_" + coord_string + ".n5")
+            output_name = f"{prefix}crop_{coord_string}{suffix}.n5"
 
         output_path = os.path.join(output_path, output_name)
 

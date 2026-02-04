@@ -93,4 +93,11 @@ flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zar
 
 ## Intensity analysis
 
-TODO
+This would calculate the PV intensity for the SGN segmentation
+```bash
+flamingo_tools.object_measures -o M-AMD-N162-L_PV_SGN-v2_object-measures.tsv \
+    -i M_AMD_N162_L/images/ome-zarr/PV.ome.zarr \
+    -t M_AMD_N162_L/tables/SGN_v2/default.tsv \
+    -s M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr \
+    --s3
+```
