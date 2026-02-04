@@ -40,7 +40,7 @@ def main(
     input_dir = os.path.abspath(input_path).split(basename)[0]
 
     if output_dir is None:
-        output_path = os.path.join(input_dir, basename + "_resized.n5")
+        output_path = os.path.join(input_dir, f"{basename}_resized.n5")
     else:
         output_path = os.path.abspath(output_dir)
 

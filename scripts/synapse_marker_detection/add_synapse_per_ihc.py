@@ -71,7 +71,7 @@ def add_syn_per_ihc(args):
 
         print(f"Mean syn_per_IHC: {round(sum(syn_per_IHC) / len(syn_per_IHC), 2)}")
         print(f"Stdv syn_per_IHC: {round(np.std(syn_per_IHC), 2)}")
-        out_path = os.path.join(out_dir, cochlea + "_syn-per-ihc.tsv")
+        out_path = os.path.join(out_dir, f"{cochlea}_syn-per-ihc.tsv")
         ihc_table.to_csv(out_path, sep="\t", index=False)
 
 

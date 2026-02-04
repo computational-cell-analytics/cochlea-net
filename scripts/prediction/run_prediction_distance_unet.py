@@ -89,9 +89,9 @@ def main():
 
         abs_path = os.path.abspath(args.input)
         basename = ".".join(os.path.basename(abs_path).split(".")[:-1])
-        output_path = os.path.join(args.output_folder, basename + "_seg.tif")
+        output_path = os.path.join(args.output_folder, f"{basename}_seg.tif")
         imageio.imwrite(output_path, segmentation, compression="zlib")
-        timer_output = os.path.join(args.output_folder, basename + "_timer.json")
+        timer_output = os.path.join(args.output_folder, f"{basename}_timer.json")
 
     else:
         run_unet_prediction(
