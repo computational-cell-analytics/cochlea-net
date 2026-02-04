@@ -1,5 +1,5 @@
 import os
-from flamingo_tools.extract_block_util import extract_block
+from flamingo_tools.extract_block_util import extract_block_single
 
 RESOLUTION_LA_VISION = (1.887779, 1.887779, 3.000000)
 RESOLUTION_FLAMINGO = (0.38, 0.38, 0.38)
@@ -27,7 +27,7 @@ def download_lavision_crops():
     os.makedirs(output_folder, exist_ok=True)
     for pos in POSITIONS:
         halo = [128, 128, 32]
-        extract_block(
+        extract_block_single(
             input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
             tif=True, s3=True,
         )
@@ -36,7 +36,7 @@ def download_lavision_crops():
     os.makedirs(output_folder, exist_ok=True)
     for pos in EMPTY_POSITIONS:
         halo = [128, 128, 32]
-        extract_block(
+        extract_block_single(
             input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
             tif=True, s3=True,
         )
@@ -84,11 +84,11 @@ def downscale_segmentation():
         input_path = f"{cochlea}/images/ome-zarr/PV.ome.zarr"
         seg_path = f"{cochlea}/images/ome-zarr/SGN_v2.ome.zarr"
         for position in positions:
-            extract_block(
+            extract_block_single(
                 input_path, position, image_out_folder, input_key, output_key, resolution, halo,
                 tif=True, s3=True, scale_factor=(0.5, 1, 1),
             )
-            extract_block(
+            extract_block_single(
                 seg_path, position, label_out_folder, input_key, output_key, resolution, halo,
                 tif=True, s3=True, scale_factor=(0.5, 1, 1),
             )
@@ -114,7 +114,7 @@ def download_lavision_crops2():
     os.makedirs(output_folder, exist_ok=True)
     for pos in new_positions_m04:
         halo = [128, 128, 32]
-        extract_block(
+        extract_block_single(
             input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
             tif=True, s3=True,
         )
@@ -128,7 +128,7 @@ def download_lavision_crops2():
     os.makedirs(output_folder, exist_ok=True)
     for pos in new_positions_mar05:
         halo = [128, 128, 32]
-        extract_block(
+        extract_block_single(
             input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
             tif=True, s3=True,
         )

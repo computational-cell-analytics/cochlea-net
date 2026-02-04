@@ -28,6 +28,8 @@ def wrapper_label_components(
     if ddict is None:
         label_components_single(table_path, out_path=output_path, use_napari=use_napari, s3=s3, **kwargs)
     else:
+        if output_path is None:
+            raise ValueError("Specify an output path when supplying a JSON dictionary.")
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
 
@@ -50,21 +52,23 @@ def main():
     parser = argparse.ArgumentParser(
         description="Script to label segmentation using a segmentation table and graph connected components.")
 
-    parser.add_argument("-o", "--output", type=str, required=True,
-                        help="Output path. Either directory (for --json) or specific file otherwise.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output path. Directory (for --json) or specific file. Default: Overwrite input table.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
     parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
+                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("--min_size", type=int, default=1000,
-                        help="Minimal number of pixels for filtering small instances.")
+                        help="Minimal number of pixels for filtering small instances. Default: 1000")
     parser.add_argument("--min_component_length", type=int, default=50,
-                        help="Minimal length for filtering out connected components.")
-    parser.add_argument("--max_edge_distance", type=float, default=30,
-                        help="Maximal distance in micrometer between points to create edges for connected components.")
+                        help="Minimal length for filtering out connected components. Default: 50")
+    parser.add_argument(
+        "--max_edge_distance", type=float, default=30,
+        help="Maximal distance in micrometer between points to create edges for connected components. Default: 30",
+    )
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true", help="Use napari viewer to visualize result.")
 

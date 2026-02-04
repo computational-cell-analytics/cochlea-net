@@ -7,7 +7,7 @@
 		],
 		"segmentation_channel": "IHC_resized_v4b",
 		"cell_type": "ihc",
-		"halo_size": [
+		"roi_halo": [
 			256,
 			256,
 			50

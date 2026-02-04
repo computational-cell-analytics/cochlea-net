@@ -20,7 +20,7 @@
 			18,
 			7
 		],
-		"halo_size": [
+		"roi_halo": [
 			128,
 			128,
 			48
@@ -63,7 +63,7 @@
 			1,
 			2
 		],
-		"halo_size": [
+		"roi_halo": [
 			128,
 			128,
 			48
@@ -105,7 +105,7 @@
 		"component_list": [
 			1
 		],
-		"halo_size": [
+		"roi_halo": [
 			128,
 			128,
 			48

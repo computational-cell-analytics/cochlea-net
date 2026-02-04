@@ -1,6 +1,6 @@
 import os
 import json
-from flamingo_tools.extract_block_util import extract_block
+from flamingo_tools.extract_block_util import extract_block_single
 
 # Segmentation G_EK_000233_L IHC_v5:
 # Components: 1, 2, 3, 4, 5, 8
@@ -31,7 +31,7 @@ def initial_blocks():
     for coords in blocks_to_annotate:
         halo = [196, 196, 48]
         coords = json.loads(coords)
-        extract_block(
+        extract_block_single(
             input_path, coords, output_folder, input_key, output_key, resolution, halo,
             tif=True, s3=True,
         )
@@ -40,7 +40,7 @@ def initial_blocks():
     os.makedirs(output_folder, exist_ok=True)
     for coords in empty_blocks:
         coords = json.loads(coords)
-        extract_block(
+        extract_block_single(
             input_path, coords, output_folder, input_key, output_key, resolution, halo,
             tif=True, s3=True,
         )
@@ -67,7 +67,7 @@ def next_blocks():
     for coords in blocks_to_annotate:
         halo = [196, 196, 48]
         coords = json.loads(coords)
-        extract_block(
+        extract_block_single(
             input_path, coords, output_folder, input_key, output_key, resolution, halo,
             tif=True, s3=True,
         )
