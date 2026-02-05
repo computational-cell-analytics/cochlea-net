@@ -26,10 +26,6 @@ def equidistant_centers():
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
-    parser.add_argument(
-        "--max_edge_distance", type=float, default=30,
-        help="Maximal distance in micrometer between points to create edges for connected components. Default: 30",
-    )
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -49,7 +45,6 @@ def equidistant_centers():
         n_blocks=args.n_blocks,
         cell_type=args.cell_type,
         component_list=args.components,
-        max_edge_distance=args.max_edge_distance,
         force_overwrite=args.force,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
@@ -263,10 +258,6 @@ def tonotopic_mapping():
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
     parser.add_argument(
-        "--max_edge_distance", type=float, default=30,
-        help="Maximal distance in micrometer between points to create edges for connected components. Used for IHCs.",
-    )
-    parser.add_argument(
         "-c", "--components", type=int, nargs="+", default=[1],
         help="List of connected components. The order has to match the order within the cochlear volume.",
     )
@@ -291,7 +282,6 @@ def tonotopic_mapping():
         otof=args.otof,
         apex_position=args.apex_position,
         cell_type=args.cell_type,
-        max_edge_distance=args.max_edge_distance,
         component_list=args.components,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
