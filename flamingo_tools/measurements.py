@@ -518,7 +518,7 @@ def object_measures_single(
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **_
+    **_,
 ):
     """Compute object measures for a single or multiple image channels in respect to a single segmentation channel.
 

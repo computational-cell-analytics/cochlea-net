@@ -59,7 +59,7 @@ def main():
     parser.add_argument('-i', '--input', type=str, default=None,
                         help="Input path to data in n5/ome-zarr/TIF format.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for block etraction
     parser.add_argument("-c", "--coords", type=int, nargs="+", default=[],

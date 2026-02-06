@@ -80,7 +80,7 @@ def main():
                         help="Output path. Directory (for --json) or specific file. Default: Overwrite input table.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for tonotopic mapping
     parser.add_argument("--animal", type=str, default="mouse",

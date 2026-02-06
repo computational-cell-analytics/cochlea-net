@@ -49,7 +49,7 @@ def wrapper_object_measures(
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
             image_channels = params["image_channel"]
-            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
+            table_path = os.path.join(cochlea, "tables", seg_channel, "default.tsv")
             if len(out_paths) == 1 and os.path.isdir(out_paths[0]):
 
                 c_str = "-".join(cochlea.split("_"))
@@ -64,16 +64,16 @@ def wrapper_object_measures(
                 out_paths_tmp = out_paths.copy()
 
             if s3:
-                image_paths = [os.path.join(f"{cochlea}", "images", "ome-zarr", f"{ch}.ome.zarr")
+                image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
                                for ch in image_channels]
-                seg_path = os.path.join(f"{cochlea}", "images", "ome-zarr", f"{seg_channel}.ome.zarr")
-                seg_table = os.path.join(f"{cochlea}", "tables", f"{seg_channel}", "default.tsv")
+                seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
+                seg_table = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
             else:
-                image_paths = [os.path.join(f"{MOBIE_FOLDER}", f"{cochlea}", "images", "ome-zarr", f"{ch}.ome.zarr")
+                image_paths = [os.path.join(MOBIE_FOLDER, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
                                for ch in image_channels]
-                seg_path = os.path.join(f"{MOBIE_FOLDER}", f"{cochlea}", "images", "ome-zarr",
+                seg_path = os.path.join(MOBIE_FOLDER, cochlea, "images", "ome-zarr",
                                         f"{seg_channel}.ome.zarr")
-                seg_table = os.path.join(f"{MOBIE_FOLDER}", f"{cochlea}", "tables", f"{seg_channel}", "default.tsv")
+                seg_table = os.path.join(MOBIE_FOLDER, cochlea, "tables", seg_channel, "default.tsv")
 
             object_measures_single(
                 table_path=seg_table,
@@ -99,7 +99,7 @@ def main():
     parser.add_argument("-s", "--seg_path", type=str, default=None,
                         help="Input path to segmentation channel in ome.zarr format.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for object measures
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")

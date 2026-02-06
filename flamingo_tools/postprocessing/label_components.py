@@ -751,7 +751,7 @@ def label_components_single(
     s3_service_endpoint: Optional[str] = None,
     custom_dic: Optional[dict] = None,
     use_napari: bool = False,
-    **_
+    **_,
 ):
     """Process a single cochlea using one set of parameters or a custom dictionary.
     The cochlea is analyzed using graph-connected components

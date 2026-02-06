@@ -63,7 +63,7 @@ def run_segmentation():
         description="Segment individual cells in volumetric light microscopy data. "
         "This function supports the segmentation of SGNs and IHCs, at high- and low-resolution. "
         "Which model to use is specified with the argument '--model_type' ('-m'). "
-        "It also supports custom models via the (optional) argument '--checkpoint_path' ('-c'). "
+        "It also supports custom models via the (optional) argument '--checkpoint_path' ('-c')."
     )
     parser.add_argument(
         "-i", "--input_path", required=True,

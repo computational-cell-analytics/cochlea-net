@@ -28,7 +28,7 @@ def wrapper_equidistant_centers(
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ):
     """Wrapper function for extracting blocks from volumetric data.
     The function is used to distinguish between a passed parameter dictionary in JSON format
