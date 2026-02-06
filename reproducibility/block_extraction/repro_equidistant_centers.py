@@ -22,7 +22,6 @@ def wrapper_equidistant_centers(
     n_blocks: int = 10,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
-    force_overwrite: bool = False,
     offset_blocks: bool = True,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
@@ -37,22 +36,13 @@ def wrapper_equidistant_centers(
     if ddict is None:
         equidistant_centers_single(input_path, output_path, s3=s3, n_blocks=n_blocks,
                                    cell_type=cell_type, component_list=component_list,
-                                   force_overwrite=force_overwrite,
                                    offset_blocks=offset_blocks, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
 
         out_dict = []
         if output_path is None:
-            output_path = input_path
-            force_overwrite = True
-
-        if output_path is None:
             output_path = ddict
-            force_overwrite = True
-
-        if os.path.isfile(output_path) and not force_overwrite:
-            print(f"Skipping {output_path}. File already exists.")
 
         for params in param_dicts:
             cochlea = params["cochlea"]
@@ -89,7 +79,6 @@ def main():
                         help="Output path for JSON dictionary. Optional for --json: Table is overwritten.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for equidistant centers
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
@@ -117,7 +106,6 @@ def main():
         n_blocks=args.n_blocks,
         cell_type=args.cell_type,
         component_list=args.components,
-        force_overwrite=args.force,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

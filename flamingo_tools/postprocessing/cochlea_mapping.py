@@ -339,7 +339,7 @@ def measure_run_length_ihcs_multi_component(
             print(f"Graph consists of {len(components)} connected components.")
             if len(component_label) != len(components):
                 raise ValueError(f"Length of graph components {len(components)} "
-                                 f"does not match number of component labels {len(component_label)}. ")
+                                 f"does not match number of component labels {len(component_label)}.")
 
             # Order connected components in order of component labels
             # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -446,7 +446,6 @@ def find_max_min_distance(coords):
         float: Maximum of the minimum distances
     """
     coords = np.array(coords)
-    n = len(coords)
 
     # Compute all pairwise distances using broadcasting
     # Shape: (n, n, 3) - all pairwise differences
@@ -519,7 +518,7 @@ def measure_run_length_ihcs(
         print(f"Graph consists of {len(components)} connected components.")
         if len(component_label) != len(components):
             raise ValueError(f"Length of graph components {len(components)} "
-                             f"does not match number of component labels {len(component_label)}. ")
+                             f"does not match number of component labels {len(component_label)}.")
 
         # Order connected components in order of component labels
         # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -883,7 +882,7 @@ def tonotopic_mapping_single(
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **_
+    **_,
 ):
     """Tonotopic mapping of a single cochlea.
     Each segmentation instance within a given component list is assigned a frequency[kHz], a run length and an offset.
@@ -951,13 +950,12 @@ def equidistant_centers_single(
     n_blocks: int = 10,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
-    force_overwrite: bool = False,
     offset_blocks: bool = True,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **_
+    **_,
 ):
     """Find equidistant centers within the central path of the Rosenthal's canal.
 
@@ -967,7 +965,6 @@ def equidistant_centers_single(
         cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
         force_overwrite: Forcefully overwrite existing output path.
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
-        force_overwrite: Forcefully overwrite existing output path.
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
         s3: Use S3 bucket.
         s3_credentials:
@@ -987,19 +984,28 @@ def equidistant_centers_single(
         table_path = os.path.realpath(table_path)
         table = pd.read_csv(table_path, sep="\t")
 
-    if os.path.isfile(output_path) and not force_overwrite:
-        print(f"Skipping {output_path}. Table already exists.")
+    if os.path.isfile(output_path):
+        print(f"Updating parameters in {output_path}.")
+        with open(output_path, "r") as f:
+            dic = json.load(f)
+        dic["n_blocks"] = n_blocks
+        dic["cell_type"] = cell_type
+        dic["component_list"] = component_list
 
     else:
-        centers = equidistant_centers(
-            table, component_label=component_list, cell_type=cell_type,
-            n_blocks=n_blocks, offset_blocks=offset_blocks,
-        )
-        centers = [[round(c) for c in center] for center in centers]
-
         dic = {}
         dic["seg_table"] = table_path
-        dic["crop_centers"] = centers
+        dic["n_blocks"] = n_blocks
+        dic["cell_type"] = cell_type
+        dic["component_list"] = component_list
 
-        with open(output_path, "w") as f:
-            json.dump(dic, f, indent='\t', separators=(',', ': '))
+    centers = equidistant_centers(
+        table, component_label=component_list, cell_type=cell_type,
+        n_blocks=n_blocks, offset_blocks=offset_blocks,
+    )
+    centers = [[round(c) for c in center] for center in centers]
+
+    dic["crop_centers"] = centers
+
+    with open(output_path, "w") as f:
+        json.dump(dic, f, indent='\t', separators=(',', ': '))

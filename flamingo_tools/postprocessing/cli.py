@@ -1,13 +1,12 @@
 """private
 """
 import argparse
-import json
-import os
 
 from .label_components import label_components_single
 from .cochlea_mapping import tonotopic_mapping_single, equidistant_centers_single
+from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_single
-from flamingo_tools.extract_block_util import extract_block_single
+from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
 from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 
@@ -18,7 +17,7 @@ def equidistant_centers():
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output path for JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for equidistant centers
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
@@ -45,7 +44,6 @@ def equidistant_centers():
         n_blocks=args.n_blocks,
         cell_type=args.cell_type,
         component_list=args.components,
-        force_overwrite=args.force,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
@@ -59,7 +57,9 @@ def extract_block():
 
     parser.add_argument('-o', "--output", type=str, required=True, help="Output directory or file.")
     parser.add_argument('-i', '--input', type=str, default=None, help="Input path to data in n5/ome-zarr/TIF format.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project. Only used for '--json_info'.")
 
     # options for file naming
     parser.add_argument("--dataset_name", type=str, default=None,
@@ -67,7 +67,7 @@ def extract_block():
     parser.add_argument("--image_channel", type=str, default=None,
                         help="Name of image channel/stain, e.g. PV. Used as suffix in output name.")
 
-    # options for block etraction
+    # options for block extraction
     parser.add_argument("-c", "--coords", type=int, nargs="+", default=[],
                         help="3D coordinate as center of extracted block [µm].")
     parser.add_argument("--json_info", type=str, default=None,
@@ -92,55 +92,75 @@ def extract_block():
                         help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
 
     args = parser.parse_args()
+    args_dict = vars(args)
+    extract_block_json_wrapper(args_dict)
 
-    if args.json_info is not None:
-        with open(args.json_coords, "r") as f:
-            params = json.loads(f.read())
-            cochlea = params["cochlea"]
-            if isinstance(params["image_channel"], list):
-                image_channels = params["image_channel"]
-            else:
-                image_channels = [params["image_channel"]]
 
-            for image_channel in image_channels:
-                if args.s3:
-                    input_path = os.path.join(cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
-                else:
-                    input_path = os.path.join(MOBIE_FOLDER, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+def extract_central_blocks():
+    parser = argparse.ArgumentParser(
+        description="Script to extract multiple blocks for intensity annotation based on a JSON file.")
 
-                for coords in params["crop_centers"]:
-                    extract_block_single(
-                        input_path=input_path,
-                        coords=coords,
-                        output_path=args.output,
-                        dataset_name=cochlea,
-                        channel_name=image_channel,
-                        input_key=args.input_key,
-                        output_key=args.output_key,
-                        resolution=args.resolution,
-                        roi_halo=args.roi_halo,
-                        s3=args.s3,
-                        s3_credentials=args.s3_credentials,
-                        s3_bucket_name=args.s3_bucket_name,
-                        s3_service_endpoint=args.s3_service_endpoint,
-                    )
+    parser.add_argument('-i', '--input', type=str, default=None, help="Input JSON dictionary.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output directory for extracted blocks.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-m", "--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project.")
 
-    else:
-        extract_block_single(
-            input_path=args.input,
-            coords=args.coords,
-            output_path=args.output,
-            dataset_name=args.dataset_name,
-            channel_name=args.channel_name,
-            input_key=args.input_key,
-            output_key=args.output_key,
-            resolution=args.resolution,
-            roi_halo=args.roi_halo,
-            s3=args.s3,
-            s3_credentials=args.s3_credentials,
-            s3_bucket_name=args.s3_bucket_name,
-            s3_service_endpoint=args.s3_service_endpoint,
-        )
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
+    parser.add_argument("--s3_credentials", type=str, default=None,
+                        help="Input file containing S3 credentials. "
+                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
+    parser.add_argument("--s3_bucket_name", type=str, default=None,
+                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
+    parser.add_argument("--s3_service_endpoint", type=str, default=None,
+                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
+
+    args = parser.parse_args()
+
+    extract_central_block_from_json(
+        json_file=args.input,
+        output_path=args.output,
+        force_overwrite=args.force,
+        mobie_dir=args.mobie_dir,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
+    )
+
+
+def json_block_extraction():
+    parser = argparse.ArgumentParser(
+        description="Script to create JSON dictionary used for extracting blocks for intensity annotation.")
+
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output path for JSON dictionary.")
+    parser.add_argument("-d", "--dataset_name", type=str, required=True, help="Dataset name.")
+    parser.add_argument("-i", "--image_channel", type=str, required=True, nargs="+",
+                        help="Input image channel(s), e.g. PV, SGN_v2.")
+    parser.add_argument("-s", "--segmentation_channel", type=str, default=[],
+                        help="Segmentation channel as reference for finding equidistant centers.")
+    parser.add_argument("--cell_type", type=str, default="sgn",
+                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
+    parser.add_argument("-c", "--component_list", type=int, nargs="+", default=[1],
+                        help="List of connected components.")
+    parser.add_argument('-n', "--n_blocks", type=int, default=6,
+                        help="Number of blocks to extract. Default: 6")
+    parser.add_argument("--roi_halo", type=int, nargs="+", default=[256, 256, 64],
+                        help="ROI halo around center coordinate [pixel]. "
+                        "Cropped mask has twice the size. Default: 256 256 64")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+
+    args = parser.parse_args()
+    args_dict = vars(args)
+
+    export_dictionary_as_json(
+        output_path=args_dict.pop("output"),
+        force_overwrite=args_dict.pop("force"),
+        param_dict=args_dict,
+    )
 
 
 def label_components():
@@ -150,7 +170,7 @@ def label_components():
     parser.add_argument("-i", "--input", type=str, required=True, help="Input path to segmentation table.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output path for segmentation table. Default: Overwrite input table.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",
@@ -208,7 +228,7 @@ def object_measures():
                         help="Input path to segmentation table.")
     parser.add_argument("-s", "--seg_path", type=str, default=None,
                         help="Input path to segmentation channel in ome.zarr format.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for object measures
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
@@ -245,7 +265,7 @@ def tonotopic_mapping():
     parser.add_argument("-i", "--input", type=str, required=True, help="Input path to segmentation table.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output path for segmentation table. Default: Overwrite input table.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for tonotopic mapping
     parser.add_argument("--animal", type=str, default="mouse",
@@ -265,7 +285,7 @@ def tonotopic_mapping():
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
     parser.add_argument("--s3_credentials", type=str, default=None,
-                        help="Input file containing S3 credentials. "
+                        help="Input file containing S3 credentials."
                         "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
     parser.add_argument("--s3_bucket_name", type=str, default=None,
                         help="S3 bucket name. Optional if BUCKET_NAME was exported.")

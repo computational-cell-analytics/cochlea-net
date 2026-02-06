@@ -72,12 +72,27 @@ flamingo_tools.tonotopic_mapping --input M_AMD_N162_L_v4b.tsv --s3 -o M_AMD_N162
 ```
 We can use the table we created after labeling the components as the input because the function only adds new columns without changing the existing ones.
 
-## GFP annotation
+## Intensity annotation
 
 For the analysis of optogenetic therapy, it is helpful to perform intensity evaluation on multiple crops along the segmentation.
 To do this in an orderly manner, there is a function to determine equidistant centers, so coordinates which are equally spaced along the center of the Rosenthal's canal (for SGN) or
 along the IHC segmentation.
 
+### Extraction of regions of interest (ROI) blocks
+
+Create a JSON dictionary which will be used as the input for extracting central crops.
+```bash
+flamingo_tools.json_block_extraction -o M_AMD_N162_L.json -d M_AMD_N162_L -i PV SGN_v2 --cell_type sgn -c 1 -n 6 --roi_halo 256 256 64 -s SGN_v2
+```
+Provide this JSON file as input to the function
+```bash
+# s3 cluster
+flamingo_tools.extract_central_blocks --input M_AMD_N162_L.json -o <output_dir> --s3
+# local MoBIE project
+flamingo_tools.extract_central_blocks --input M_AMD_N162_L.json -o <output_dir> --mobie_dir <mobie_project_dir>
+```
+
+#### Step-by-Step
 ```bash
 flamingo_tools.equidistant_centers -i M_AMD_N162_L/tables/SGN_v2/default.tsv -o M_AMD_N162_L_crop.json -n 6 --s3
 ```
@@ -86,10 +101,21 @@ This command creates a JSON dictionary with six center coordinates which can be 
 
 ```bash
 # for a single file
-flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr -o crop.tif -c 300 300 400 --s3 --input_key s0 --force
-# for multiple crops
-flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr --json M_AMD_N162_L_crop.json -o <crop_folder> --s3 --input_key s0 --force
+flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr -o crop.tif -c x y z --s3 --input_key s0 --force
 ```
+
+The extracted blocks can be used for intensity annotation.
+For the annotation of GFP, the crops of PV, GFP, and SGN are needed.
+The crop files are expected to have the format `<cochlea>_crop_xxx-yyy-zzz_<image_channel>.tif`.
+
+### Starting the annotation tool
+
+The annotation tool in Napari can then be called using the common prefix `<cochlea>_crop_xxx-yyy-zzz` of all crops.
+```bash
+python /path/to/cochlea-net-repository/scripts/intensity_annotation/gfp_annotation.py --seg_version SGN_v2 <common_prefix>
+```
+The intensity analysis currently requires the creation of two files, which are created through the tuning of the intensity threshold.
+One contains the segmentation channel for all weak positives and one excluding all negatives.
 
 ## Intensity analysis
 
