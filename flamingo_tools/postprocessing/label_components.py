@@ -751,6 +751,7 @@ def label_components_single(
     s3_service_endpoint: Optional[str] = None,
     custom_dic: Optional[dict] = None,
     use_napari: bool = False,
+    scale_factor: int = 20,
     **_
 ):
     """Process a single cochlea using one set of parameters or a custom dictionary.
@@ -776,6 +777,7 @@ def label_components_single(
         custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
             results into final components.
         use_napari: Visualize component labels with napari viewer.
+        scale_factor: Scale factor for down-scaling data for visualization in Napari.
     """
     # overwrite input segmentation table with labeled version
     if out_path is None:
@@ -832,7 +834,6 @@ def label_components_single(
 
         if use_napari:
             import napari
-            scale_factor = 20
             centroids = list(zip(tsv_table["anchor_x"], tsv_table["anchor_y"], tsv_table["anchor_z"]))
             component_labels = list(tsv_table["component_labels"])
             array_downscaled = downscaled_centroids(centroids=centroids, scale_factor=scale_factor,

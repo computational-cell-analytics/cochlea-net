@@ -148,6 +148,8 @@ def label_components():
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true",
                         help="Use napari image viewer for visualizing labeled components.")
+    parser.add_argument("--scale_factor", type=int, default=20,
+                        help="Scale factor for down-scaling data for visualization in Napari. Default: 20")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -175,6 +177,7 @@ def label_components():
         s3_bucket_name=args.s3_bucket_name,
         s3_service_endpoint=args.s3_service_endpoint,
         use_napari=args.napari,
+        scale_factor=args.scale_factor,
     )
 
 
