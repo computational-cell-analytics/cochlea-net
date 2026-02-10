@@ -2,26 +2,19 @@ import argparse
 import os
 from typing import Optional
 
-import imageio.v3 as imageio
-import napari
-import numpy as np
-import pandas as pd
-from magicgui import magicgui
-
 import flamingo_tools.intensity_annotation.annotation_utils as annotation_utils
-from flamingo_tools.measurements import compute_object_measures_impl, get_object_measures_from_table
-from flamingo_tools.s3_utils import get_s3_path
 
 
 def gfp_annotation(
     prefix: str,
-    default_stat: str = "median",
-    background_norm: Optional[str] = None,
+    measurement_table_path: str,
+    statistics_keyword: str = "median",
     is_otof: bool = False,
-    seg_version: Optional[str] = None,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
 ):
-    assert background_norm in (None, "division", "subtraction")
-
     direc = os.path.dirname(os.path.abspath(prefix))
     basename = os.path.basename(prefix)
     file_names = [entry.name for entry in os.scandir(direc)]
@@ -43,142 +36,59 @@ def gfp_annotation(
         stain2_name = "PV"
         seg_name = "SGN"
 
-    stain1 = imageio.imread(os.path.join(direc, stain1_file))
-    stain2 = imageio.imread(os.path.join(direc, stain2_file))
-    seg = imageio.imread(os.path.join(direc, seg_file))
+    stain_dict = {
+        stain1_name: os.path.join(direc, stain1_file),
+        stain2_name: os.path.join(direc, stain2_file),
+    }
+    seg_file = os.path.join(direc, seg_file)
 
-    # Extend the sgns so that they cover the SGN boundaries.
-    # sgns_extended = _extend_seg(gfp, sgns)
-    # TODO we need to integrate this directly in the object measurement to efficiently do it at scale.
-    seg_extended = annotation_utils._extend_seg_simple(seg, dilation=4)
-    if is_otof:
-        seg_extended = seg.copy()
-
-    # Compute the intensity statistics.
-    if background_norm is None:
-        mask = None
-        feature_set = "default"
-    else:
-        mask = annotation_utils._create_mask(seg_extended, stain1)
-        assert mask.shape == seg_extended.shape
-        feature_set = "default_background_norm" if background_norm == "division" else "default_background_subtract"
-
-    if seg_version is not None:
-        seg_string = "-".join(seg_version.split("_"))
-        cochlea_str = os.path.basename(prefix).split("_crop_")[0]
-        cochlea = "_".join(cochlea_str.split("-"))
-
-        table_measurement_path = f"{cochlea}/tables/{seg_version}/{stain1_name}_{seg_string}_object-measures.tsv"
-        table_path_s3, fs = get_s3_path(table_measurement_path)
-        with fs.open(table_path_s3, "r") as f:
-            table_measurement = pd.read_csv(f, sep="\t")
-
-        statistics = get_object_measures_from_table(seg, table=table_measurement)
-
-    else:
-        statistics = compute_object_measures_impl(
-            stain1, seg_extended, feature_set=feature_set, background_mask=mask, median_only=True
-        )
-
-    # Open the napari viewer.
-    v = napari.Viewer()
-
-    # Add the base layers.
-    v.add_image(stain1, name=stain1_name)
-    v.add_image(stain2, visible=False, name=stain2_name)
-    v.add_labels(seg, visible=False, name=f"{seg_name}s")
-    v.add_labels(seg_extended, name=f"{seg_name}s-extended")
-    if mask is not None:
-        v.add_labels(mask, name="mask-for-background", visible=False)
-
-    # Add additional layers for intensity coloring and classification
-    # data_numerical = np.zeros(gfp.shape, dtype="float32")
-    data_labels = np.zeros(stain1.shape, dtype="uint8")
-
-    # v.add_image(data_numerical, name="gfp-intensity")
-    v.add_labels(data_labels, name="positive-negative")
-
-    # Add widgets:
-
-    # 1.) The widget for selcting the statistics to be used and displaying the histogram.
-    stat_widget = annotation_utils._create_stat_widget(statistics, default_stat)
-
-    # 2.) Precompute statistic ranges.
-    stat_names = stat_widget.stat_names
-    all_values = statistics[stat_names].values
-    min_val = all_values.min()
-    max_val = all_values.max()
-
-    # 3.) The widget for printing the intensity of a selected cell.
-    @magicgui(
-        value={
-            "label": "value", "enabled": False, "widget_type": "FloatSpinBox", "min": min(min_val, 0), "max": max_val
-        },
-        call_button="Pick Value"
+    annotation_utils.annotation_napari(
+        stain_dict=stain_dict,
+        measurement_table_path=measurement_table_path,
+        seg_name=seg_name,
+        seg_file=seg_file,
+        statistics_keyword=statistics_keyword,
+        is_otof=is_otof,
+        s3=s3,
+        s3_credentials=s3_credentials,
+        s3_bucket_name=s3_bucket_name,
+        s3_service_endpoint=s3_service_endpoint,
     )
-    def pick_widget(viewer: napari.Viewer, value: float = 0.0):
-        layer = viewer.layers[f"{seg_name}s-extended"]
-        selected_id = layer.selected_label
-
-        stat_name = stat_widget.param_box.currentText()
-        label_ids = statistics.label_id.values
-        if selected_id not in label_ids:
-            return {"value": 0.0}
-
-        vals = statistics[stat_name].values
-        picked_value = vals[label_ids == selected_id][0]
-        pick_widget.value.value = picked_value
-
-    # 4.) The widget for setting the threshold and updating the positive / negative classification based on it.
-    @magicgui(
-        threshold={
-            "widget_type": "FloatSlider",
-            "label": "Threshold",
-            "min": min_val,
-            "max": max_val,
-            "step": 1,
-        },
-        call_button="Apply",
-    )
-    def threshold_widget(viewer: napari.Viewer, threshold: float = (max_val + min_val) / 2):
-        label_ids = statistics.label_id.values
-        stat_name = stat_widget.param_box.currentText()
-        vals = statistics[stat_name].values
-        pos_ids = label_ids[vals >= threshold]
-        neg_ids = label_ids[vals <= threshold]
-        data_labels = np.zeros(stain1.shape, dtype="uint8")
-        data_labels[np.isin(seg_extended, pos_ids)] = 2
-        data_labels[np.isin(seg_extended, neg_ids)] = 1
-        viewer.layers["positive-negative"].data = data_labels
-
-    threshold_widget.viewer.value = v
-
-    # Bind the widgets.
-    v.window.add_dock_widget(stat_widget, area="right")
-    v.window.add_dock_widget(pick_widget, area="right")
-    v.window.add_dock_widget(threshold_widget, area="right")
-    stat_widget.setWindowTitle(f"{stain1_name} Histogram")
-
-    napari.run()
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Start a GUI for determining an intensity threshold for positive "
         "/ negative transduction in segmented cells.")
-    parser.add_argument("prefix", help="The prefix of the files to open with the annotation tool.")
-    parser.add_argument("-b", "--background_norm",
-                        help="How to normalize the intensity values for background intensity."
-                        "Valid options are 'division' and 'subtraction'."
-                        "If nothing is passed then the intensity values are not normalized.")
+    parser.add_argument("-p", "--prefix", type=str, required=True,
+                        help="The prefix of the files to open with the annotation tool.")
+    parser.add_argument("-m", "--meas_table", type=str, default=None,
+                        help="Measurement table containing intensity information about segmentation.")
     parser.add_argument("--otof", action="store_true",
                         help="Whether to run the annotation tool for otof samples with VGlut3, "
-                        "Alphatag and IHC segmentation.")  # noqa
-    parser.add_argument("--seg_version", type=str, default=None,
-                        help="Supply segmentation version, e.g. SGN_v2, to use intensities from object measure table.")
+                        "Alphatag and IHC segmentation.")
+
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
+    parser.add_argument("--s3_credentials", type=str, default=None,
+                        help="Input file containing S3 credentials. "
+                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
+    parser.add_argument("--s3_bucket_name", type=str, default=None,
+                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
+    parser.add_argument("--s3_service_endpoint", type=str, default=None,
+                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
+
     args = parser.parse_args()
 
-    gfp_annotation(args.prefix, background_norm=args.background_norm, is_otof=args.otof, seg_version=args.seg_version)
+    gfp_annotation(
+        args.prefix,
+        measurement_table_path=args.meas_table,
+        is_otof=args.otof,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
+    )
 
 
 if __name__ == "__main__":
