@@ -86,7 +86,7 @@ def _extend_seg_simple(seg, dilation):
 
 
 def annotation_napari(
-    stain_dict,
+    stain_dict: dict,
     measurement_table_path: str,
     seg_name: str,
     seg_file: str,
@@ -97,6 +97,20 @@ def annotation_napari(
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
 ):
+    """Visualize data in Napari for thresholding.
+
+    Args:
+        stain_dict: Dictionary containing stain names and file paths.
+        measurement_table_path: Path to table containing object measures of stain.
+        seg_name: Segmentation name, e.g. SGN_v2.
+        seg_file: File path to segmentation data.
+        statistics_keyword: Keyword for column in object measures dataframe.
+        is_otof: Flag for analyzing OTOF cochleae.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+    """
     if s3:
         table_path_s3, fs = get_s3_path(measurement_table_path, s3_bucket_name, s3_service_endpoint, s3_credentials)
         with fs.open(table_path_s3, "r") as f:

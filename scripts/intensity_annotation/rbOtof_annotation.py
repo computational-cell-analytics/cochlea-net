@@ -14,6 +14,20 @@ def otof_annotation(
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
 ):
+    """Function for rbOtof annotation.
+    The function requires crops of the same dimension, which are labeled using a specific naming scheme.
+    The files should have the common prefix: <cochlea>_crop_xxx-yyy-zzz
+    Files required for the annotation: rbOtof, CR, IHC
+
+    Args:
+        prefix: Common file prefix of a specific crop.
+        measurement_table_path: Measurement table of object measures for stain-segmentation combination.
+        statistics_keyword: Column keyword for pandas dataframe of object measures.
+        s3: Use S3 file path for measurement table.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+    """
 
     direc = os.path.dirname(os.path.abspath(prefix))
     basename = os.path.basename(prefix)

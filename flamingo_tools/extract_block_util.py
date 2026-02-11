@@ -7,7 +7,6 @@ from typing import Optional, List, Union, Tuple
 
 import imageio.v3 as imageio
 import numpy as np
-import pandas as pd
 import zarr
 from skimage.transform import rescale
 
@@ -45,11 +44,12 @@ def extract_block_single(
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
         roi_halo: ROI halo of extracted 3D volume.
-        s3: Flag for considering input_path for S3 bucket.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
-        s3_credentials: File path to credentials for S3 bucket.
         scale_factor: Optional factor for rescaling the extracted data.
+        force_overwrite: Flag for forcefully overwriting output files.
     """
     coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
 
@@ -129,7 +129,7 @@ def extract_block_json_wrapper(
         input_path: Input path for image channel.
         json_file: JSON file containing parameter dictionary.
         coords: List of center coordinates for extracting blocks.
-        mobie_dir: MoBIE directory used for creating the image data paths when a JSON dict is provided.
+        mobie_dir: Local MoBIE directory used for creating data paths when a JSON dict is provided.
         force: Flag for forcefully overwriting output files.
         s3: Flag for accessing data stored on S3 bucket.
     """
@@ -185,10 +185,11 @@ def extract_central_block_from_json(
     This function combines the search of equidistant center coordinates and the subsequent block extraction.
 
     Args:
-        json_file: JSON file containing parameter dictionary. Can be created using 'flamingo_tools.json_block_extraction'.
+        json_file: JSON with parameter dictionary. Can be created using 'flamingo_tools.json_block_extraction'.
         output_path: Output directory for storing extracted blocks.
         force_overwrite: Force overwrite of extracted blocks.
         s3: Flag for accessing data on the S3 bucket.
+        mobie_dir: Local MoBIE directory used for creating data paths.
     """
     with open(json_file, "r") as f:
         dic = json.loads(f.read())
