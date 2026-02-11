@@ -5,7 +5,7 @@ import argparse
 from .label_components import label_components_single
 from .cochlea_mapping import tonotopic_mapping_single, equidistant_centers_single
 from flamingo_tools.json_util import export_dictionary_as_json
-from flamingo_tools.measurements import object_measures_single
+from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
 from flamingo_tools.s3_utils import MOBIE_FOLDER
 
@@ -140,7 +140,7 @@ def json_block_extraction():
     parser.add_argument("-d", "--dataset_name", type=str, required=True, help="Dataset name.")
     parser.add_argument("-i", "--image_channel", type=str, required=True, nargs="+",
                         help="Input image channel(s), e.g. PV, SGN_v2.")
-    parser.add_argument("-s", "--segmentation_channel", type=str, default=[],
+    parser.add_argument("-s", "--segmentation_channel", type=str, default="",
                         help="Segmentation channel as reference for finding equidistant centers.")
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
@@ -220,7 +220,7 @@ def object_measures():
     parser = argparse.ArgumentParser(
         description="Script to compute object measures for different stainings.")
 
-    parser.add_argument("-o", "--output", type=str, nargs="+", required=True,
+    parser.add_argument("-o", "--output", type=str, nargs="+", default=[],
                         help="Output path(s). Either directory or specific file(s).")
     parser.add_argument("-i", "--image_paths", type=str, nargs="+", default=None,
                         help="Input path to one or multiple image channels in ome.zarr format.")
@@ -229,8 +229,12 @@ def object_measures():
     parser.add_argument("-s", "--seg_path", type=str, default=None,
                         help="Input path to segmentation channel in ome.zarr format.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project. Only used for '--json_info'.")
 
     # options for object measures
+    parser.add_argument("--json_info", type=str, default=None,
+                        help="JSON file with parameters for object_measures.")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
     parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Resolution of input in micrometer.")
@@ -248,8 +252,10 @@ def object_measures():
 
     args = parser.parse_args()
 
-    object_measures_single(
+    object_measures_json_wrapper(
         out_paths=args.output,
+        json_file=args.json_info,
+        mobie_dir=args.mobie_dir,
         image_paths=args.image_paths,
         table_path=args.seg_table,
         seg_path=args.seg_path,
