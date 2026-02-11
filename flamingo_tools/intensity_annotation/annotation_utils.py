@@ -112,7 +112,8 @@ def annotation_napari(
         s3_service_endpoint: S3 service endpoint.
     """
     if s3:
-        table_path_s3, fs = get_s3_path(measurement_table_path, s3_bucket_name, s3_service_endpoint, s3_credentials)
+        table_path_s3, fs = get_s3_path(measurement_table_path, bucket_name=s3_bucket_name,
+                                        service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
         with fs.open(table_path_s3, "r") as f:
             measurement_table = pd.read_csv(f, sep="\t")
     else:
