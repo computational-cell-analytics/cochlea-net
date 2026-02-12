@@ -68,7 +68,7 @@ class TestPostprocessing(unittest.TestCase):
             ("bb_min_x", "bbox-2"), ("bb_min_y", "bbox-1"), ("bb_min_z", "bbox-0"),
             ("bb_max_x", "bbox-5"), ("bb_max_y", "bbox-4"), ("bb_max_z", "bbox-3"),
         ]:
-            values = table[col].values
+            values = table[col].values.copy()
             if col != "label_id":
                 values /= resolution
             self.assertTrue(np.allclose(values, expected_table[col_exp].values))
