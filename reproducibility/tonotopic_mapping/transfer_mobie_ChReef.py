@@ -50,8 +50,8 @@ else:
 dry_run = False
 
 for cochlea in COCHLEAE:
-    cochlea_table = "-".join(cochlea.split("_"))
-    seg_table = "-".join(seg.split("_"))
+    cochlea_table = cochlea.replace('_', '-')
+    seg_table = seg.replace('_', '-')
     in_path = os.path.join(tonotopic_dir, f"{cochlea_table}_{seg_table}.tsv")
     out_path = f"cochlea-lightsheet:cochlea-lightsheet/{cochlea}/tables/{seg}/default.tsv"
     print(out_path)

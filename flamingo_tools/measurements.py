@@ -657,22 +657,22 @@ def object_measures_json_wrapper(
             if s3:
                 raise ValueError("The automatic copying to the S3 bucket is not supported yet. "
                                  "Make sure to specify an output directory.")
-            c_str = "-".join(cochlea.split("_"))
-            s_str = "-".join(seg_channel.split("_"))
+            c_str = cochlea.replace('_', '-')
+            s_str = seg_channel.replace('_', '-')
             out_paths_tmp = []
             for img_channel in image_channels:
-                i_str = "-".join(img_channel.split("_"))
+                i_str = img_channel.replace('_', '-')
                 meas_table_name = f"{i_str}_{s_str}_object-measures.tsv"
                 out_paths_tmp.append(os.path.join(mobie_dir, cochlea, "tables", seg_channel, meas_table_name))
 
         # create distinct output names in output folder
         elif len(out_paths) == 1 and ".tsv" not in out_paths[0]:
             os.makedirs(out_paths[0], exist_ok=True)
-            c_str = "-".join(cochlea.split("_"))
-            s_str = "-".join(seg_channel.split("_"))
+            c_str = cochlea.replace('_', '-')
+            s_str = seg_channel.replace('_', '-')
             out_paths_tmp = []
             for img_channel in image_channels:
-                i_str = "-".join(img_channel.split("_"))
+                i_str = img_channel.replace('_', '-')
                 out_paths_tmp.append(os.path.join(out_paths[0], f"{c_str}_{i_str}_{s_str}_object-measures.tsv"))
 
         # use pre-set output paths given as arguments in CLI
@@ -683,12 +683,12 @@ def object_measures_json_wrapper(
         # create paths based on JSON parameters
         if s3:
             image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
-                            for ch in image_channels]
+                           for ch in image_channels]
             seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
             seg_table = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
         else:
             image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
-                            for ch in image_channels]
+                           for ch in image_channels]
             seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
                                     f"{seg_channel}.ome.zarr")
             seg_table = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")

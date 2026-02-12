@@ -534,7 +534,8 @@ def run_unet_prediction_preprocess_slurm(
     """
     if s3 is not None:
         input_path, fs = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name, service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+            input_path, bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
         )
 
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
@@ -583,7 +584,8 @@ def run_unet_prediction_slurm(
 
     if s3 is not None:
         input_path, fs = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name, service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+            input_path, bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
         )
 
     if slurm_task_id is not None:

@@ -64,10 +64,10 @@ def extract_block_single(
     prefix = ""
     suffix = ""
     if dataset_name is not None:
-        dataset_str = "-".join(dataset_name.split("_"))
+        dataset_str = dataset_name.replace('_', '-')
         prefix = f"{dataset_str}_"
     if channel_name is not None:
-        channel_str = "-".join(channel_name.split("_"))
+        channel_str = channel_name.replace('_', '-')
         suffix = f"_{channel_str}"
 
     if os.path.isdir(output_path):

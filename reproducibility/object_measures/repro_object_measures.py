@@ -52,11 +52,11 @@ def wrapper_object_measures(
             table_path = os.path.join(cochlea, "tables", seg_channel, "default.tsv")
             if len(out_paths) == 1 and os.path.isdir(out_paths[0]):
 
-                c_str = "-".join(cochlea.split("_"))
-                s_str = "-".join(seg_channel.split("_"))
+                c_str = cochlea.replace('_', '-')
+                s_str = seg_channel.replace('_', '-')
                 out_paths_tmp = []
                 for img_channel in image_channels:
-                    i_str = "-".join(img_channel.split("_"))
+                    i_str = img_channel.replace('_', '-')
                     out_paths_tmp.append(os.path.join(out_paths[0], f"{c_str}_{i_str}_{s_str}_object-measures.tsv"))
 
             else:

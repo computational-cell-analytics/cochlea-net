@@ -80,7 +80,7 @@ def supp_fig_03_thresholds(
     input_dir = THRESHOLD_DIR
 
     om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
-    cochlea_str = "-".join(cochlea.split("_"))
+    cochlea_str = cochlea.replace('_', '-')
     om_paths = [p for p in om_paths if cochlea_str in p]
     stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_om")[0] for p in om_paths]
 
@@ -106,7 +106,7 @@ def supp_fig_03_thresholds(
             print(f"No columns for cochlea {cochlea}.")
             continue
 
-        seg_str = "-".join(data_name.split("_"))
+        seg_str = data_name.replace('_', '-')
         if intensity_mode == "ratio":
             table_measurement_path = f"{cochlea}/tables/{data_name}/subtype_ratio.tsv"
             column = f"{stain}_ratio_PV"
