@@ -5,7 +5,7 @@
 			1
 		],
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn"
+		"cell_type": "sgn"
 	},
 	{
 		"cochlea": "M_LR_000260_L",
@@ -13,7 +13,7 @@
 			1
 		],
 		"segmentation_channel": "SGN_v2b",
-		"type": "sgn"
+		"cell_type": "sgn"
 	}
 
-]									
+]

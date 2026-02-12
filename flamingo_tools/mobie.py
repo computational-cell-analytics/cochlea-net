@@ -148,7 +148,7 @@ def add_segmentation_to_mobie(
     have_source = _source_exists(mobie_project, mobie_dataset, source_name)
     if have_source and skip_existing:
         print(f"Source {source_name} already exists in {mobie_project}:{mobie_dataset}.")
-        print("Conversion to mobie will be skipped.")
+        print("Conversion to MoBIE format will be skipped.")
         return
     elif have_source:
         raise NotImplementedError

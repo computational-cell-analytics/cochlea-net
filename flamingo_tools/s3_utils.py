@@ -211,8 +211,8 @@ def sync_dataset(
     """Sync a MoBIE dataset on the s3 bucket using rclone.
 
     Args:
-        mobie_root: The directory with the local mobie project.
-        dataset_name: The mobie dataset to sync.
+        mobie_root: The directory with the local MoBIE project.
+        dataset_name: The MoBIE dataset to sync.
         bucket_name: The name of the dataset's bucket on s3.
         url: Service endpoint for S3 bucket
         anon: Option for anon argument of S3FileSystem

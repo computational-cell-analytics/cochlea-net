@@ -1,0 +1,79 @@
+[
+	{
+		"cochlea": "M_AMD_N95_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1,
+			4,
+			3,
+			9,
+			17,
+			2
+		],
+		"max_edge_distance": 30
+	},
+	{
+		"cochlea": "M_AMD_N95_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			8,
+			4,
+			2,
+			29,
+			6,
+			9,
+			3
+		],
+		"max_edge_distance": 35
+	},
+	{
+		"cochlea": "M_AMD_N97_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			2,
+			1,
+			3
+		],
+		"max_edge_distance": 70
+	},
+	{
+		"cochlea": "M_AMD_N97_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			2,
+			5
+		],
+		"max_edge_distance": 70
+	},
+	{
+		"cochlea": "M_AMD_000103_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			2
+		],
+		"max_edge_distance": 70
+	},
+	{
+		"cochlea": "M_AMD_000103_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			12,
+			3,
+			5,
+			8,
+			4,
+			19,
+			6,
+			11,
+			16
+		],
+		"max_edge_distance": 30
+	}
+]
+

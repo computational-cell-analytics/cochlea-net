@@ -5,6 +5,6 @@
 			1
 		],
 		"segmentation_channel": "SGN_v2b",
-		"type": "sgn"
+		"cell_type": "sgn"
 	}
-]									
+]

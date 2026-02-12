@@ -111,14 +111,16 @@ CochleaNet's functionality is implemented in the `flamingo_tools` python library
 
 ## Available Models
 
-CochleaNet provides five different models:
+CochleaNet provides four different segmentation models:
 - `SGN`: for segmenting spiral ganglion neurons (SGNs) in high-resolution, isotropic light-sheet microscopy data.
     - This model was trained on image data with parvalbumin (PV) stain, with a voxel size of 0.38 micrometer.
 - `IHC`: for segmenting inner hair cells (IHCs) in high-resolution, isotropic light-sheet microscopy data.
     - This model was trained on image data with Vglut3 stain, with a voxel size of 0.38 micrometer.
+- `SGN-lowres`: for segmenting SGNs in lower-resolution, anisotropic light-sheet microscopy data.
+    - This model was trained on image data with PV stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
+- `IHC-lowres`: for segmenting IHCs in lower-resolution, anisotropic light-sheet microscopy data.
+    - This model was trained on image data with Myosin VIIa stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
+
+It provides one detection model:
 - `Synapses`: for detecting afferent ribbon synapses in high-resolution isotropic light-sheet microscopy data.
     - This model was trained on image data with CtBP2 stain, with a voxel size of 0.38 micrometer.
-- `SGN-lowres`: for segmenting SGNS in lower-resolution, anisotropic light-sheet microscopy data.
-    - This model was trained on image data with PV stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
-- `SGN-lowres`: for segmenting SGNS in lower-resolution, anisotropic light-sheet microscopy data.
-    - This model was trained on image data with Myosin VIIa stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.

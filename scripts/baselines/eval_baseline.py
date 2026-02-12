@@ -305,7 +305,7 @@ def runtimes_sgn():
     runtimes = {name: [] for name in for_comparison}
 
     for path in image_paths:
-        eval_fname = Path(path).stem + "_dic.json"
+        eval_fname = f"{Path(path).stem}_dic.json"
         for seg_name in for_comparison:
             eval_path = os.path.join(val_sgn_dir, seg_name, eval_fname)
             with open(eval_path, "r") as f:
@@ -329,7 +329,7 @@ def runtimes_ihc():
     runtimes = {name: [] for name in for_comparison}
 
     for path in image_paths:
-        eval_fname = Path(path).stem + "_dic.json"
+        eval_fname = f"{Path(path).stem}_dic.json"
         for seg_name in for_comparison:
             eval_path = os.path.join(val_sgn_dir, seg_name, eval_fname)
             if not os.path.exists(eval_path):

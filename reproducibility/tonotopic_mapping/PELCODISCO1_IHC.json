@@ -1,0 +1,44 @@
+[
+	{
+		"cochlea": "M_AMD_N88_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"max_edge_distance": 70
+	},
+	{
+		"cochlea": "M_AMD_N88_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			22,
+			2,
+			46,
+			3,
+			5
+		],
+		"max_edge_distance": 20
+	},
+	{
+		"cochlea": "M_AMD_N89_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"max_edge_distance": 60
+	},
+	{
+		"cochlea": "M_AMD_N89_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1,
+			2
+		],
+		"max_edge_distance": 50
+	}
+]
+

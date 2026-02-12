@@ -1,4 +1,6 @@
+import json
 import math
+import os
 from typing import List, Optional, Tuple
 
 import networkx as nx
@@ -7,7 +9,8 @@ import pandas as pd
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.interpolate import interp1d
 
-from flamingo_tools.segmentation.postprocessing import downscaled_centroids
+from flamingo_tools.postprocessing.label_components import downscaled_centroids
+from flamingo_tools.s3_utils import get_s3_path
 
 
 def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -> Tuple[float, float]:
@@ -34,7 +37,11 @@ def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -
     return u, v
 
 
-def central_path_edt_graph(mask: np.ndarray, start: Tuple[int], end: Tuple[int]) -> np.ndarray:
+def central_path_edt_graph(
+    mask: np.ndarray,
+    start: Tuple[int],
+    end: Tuple[int],
+) -> Optional[np.ndarray]:
     """Find the central path within a binary mask between a start and an end coordinate.
 
     Args:
@@ -43,7 +50,7 @@ def central_path_edt_graph(mask: np.ndarray, start: Tuple[int], end: Tuple[int])
         end: End coordinate.
 
     Returns:
-        Coordinates of central path.
+        Coordinates of central path or None if no path exists.
     """
     dt = distance_transform_edt(mask)
     G = nx.Graph()
@@ -64,6 +71,8 @@ def central_path_edt_graph(mask: np.ndarray, start: Tuple[int], end: Tuple[int])
                         G.add_edge(u, v, weight=w)
     s = idx_to_node(*start)
     t = idx_to_node(*end)
+    if not nx.has_path(G, source=s, target=t):
+        return None
     path = nx.shortest_path(G, source=s, target=t, weight="weight")
     coords = [(p//(shape[1]*shape[2]),
                (p//shape[2]) % shape[1],
@@ -127,9 +136,10 @@ def measure_run_length_sgns_multi_component(
     """
     total_path = []
     print(f"Evaluating {len(centroids_components)} components.")
-    # 1) Process centroids for each component
-    for centroids in centroids_components:
-        mask = downscaled_centroids(centroids, scale_factor=scale_factor, downsample_mode="capped")
+
+    def _find_central_path_through_downscaled_mask(centroids, downscaling_factor):
+        # Check for the existence of and the shortest path between the most distant nodes in the downscaled volume.
+        mask = downscaled_centroids(centroids, scale_factor=downscaling_factor, downsample_mode="capped")
         mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
         mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
         pts = np.argwhere(mask == 1)
@@ -144,7 +154,21 @@ def measure_run_length_sgns_multi_component(
         end_voxel = tuple(pts[proj.argmax()])
 
         # get central path and total distance
-        path = central_path_edt_graph(mask, start_voxel, end_voxel)
+        return central_path_edt_graph(mask, start_voxel, end_voxel)
+
+    # 1) Process centroids for each component
+    for centroids in centroids_components:
+        # get central path and total distance
+        path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
+
+        # Use larger downscaling factor to have connected components in downscaled volume.
+        while path is None:
+            scale_factor = 2 * scale_factor
+            print(f"Not all components are fully connected in downscaled volume. Trying scale factor {scale_factor}.")
+            if scale_factor > 100:
+                raise ValueError("Downscaling for tonotopic mapping not possible.")
+            path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
+
         path = path * scale_factor
         path = moving_average_3d(path, window=5)
         total_path.append(path)
@@ -288,6 +312,7 @@ def measure_run_length_ihcs_multi_component(
     print(f"Evaluating {len(centroids_components)} components.")
     # 1) Process centroids for each component
     for centroids in centroids_components:
+        max_edge_dist_tmp = max([round(find_max_min_distance(centroids) + 0.5), max_edge_distance])
         graph = nx.Graph()
         coords = {}
         labels = [int(i) for i in range(len(centroids))]
@@ -302,7 +327,7 @@ def measure_run_length_ihcs_multi_component(
             for num_j, pos_j in coords.items():
                 if num_i < num_j:
                     dist = math.dist(pos_i, pos_j)
-                    if dist <= max_edge_distance:
+                    if dist <= max_edge_dist_tmp:
                         graph.add_edge(num_i, num_j, weight=dist)
 
         components = [list(c) for c in nx.connected_components(graph)]
@@ -314,8 +339,7 @@ def measure_run_length_ihcs_multi_component(
             print(f"Graph consists of {len(components)} connected components.")
             if len(component_label) != len(components):
                 raise ValueError(f"Length of graph components {len(components)} "
-                                 f"does not match number of component labels {len(component_label)}. "
-                                 "Check max_edge_distance and post-processing.")
+                                 f"does not match number of component labels {len(component_label)}.")
 
             # Order connected components in order of component labels
             # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -411,6 +435,37 @@ def measure_run_length_ihcs_multi_component(
     return total_distance, path, path_dict
 
 
+def find_max_min_distance(coords):
+    """
+    Find the maximum of the minimum distances from each point to any other point.
+
+    Args:
+        coords: Array of shape (n, 3) containing 3D coordinates
+
+    Returns:
+        float: Maximum of the minimum distances
+    """
+    coords = np.array(coords)
+
+    # Compute all pairwise distances using broadcasting
+    # Shape: (n, n, 3) - all pairwise differences
+    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+
+    # Compute squared distances (avoiding sqrt for efficiency)
+    squared_distances = np.sum(diff**2, axis=2)
+
+    # Set diagonal to infinity to exclude distance to self
+    np.fill_diagonal(squared_distances, np.inf)
+
+    # Find minimum distance for each point
+    min_distances = np.sqrt(np.min(squared_distances, axis=1))
+
+    # Find the maximum of these minimum distances
+    max_min_distance = np.max(min_distances)
+
+    return max_min_distance
+
+
 def measure_run_length_ihcs(
     centroids: np.ndarray,
     max_edge_distance: float = 30,
@@ -419,8 +474,7 @@ def measure_run_length_ihcs(
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the IHC segmentation
     by determining the shortest path between the most distant nodes of a graph.
-    The graph is created based on a maximal edge distance between nodes.
-    Take care, that this value should be identical to the one used to initially process the IHC segmentation.
+    The graph is created based on the maximal edge distance between nodes.
 
     If the graph consists of more than one connected components, a list of component labels must be supplied.
     The components are then connected with edges between nodes of neighboring components which are closest together.
@@ -446,6 +500,7 @@ def measure_run_length_ihcs(
     for num, pos in coords.items():
         graph.add_node(num, pos=pos)
 
+    max_edge_distance = max([round(find_max_min_distance(centroids) + 0.5), max_edge_distance])
     # create edges between points whose distance is less than threshold max_edge_distance
     for num_i, pos_i in coords.items():
         for num_j, pos_j in coords.items():
@@ -463,8 +518,7 @@ def measure_run_length_ihcs(
         print(f"Graph consists of {len(components)} connected components.")
         if len(component_label) != len(components):
             raise ValueError(f"Length of graph components {len(components)} "
-                             f"does not match number of component labels {len(component_label)}. "
-                             "Check max_edge_distance and post-processing.")
+                             f"does not match number of component labels {len(component_label)}.")
 
         # Order connected components in order of component labels
         # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -528,6 +582,7 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
     Args:
         table: Dataframe containing the segmentation.
         animal: Select the Greenwood function parameters specific to a species. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
     Returns:
         Dataframe containing frequency in an additional column 'frequency[kHz]'.
@@ -688,7 +743,6 @@ def equidistant_centers(
     component_label: List[int] = [1],
     cell_type: str = "sgn",
     n_blocks: int = 10,
-    max_edge_distance: float = 30,
     offset_blocks: bool = True,
 ) -> np.ndarray:
     """Find equidistant centers within the central path of the Rosenthal's canal.
@@ -710,7 +764,7 @@ def equidistant_centers(
     if cell_type == "ihc":
         if len(component_label) == 1:
             total_distance, path, _ = measure_run_length_ihcs(
-                centroids, component_label=component_label, max_edge_distance=max_edge_distance
+                centroids, component_label=component_label,
             )
             return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
         else:
@@ -720,7 +774,7 @@ def equidistant_centers(
                 subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
                 centroids_components.append(subset_centroids)
             total_distance, path, path_dict = measure_run_length_ihcs_multi_component(
-                centroids_components, max_edge_distance=max_edge_distance
+                centroids_components,
             )
             return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
@@ -745,18 +799,20 @@ def tonotopic_mapping(
     component_mapping: Optional[List[int]] = None,
     cell_type: str = "ihc",
     animal: str = "mouse",
-    max_edge_distance: float = 30,
     apex_higher: bool = True,
     otof: bool = False,
 ) -> pd.DataFrame:
-    """Tonotopic mapping of IHCs by supplying a table with component labels.
-    The mapping assigns a tonotopic label to each IHC according to the position along the length of the cochlea.
+    """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
+    The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
 
     Args:
         table: Dataframe of segmentation table.
         component_label: List of component labels to evaluate.
         components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         cell_type: Cell type of segmentation.
+        animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
+        apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
     Returns:
         Table with tonotopic label for cells.
@@ -772,7 +828,6 @@ def tonotopic_mapping(
     if cell_type == "ihc":
         total_distance, _, path_dict = measure_run_length_ihcs(
             centroids, component_label=component_label, apex_higher=apex_higher,
-            max_edge_distance=max_edge_distance
         )
 
     else:
@@ -811,3 +866,146 @@ def tonotopic_mapping(
     table = map_frequency(table, animal=animal, otof=otof)
 
     return table
+
+
+def tonotopic_mapping_single(
+    table_path: str,
+    out_path: str,
+    force_overwrite: bool = False,
+    cell_type: str = "sgn",
+    animal: str = "mouse",
+    otof: bool = False,
+    apex_position: str = "apex_higher",
+    component_list: List[int] = [1],
+    component_mapping: Optional[List[int]] = None,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    **_,
+):
+    """Tonotopic mapping of a single cochlea.
+    Each segmentation instance within a given component list is assigned a frequency[kHz], a run length and an offset.
+    The components used for the mapping itself can be a subset of the component list to adapt to broken components
+    along the Rosenthal's canal.
+    If the cochlea is broken in the direction of the Rosenthal's canal, the components have to be provided in a
+    continuous order which reflects the positioning within 3D.
+    The frequency is calculated using the Greenwood function using animal specific parameters.
+    The orientation of the mapping can be reversed using the apex position in reference to the y-coordinate.
+
+    Args:
+        table_path: File path to segmentation table.
+        out_path: Output path to segmentation table with new column "component_labels".
+        force_overwrite: Forcefully overwrite existing output path.
+        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
+        animal: Animal for species specific frequency mapping. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+        apex_position: Identify position of apex and base. Apex is set to node with higher y-value per default.
+        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
+        s3: Use S3 bucket.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+    """
+    # overwrite input segmentation table with labeled version
+    if out_path is None:
+        if s3:
+            raise ValueError("Set an output path when accessing remote data.")
+        out_path = table_path
+        force_overwrite = True
+
+    if os.path.isdir(out_path):
+        raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
+
+    if s3:
+        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
+                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table = pd.read_csv(table_path, sep="\t")
+
+    apex_higher = (apex_position == "apex_higher")
+
+    # overwrite input file
+    if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
+        force_overwrite = True
+
+    if os.path.isfile(out_path) and not force_overwrite:
+        print(f"Skipping {out_path}. Table already exists.")
+
+    else:
+        table = tonotopic_mapping(table, component_label=component_list, animal=animal,
+                                  cell_type=cell_type, component_mapping=component_mapping,
+                                  apex_higher=apex_higher,
+                                  otof=otof)
+
+        table.to_csv(out_path, sep="\t", index=False)
+
+
+def equidistant_centers_single(
+    table_path: str,
+    output_path: str,
+    n_blocks: int = 10,
+    cell_type: str = "sgn",
+    component_list: List[int] = [1],
+    offset_blocks: bool = True,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    **_,
+):
+    """Find equidistant centers within the central path of the Rosenthal's canal.
+
+    Args:
+        table_path: File path to segmentation table.
+        output_path: Output path to JSON file with center coordinates.
+        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
+        force_overwrite: Forcefully overwrite existing output path.
+        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
+        s3: Use S3 bucket.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+    """
+    # overwrite input segmentation table with labeled version
+    if output_path is None:
+        raise ValueError("Set an output path for the JSON dictionary.")
+
+    if s3:
+        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
+                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table_path = os.path.realpath(table_path)
+        table = pd.read_csv(table_path, sep="\t")
+
+    if os.path.isfile(output_path):
+        print(f"Updating parameters in {output_path}.")
+        with open(output_path, "r") as f:
+            dic = json.load(f)
+        dic["n_blocks"] = n_blocks
+        dic["cell_type"] = cell_type
+        dic["component_list"] = component_list
+
+    else:
+        dic = {}
+        dic["seg_table"] = table_path
+        dic["n_blocks"] = n_blocks
+        dic["cell_type"] = cell_type
+        dic["component_list"] = component_list
+
+    centers = equidistant_centers(
+        table, component_label=component_list, cell_type=cell_type,
+        n_blocks=n_blocks, offset_blocks=offset_blocks,
+    )
+    centers = [[round(c) for c in center] for center in centers]
+
+    dic["crop_centers"] = centers
+
+    with open(output_path, "w") as f:
+        json.dump(dic, f, indent='\t', separators=(',', ': '))

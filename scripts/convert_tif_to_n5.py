@@ -23,7 +23,7 @@ def main(input_path: str, output_path: str = None) -> None:
     input_dir = os.path.abspath(input_path).split(basename)[0]
 
     if output_path is None:
-        output_path = os.path.join(input_dir, basename + ".n5")
+        output_path = os.path.join(input_dir, f"{basename}.n5")
 
     img = imageio.imread(input_path)
     pybdv.make_bdv(img, output_path)

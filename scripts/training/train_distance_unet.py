@@ -139,7 +139,7 @@ def main():
 
     # Parameters for training on A100.
     n_iterations = int(1e5)
-    patch_shape = (48, 128, 128) if anisotropy is None else (24, 128, 128)
+    patch_shape = (48, 128, 128) if args.anisotropy is None else (24, 128, 128)
 
     # The U-Net.
     scale_factors = None if args.anisotropy is None else [[1, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]]

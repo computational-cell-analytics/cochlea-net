@@ -7,7 +7,7 @@ import tifffile
 import zarr
 
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
-from flamingo_tools.segmentation.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
+from flamingo_tools.postprocessing.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 # from skimage.segmentation import relabel_sequential
 
 
@@ -180,11 +180,11 @@ def export_lower_resolution(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--cochlea", "-c", required=True)
-    parser.add_argument("--scale", "-s", nargs="+", type=int, required=True)
-    parser.add_argument("--output_folder", "-o", required=True)
+    parser.add_argument("-c", "--cochlea", required=True)
+    parser.add_argument("-s", "--scale", nargs="+", type=int, required=True)
+    parser.add_argument("-o", "--output_folder", required=True)
     parser.add_argument("--stains", nargs="+", type=str, default=None)
-    parser.add_argument("--force", action="store_true")
+    parser.add_argument("-f", "--force", action="store_true")
     args = parser.parse_args()
 
     export_lower_resolution(args)

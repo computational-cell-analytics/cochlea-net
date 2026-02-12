@@ -7,7 +7,7 @@
 			"SGN_v2"
 		],
 		"segmentation_channel": "SGN_v2",
-		"type": "sgn",
+		"cell_type": "sgn",
 		"n_blocks": 6,
 		"crop_centers": [
 			[
@@ -41,7 +41,7 @@
 				483
 			]
 		],
-		"halo_size": [
+		"roi_halo": [
 			256,
 			256,
 			50

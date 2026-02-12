@@ -3,7 +3,7 @@
 import argparse
 import json
 
-from flamingo_tools.extract_block_util import extract_block
+from flamingo_tools.extract_block_util import extract_block_single
 
 
 def main():
@@ -38,7 +38,7 @@ def main():
     coords = json.loads(args.coord)
     roi_halo = json.loads(args.roi_halo)
 
-    extract_block(
+    extract_block_single(
         args.input, coords, args.output, args.input_key, args.output_key, args.resolution, roi_halo,
         args.tif, args.s3, args.s3_credentials, args.s3_bucket_name, args.s3_service_endpoint,
     )

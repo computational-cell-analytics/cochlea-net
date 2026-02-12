@@ -1,11 +1,13 @@
 """Functionality for measuring morphology and fluorescence intensities of segmented cells.
 """
 
+import json
 import multiprocessing as mp
 import os
 import warnings
 from concurrent import futures
 from functools import partial
+from multiprocessing import cpu_count
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
@@ -22,13 +24,14 @@ from scipy.ndimage import binary_dilation
 from tqdm import tqdm
 
 from .file_utils import read_image_data
-from .segmentation.postprocessing import compute_table_on_the_fly
+from .postprocessing.label_components import compute_table_on_the_fly
 import flamingo_tools.s3_utils as s3_utils
+from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 
 def _measure_volume_and_surface(mask, resolution):
     # Use marching_cubes for 3D data
-    verts, faces, normals, _ = marching_cubes(mask, spacing=(resolution,) * 3)
+    verts, faces, normals, _ = marching_cubes(mask, spacing=resolution)
 
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
     surface = mesh.area
@@ -166,6 +169,8 @@ def _default_object_features(
 
     # Do the volume and surface measurement.
     if not median_only:
+        if isinstance(resolution, float):
+            resolution = (resolution,) * 3
         volume, surface = _measure_volume_and_surface(mask, resolution)
         measures["volume"] = volume
         measures["surface"] = surface
@@ -181,6 +186,8 @@ def _morphology_features(seg_id, table, image, segmentation, resolution, **kwarg
     # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
     # resolution = (3.0, 0.76, 0.76)
 
+    if isinstance(resolution, float):
+        resolution = (resolution,) * 3
     volume, surface = _measure_volume_and_surface(mask, resolution)
     measures["volume"] = volume
     measures["surface"] = surface
@@ -332,11 +339,14 @@ def compute_object_measures(
     resolution: Union[float, Tuple[float, ...]] = 0.38,
     force: bool = False,
     feature_set: str = "default",
-    s3_flag: bool = False,
     component_list: List[int] = [],
     dilation: Optional[int] = None,
     median_only: bool = False,
     background_mask: Optional[np.typing.ArrayLike] = None,
+    s3: Optional[bool] = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
 ) -> None:
     """Compute simple intensity and morphology measures for each segmented cell in a segmentation.
 
@@ -356,21 +366,26 @@ def compute_object_measures(
         resolution: The resolution / voxel size of the data.
         force: Whether to overwrite an existing output table.
         feature_set: The features to compute for each object. Refer to `FEATURE_FUNCTIONS` for details.
-        s3_flag:
         component_list:
         median_only: Whether to only compute the median intensity.
         dilation: Value for dilating the segmentation before computing measurements.
             By default no dilation is applied.
         background_mask: An optional mask indicating the area to use for computing background correction values.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
     """
     if os.path.exists(output_table_path) and not force:
+        print(f"Skipping {output_table_path}. Table already exists.")
         return
 
     # First, we load the pre-computed segmentation table from MoBIE.
     if segmentation_table_path is None:
         table = None
-    elif s3_flag:
-        seg_table, fs = s3_utils.get_s3_path(segmentation_table_path)
+    elif s3:
+        seg_table, fs = s3_utils.get_s3_path(segmentation_table_path, bucket_name=s3_bucket_name,
+                                             service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
         with fs.open(seg_table, "r") as f:
             table = pd.read_csv(f, sep="\t")
     else:
@@ -381,8 +396,8 @@ def compute_object_measures(
         table = table[table["component_labels"].isin(component_list)]
 
     # Then, open the volumes.
-    image = read_image_data(image_path, image_key, from_s3=s3_flag)
-    segmentation = read_image_data(segmentation_path, segmentation_key, from_s3=s3_flag)
+    image = read_image_data(image_path, image_key, from_s3=s3)
+    segmentation = read_image_data(segmentation_path, segmentation_key, from_s3=s3)
 
     measures = compute_object_measures_impl(
         image, segmentation, n_threads, resolution, table=table, feature_set=feature_set,
@@ -498,3 +513,197 @@ def compute_sgn_background_mask(
 
     mask = ResizedVolume(low_res_mask, shape=original_shape, order=0)
     return mask
+
+
+def object_measures_single(
+    table_path: str,
+    seg_path: str,
+    image_paths: List[str],
+    out_paths: List[str],
+    force_overwrite: bool = False,
+    component_list: List[int] = [1],
+    background_mask: Optional[str] = None,
+    resolution: List[float] = [0.38, 0.38, 0.38],
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    **_,
+):
+    """Compute object measures for a single or multiple image channels in respect to a single segmentation channel.
+
+    Args:
+        table_path: File path to segmentation table.
+        seg_path: Path to segmentation channel in ome.zarr format.
+        image_paths: Path(s) to image channel(s) in ome.zarr format.
+        out_paths: Paths(s) for calculated object measures.
+        force_overwrite: Forcefully overwrite existing files.
+        component_list: Only calculate object measures for specific components.
+        background_mask: Use background mask for calculating object measures.
+        resolution: Resolution of input in micrometer.
+        s3: Use S3 file paths.
+        s3_credentials:
+        s3_bucket_name:
+        s3_service_endpoint:
+    """
+    input_key = "s0"
+    out_paths = [os.path.realpath(o) for o in out_paths]
+
+    if not isinstance(resolution, float):
+        if len(resolution) == 1:
+            resolution = resolution * 3
+        assert len(resolution) == 3
+        resolution = np.array(resolution)[::-1]
+    else:
+        resolution = (resolution,) * 3
+
+    for (img_path, out_path) in zip(image_paths, out_paths):
+        n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
+
+        # overwrite input file
+        if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
+            force_overwrite = True
+
+        if os.path.isfile(out_path) and not force_overwrite:
+            print(f"Skipping {out_path}. Table already exists.")
+
+        else:
+            if background_mask is None:
+                feature_set = "default"
+                dilation = None
+                median_only = False
+            elif background_mask in ["yes", "Yes"]:
+                print("Using background mask for calculating object measures.")
+                feature_set = "default_background_subtract"
+                dilation = 4
+                median_only = True
+
+                if s3:
+                    img_path, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
+                                                        service_endpoint=s3_service_endpoint,
+                                                        credential_file=s3_credentials)
+                    seg_path, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
+                                                        service_endpoint=s3_service_endpoint,
+                                                        credential_file=s3_credentials)
+
+                mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
+                background_mask = compute_sgn_background_mask(
+                    image_path=img_path,
+                    segmentation_path=seg_path,
+                    image_key=input_key,
+                    segmentation_key=input_key,
+                    n_threads=n_threads,
+                    cache_path=mask_cache_path,
+                )
+            else:
+                print("Calculating object measures without background mask.")
+
+            compute_object_measures(
+                image_path=img_path,
+                segmentation_path=seg_path,
+                segmentation_table_path=table_path,
+                output_table_path=out_path,
+                image_key=input_key,
+                segmentation_key=input_key,
+                feature_set=feature_set,
+                force=force_overwrite,
+                component_list=component_list,
+                dilation=dilation,
+                median_only=median_only,
+                background_mask=background_mask,
+                n_threads=n_threads,
+                resolution=resolution,
+                s3=s3,
+                s3_credentials=s3_credentials,
+                s3_bucket_name=s3_bucket_name,
+                s3_service_endpoint=s3_service_endpoint,
+            )
+
+
+def object_measures_json_wrapper(
+    out_paths: List[str],
+    json_file: Optional[str] = None,
+    mobie_dir: str = MOBIE_FOLDER,
+    s3: Optional[bool] = False,
+    **kwargs,
+):
+    """Wrapper function for calculating object measures based on a dictionary in a JSON file.
+
+    Args:
+        output_paths: Directory for storing object measures or individual output files.
+            If no directory is given, files are stored in the MoBIE project.
+        json_file: JSON file containing parameter dictionary.
+        mobie_dir: Local MoBIE directory used for creating data paths.
+        s3: Flag for accessing data stored on S3 bucket.
+    """
+    if json_file is not None:
+        # load parameters from JSON
+        with open(json_file, "r") as f:
+            params = json.loads(f.read())
+        cochlea = params["dataset_name"]
+        if isinstance(params["image_channel"], list):
+            image_channels = params["image_channel"]
+        else:
+            image_channels = [params["image_channel"]]
+
+        seg_channel = params["segmentation_channel"]
+        if len(seg_channel) == 0:
+            raise ValueError("Provide a segmentation channel.")
+
+        image_channels = [i for i in image_channels if i != seg_channel]
+        print(f"Calculating object measures for image channels: {image_channels}.")
+
+        # create output path in local MoBIE project
+        if len(out_paths) == 0:
+            if s3:
+                raise ValueError("The automatic copying to the S3 bucket is not supported yet. "
+                                 "Make sure to specify an output directory.")
+            c_str = cochlea.replace('_', '-')
+            s_str = seg_channel.replace('_', '-')
+            out_paths_tmp = []
+            for img_channel in image_channels:
+                i_str = img_channel.replace('_', '-')
+                meas_table_name = f"{i_str}_{s_str}_object-measures.tsv"
+                out_paths_tmp.append(os.path.join(mobie_dir, cochlea, "tables", seg_channel, meas_table_name))
+
+        # create distinct output names in output folder
+        elif len(out_paths) == 1 and ".tsv" not in out_paths[0]:
+            os.makedirs(out_paths[0], exist_ok=True)
+            c_str = cochlea.replace('_', '-')
+            s_str = seg_channel.replace('_', '-')
+            out_paths_tmp = []
+            for img_channel in image_channels:
+                i_str = img_channel.replace('_', '-')
+                out_paths_tmp.append(os.path.join(out_paths[0], f"{c_str}_{i_str}_{s_str}_object-measures.tsv"))
+
+        # use pre-set output paths given as arguments in CLI
+        else:
+            assert len(image_channels) == len(out_paths)
+            out_paths_tmp = out_paths.copy()
+
+        # create paths based on JSON parameters
+        if s3:
+            image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                           for ch in image_channels]
+            seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
+            seg_table = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
+        else:
+            image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                           for ch in image_channels]
+            seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
+                                    f"{seg_channel}.ome.zarr")
+            seg_table = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+
+        object_measures_single(
+            table_path=seg_table,
+            seg_path=seg_path,
+            image_paths=image_paths,
+            out_paths=out_paths_tmp,
+            s3=s3,
+            **params,
+        )
+
+    else:
+        object_measures_single(
+            **kwargs,
+        )

@@ -10,9 +10,8 @@ import numpy as np
 
 from flamingo_tools.s3_utils import get_s3_path
 from sklearn.metrics import confusion_matrix, ConfusionMatrixDisplay
-from flamingo_tools.segmentation.sgn_subtype_utils import COCHLEAE, CUSTOM_THRESHOLDS
+from flamingo_tools.postprocessing.sgn_subtype_utils import ALIAS, COCHLEAE, CUSTOM_THRESHOLDS
 from util import prism_style, prism_cleanup_axes, export_legend, get_flatline_handle
-from flamingo_tools.segmentation.sgn_subtype_utils import ALIAS
 
 png_dpi = 300
 FILE_EXTENSION = "png"
@@ -81,7 +80,7 @@ def supp_fig_03_thresholds(
     input_dir = THRESHOLD_DIR
 
     om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
-    cochlea_str = "-".join(cochlea.split("_"))
+    cochlea_str = cochlea.replace('_', '-')
     om_paths = [p for p in om_paths if cochlea_str in p]
     stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_om")[0] for p in om_paths]
 
@@ -107,7 +106,7 @@ def supp_fig_03_thresholds(
             print(f"No columns for cochlea {cochlea}.")
             continue
 
-        seg_str = "-".join(data_name.split("_"))
+        seg_str = data_name.replace('_', '-')
         if intensity_mode == "ratio":
             table_measurement_path = f"{cochlea}/tables/{data_name}/subtype_ratio.tsv"
             column = f"{stain}_ratio_PV"

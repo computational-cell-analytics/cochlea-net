@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.s3_utils import get_s3_path
-from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE, ALIAS
+from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE, ALIAS
 
 png_dpi = 300
 
@@ -20,7 +20,7 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
     os.makedirs(output_dir, exist_ok=True)
 
     om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
-    cochlea_str = "-".join(cochlea.split("_"))
+    cochlea_str = cochlea.replace('_', '-')
     om_paths = [p for p in om_paths if cochlea_str in p]
     stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_om")[0] for p in om_paths]
 
@@ -45,7 +45,7 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
             print(f"No columns for cochlea {cochlea}.")
             continue
 
-        seg_str = "-".join(data_name.split("_"))
+        seg_str = data_name.replace('_', '-')
         if intensity_mode == "ratio":
             table_measurement_path = f"{cochlea}/tables/{data_name}/subtype_ratio.tsv"
             column = f"{stain}_ratio_PV"

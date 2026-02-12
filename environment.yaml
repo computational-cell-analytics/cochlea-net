@@ -4,13 +4,14 @@ channels:
   - conda-forge
 
 dependencies:
-  - cluster_tools
+  - cluster_tools >=0.5.1
   - mobie_utils
   - pip
   - pooch
   - pybdv
   - pytorch
   - scikit-image
+  - seaborn
   - s3fs
   - torch_em
   - trimesh

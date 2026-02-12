@@ -5,9 +5,9 @@
 			"CR"
 		],
 		"segmentation_channel": "IHC_v4b",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"n_blocks": 6,
-		"halo_size": [
+		"roi_halo": [
 			256,
 			256,
 			256

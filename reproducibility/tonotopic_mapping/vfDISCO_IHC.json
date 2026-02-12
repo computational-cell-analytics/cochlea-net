@@ -1,0 +1,39 @@
+[
+	{
+		"cochlea": "M_LR_000248_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1,
+			2
+		],
+		"max_edge_distance": 35
+	},
+	{
+		"cochlea": "M_LR_000248_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"max_edge_distance": 30
+	},
+	{
+		"cochlea": "M_LR_000249_L",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"max_edge_distance": 120
+	},
+	{
+		"cochlea": "M_LR_000249_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"max_edge_distance": 40
+	}
+]

@@ -4,7 +4,7 @@ import os
 import numpy as np
 import pandas as pd
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
-from sgn_subtypes import COCHLEAE
+from flamingo_tools.postprocessing.sgn_subtype_utils import COCHLEAE
 
 
 def get_overview(cochlea, seg_name, component_ids):

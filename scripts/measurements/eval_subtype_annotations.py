@@ -5,10 +5,10 @@ from typing import List, Optional
 
 import pandas as pd
 
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.segmentation.chreef_utils import localize_median_intensities, find_annotations
-from flamingo_tools.segmentation.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
+from flamingo_tools.postprocessing.chreef_utils import localize_median_intensities, find_annotations
+from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
 
 MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/SGN_subtypes"
 
@@ -32,7 +32,7 @@ def get_length_fraction_from_center(table, center_str):
     return length_fraction
 
 
-def apply_nearest_threshold(intensity_dic, table_seg, table_measurement,
+def apply_nearest_threshold(intensity_dic, table_seg, table_meas,
                             column="median", suffix="labels", threshold_dic=None):
     """Apply threshold to nearest segmentation instances.
     Crop centers are transformed into the "length fraction" parameter of the segmentation table.
@@ -75,7 +75,7 @@ def apply_nearest_threshold(intensity_dic, table_seg, table_measurement,
         threshold = lf_intensity[fraction]["threshold"]
         label_ids_seg = subset_seg["label_id"]
 
-        subset_measurement = table_measurement[table_measurement["label_id"].isin(label_ids_seg)]
+        subset_measurement = table_meas[table_meas["label_id"].isin(label_ids_seg)]
         subset_positive = subset_measurement[subset_measurement[column] >= threshold]
         subset_negative = subset_measurement[subset_measurement[column] < threshold]
         label_ids_pos = list(subset_positive["label_id"])
@@ -87,14 +87,14 @@ def apply_nearest_threshold(intensity_dic, table_seg, table_measurement,
     return table_seg
 
 
-def find_thresholds(cochlea_annotations, cochlea, data_seg, table_measurement, column="median", pattern=None):
+def find_thresholds(cochlea_annotations, cochlea, data_seg, table_meas, column="median", pattern=None):
     # Find the median intensities by averaging the individual annotations for specific crops
     annotation_dics = {}
     annotated_centers = []
     for annotation_dir in cochlea_annotations:
         print(f"Localizing threshold with median intensities for {os.path.basename(annotation_dir)}.")
         annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg,
-                                                     table_measurement, column=column, pattern=pattern)
+                                                     table_meas, column=column, pattern=pattern)
         annotated_centers.extend(annotation_dic["center_strings"])
         annotation_dics[annotation_dir] = annotation_dic
 
@@ -184,12 +184,22 @@ def get_object_measures(annotation_dics, intensity_dic, intensity_mode, subtype_
     return om_dic
 
 
-def evaluate_marker_annotation(
+def eval_subtype_annotation(
     cochleae: List[str],
-    output_dir: str,
+    output_dir: Optional[str] = None,
     annotation_dirs: Optional[List[str]] = None,
     threshold_save_dir: Optional[str] = None,
-    force: bool = False,
+    input_key: str = "s0",
+    data_seg_path: Optional[str] = None,
+    table_seg_path: Optional[str] = None,
+    table_meas_path: Optional[str] = None,
+    mobie_dir: str = MOBIE_FOLDER,
+    seg_name: str = "SGN_v2",
+    force_overwrite: bool = False,
+    s3: Optional[bool] = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
 ) -> None:
     """Evaluate marker annotations of a single or multiple annotators.
     Segmentation instances are assigned a positive (1) or negative label (2)
@@ -200,43 +210,84 @@ def evaluate_marker_annotation(
     Args:
         cochleae: List of cochlea
         output_dir: Output directory for segmentation table with "marker_label" in format <cochlea>_<marker>_<seg>.tsv
+            If no output directory is passed, the table will be saved in the appropriate location in the MoBIE project.
         annotation_dirs: List of directories containing marker annotations by annotator(s).
+        mobie_dir: Local MoBIE directory used for creating data paths.
+        seg_name: Identifier for segmentation.
         threshold_save_dir: Optional directory for saving the thresholds.
-        force: Whether to overwrite already existing results.
+        force_overwrite: Whether to overwrite already existing results.
+        legacy_formatting: Use legacy formatting of thresholds with underscores, e.g. M_LR_N127_L.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
     """
-    input_key = "s0"
-
     if annotation_dirs is None:
         marker_dir = MARKER_DIR_SUBTYPE
         annotation_dirs = [entry.path for entry in os.scandir(marker_dir)
                            if os.path.isdir(entry) and "Result" in entry.name]
 
     for cochlea in cochleae:
-        data_name = COCHLEAE[cochlea]["seg_data"]
+
+        if cochlea not in list(COCHLEAE.keys()):
+            subtype_utils = "flamingo_tools/postprocessing/sgn_subtype_utils.py"
+            raise ValueError(f"Please add cochlea {cochlea} to the COCHLEAE dictionary in {subtype_utils}.")
+
+        seg_name = COCHLEAE[cochlea]["seg_data"]
         if "output_seg" in list(COCHLEAE[cochlea].keys()):
             output_seg = COCHLEAE[cochlea]["output_seg"]
         else:
-            output_seg = data_name
+            output_seg = seg_name
 
-        seg_string = "-".join(output_seg.split("_"))
-        cochlea_str = "-".join(cochlea.split("_"))
+        seg_string = output_seg.replace('_', '-')
+        cochlea_str = cochlea.replace('_', '-')
         stains = COCHLEAE[cochlea]["subtype_stains"]
         print(f"Cochlea {cochlea} with subtype stains {stains}.")
         subtype_str = "_".join(stains)
-        out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
-        annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
-        if os.path.exists(out_path) and os.path.exists(annot_out) and not force:
+
+        if output_dir is None:
+            if s3:
+                raise ValueError("Specify an output directory, when data is accessed from the S3 bucket.")
+            else:
+                print(f"Using MoBIE directory {mobie_dir} for output paths.")
+                output_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
+                os.makedirs(output_dir, exist_ok=True)
+                # TODO: Overwrite default table after checking that other entries are identical.
+                out_path = os.path.join(output_dir, f"{subtype_str}_{seg_string}.tsv")
+                annot_out = os.path.join(output_dir, f"{subtype_str}_{seg_string}_annotations.tsv")
+
+        else:
+            os.makedirs(output_dir, exist_ok=True)
+            out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
+            annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
+
+        if os.path.exists(out_path) and os.path.exists(annot_out) and not force_overwrite:
+            print(f"Skipping {out_path}. Output already exists.")
             continue
 
-        # Get the segmentation data and table.
-        input_path = f"{cochlea}/images/ome-zarr/{data_name}.ome.zarr"
-        input_path, fs = get_s3_path(input_path)
-        data_seg = read_image_data(input_path, input_key)
+        # get the segmentation data and the segmentation table
+        if data_seg_path is None:
+            if s3:
+                data_seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+            else:
+                data_seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+        if s3:
+            data_seg_path, fs = get_s3_path(data_seg_path, bucket_name=s3_bucket_name,
+                                            service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        data_seg = read_image_data(data_seg_path, input_key)
 
-        table_seg_path = f"{cochlea}/tables/{output_seg}/default.tsv"
-        table_path_s3, fs = get_s3_path(table_seg_path)
-        with fs.open(table_path_s3, "r") as f:
-            table_seg = pd.read_csv(f, sep="\t")
+        if table_seg_path is None:
+            if s3:
+                table_seg_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
+            else:
+                table_seg_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, "default.tsv")
+        if s3:
+            table_path_s3, fs = get_s3_path(table_seg_path, bucket_name=s3_bucket_name,
+                                            service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+            with fs.open(table_path_s3, "r") as f:
+                table_seg = pd.read_csv(f, sep="\t")
+        else:
+            table_seg = pd.read_csv(table_seg_path, sep="\t")
 
         # Check whether to use intensity ratio of subtype / PV or object measures for thresholding
         intensity_mode = COCHLEAE[cochlea]["intensity"]
@@ -244,26 +295,43 @@ def evaluate_marker_annotation(
         # iterate through subtypes
         annot_table = None
         for stain in stains:
-            if intensity_mode == "ratio":
-                table_measurement_path = f"{cochlea}/tables/{data_name}/subtype_ratio.tsv"
-                column = f"{stain}_ratio_PV"
-            elif intensity_mode == "absolute":
-                table_measurement_path = f"{cochlea}/tables/{data_name}/{stain}_{seg_string}_object-measures.tsv"
-                column = "median"
+
+            if table_meas_path is None:
+                if intensity_mode == "ratio":
+                    table_meas_name = "subtype_ratio.tsv"
+                    column = f"{stain}_ratio_PV"
+                elif intensity_mode == "absolute":
+                    table_meas_name = f"{stain}_{seg_string}_object-measures.tsv"
+                    column = "median"
+                else:
+                    raise ValueError("Choose either 'ratio' or 'median' as intensity mode.")
+
+                if s3:
+                    table_meas_path = os.path.join(cochlea, "tables", seg_name, table_meas_name)
+                else:
+                    table_meas_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, table_meas_name)
+
+            if s3:
+                table_path_s3, fs = get_s3_path(table_meas_path)
+                with fs.open(table_path_s3, "r") as f:
+                    table_meas = pd.read_csv(f, sep="\t")
             else:
-                raise ValueError("Choose either 'ratio' or 'median' as intensity mode.")
+                table_meas = pd.read_csv(table_meas_path, sep="\t")
 
-            table_path_s3, fs = get_s3_path(table_measurement_path)
-            with fs.open(table_path_s3, "r") as f:
-                table_measurement = pd.read_csv(f, sep="\t")
+            # check for legacy formatting, e.g. M_LR_000143_L instead of M-LR-000143-L
+            search_str = cochlea_str
+            annotations = [a for a in annotation_dirs
+                           if len(find_annotations(a, search_str, stain)["center_strings"]) != 0]
+            if len(annotations) == 0:
+                search_str = cochlea
+                annotations = [a for a in annotation_dirs
+                               if len(find_annotations(a, search_str, stain)["center_strings"]) != 0]
 
-            cochlea_annotations = [a for a in annotation_dirs
-                                   if len(find_annotations(a, cochlea, stain)["center_strings"]) != 0]
-            print(f"Evaluating data for cochlea {cochlea} in {cochlea_annotations}.")
+            print(f"Evaluating data for cochlea {cochlea} in {annotations}.")
 
             # Find the thresholds from the annotated blocks and save them if specified.
-            intensity_dic, annot_dic = find_thresholds(cochlea_annotations, cochlea, data_seg,
-                                                       table_measurement, column=column, pattern=stain)
+            intensity_dic, annot_dic = find_thresholds(annotations, search_str, data_seg,
+                                                       table_meas, column=column, pattern=stain)
 
             if annot_table is None:
                 annot_table = get_annotation_table(annot_dic, stain)
@@ -283,12 +351,13 @@ def evaluate_marker_annotation(
                     json.dump(intensity_dic, f, sort_keys=True, indent=4)
 
             # load measurement table of output segmentation
+            # this step can (hopefully) be ignored for future analysis
             if "output_seg" in list(COCHLEAE[cochlea].keys()):
                 output_seg = COCHLEAE[cochlea]["output_seg"]
-                table_measurement_path = f"{cochlea}/tables/{output_seg}/subtype_ratio.tsv"
-                table_path_s3, fs = get_s3_path(table_measurement_path)
+                table_meas_path = os.path.join(cochlea, "tables", output_seg, "subtype_ratio.tsv")
+                table_path_s3, fs = get_s3_path(table_meas_path)
                 with fs.open(table_path_s3, "r") as f:
-                    table_measurement = pd.read_csv(f, sep="\t")
+                    table_meas = pd.read_csv(f, sep="\t")
 
             # Apply the threshold to all SGNs.
             if CUSTOM_THRESHOLDS.get(cochlea, {}).get(stain) is not None:
@@ -297,16 +366,14 @@ def evaluate_marker_annotation(
                 custom_threshold_dic = None
 
             table_seg = apply_nearest_threshold(
-                intensity_dic, table_seg, table_measurement, column=column, suffix=stain,
+                intensity_dic, table_seg, table_meas, column=column, suffix=stain,
                 threshold_dic=custom_threshold_dic,
             )
 
         # Save the table with positives / negatives for all SGNs.
-        os.makedirs(output_dir, exist_ok=True)
-
-        if not os.path.exists(out_path) or force:
+        if not os.path.exists(out_path) or force_overwrite:
             table_seg.to_csv(out_path, sep="\t", index=False)
-        if not os.path.exists(annot_out) or force:
+        if not os.path.exists(annot_out) or force_overwrite:
             annot_table.to_csv(annot_out, sep="\t", index=False)
 
 
@@ -314,17 +381,54 @@ def main():
     parser = argparse.ArgumentParser(
         description="Assign each segmentation instance a marker based on annotation thresholds."
     )
-
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
-    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory.")
+    parser.add_argument("-o", "--output", type=str, help="Output directory.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+
     parser.add_argument("-a", "--annotation_dirs", type=str, nargs="+", default=None,
                         help="Directories containing marker annotations.")
-    parser.add_argument("--threshold_save_dir", "-t")
-    parser.add_argument("-f", "--force", action="store_true")
+    parser.add_argument("-t", "--threshold_save_dir")
+
+    # options for specific data paths
+    parser.add_argument("--seg_data", type=str, default=None,
+                        help="Path to segmentation data.")
+    parser.add_argument("--seg_table", type=str, default=None,
+                        help="Path to segmentation table.")
+    parser.add_argument("--meas_table", type=str, default=None,
+                        help="Path to table with object measures.")
+
+    # options for creating data paths automatically
+    parser.add_argument("--seg_name", type=str, default="SGN_v2")
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project.")
+
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
+    parser.add_argument("--s3_credentials", type=str, default=None,
+                        help="Input file containing S3 credentials. "
+                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
+    parser.add_argument("--s3_bucket_name", type=str, default=None,
+                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
+    parser.add_argument("--s3_service_endpoint", type=str, default=None,
+                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
 
     args = parser.parse_args()
-    evaluate_marker_annotation(
-        args.cochlea, args.output, args.annotation_dirs, threshold_save_dir=args.threshold_save_dir, force=args.force,
+
+    eval_subtype_annotation(
+        cochleae=args.cochlea,
+        output_dir=args.output,
+        annotation_dirs=args.annotation_dirs,
+        threshold_save_dir=args.threshold_save_dir,
+        data_seg_path=args.seg_data,
+        table_seg_path=args.seg_table,
+        table_meas_path=args.meas_table,
+        mobie_dir=args.mobie_dir,
+        seg_name=args.seg_name,
+        force_overwrite=args.force,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
 
 

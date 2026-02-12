@@ -7,7 +7,7 @@
 			"IHC_LOWRES-v3"
 		],
 		"segmentation_channel": "IHC_LOWRES-v3",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"resolution": [
 			1.887779,
 			1.887779,
@@ -20,7 +20,7 @@
 			18,
 			7
 		],
-		"halo_size": [
+		"roi_halo": [
 			128,
 			128,
 			48
@@ -51,7 +51,7 @@
 			"IHC_LOWRES-v3"
 		],
 		"segmentation_channel": "IHC_LOWRES-v3",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"resolution": [
 			1.887779,
 			1.887779,
@@ -63,7 +63,7 @@
 			1,
 			2
 		],
-		"halo_size": [
+		"roi_halo": [
 			128,
 			128,
 			48
@@ -94,7 +94,7 @@
 			"IHC_LOWRES-v3"
 		],
 		"segmentation_channel": "IHC_LOWRES-v3",
-		"type": "ihc",
+		"cell_type": "ihc",
 		"resolution": [
 			1.887779,
 			1.887779,
@@ -105,7 +105,7 @@
 		"component_list": [
 			1
 		],
-		"halo_size": [
+		"roi_halo": [
 			128,
 			128,
 			48

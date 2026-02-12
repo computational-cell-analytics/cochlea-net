@@ -1,98 +1,105 @@
 import argparse
 import json
 import os
-from typing import Optional
+from typing import List, Optional
 
-import pandas as pd
-from flamingo_tools.s3_utils import get_s3_path
-from flamingo_tools.segmentation.cochlea_mapping import tonotopic_mapping
+from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping_single
 
 
-def repro_tonotopic_mapping(
-    ddict: dict,
-    output_dir: str,
-    s3_credentials: Optional[str] = None,
-    s3_bucket_name: Optional[str] = None,
-    s3_service_endpoint: Optional[str] = None,
-    force_overwrite: Optional[bool] = None,
+def _load_json_as_list(ddict_path: str) -> List[dict]:
+    with open(ddict_path, "r") as f:
+        data = json.loads(f.read())
+    # ensure the result is always a list
+    return data if isinstance(data, list) else [data]
+
+
+def wrapper_tonotopic_mapping(
+    output_path: str,
+    table_path: Optional[str] = None,
+    ddict: Optional[str] = None,
+    force_overwrite: bool = False,
+    animal: str = "mouse",
+    otof: bool = False,
+    s3: bool = False,
+    **kwargs
 ):
-    default_cell_type = "ihc"
-    default_apex_position = "apex_higher"
-    default_max_edge_distance = 30
-    default_component_list = [1]
+    """Wrapper function for tonotopic mapping using a segmentation table.
+    The function is used to distinguish between a passed parameter dictionary in JSON format
+    and the explicit setting of parameters.
 
-    remove_columns = ["tonotopic_label",
-                      "tonotopic_value[kHz]",
-                      "distance_to_path[µm]",
-                      "length_fraction",
-                      "run_length[µm]",
-                      "centrality"]
+    Args:
+        output_path: Output path to segmentation table with new column "component_labels".
+        table_path: File path to segmentation table.
+        ddict: Data dictionary containing parameters for tonotopic mapping.
+        force_overwrite: Forcefully overwrite existing output path.
+        animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+    """
+    if ddict is None:
+        tonotopic_mapping_single(table_path, out_path=output_path, animal=animal, ototf=otof,
+                                 force_overwrite=force_overwrite, s3=s3, **kwargs)
+    else:
+        if output_path is None:
+            raise ValueError("Specify an output path when supplying a JSON dictionary.")
+        param_dicts = _load_json_as_list(ddict)
+        for params in param_dicts:
 
-    with open(ddict, 'r') as myfile:
-        data = myfile.read()
-    param_dicts = json.loads(data)
+            cochlea = params["cochlea"]
+            print(f"\n{cochlea}")
+            seg_channel = params["segmentation_channel"]
+            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
 
-    for dic in param_dicts:
-        cochlea = dic["cochlea"]
-        seg_channel = dic["segmentation_channel"]
-        if "OTOF" in cochlea:
-            otof = True
-        else:
-            otof = False
+            if "OTOF" in cochlea:
+                otof = True
+            else:
+                otof = False
 
-        if cochlea[0] in ["M", "m"]:
-            animal = "mouse"
-        elif cochlea[0] in ["G", "g"]:
-            animal = "gerbil"
-        else:
-            animal = "mouse"
-            # raise ValueError("Cochlea does not have expected name format 'M_[...]' or 'G_[...]'.")
+            if cochlea[0] in ["M", "m"]:
+                animal = "mouse"
+            elif cochlea[0] in ["G", "g"]:
+                animal = "gerbil"
+            else:
+                animal = "mouse"
 
-        cochlea_str = "-".join(cochlea.split("_"))
-        seg_str = "-".join(seg_channel.split("_"))
-        os.makedirs(output_dir, exist_ok=True)
-        output_table_path = os.path.join(output_dir, f"{cochlea_str}_{seg_str}.tsv")
+            if os.path.isdir(output_path):
+                cochlea_str = cochlea.replace('_', '-')
+                table_str = seg_channel.replace('_', '-')
+                save_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
+            else:
+                save_path = output_path
 
-        s3_path = os.path.join(f"{cochlea}", "tables", f"{seg_channel}", "default.tsv")
-        print(f"Tonotopic mapping for {cochlea}.")
-
-        tsv_path, fs = get_s3_path(s3_path, bucket_name=s3_bucket_name,
-                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(tsv_path, 'r') as f:
-            table = pd.read_csv(f, sep="\t")
-
-        cell_type = dic["type"] if "type" in dic else default_cell_type
-        component_list = dic["component_list"] if "component_list" in dic else default_component_list
-        component_mapping = dic["component_mapping"] if "component_mapping" in dic else component_list
-        apex_position = dic["apex_position"] if "apex_position" in dic else default_apex_position
-        max_edge_distance = dic["max_edge_distance"] if "max_edge_distance" in dic else default_max_edge_distance
-
-        apex_higher = (apex_position == "apex_higher")
-
-        for column in remove_columns:
-            if column in list(table.columns):
-                table = table.drop(column, axis=1)
-
-        if not os.path.isfile(output_table_path) or force_overwrite:
-            table = tonotopic_mapping(table, component_label=component_list, animal=animal,
-                                      cell_type=cell_type, component_mapping=component_mapping,
-                                      apex_higher=apex_higher, max_edge_distance=max_edge_distance,
-                                      otof=otof)
-
-            table.to_csv(output_table_path, sep="\t", index=False)
-
-        else:
-            print(f"Skipping {output_table_path}. Table already exists.")
+            tonotopic_mapping_single(table_path=table_path, out_path=save_path, animal=animal, otof=otof,
+                                     force_overwrite=force_overwrite, s3=s3, **params)
 
 
 def main():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument('-i', '--input', type=str, required=True, help="Input JSON dictionary.")
-    parser.add_argument('-o', "--output", type=str, required=True, help="Output directory.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output path. Directory (for --json) or specific file. Default: Overwrite input table.")
+    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
+    parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    # options for tonotopic mapping
+    parser.add_argument("--animal", type=str, default="mouse",
+                        help="Animal type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
+    parser.add_argument("--otof", action="store_true", help="Use frequency mapping for OTOF cochleae.")
+    parser.add_argument(
+        "--apex_position", type=str, default="apex_higher",
+        help="Apex is set to node with higher y-value. Use 'apex_lower' to reverse default mapping.",
+    )
+
+    # options for post-processing
+    parser.add_argument("--cell_type", type=str, default="sgn",
+                        help="Cell type of segmentation. Either 'sgn' or 'ihc'.")
+    parser.add_argument("--max_edge_distance", type=float, default=30,
+                        help="Maximal distance in micrometer between points to create edges for connected components.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
+
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
     parser.add_argument("--s3_credentials", type=str, default=None,
                         help="Input file containing S3 credentials. "
                         "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
@@ -103,10 +110,21 @@ def main():
 
     args = parser.parse_args()
 
-    repro_tonotopic_mapping(
-        args.input, args.output,
-        args.s3_credentials, args.s3_bucket_name, args.s3_service_endpoint,
-        args.force,
+    wrapper_tonotopic_mapping(
+        output_path=args.output,
+        table_path=args.input,
+        ddict=args.json,
+        force_overwrite=args.force,
+        cell_type=args.cell_type,
+        animal=args.animal,
+        otof=args.otof,
+        max_edge_distance=args.max_edge_distance,
+        component_list=args.components,
+        apex_position=args.apex_position,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
 
 
