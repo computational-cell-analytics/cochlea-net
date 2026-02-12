@@ -312,6 +312,7 @@ def measure_run_length_ihcs_multi_component(
     print(f"Evaluating {len(centroids_components)} components.")
     # 1) Process centroids for each component
     for centroids in centroids_components:
+        max_edge_dist_tmp = max([round(find_max_min_distance(centroids) + 0.5), max_edge_distance])
         graph = nx.Graph()
         coords = {}
         labels = [int(i) for i in range(len(centroids))]
@@ -326,7 +327,7 @@ def measure_run_length_ihcs_multi_component(
             for num_j, pos_j in coords.items():
                 if num_i < num_j:
                     dist = math.dist(pos_i, pos_j)
-                    if dist <= max_edge_distance:
+                    if dist <= max_edge_dist_tmp:
                         graph.add_edge(num_i, num_j, weight=dist)
 
         components = [list(c) for c in nx.connected_components(graph)]
@@ -338,8 +339,7 @@ def measure_run_length_ihcs_multi_component(
             print(f"Graph consists of {len(components)} connected components.")
             if len(component_label) != len(components):
                 raise ValueError(f"Length of graph components {len(components)} "
-                                 f"does not match number of component labels {len(component_label)}. "
-                                 "Check max_edge_distance and post-processing.")
+                                 f"does not match number of component labels {len(component_label)}.")
 
             # Order connected components in order of component labels
             # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -435,6 +435,37 @@ def measure_run_length_ihcs_multi_component(
     return total_distance, path, path_dict
 
 
+def find_max_min_distance(coords):
+    """
+    Find the maximum of the minimum distances from each point to any other point.
+
+    Args:
+        coords: Array of shape (n, 3) containing 3D coordinates
+
+    Returns:
+        float: Maximum of the minimum distances
+    """
+    coords = np.array(coords)
+
+    # Compute all pairwise distances using broadcasting
+    # Shape: (n, n, 3) - all pairwise differences
+    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+
+    # Compute squared distances (avoiding sqrt for efficiency)
+    squared_distances = np.sum(diff**2, axis=2)
+
+    # Set diagonal to infinity to exclude distance to self
+    np.fill_diagonal(squared_distances, np.inf)
+
+    # Find minimum distance for each point
+    min_distances = np.sqrt(np.min(squared_distances, axis=1))
+
+    # Find the maximum of these minimum distances
+    max_min_distance = np.max(min_distances)
+
+    return max_min_distance
+
+
 def measure_run_length_ihcs(
     centroids: np.ndarray,
     max_edge_distance: float = 30,
@@ -443,8 +474,7 @@ def measure_run_length_ihcs(
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the IHC segmentation
     by determining the shortest path between the most distant nodes of a graph.
-    The graph is created based on a maximal edge distance between nodes.
-    Take care, that this value should be identical to the one used to initially process the IHC segmentation.
+    The graph is created based on the maximal edge distance between nodes.
 
     If the graph consists of more than one connected components, a list of component labels must be supplied.
     The components are then connected with edges between nodes of neighboring components which are closest together.
@@ -470,6 +500,7 @@ def measure_run_length_ihcs(
     for num, pos in coords.items():
         graph.add_node(num, pos=pos)
 
+    max_edge_distance = max([round(find_max_min_distance(centroids) + 0.5), max_edge_distance])
     # create edges between points whose distance is less than threshold max_edge_distance
     for num_i, pos_i in coords.items():
         for num_j, pos_j in coords.items():
@@ -487,8 +518,7 @@ def measure_run_length_ihcs(
         print(f"Graph consists of {len(components)} connected components.")
         if len(component_label) != len(components):
             raise ValueError(f"Length of graph components {len(components)} "
-                             f"does not match number of component labels {len(component_label)}. "
-                             "Check max_edge_distance and post-processing.")
+                             f"does not match number of component labels {len(component_label)}.")
 
         # Order connected components in order of component labels
         # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
@@ -713,7 +743,6 @@ def equidistant_centers(
     component_label: List[int] = [1],
     cell_type: str = "sgn",
     n_blocks: int = 10,
-    max_edge_distance: float = 30,
     offset_blocks: bool = True,
 ) -> np.ndarray:
     """Find equidistant centers within the central path of the Rosenthal's canal.
@@ -735,7 +764,7 @@ def equidistant_centers(
     if cell_type == "ihc":
         if len(component_label) == 1:
             total_distance, path, _ = measure_run_length_ihcs(
-                centroids, component_label=component_label, max_edge_distance=max_edge_distance
+                centroids, component_label=component_label,
             )
             return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
         else:
@@ -745,7 +774,7 @@ def equidistant_centers(
                 subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
                 centroids_components.append(subset_centroids)
             total_distance, path, path_dict = measure_run_length_ihcs_multi_component(
-                centroids_components, max_edge_distance=max_edge_distance
+                centroids_components,
             )
             return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
@@ -770,7 +799,6 @@ def tonotopic_mapping(
     component_mapping: Optional[List[int]] = None,
     cell_type: str = "ihc",
     animal: str = "mouse",
-    max_edge_distance: float = 30,
     apex_higher: bool = True,
     otof: bool = False,
 ) -> pd.DataFrame:
@@ -783,7 +811,6 @@ def tonotopic_mapping(
         components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         cell_type: Cell type of segmentation.
         animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
-        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
 
@@ -801,7 +828,6 @@ def tonotopic_mapping(
     if cell_type == "ihc":
         total_distance, _, path_dict = measure_run_length_ihcs(
             centroids, component_label=component_label, apex_higher=apex_higher,
-            max_edge_distance=max_edge_distance
         )
 
     else:
@@ -852,12 +878,11 @@ def tonotopic_mapping_single(
     apex_position: str = "apex_higher",
     component_list: List[int] = [1],
     component_mapping: Optional[List[int]] = None,
-    max_edge_distance: float = 30,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **_
+    **_,
 ):
     """Tonotopic mapping of a single cochlea.
     Each segmentation instance within a given component list is assigned a frequency[kHz], a run length and an offset.
@@ -878,7 +903,6 @@ def tonotopic_mapping_single(
         apex_position: Identify position of apex and base. Apex is set to node with higher y-value per default.
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
         components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
-        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -914,7 +938,7 @@ def tonotopic_mapping_single(
     else:
         table = tonotopic_mapping(table, component_label=component_list, animal=animal,
                                   cell_type=cell_type, component_mapping=component_mapping,
-                                  apex_higher=apex_higher, max_edge_distance=max_edge_distance,
+                                  apex_higher=apex_higher,
                                   otof=otof)
 
         table.to_csv(out_path, sep="\t", index=False)
@@ -926,14 +950,12 @@ def equidistant_centers_single(
     n_blocks: int = 10,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
-    max_edge_distance: float = 30,
-    force_overwrite: bool = False,
     offset_blocks: bool = True,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **_
+    **_,
 ):
     """Find equidistant centers within the central path of the Rosenthal's canal.
 
@@ -943,8 +965,6 @@ def equidistant_centers_single(
         cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
         force_overwrite: Forcefully overwrite existing output path.
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
-        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
-        force_overwrite: Forcefully overwrite existing output path.
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
         s3: Use S3 bucket.
         s3_credentials:
@@ -964,19 +984,28 @@ def equidistant_centers_single(
         table_path = os.path.realpath(table_path)
         table = pd.read_csv(table_path, sep="\t")
 
-    if os.path.isfile(output_path) and not force_overwrite:
-        print(f"Skipping {output_path}. Table already exists.")
+    if os.path.isfile(output_path):
+        print(f"Updating parameters in {output_path}.")
+        with open(output_path, "r") as f:
+            dic = json.load(f)
+        dic["n_blocks"] = n_blocks
+        dic["cell_type"] = cell_type
+        dic["component_list"] = component_list
 
     else:
-        centers = equidistant_centers(
-            table, component_label=component_list, cell_type=cell_type,
-            n_blocks=n_blocks, max_edge_distance=max_edge_distance, offset_blocks=offset_blocks,
-        )
-        centers = [[round(c) for c in center] for center in centers]
-
         dic = {}
         dic["seg_table"] = table_path
-        dic["crop_centers"] = centers
+        dic["n_blocks"] = n_blocks
+        dic["cell_type"] = cell_type
+        dic["component_list"] = component_list
 
-        with open(output_path, "w") as f:
-            json.dump(dic, f, indent='\t', separators=(',', ': '))
+    centers = equidistant_centers(
+        table, component_label=component_list, cell_type=cell_type,
+        n_blocks=n_blocks, offset_blocks=offset_blocks,
+    )
+    centers = [[round(c) for c in center] for center in centers]
+
+    dic["crop_centers"] = centers
+
+    with open(output_path, "w") as f:
+        json.dump(dic, f, indent='\t', separators=(',', ': '))

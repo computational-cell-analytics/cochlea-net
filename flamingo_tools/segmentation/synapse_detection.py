@@ -106,7 +106,7 @@ def run_prediction(
         detections = find_local_maxima(
             input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
         )
-        # Save the result in mobie compatible format.
+        # Save the result in MoBIE compatible format.
         detections = np.concatenate(
             [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
         )
@@ -191,7 +191,7 @@ def marker_detection(
         detections = find_local_maxima(
             input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
         )
-        # Save the result in mobie compatible format.
+        # Save the result in MoBIE compatible format.
         detections = np.concatenate(
             [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
         )
@@ -219,6 +219,6 @@ def marker_detection(
             resolution=resolution,
         )
 
-        # Save the result in mobie compatible format.
+        # Save the result in MoBIE compatible format.
         detection_path = os.path.join(output_folder, "synapse_detection_filtered.tsv")
         detections_filtered.to_csv(detection_path, index=False, sep="\t")

@@ -39,8 +39,8 @@ def wrapper_label_components(
             table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
 
             if os.path.isdir(output_path):
-                cochlea_str = "-".join(cochlea.split("_"))
-                table_str = "-".join(seg_channel.split("_"))
+                cochlea_str = cochlea.replace('_', '-')
+                table_str = seg_channel.replace('_', '-')
                 save_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
             else:
                 save_path = output_path
@@ -56,7 +56,7 @@ def main():
                         help="Output path. Directory (for --json) or specific file. Default: Overwrite input table.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",

@@ -526,7 +526,7 @@ def run_unet_prediction_preprocess_slurm(
         input_path: The path to the input data.
         output_folder: The output folder for storing the segmentation related data.
         input_key: The key / internal path of the image data.
-        s3: Flag for considering input_path fo S3 bucket.
+        s3: Flag for accessing data stored on S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
         s3_credentials: File path to credentials for S3 bucket.
@@ -534,7 +534,8 @@ def run_unet_prediction_preprocess_slurm(
     """
     if s3 is not None:
         input_path, fs = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name, service_endpoint=s3_service_endpoint, credential_file=s3_credentials
+            input_path, bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
         )
 
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
@@ -570,7 +571,7 @@ def run_unet_prediction_slurm(
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
         prediction_instances: Number of instances for parallel prediction.
-        s3: Flag for considering input_path fo S3 bucket.
+        s3: Flag for accessing data stored on S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
         s3_credentials: File path to credentials for S3 bucket.
@@ -583,7 +584,8 @@ def run_unet_prediction_slurm(
 
     if s3 is not None:
         input_path, fs = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name, service_endpoint=s3_service_endpoint, credential_file=s3_credentials
+            input_path, bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
         )
 
     if slurm_task_id is not None:

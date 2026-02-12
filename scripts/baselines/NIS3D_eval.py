@@ -144,9 +144,9 @@ def filter_true_positives(output_folder, prefixes, force_overwrite):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--output_folder", "-o", required=True)
-    parser.add_argument("--prefix", "-p", nargs="+", type=str, default=None)
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-o", "--output_folder", required=True)
+    parser.add_argument("-p", "--prefix", nargs="+", type=str, default=None)
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
     args = parser.parse_args()
 
     filter_true_positives(

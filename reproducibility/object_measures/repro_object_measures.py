@@ -44,19 +44,19 @@ def wrapper_object_measures(
     else:
         out_paths = [os.path.realpath(o) for o in out_paths]
         param_dicts = _load_json_as_list(ddict)
-        for num, params in enumerate(param_dicts):
+        for params in param_dicts:
             cochlea = params["cochlea"]
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
             image_channels = params["image_channel"]
-            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
+            table_path = os.path.join(cochlea, "tables", seg_channel, "default.tsv")
             if len(out_paths) == 1 and os.path.isdir(out_paths[0]):
 
-                c_str = "-".join(cochlea.split("_"))
-                s_str = "-".join(seg_channel.split("_"))
+                c_str = cochlea.replace('_', '-')
+                s_str = seg_channel.replace('_', '-')
                 out_paths_tmp = []
                 for img_channel in image_channels:
-                    i_str = "-".join(img_channel.split("_"))
+                    i_str = img_channel.replace('_', '-')
                     out_paths_tmp.append(os.path.join(out_paths[0], f"{c_str}_{i_str}_{s_str}_object-measures.tsv"))
 
             else:
@@ -64,13 +64,16 @@ def wrapper_object_measures(
                 out_paths_tmp = out_paths.copy()
 
             if s3:
-                image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr" for ch in image_channels]
-                seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
-                seg_table = f"{cochlea}/tables/{seg_channel}/default.tsv"
+                image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                               for ch in image_channels]
+                seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
+                seg_table = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
             else:
-                image_paths = [f"{MOBIE_FOLDER}/{cochlea}/images/ome-zarr/{ch}.ome.zarr" for ch in image_channels]
-                seg_path = f"{MOBIE_FOLDER}/{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
-                seg_table = f"{MOBIE_FOLDER}/{cochlea}/tables/{seg_channel}/default.tsv"
+                image_paths = [os.path.join(MOBIE_FOLDER, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                               for ch in image_channels]
+                seg_path = os.path.join(MOBIE_FOLDER, cochlea, "images", "ome-zarr",
+                                        f"{seg_channel}.ome.zarr")
+                seg_table = os.path.join(MOBIE_FOLDER, cochlea, "tables", seg_channel, "default.tsv")
 
             object_measures_single(
                 table_path=seg_table,
@@ -96,7 +99,7 @@ def main():
     parser.add_argument("-s", "--seg_path", type=str, default=None,
                         help="Input path to segmentation channel in ome.zarr format.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for object measures
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
@@ -123,9 +126,13 @@ def main():
         seg_path=args.seg_path,
         ddict=args.json,
         force_overwrite=args.force,
-        s3=args.s3,
         component_list=args.components,
         resolution=args.resolution,
+        background_mask=args.bg_mask,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
 
 

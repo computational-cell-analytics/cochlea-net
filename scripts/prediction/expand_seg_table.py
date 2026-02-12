@@ -27,10 +27,10 @@ def main(
         n_neighbors: Value(s) for nearest neighbor distance.
         local_ripley_radius: Value(s) for calculating local Ripley's K function.
         r_neighbors: Value(s) for radii for calculating number of neighbors in range.
-        s3: Flag for considering in_path fo S3 bucket.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
-        s3_credentials: File path to credentials for S3 bucket.
     """
     if s3:
         tsv_path, fs = s3_utils.get_s3_path(in_path, bucket_name=s3_bucket_name,

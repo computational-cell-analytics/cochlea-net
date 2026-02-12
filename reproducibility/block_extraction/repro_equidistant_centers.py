@@ -22,17 +22,12 @@ def wrapper_equidistant_centers(
     n_blocks: int = 10,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
-    max_edge_distance: float = 30,
-    force_overwrite: bool = False,
     offset_blocks: bool = True,
-    bucket_name: Optional[str] = None,
-    service_endpoint: Optional[str] = None,
-    credential_file: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
-    **kwargs
+    **kwargs,
 ):
     """Wrapper function for extracting blocks from volumetric data.
     The function is used to distinguish between a passed parameter dictionary in JSON format
@@ -41,22 +36,13 @@ def wrapper_equidistant_centers(
     if ddict is None:
         equidistant_centers_single(input_path, output_path, s3=s3, n_blocks=n_blocks,
                                    cell_type=cell_type, component_list=component_list,
-                                   max_edge_distance=max_edge_distance, force_overwrite=force_overwrite,
                                    offset_blocks=offset_blocks, **kwargs)
     else:
         param_dicts = _load_json_as_list(ddict)
 
         out_dict = []
         if output_path is None:
-            output_path = input_path
-            force_overwrite = True
-
-        if output_path is None:
             output_path = ddict
-            force_overwrite = True
-
-        if os.path.isfile(output_path) and not force_overwrite:
-            print(f"Skipping {output_path}. File already exists.")
 
         for params in param_dicts:
             cochlea = params["cochlea"]
@@ -72,7 +58,7 @@ def wrapper_equidistant_centers(
 
             centers = equidistant_centers(
                 table, component_label=component_list, cell_type=cell_type,
-                n_blocks=n_blocks, max_edge_distance=max_edge_distance,
+                n_blocks=n_blocks,
                 offset_blocks=offset_blocks,
             )
             centers = [[round(c) for c in center] for center in centers]
@@ -93,7 +79,6 @@ def main():
                         help="Output path for JSON dictionary. Optional for --json: Table is overwritten.")
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for equidistant centers
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
@@ -101,10 +86,6 @@ def main():
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
-    parser.add_argument(
-        "--max_edge_distance", type=float, default=30,
-        help="Maximal distance in micrometer between points to create edges for connected components. Default: 30",
-    )
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -125,8 +106,6 @@ def main():
         n_blocks=args.n_blocks,
         cell_type=args.cell_type,
         component_list=args.components,
-        max_edge_distance=args.max_edge_distance,
-        force_overwrite=args.force,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

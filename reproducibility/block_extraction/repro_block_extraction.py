@@ -43,9 +43,12 @@ def wrapper_extract_block(
                 image_channels = [params["image_channel"]]
 
             for image_channel in image_channels:
-                input_path = os.path.join(cochlea, "images", "ome-zarr", image_channel + ".ome.zarr")
+                input_path = os.path.join(cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
                 for coords in params["crop_centers"]:
-                    extract_block_single(input_path, coords, output_path, input_key=input_key, s3=s3, **params)
+                    extract_block_single(
+                        input_path, coords, output_path, dataset_name=cochlea, channel_name=image_channel,
+                        input_key=input_key, s3=s3, **params,
+                    )
 
 
 def main():
@@ -56,7 +59,7 @@ def main():
     parser.add_argument('-i', '--input', type=str, default=None,
                         help="Input path to data in n5/ome-zarr/TIF format.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for block etraction
     parser.add_argument("-c", "--coords", type=int, nargs="+", default=[],
