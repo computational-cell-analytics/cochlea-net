@@ -224,9 +224,9 @@ def object_measures():
                         help="Output path(s). Either directory or specific file(s).")
     parser.add_argument("-i", "--image_paths", type=str, nargs="+", default=None,
                         help="Input path to one or multiple image channels in ome.zarr format.")
-    parser.add_argument("-t", "--seg_table", type=str, default=None,
+    parser.add_argument("--seg_table", type=str, default=None,
                         help="Input path to segmentation table.")
-    parser.add_argument("-s", "--seg_path", type=str, default=None,
+    parser.add_argument("--seg_path", type=str, default=None,
                         help="Input path to segmentation channel in ome.zarr format.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
     parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,

@@ -142,9 +142,9 @@ def find_thresholds(cochlea_annotations, cochlea, data_seg, table_meas, resoluti
     return intensity_dic
 
 
-def evaluate_marker_annotation(
+def eval_marker_annotation(
     cochleae: List[str],
-    output_dir: str,
+    output_dir: Optional[str] = None,
     annotation_dirs: Optional[List[str]] = None,
     threshold_save_dir: Optional[str] = None,
     input_key: str = "s0",
@@ -169,6 +169,7 @@ def evaluate_marker_annotation(
     Args:
         cochleae: List of cochlea
         output_dir: Output directory for segmentation table with "marker_label" in format <cochlea>_<marker>_<seg>.tsv
+            If no output directory is passed, the table will be saved in the appropriate location in the MoBIE project.
         annotation_dirs: List of directories containing marker annotations by annotator(s).
         mobie_dir: Local MoBIE directory used for creating data paths.
         seg_name: Identifier for segmentation.
@@ -197,8 +198,22 @@ def evaluate_marker_annotation(
     seg_string = seg_name.replace('_', '-')
     for cochlea in cochleae:
         cochlea_str = cochlea.replace('_', '-')
-        out_path = os.path.join(output_dir, f"{cochlea_str}_{marker_name}_{seg_string}.tsv")
+
+        if output_dir is None:
+            if s3:
+                raise ValueError("Specify an output directory, when data is accessed from the S3 bucket.")
+            else:
+                print(f"Using MoBIE directory {mobie_dir} for output paths.")
+                output_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
+                os.makedirs(output_dir, exist_ok=True)
+                # TODO: Overwrite default table after checking that other entries are identical.
+                out_path = os.path.join(output_dir, f"{marker_name}_{seg_string}.tsv")
+        else:
+            os.makedirs(output_dir, exist_ok=True)
+            out_path = os.path.join(output_dir, f"{cochlea_str}_{marker_name}_{seg_string}.tsv")
+
         if os.path.exists(out_path) and not force_overwrite:
+            print(f"Skipping {out_path}. Table already exists.")
             continue
 
         # check for legacy formatting, e.g. M_LR_000143_L instead of M-LR-000143-L
@@ -261,7 +276,6 @@ def evaluate_marker_annotation(
         table_seg = apply_nearest_threshold(intensity_dic, table_seg, table_meas, halo_size=halo_size)
 
         # Save the table with positives / negatives for all SGNs.
-        os.makedirs(output_dir, exist_ok=True)
         table_seg.to_csv(out_path, sep="\t", index=False)
 
 
@@ -271,7 +285,7 @@ def main():
     )
 
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
-    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory.")
+    parser.add_argument("-o", "--output", type=str, help="Output directory.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     parser.add_argument("-a", "--annotation_dirs", type=str, nargs="+", default=None,
@@ -304,7 +318,7 @@ def main():
 
     args = parser.parse_args()
 
-    evaluate_marker_annotation(
+    eval_marker_annotation(
         cochleae=args.cochlea,
         output_dir=args.output,
         annotation_dirs=args.annotation_dirs,

@@ -184,9 +184,9 @@ def get_object_measures(annotation_dics, intensity_dic, intensity_mode, subtype_
     return om_dic
 
 
-def evaluate_subtype_annotation(
+def eval_subtype_annotation(
     cochleae: List[str],
-    output_dir: str,
+    output_dir: Optional[str] = None,
     annotation_dirs: Optional[List[str]] = None,
     threshold_save_dir: Optional[str] = None,
     input_key: str = "s0",
@@ -210,6 +210,7 @@ def evaluate_subtype_annotation(
     Args:
         cochleae: List of cochlea
         output_dir: Output directory for segmentation table with "marker_label" in format <cochlea>_<marker>_<seg>.tsv
+            If no output directory is passed, the table will be saved in the appropriate location in the MoBIE project.
         annotation_dirs: List of directories containing marker annotations by annotator(s).
         mobie_dir: Local MoBIE directory used for creating data paths.
         seg_name: Identifier for segmentation.
@@ -243,8 +244,23 @@ def evaluate_subtype_annotation(
         stains = COCHLEAE[cochlea]["subtype_stains"]
         print(f"Cochlea {cochlea} with subtype stains {stains}.")
         subtype_str = "_".join(stains)
-        out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
-        annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
+
+        if output_dir is None:
+            if s3:
+                raise ValueError("Specify an output directory, when data is accessed from the S3 bucket.")
+            else:
+                print(f"Using MoBIE directory {mobie_dir} for output paths.")
+                output_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
+                os.makedirs(output_dir, exist_ok=True)
+                # TODO: Overwrite default table after checking that other entries are identical.
+                out_path = os.path.join(output_dir, f"{subtype_str}_{seg_string}.tsv")
+                annot_out = os.path.join(output_dir, f"{subtype_str}_{seg_string}_annotations.tsv")
+
+        else:
+            os.makedirs(output_dir, exist_ok=True)
+            out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
+            annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
+
         if os.path.exists(out_path) and os.path.exists(annot_out) and not force_overwrite:
             print(f"Skipping {out_path}. Output already exists.")
             continue
@@ -355,8 +371,6 @@ def evaluate_subtype_annotation(
             )
 
         # Save the table with positives / negatives for all SGNs.
-        os.makedirs(output_dir, exist_ok=True)
-
         if not os.path.exists(out_path) or force_overwrite:
             table_seg.to_csv(out_path, sep="\t", index=False)
         if not os.path.exists(annot_out) or force_overwrite:
@@ -368,7 +382,7 @@ def main():
         description="Assign each segmentation instance a marker based on annotation thresholds."
     )
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=COCHLEAE, help="Cochlea(e) to process.")
-    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory.")
+    parser.add_argument("-o", "--output", type=str, help="Output directory.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     parser.add_argument("-a", "--annotation_dirs", type=str, nargs="+", default=None,
@@ -400,7 +414,7 @@ def main():
 
     args = parser.parse_args()
 
-    evaluate_subtype_annotation(
+    eval_subtype_annotation(
         cochleae=args.cochlea,
         output_dir=args.output,
         annotation_dirs=args.annotation_dirs,

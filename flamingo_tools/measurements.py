@@ -377,6 +377,7 @@ def compute_object_measures(
         s3_service_endpoint: S3 service endpoint.
     """
     if os.path.exists(output_table_path) and not force:
+        print(f"Skipping {output_table_path}. Table already exists.")
         return
 
     # First, we load the pre-computed segmentation table from MoBIE.
