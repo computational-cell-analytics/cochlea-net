@@ -5,7 +5,7 @@
 			"GFP"
 		],
 		"segmentation_channel": "SGN_v2",
-		"background_mask": "yes",
+		"use_bg_mask": "yes",
 		"component_list": [
 			1,
 			2
