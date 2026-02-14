@@ -117,7 +117,7 @@ def annotation_napari(
         with fs.open(table_path_s3, "r") as f:
             measurement_table = pd.read_csv(f, sep="\t")
     else:
-        measurement_table = pd.read_csv(measurement_table, sep="\t")
+        measurement_table = pd.read_csv(measurement_table_path, sep="\t")
 
     seg = imageio.imread(seg_file)
     statistics = get_object_measures_from_table(seg, table=measurement_table, keyword=statistics_keyword)

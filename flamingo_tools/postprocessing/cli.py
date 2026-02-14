@@ -93,7 +93,11 @@ def extract_block():
 
     args = parser.parse_args()
     args_dict = vars(args)
-    extract_block_json_wrapper(args_dict)
+    extract_block_json_wrapper(
+        input_path=args_dict["input"],
+        output_path=args_dict["output"],
+        **args_dict,
+    )
 
 
 def extract_central_blocks():
@@ -257,13 +261,19 @@ def object_measures():
 
     object_measures_json_wrapper(
         out_paths=args.output,
-        json_file=args.json_info,
-        mobie_dir=args.mobie_dir,
         image_paths=args.image_paths,
         table_path=args.seg_table,
         seg_path=args.seg_path,
         force_overwrite=args.force,
+        mobie_dir=args.mobie_dir,
+        json_file=args.json_info,
+        component_list=args.components,
+        resolution=args.resolution,
+        use_bg_mask=args.bg_mask,
         s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
 
 

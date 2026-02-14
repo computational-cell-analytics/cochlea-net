@@ -1,4 +1,5 @@
 import json
+import os
 
 
 def export_dictionary_as_json(
@@ -13,7 +14,8 @@ def export_dictionary_as_json(
         out_path: Output path for JSON file.
         force_overwrite: Flag for forcefully overwriting file.
     """
-    if force_overwrite:
+
+    if force_overwrite or not os.path.isfile(output_path):
         with open(output_path, "w") as f:
             json.dump(param_dict, f, indent='\t', separators=(',', ': '))
     else:

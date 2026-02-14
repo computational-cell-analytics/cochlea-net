@@ -22,6 +22,7 @@ def wrapper_object_measures(
     ddict: Optional[str] = None,
     force_overwrite: bool = False,
     s3: bool = False,
+    use_bg_mask: bool = False,
     **kwargs
 ):
     """Wrapper function for calculationg object measures for different image channels using a segmentation table.
@@ -63,6 +64,10 @@ def wrapper_object_measures(
                 assert len(image_channels) == len(out_paths)
                 out_paths_tmp = out_paths.copy()
 
+            if "use_bg_mask" in list(params.keys()):
+                if params["use_bg_mask"] in ["yes", "Yes"]:
+                    use_bg_mask = True
+
             if s3:
                 image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
                                for ch in image_channels]
@@ -81,6 +86,7 @@ def wrapper_object_measures(
                 image_paths=image_paths,
                 out_paths=out_paths_tmp,
                 force_overwrite=force_overwrite,
+                use_bg_mask=use_bg_mask,
                 s3=s3,
                 **params,
             )
@@ -128,7 +134,7 @@ def main():
         force_overwrite=args.force,
         component_list=args.components,
         resolution=args.resolution,
-        background_mask=args.bg_mask,
+        use_bg_mask=args.bg_mask,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

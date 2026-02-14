@@ -522,7 +522,7 @@ def object_measures_single(
     out_paths: List[str],
     force_overwrite: bool = False,
     component_list: List[int] = [1],
-    background_mask: Optional[str] = None,
+    use_bg_mask: bool = False,
     resolution: List[float] = [0.38, 0.38, 0.38],
     s3: bool = False,
     s3_credentials: Optional[str] = None,
@@ -539,7 +539,7 @@ def object_measures_single(
         out_paths: Paths(s) for calculated object measures.
         force_overwrite: Forcefully overwrite existing files.
         component_list: Only calculate object measures for specific components.
-        background_mask: Use background mask for calculating object measures.
+        use_bg_mask: Use background mask for calculating object measures.
         resolution: Resolution of input in micrometer.
         s3: Use S3 file paths.
         s3_credentials:
@@ -568,34 +568,34 @@ def object_measures_single(
             print(f"Skipping {out_path}. Table already exists.")
 
         else:
-            if background_mask is None:
-                feature_set = "default"
-                dilation = None
-                median_only = False
-            elif background_mask in ["yes", "Yes"]:
+            if use_bg_mask:
                 print("Using background mask for calculating object measures.")
                 feature_set = "default_background_subtract"
                 dilation = 4
                 median_only = True
 
                 if s3:
-                    img_path, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
+                    img_path_s3, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
                                                         service_endpoint=s3_service_endpoint,
                                                         credential_file=s3_credentials)
-                    seg_path, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
+                    seg_path_s3, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
                                                         service_endpoint=s3_service_endpoint,
                                                         credential_file=s3_credentials)
 
                 mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
                 background_mask = compute_sgn_background_mask(
-                    image_path=img_path,
-                    segmentation_path=seg_path,
+                    image_path=img_path_s3,
+                    segmentation_path=seg_path_s3,
                     image_key=input_key,
                     segmentation_key=input_key,
                     n_threads=n_threads,
                     cache_path=mask_cache_path,
                 )
             else:
+                feature_set = "default"
+                dilation = None
+                median_only = False
+                background_mask = None
                 print("Calculating object measures without background mask.")
 
             compute_object_measures(
@@ -624,7 +624,11 @@ def object_measures_json_wrapper(
     out_paths: List[str],
     json_file: Optional[str] = None,
     mobie_dir: str = MOBIE_FOLDER,
+    use_bg_mask: bool = False,
     s3: Optional[bool] = False,
+    image_paths: Optional[List[str]] = None,
+    table_path: Optional[str] = None,
+    seg_path: Optional[str] = None,
     **kwargs,
 ):
     """Wrapper function for calculating object measures based on a dictionary in a JSON file.
@@ -634,7 +638,11 @@ def object_measures_json_wrapper(
             If no directory is given, files are stored in the MoBIE project.
         json_file: JSON file containing parameter dictionary.
         mobie_dir: Local MoBIE directory used for creating data paths.
+        use_bg_mask: Use background mask for calculating object measures.
         s3: Flag for accessing data stored on S3 bucket.
+        image_paths: Optional image paths.
+        table_path: Optional path to segmentation table.
+        seg_path: Optional segmentation path.
     """
     if json_file is not None:
         # load parameters from JSON
@@ -653,6 +661,18 @@ def object_measures_json_wrapper(
         image_channels = [i for i in image_channels if i != seg_channel]
         print(f"Calculating object measures for image channels: {image_channels}.")
 
+        if "use_bg_mask" in list(params.keys()):
+            if params["use_bg_mask"] in ["yes", "Yes"]:
+                use_bg_mask = True
+            else:
+                use_bg_mask = False
+
+        if use_bg_mask:
+            suffix = "-bg-mask"
+        else:
+            suffix = ""
+
+        out_paths_tmp = []
         # create output path in local MoBIE project
         if len(out_paths) == 0:
             if s3:
@@ -660,10 +680,9 @@ def object_measures_json_wrapper(
                                  "Make sure to specify an output directory.")
             c_str = cochlea.replace('_', '-')
             s_str = seg_channel.replace('_', '-')
-            out_paths_tmp = []
             for img_channel in image_channels:
                 i_str = img_channel.replace('_', '-')
-                meas_table_name = f"{i_str}_{s_str}_object-measures.tsv"
+                meas_table_name = f"{i_str}_{s_str}_object-measures{suffix}.tsv"
                 out_paths_tmp.append(os.path.join(mobie_dir, cochlea, "tables", seg_channel, meas_table_name))
 
         # create distinct output names in output folder
@@ -671,10 +690,10 @@ def object_measures_json_wrapper(
             os.makedirs(out_paths[0], exist_ok=True)
             c_str = cochlea.replace('_', '-')
             s_str = seg_channel.replace('_', '-')
-            out_paths_tmp = []
             for img_channel in image_channels:
                 i_str = img_channel.replace('_', '-')
-                out_paths_tmp.append(os.path.join(out_paths[0], f"{c_str}_{i_str}_{s_str}_object-measures.tsv"))
+                prefix = f"{c_str}_{i_str}_{s_str}"
+                out_paths_tmp.append(os.path.join(out_paths[0], f"{prefix}_object-measures{suffix}.tsv"))
 
         # use pre-set output paths given as arguments in CLI
         else:
@@ -683,27 +702,41 @@ def object_measures_json_wrapper(
 
         # create paths based on JSON parameters
         if s3:
-            image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
-                           for ch in image_channels]
-            seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
-            seg_table = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
+            if image_paths is None:
+                image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                               for ch in image_channels]
+            if seg_path is None:
+                seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
+            if table_path is None:
+                table_path = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
         else:
-            image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
-                           for ch in image_channels]
-            seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
-                                    f"{seg_channel}.ome.zarr")
-            seg_table = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+            if image_paths is None:
+                image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                               for ch in image_channels]
+            if seg_path is None:
+                seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
+                                        f"{seg_channel}.ome.zarr")
+            if table_path is None:
+                table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
 
+        kwargs.update(params)
         object_measures_single(
-            table_path=seg_table,
+            table_path=table_path,
             seg_path=seg_path,
             image_paths=image_paths,
             out_paths=out_paths_tmp,
             s3=s3,
-            **params,
+            use_bg_mask=use_bg_mask,
+            **kwargs,
         )
 
     else:
         object_measures_single(
+            out_paths=out_paths,
+            use_bg_mask=use_bg_mask,
+            s3=s3,
+            image_paths=image_paths,
+            table_path=table_path,
+            seg_path=seg_path,
             **kwargs,
         )
