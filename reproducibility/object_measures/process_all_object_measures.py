@@ -5,8 +5,9 @@ import zarr
 
 import flamingo_tools.s3_utils as s3_utils
 
-OUTPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements2"  # noqa
-JSON_ROOT = "/user/pape41/u12086/Work/my_projects/flamingo-tools/reproducibility/object_measures"
+OUTPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements3"  # noqa
+# JSON_ROOT = "/user/pape41/u12086/Work/my_projects/flamingo-tools/reproducibility/object_measures"
+JSON_ROOT = "/user/schilling40/u15000/flamingo-tools/reproducibility/object_measures"
 COCHLEAE = [
     "M_LR_000143_L",
     "M_LR_000144_L",

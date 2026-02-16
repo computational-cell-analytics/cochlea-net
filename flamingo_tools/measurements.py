@@ -524,6 +524,7 @@ def object_measures_single(
     component_list: List[int] = [1],
     use_bg_mask: bool = False,
     resolution: List[float] = [0.38, 0.38, 0.38],
+    cochlea: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -575,17 +576,23 @@ def object_measures_single(
                 median_only = True
 
                 if s3:
-                    img_path_s3, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
-                                                        service_endpoint=s3_service_endpoint,
-                                                        credential_file=s3_credentials)
-                    seg_path_s3, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
-                                                        service_endpoint=s3_service_endpoint,
-                                                        credential_file=s3_credentials)
+                    img_path_bg_mask, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
+                                                                service_endpoint=s3_service_endpoint,
+                                                                credential_file=s3_credentials)
+                    seg_path_bg_mask, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
+                                                                service_endpoint=s3_service_endpoint,
+                                                                credential_file=s3_credentials)
+                else:
+                    img_path_bg_mask = img_path
+                    seg_path_bg_mask = seg_path
 
-                mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
+                if cochlea is None:
+                    mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
+                else:
+                    mask_cache_path = os.path.join(os.path.dirname(out_path), f"{cochlea}_bg-mask.zarr")
                 background_mask = compute_sgn_background_mask(
-                    image_path=img_path_s3,
-                    segmentation_path=seg_path_s3,
+                    image_path=img_path_bg_mask,
+                    segmentation_path=seg_path_bg_mask,
                     image_key=input_key,
                     segmentation_key=input_key,
                     n_threads=n_threads,
@@ -727,6 +734,7 @@ def object_measures_json_wrapper(
             out_paths=out_paths_tmp,
             s3=s3,
             use_bg_mask=use_bg_mask,
+            cochlea=cochlea,
             **kwargs,
         )
 

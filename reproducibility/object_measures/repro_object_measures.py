@@ -67,6 +67,7 @@ def wrapper_object_measures(
             if "use_bg_mask" in list(params.keys()):
                 if params["use_bg_mask"] in ["yes", "Yes"]:
                     use_bg_mask = True
+                del params["use_bg_mask"]
 
             if s3:
                 image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
