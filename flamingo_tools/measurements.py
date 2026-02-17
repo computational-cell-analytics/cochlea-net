@@ -52,13 +52,13 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
         bb_extension = 2
 
     bb_min = np.array([
-        row.bb_min_z.item(), row.bb_min_y.item(), row.bb_min_x.item()
-    ]).astype("float32") / resolution
+        row.bb_min_z.item() / resolution[0], row.bb_min_y.item() / resolution[1], row.bb_min_x.item() / resolution[2]
+    ]).astype("float32")
     bb_min = np.round(bb_min, 0).astype("int32")
 
     bb_max = np.array([
-        row.bb_max_z.item(), row.bb_max_y.item(), row.bb_max_x.item()
-    ]).astype("float32") / resolution
+        row.bb_max_z.item() / resolution[0], row.bb_max_y.item() / resolution[1], row.bb_max_x.item() / resolution[2]
+    ]).astype("float32")
     bb_max = np.round(bb_max, 0).astype("int32")
 
     bb = tuple(
@@ -164,7 +164,7 @@ def _default_object_features(
         # The radius passed is given in micrometer.
         # The resolution is given in micrometer per pixel.
         # So we have to divide by the resolution to obtain the radius in pixel.
-        radius_in_pixel = background_radius / resolution if isinstance(resolution, (float, int)) else resolution[1]
+        radius_in_pixel = background_radius / resolution[1]
         measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm, median_only)
 
     # Do the volume and surface measurement.
