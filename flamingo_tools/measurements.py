@@ -497,6 +497,7 @@ def compute_sgn_background_mask(
     assert image.shape == segmentation.shape
 
     if cache_path is not None and os.path.exists(cache_path):
+        print(f"Using background mask {cache_path} from cache.")
         with open_file(cache_path, "r") as f:
             if "mask" in f:
                 low_res_mask = f["mask"][:]
@@ -556,8 +557,8 @@ def object_measures_single(
     force_overwrite: bool = False,
     component_list: List[int] = [1],
     use_bg_mask: bool = False,
+    bg_cache_paths: Optional[List[str]] = None,
     resolution: Tuple[float] = (0.38, 0.38, 0.38),
-    cochlea: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -574,6 +575,7 @@ def object_measures_single(
         force_overwrite: Forcefully overwrite existing files.
         component_list: Only calculate object measures for specific components.
         use_bg_mask: Use background mask for calculating object measures.
+        bg_cache_paths: Cache path(s) for background mask in zarr format. Either directory or specific file(s).
         resolution: Resolution of input in micrometer.
         s3: Use S3 file paths.
         s3_credentials:
@@ -590,7 +592,10 @@ def object_measures_single(
     else:
         resolution = (resolution,) * 3
 
-    for (img_path, out_path) in zip(image_paths, out_paths):
+    if bg_cache_paths is None:
+        bg_cache_paths = [None for i in len(image_paths)]
+
+    for (img_path, out_path, bg_cache_path) in zip(image_paths, out_paths, bg_cache_paths):
         n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
 
         # overwrite input file
@@ -618,17 +623,13 @@ def object_measures_single(
                     img_path_bg_mask = img_path
                     seg_path_bg_mask = seg_path
 
-                if cochlea is None:
-                    mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
-                else:
-                    mask_cache_path = os.path.join(os.path.dirname(out_path), f"{cochlea}_bg-mask.zarr")
                 background_mask = compute_sgn_background_mask(
                     image_path=img_path_bg_mask,
                     segmentation_path=seg_path_bg_mask,
                     image_key=input_key,
                     segmentation_key=input_key,
                     n_threads=n_threads,
-                    cache_path=mask_cache_path,
+                    cache_path=bg_cache_path,
                 )
             else:
                 feature_set = "default"
@@ -664,6 +665,7 @@ def object_measures_json_wrapper(
     json_file: Optional[str] = None,
     mobie_dir: str = MOBIE_FOLDER,
     use_bg_mask: bool = False,
+    bg_cache_paths: List[str] = [],
     s3: Optional[bool] = False,
     image_paths: Optional[List[str]] = None,
     table_path: Optional[str] = None,
@@ -678,6 +680,7 @@ def object_measures_json_wrapper(
         json_file: JSON file containing parameter dictionary.
         mobie_dir: Local MoBIE directory used for creating data paths.
         use_bg_mask: Use background mask for calculating object measures.
+        bg_cache_paths: Cache path(s) for background mask in zarr format. Either directory or specific file(s).
         s3: Flag for accessing data stored on S3 bucket.
         image_paths: Optional image paths.
         table_path: Optional path to segmentation table.
@@ -687,6 +690,9 @@ def object_measures_json_wrapper(
         # load parameters from JSON
         with open(json_file, "r") as f:
             params = json.loads(f.read())
+            if isinstance(params, list):
+                warnings.warn("Using only the first entry of the JSON dictionary.")
+                params = params[0]
         cochlea = params["dataset_name"]
         if isinstance(params["image_channel"], list):
             image_channels = params["image_channel"]
@@ -700,8 +706,11 @@ def object_measures_json_wrapper(
         image_channels = [i for i in image_channels if i != seg_channel]
         print(f"Calculating object measures for image channels: {image_channels}.")
 
+        c_str = cochlea.replace('_', '-')
+        s_str = seg_channel.replace('_', '-')
+
         if "use_bg_mask" in list(params.keys()):
-            if params["use_bg_mask"] in ["yes", "Yes"]:
+            if params.pop("use_bg_mask") in ["yes", "Yes"]:
                 use_bg_mask = True
             else:
                 use_bg_mask = False
@@ -717,8 +726,6 @@ def object_measures_json_wrapper(
             if s3:
                 raise ValueError("The automatic copying to the S3 bucket is not supported yet. "
                                  "Make sure to specify an output directory.")
-            c_str = cochlea.replace('_', '-')
-            s_str = seg_channel.replace('_', '-')
             for img_channel in image_channels:
                 i_str = img_channel.replace('_', '-')
                 meas_table_name = f"{i_str}_{s_str}_object-measures{suffix}.tsv"
@@ -727,8 +734,6 @@ def object_measures_json_wrapper(
         # create distinct output names in output folder
         elif len(out_paths) == 1 and ".tsv" not in out_paths[0]:
             os.makedirs(out_paths[0], exist_ok=True)
-            c_str = cochlea.replace('_', '-')
-            s_str = seg_channel.replace('_', '-')
             for img_channel in image_channels:
                 i_str = img_channel.replace('_', '-')
                 prefix = f"{c_str}_{i_str}_{s_str}"
@@ -738,6 +743,25 @@ def object_measures_json_wrapper(
         else:
             assert len(image_channels) == len(out_paths)
             out_paths_tmp = out_paths.copy()
+
+        if use_bg_mask:
+            bg_cache_paths_tmp = []
+            # create output path in local MoBIE project
+            if len(bg_cache_paths) == 0:
+                bg_cache_paths_tmp = [None for _ in range(len(image_channels))]
+
+            # create distinct output names in output folder
+            elif len(bg_cache_paths) == 1 and ".zarr" not in bg_cache_paths[0]:
+                os.makedirs(bg_cache_paths[0], exist_ok=True)
+                for img_channel in image_channels:
+                    i_str = img_channel.replace('_', '-')
+                    bg_cache_name = f"{c_str}_{i_str}_{s_str}_bg-mask.zarr"
+                    bg_cache_paths_tmp.append(os.path.join(bg_cache_paths[0], bg_cache_name))
+
+            # use pre-set output paths given as arguments in CLI
+            else:
+                assert len(bg_cache_paths) == len(image_channels)
+                bg_cache_paths_tmp = bg_cache_paths.copy()
 
         # create paths based on JSON parameters
         if s3:
@@ -767,6 +791,7 @@ def object_measures_json_wrapper(
             s3=s3,
             use_bg_mask=use_bg_mask,
             cochlea=cochlea,
+            bg_cache_paths=bg_cache_paths_tmp,
             **kwargs,
         )
 

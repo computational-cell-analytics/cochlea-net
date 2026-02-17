@@ -246,6 +246,8 @@ def object_measures():
     parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Resolution of input in micrometer.")
     parser.add_argument("--bg_mask", action="store_true", help="Use background mask for calculating object measures.")
+    parser.add_argument("--bg_cache_paths", type=str, nargs="+", default=[],
+                        help="Cache path(s) for background mask in zarr format. Either directory or specific file(s).")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -270,6 +272,7 @@ def object_measures():
         component_list=args.components,
         resolution=args.resolution,
         use_bg_mask=args.bg_mask,
+        bg_cache_paths=args.bg_cache_paths,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

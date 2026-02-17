@@ -133,6 +133,17 @@ flamingo_tools.object_measures -o M-AMD-N162-L_PV_SGN-v2_object-measures.tsv \
     --seg_path M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr \
     --s3
 ```
+This is an example for the calculation of object measures using a background mask.
+Once the background mask has been calculated it can be reused by supplying the explicit path.
+If no path is specified, the background mask is only computed on the fly and not saved.
+```bash
+flamingo_tools.object_measures -i M_LR_000144_L/images/ome-zarr/GFP.ome.zarr \
+    --seg_table M_LR_000144_L/tables/SGN_v2/default.tsv \
+    --json_info /path/to/cochlea-net/reproducibility/object_measures/ChReef_MLR144L.json \
+    --bg_cache_paths M_LR_000144_L_bg-mask.zarr \
+    -o . --s3
+```
+
 
 #### 2a - For subtype analysis
 You may want to calculate the ratio of subtype stains to a reference stain, e.g. the ratio of Calb1 and Ntng1 to PV.
