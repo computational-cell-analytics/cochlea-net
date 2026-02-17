@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "G_LR_000233_R",
+		"dataset_name": "G_LR_000233_R",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v6",
 		"component_list": [

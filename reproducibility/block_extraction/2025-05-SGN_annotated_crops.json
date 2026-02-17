@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_LR_000144_L",
+		"dataset_name": "M_LR_000144_L",
 		"image_channel": "PV_resized",
 		"crop_centers": [
 			[
@@ -26,7 +26,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000145_L",
+		"dataset_name": "M_LR_000145_L",
 		"image_channel": "PV_resized",
 		"crop_centers": [
 			[
@@ -47,7 +47,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000167_R",
+		"dataset_name": "M_LR_000167_R",
 		"image_channel": "PV",
 		"crop_centers": [
 			[
@@ -98,7 +98,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000151_R",
+		"dataset_name": "M_LR_000151_R",
 		"image_channel": "PV_resized",
 		"crop_centers": [
 			[
@@ -124,7 +124,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000184_L",
+		"dataset_name": "M_LR_000184_L",
 		"image_channel": "PV_resized",
 		"crop_centers": [
 			[

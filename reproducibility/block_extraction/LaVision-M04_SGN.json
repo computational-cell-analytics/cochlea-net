@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "LaVision-M04",
+		"dataset_name": "LaVision-M04",
 		"image_channel": [
 			"PV"
 		],

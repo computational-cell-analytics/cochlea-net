@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_000058_L",
+		"dataset_name": "M_AMD_000058_L",
 		"image_channel": "PV",
 		"crop_centers": [
 			[
@@ -26,7 +26,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000145_L",
+		"dataset_name": "M_LR_000145_L",
 		"image_channel": "PV_resized",
 		"crop_centers": [
 			[
@@ -52,7 +52,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000151_R",
+		"dataset_name": "M_LR_000151_R",
 		"image_channel": "PV_resized",
 		"crop_centers": [
 			[

@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_LR_000248_L",
+		"dataset_name": "M_LR_000248_L",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -9,7 +9,7 @@
 		"max_edge_distance": 70
 	},
 	{
-		"cochlea": "M_LR_000248_R",
+		"dataset_name": "M_LR_000248_R",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -17,7 +17,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000249_L",
+		"dataset_name": "M_LR_000249_L",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -26,7 +26,7 @@
 		"max_edge_distance": 50
 	},
 	{
-		"cochlea": "M_LR_000249_R",
+		"dataset_name": "M_LR_000249_R",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -34,7 +34,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000248_L",
+		"dataset_name": "M_LR_000248_L",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [
@@ -44,7 +44,7 @@
 		"max_edge_distance": 35
 	},
 	{
-		"cochlea": "M_LR_000248_R",
+		"dataset_name": "M_LR_000248_R",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [
@@ -53,7 +53,7 @@
 		"max_edge_distance": 30
 	},
 	{
-		"cochlea": "M_LR_000249_L",
+		"dataset_name": "M_LR_000249_L",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [
@@ -87,7 +87,7 @@
 		}
 	},
 	{
-		"cochlea": "M_LR_000249_R",
+		"dataset_name": "M_LR_000249_R",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [

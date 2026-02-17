@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_LR_000143_L",
+		"dataset_name": "M_LR_000143_L",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -12,7 +12,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000144_L",
+		"dataset_name": "M_LR_000144_L",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -24,7 +24,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000145_L",
+		"dataset_name": "M_LR_000145_L",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -36,7 +36,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000153_L",
+		"dataset_name": "M_LR_000153_L",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -50,7 +50,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000155_L",
+		"dataset_name": "M_LR_000155_L",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -62,7 +62,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000189_L",
+		"dataset_name": "M_LR_000189_L",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -74,7 +74,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000143_R",
+		"dataset_name": "M_LR_000143_R",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -86,7 +86,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000144_R",
+		"dataset_name": "M_LR_000144_R",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -98,7 +98,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000145_R",
+		"dataset_name": "M_LR_000145_R",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -110,7 +110,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000153_R",
+		"dataset_name": "M_LR_000153_R",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -122,7 +122,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000155_R",
+		"dataset_name": "M_LR_000155_R",
 		"image_channel": [
 			"PV",
 			"GFP"
@@ -134,7 +134,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000189_R",
+		"dataset_name": "M_LR_000189_R",
 		"image_channel": [
 			"PV",
 			"GFP"

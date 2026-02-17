@@ -8,7 +8,7 @@ import warnings
 from concurrent import futures
 from functools import partial
 from multiprocessing import cpu_count
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,10 @@ import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 
-def _measure_volume_and_surface(mask, resolution):
+def _measure_volume_and_surface(
+    mask: np.typing.ArrayLike,
+    resolution: Tuple[float],
+) -> Tuple[float, float]:
     # Use marching_cubes for 3D data
     verts, faces, normals, _ = marching_cubes(mask, spacing=resolution)
 
@@ -43,7 +46,13 @@ def _measure_volume_and_surface(mask, resolution):
     return volume, surface
 
 
-def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
+def _get_bounding_box_and_center(
+    table: pd.DataFrame,
+    seg_id: int,
+    resolution: Tuple[float],
+    shape: Tuple[int],
+    dilation: int,
+) -> Tuple[Tuple[int], Tuple[int]]:
     row = table[table.label_id == seg_id]
 
     if dilation is not None and dilation > 0:
@@ -52,22 +61,19 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
         bb_extension = 2
 
     bb_min = np.array([
-        row.bb_min_z.item(), row.bb_min_y.item(), row.bb_min_x.item()
-    ]).astype("float32") / resolution
+        row.bb_min_z.item() / resolution[0], row.bb_min_y.item() / resolution[1], row.bb_min_x.item() / resolution[2]
+    ]).astype("float32")
     bb_min = np.round(bb_min, 0).astype("int32")
 
     bb_max = np.array([
-        row.bb_max_z.item(), row.bb_max_y.item(), row.bb_max_x.item()
-    ]).astype("float32") / resolution
+        row.bb_max_z.item() / resolution[0], row.bb_max_y.item() / resolution[1], row.bb_max_x.item() / resolution[2]
+    ]).astype("float32")
     bb_max = np.round(bb_max, 0).astype("int32")
 
     bb = tuple(
         slice(max(bmin - bb_extension, 0), min(bmax + bb_extension, sh))
         for bmin, bmax, sh in zip(bb_min, bb_max, shape)
     )
-
-    if isinstance(resolution, float):
-        resolution = (resolution,) * 3
 
     center = (
         int(row.anchor_z.item() / resolution[0]),
@@ -78,7 +84,11 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
     return bb, center
 
 
-def _spherical_mask(shape, radius, center=None):
+def _spherical_mask(
+    shape,
+    radius: float,
+    center: Optional[Tuple[int]] = None,
+) -> bool:
     if center is None:
         center = tuple(s // 2 for s in shape)
     if len(shape) != len(center):
@@ -90,7 +100,15 @@ def _spherical_mask(shape, radius, center=None):
     return (dist2 <= radius ** 2).astype(bool)
 
 
-def _normalize_background(measures, image, mask, center, radius, norm, median_only):
+def _normalize_background(
+    measures: dict,
+    image: np.typing.ArrayLike,
+    mask: np.typing.ArrayLike,
+    center: Tuple[int],
+    radius: float,
+    norm=np.divide,
+    median_only: bool = False,
+) -> dict:
     # Compute the bounding box and get the local image data.
     bb = tuple(
         slice(max(0, int(ce - radius)), min(int(ce + radius), sh)) for ce, sh in zip(center, image.shape)
@@ -136,9 +154,17 @@ def _normalize_background(measures, image, mask, center, radius, norm, median_on
 
 
 def _default_object_features(
-    seg_id, table, image, segmentation, resolution,
-    background_mask=None, background_radius=None, norm=np.divide, median_only=False, dilation=None
-):
+    seg_id: int,
+    table: pd.DataFrame,
+    image: np.typing.ArrayLike,
+    segmentation: np.typing.ArrayLike,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    background_mask: Optional[np.typing.ArrayLike] = None,
+    background_radius: Optional[float] = None,
+    norm=np.divide,
+    median_only: bool = False,
+    dilation: Optional[int] = None,
+) -> dict:
     bb, center = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
 
     local_image = image[bb]
@@ -164,13 +190,11 @@ def _default_object_features(
         # The radius passed is given in micrometer.
         # The resolution is given in micrometer per pixel.
         # So we have to divide by the resolution to obtain the radius in pixel.
-        radius_in_pixel = background_radius / resolution if isinstance(resolution, (float, int)) else resolution[1]
+        radius_in_pixel = background_radius / resolution[1]
         measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm, median_only)
 
     # Do the volume and surface measurement.
     if not median_only:
-        if isinstance(resolution, float):
-            resolution = (resolution,) * 3
         volume, surface = _measure_volume_and_surface(mask, resolution)
         measures["volume"] = volume
         measures["surface"] = surface
@@ -186,15 +210,21 @@ def _morphology_features(seg_id, table, image, segmentation, resolution, **kwarg
     # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
     # resolution = (3.0, 0.76, 0.76)
 
-    if isinstance(resolution, float):
-        resolution = (resolution,) * 3
     volume, surface = _measure_volume_and_surface(mask, resolution)
     measures["volume"] = volume
     measures["surface"] = surface
     return measures
 
 
-def _regionprops_features(seg_id, table, image, segmentation, resolution, background_mask=None, dilation=None):
+def _regionprops_features(
+    seg_id: int,
+    table: pd.DataFrame,
+    image: np.typing.ArrayLike,
+    segmentation: np.typing.ArrayLike,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    background_mask: Optional[np.typing.ArrayLike] = None,
+    dilation: int = None,
+) -> dict:
     bb, _ = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
 
     local_image = image[bb]
@@ -220,7 +250,10 @@ def _regionprops_features(seg_id, table, image, segmentation, resolution, backgr
     return features
 
 
-def get_object_measures_from_table(arr_seg, table, keyword="median"):
+def get_object_measures_from_table(
+    arr_seg: np.typing.ArrayLike,
+    table: pd.DataFrame,
+) -> pd.DataFrame:
     """Return object measurements for label IDs wthin array.
     """
     # iterate through segmentation ids in reference mask
@@ -230,11 +263,11 @@ def get_object_measures_from_table(arr_seg, table, keyword="median"):
     if len(object_ids) < len(ref_ids):
         warnings.warn(f"Not all IDs were found in measurement table. Using {len(object_ids)}/{len(ref_ids)}.")
 
-    median_values = [table.at[table.index[table["label_id"] == label_id][0], keyword] for label_id in object_ids]
+    median_values = [table.at[table.index[table["label_id"] == label_id][0], "median"] for label_id in object_ids]
 
     measures = pd.DataFrame({
         "label_id": object_ids,
-        keyword: median_values,
+        "median": median_values,
     })
     return measures
 
@@ -265,7 +298,7 @@ def compute_object_measures_impl(
     image: np.typing.ArrayLike,
     segmentation: np.typing.ArrayLike,
     n_threads: Optional[int] = None,
-    resolution: float = 0.38,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
     table: Optional[pd.DataFrame] = None,
     feature_set: str = "default",
     background_mask: Optional[np.typing.ArrayLike] = None,
@@ -292,7 +325,7 @@ def compute_object_measures_impl(
         The table with per object measurements.
     """
     if table is None:
-        table = compute_table_on_the_fly(segmentation, resolution=resolution)
+        table = compute_table_on_the_fly(segmentation, resolution=resolution[1])
 
     if feature_set not in FEATURE_FUNCTIONS:
         raise ValueError
@@ -336,7 +369,7 @@ def compute_object_measures(
     image_key: Optional[str] = None,
     segmentation_key: Optional[str] = None,
     n_threads: Optional[int] = None,
-    resolution: Union[float, Tuple[float, ...]] = 0.38,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
     force: bool = False,
     feature_set: str = "default",
     component_list: List[int] = [],
@@ -464,6 +497,7 @@ def compute_sgn_background_mask(
     assert image.shape == segmentation.shape
 
     if cache_path is not None and os.path.exists(cache_path):
+        print(f"Using background mask {cache_path} from cache.")
         with open_file(cache_path, "r") as f:
             if "mask" in f:
                 low_res_mask = f["mask"][:]
@@ -523,7 +557,8 @@ def object_measures_single(
     force_overwrite: bool = False,
     component_list: List[int] = [1],
     use_bg_mask: bool = False,
-    resolution: List[float] = [0.38, 0.38, 0.38],
+    bg_cache_paths: Optional[List[str]] = None,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -540,6 +575,7 @@ def object_measures_single(
         force_overwrite: Forcefully overwrite existing files.
         component_list: Only calculate object measures for specific components.
         use_bg_mask: Use background mask for calculating object measures.
+        bg_cache_paths: Cache path(s) for background mask in zarr format. Either directory or specific file(s).
         resolution: Resolution of input in micrometer.
         s3: Use S3 file paths.
         s3_credentials:
@@ -553,11 +589,13 @@ def object_measures_single(
         if len(resolution) == 1:
             resolution = resolution * 3
         assert len(resolution) == 3
-        resolution = np.array(resolution)[::-1]
     else:
         resolution = (resolution,) * 3
 
-    for (img_path, out_path) in zip(image_paths, out_paths):
+    if bg_cache_paths is None:
+        bg_cache_paths = [None for i in len(image_paths)]
+
+    for (img_path, out_path, bg_cache_path) in zip(image_paths, out_paths, bg_cache_paths):
         n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
 
         # overwrite input file
@@ -575,21 +613,23 @@ def object_measures_single(
                 median_only = True
 
                 if s3:
-                    img_path_s3, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
-                                                        service_endpoint=s3_service_endpoint,
-                                                        credential_file=s3_credentials)
-                    seg_path_s3, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
-                                                        service_endpoint=s3_service_endpoint,
-                                                        credential_file=s3_credentials)
+                    img_path_bg_mask, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
+                                                                service_endpoint=s3_service_endpoint,
+                                                                credential_file=s3_credentials)
+                    seg_path_bg_mask, fs = s3_utils.get_s3_path(seg_path, bucket_name=s3_bucket_name,
+                                                                service_endpoint=s3_service_endpoint,
+                                                                credential_file=s3_credentials)
+                else:
+                    img_path_bg_mask = img_path
+                    seg_path_bg_mask = seg_path
 
-                mask_cache_path = os.path.join(os.path.dirname(out_path), "bg-mask.zarr")
                 background_mask = compute_sgn_background_mask(
-                    image_path=img_path_s3,
-                    segmentation_path=seg_path_s3,
+                    image_path=img_path_bg_mask,
+                    segmentation_path=seg_path_bg_mask,
                     image_key=input_key,
                     segmentation_key=input_key,
                     n_threads=n_threads,
-                    cache_path=mask_cache_path,
+                    cache_path=bg_cache_path,
                 )
             else:
                 feature_set = "default"
@@ -625,6 +665,7 @@ def object_measures_json_wrapper(
     json_file: Optional[str] = None,
     mobie_dir: str = MOBIE_FOLDER,
     use_bg_mask: bool = False,
+    bg_cache_paths: List[str] = [],
     s3: Optional[bool] = False,
     image_paths: Optional[List[str]] = None,
     table_path: Optional[str] = None,
@@ -639,6 +680,7 @@ def object_measures_json_wrapper(
         json_file: JSON file containing parameter dictionary.
         mobie_dir: Local MoBIE directory used for creating data paths.
         use_bg_mask: Use background mask for calculating object measures.
+        bg_cache_paths: Cache path(s) for background mask in zarr format. Either directory or specific file(s).
         s3: Flag for accessing data stored on S3 bucket.
         image_paths: Optional image paths.
         table_path: Optional path to segmentation table.
@@ -648,6 +690,9 @@ def object_measures_json_wrapper(
         # load parameters from JSON
         with open(json_file, "r") as f:
             params = json.loads(f.read())
+            if isinstance(params, list):
+                warnings.warn("Using only the first entry of the JSON dictionary.")
+                params = params[0]
         cochlea = params["dataset_name"]
         if isinstance(params["image_channel"], list):
             image_channels = params["image_channel"]
@@ -661,8 +706,11 @@ def object_measures_json_wrapper(
         image_channels = [i for i in image_channels if i != seg_channel]
         print(f"Calculating object measures for image channels: {image_channels}.")
 
+        c_str = cochlea.replace('_', '-')
+        s_str = seg_channel.replace('_', '-')
+
         if "use_bg_mask" in list(params.keys()):
-            if params["use_bg_mask"] in ["yes", "Yes"]:
+            if params.pop("use_bg_mask") in ["yes", "Yes"]:
                 use_bg_mask = True
             else:
                 use_bg_mask = False
@@ -678,8 +726,6 @@ def object_measures_json_wrapper(
             if s3:
                 raise ValueError("The automatic copying to the S3 bucket is not supported yet. "
                                  "Make sure to specify an output directory.")
-            c_str = cochlea.replace('_', '-')
-            s_str = seg_channel.replace('_', '-')
             for img_channel in image_channels:
                 i_str = img_channel.replace('_', '-')
                 meas_table_name = f"{i_str}_{s_str}_object-measures{suffix}.tsv"
@@ -688,8 +734,6 @@ def object_measures_json_wrapper(
         # create distinct output names in output folder
         elif len(out_paths) == 1 and ".tsv" not in out_paths[0]:
             os.makedirs(out_paths[0], exist_ok=True)
-            c_str = cochlea.replace('_', '-')
-            s_str = seg_channel.replace('_', '-')
             for img_channel in image_channels:
                 i_str = img_channel.replace('_', '-')
                 prefix = f"{c_str}_{i_str}_{s_str}"
@@ -699,6 +743,25 @@ def object_measures_json_wrapper(
         else:
             assert len(image_channels) == len(out_paths)
             out_paths_tmp = out_paths.copy()
+
+        if use_bg_mask:
+            bg_cache_paths_tmp = []
+            # create output path in local MoBIE project
+            if len(bg_cache_paths) == 0:
+                bg_cache_paths_tmp = [None for _ in range(len(image_channels))]
+
+            # create distinct output names in output folder
+            elif len(bg_cache_paths) == 1 and ".zarr" not in bg_cache_paths[0]:
+                os.makedirs(bg_cache_paths[0], exist_ok=True)
+                for img_channel in image_channels:
+                    i_str = img_channel.replace('_', '-')
+                    bg_cache_name = f"{c_str}_{i_str}_{s_str}_bg-mask.zarr"
+                    bg_cache_paths_tmp.append(os.path.join(bg_cache_paths[0], bg_cache_name))
+
+            # use pre-set output paths given as arguments in CLI
+            else:
+                assert len(bg_cache_paths) == len(image_channels)
+                bg_cache_paths_tmp = bg_cache_paths.copy()
 
         # create paths based on JSON parameters
         if s3:
@@ -727,6 +790,8 @@ def object_measures_json_wrapper(
             out_paths=out_paths_tmp,
             s3=s3,
             use_bg_mask=use_bg_mask,
+            cochlea=cochlea,
+            bg_cache_paths=bg_cache_paths_tmp,
             **kwargs,
         )
 

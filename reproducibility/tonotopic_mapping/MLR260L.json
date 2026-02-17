@@ -1,6 +1,6 @@
 [
     {
-		"cochlea": "M_LR_000260_L",
+		"dataset_name": "M_LR_000260_L",
 		"component_list": [
 			1
 		],
@@ -8,7 +8,7 @@
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_000260_L",
+		"dataset_name": "M_LR_000260_L",
 		"component_list": [
 			1
 		],

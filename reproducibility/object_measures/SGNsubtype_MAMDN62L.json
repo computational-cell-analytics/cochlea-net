@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_N62_L",
+		"dataset_name": "M_AMD_N62_L",
 		"image_channel": [
 			"Calb1",
 			"CR"

@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "G_EK_000011_R",
+		"dataset_name": "G_EK_000011_R",
 		"image_channel": [
 			"Myo7a_resized",
 			"IHC_resized_v4b"

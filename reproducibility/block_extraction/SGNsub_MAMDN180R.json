@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_N180_R",
+		"dataset_name": "M_AMD_N180_R",
 		"image_channel": [
 			"CR",
 			"CTBP2",

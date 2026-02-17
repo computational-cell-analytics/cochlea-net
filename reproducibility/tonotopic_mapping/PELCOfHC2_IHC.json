@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_N75_L",
+		"dataset_name": "M_AMD_N75_L",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
@@ -10,7 +10,7 @@
 		"max_edge_distance": 40
 	},
 	{
-		"cochlea": "M_AMD_N75_R",
+		"dataset_name": "M_AMD_N75_R",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
@@ -25,7 +25,7 @@
 		"max_edge_distance": 40
 	},
 	{
-		"cochlea": "M_AMD_N129_L",
+		"dataset_name": "M_AMD_N129_L",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
@@ -37,7 +37,7 @@
 		"max_edge_distance": 50
 	},
 	{
-		"cochlea": "M_AMD_N129_R",
+		"dataset_name": "M_AMD_N129_R",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
@@ -48,7 +48,7 @@
 		"max_edge_distance": 40
 	},
 	{
-		"cochlea": "M_AMD_N162_L",
+		"dataset_name": "M_AMD_N162_L",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
@@ -60,7 +60,7 @@
 		"max_edge_distance": 45
 	},
 	{
-		"cochlea": "M_AMD_N162_R",
+		"dataset_name": "M_AMD_N162_R",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [

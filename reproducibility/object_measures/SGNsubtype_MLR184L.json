@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_LR_000184_L",
+		"dataset_name": "M_LR_000184_L",
 		"image_channel": [
 			"PV",
 			"Prph"
@@ -11,7 +11,7 @@
 		]
 	},
 	{
-		"cochlea": "M_LR_000184_L",
+		"dataset_name": "M_LR_000184_L",
 		"image_channel": [
 			"PV",
 			"Prph"

@@ -34,7 +34,7 @@ def wrapper_extract_block(
         input_key = "s0" if s3 else None
 
         for params in param_dicts:
-            cochlea = params["cochlea"]
+            cochlea = params["dataset_name"]
 
             print(f"\n{cochlea}")
             if isinstance(params["image_channel"], list):

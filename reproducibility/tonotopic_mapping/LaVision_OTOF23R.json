@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "LaVision-OTOF23R",
+		"dataset_name": "LaVision-OTOF23R",
 		"segmentation_channel": "IHC_LOWRES-v3",
 		"component_list":
 		[

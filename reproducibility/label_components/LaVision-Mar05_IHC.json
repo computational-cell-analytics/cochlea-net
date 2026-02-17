@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "LaVision-Mar05",
+		"dataset_name": "LaVision-Mar05",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_LOWRES-v3",
 		"component_list": [

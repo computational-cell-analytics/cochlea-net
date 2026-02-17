@@ -33,7 +33,7 @@ def wrapper_label_components(
         param_dicts = _load_json_as_list(ddict)
         for params in param_dicts:
 
-            cochlea = params["cochlea"]
+            cochlea = params["dataset_name"]
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
             table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
