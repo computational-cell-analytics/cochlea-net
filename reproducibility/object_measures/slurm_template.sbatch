@@ -1,13 +1,13 @@
 #!/bin/bash
-#SBATCH -t 04:00:00             # estimated time, adapt to your needs
+#SBATCH -t 16:00:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=constantin.pape@informatik.uni-goettingen.de # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A nim00007
 
-#SBATCH -c 4
-#SBATCH --mem 12G
+#SBATCH -c 2
+#SBATCH --mem 6G
 #SBATCH --constraint=inet
 
 source ~/.bashrc

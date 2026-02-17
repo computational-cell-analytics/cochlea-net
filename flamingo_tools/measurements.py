@@ -8,7 +8,7 @@ import warnings
 from concurrent import futures
 from functools import partial
 from multiprocessing import cpu_count
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -29,7 +29,10 @@ import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 
-def _measure_volume_and_surface(mask, resolution):
+def _measure_volume_and_surface(
+    mask: np.typing.ArrayLike,
+    resolution: Tuple[float],
+) -> Tuple[float, float]:
     # Use marching_cubes for 3D data
     verts, faces, normals, _ = marching_cubes(mask, spacing=resolution)
 
@@ -43,7 +46,13 @@ def _measure_volume_and_surface(mask, resolution):
     return volume, surface
 
 
-def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
+def _get_bounding_box_and_center(
+    table: pd.DataFrame,
+    seg_id: int,
+    resolution: Tuple[float],
+    shape: Tuple[int],
+    dilation: int,
+) -> Tuple[Tuple[int], Tuple[int]]:
     row = table[table.label_id == seg_id]
 
     if dilation is not None and dilation > 0:
@@ -66,9 +75,6 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
         for bmin, bmax, sh in zip(bb_min, bb_max, shape)
     )
 
-    if isinstance(resolution, float):
-        resolution = (resolution,) * 3
-
     center = (
         int(row.anchor_z.item() / resolution[0]),
         int(row.anchor_y.item() / resolution[1]),
@@ -78,7 +84,11 @@ def _get_bounding_box_and_center(table, seg_id, resolution, shape, dilation):
     return bb, center
 
 
-def _spherical_mask(shape, radius, center=None):
+def _spherical_mask(
+    shape,
+    radius: float,
+    center: Optional[Tuple[int]] = None,
+) -> bool:
     if center is None:
         center = tuple(s // 2 for s in shape)
     if len(shape) != len(center):
@@ -90,7 +100,15 @@ def _spherical_mask(shape, radius, center=None):
     return (dist2 <= radius ** 2).astype(bool)
 
 
-def _normalize_background(measures, image, mask, center, radius, norm, median_only):
+def _normalize_background(
+    measures: dict,
+    image: np.typing.ArrayLike,
+    mask: np.typing.ArrayLike,
+    center: Tuple[int],
+    radius: float,
+    norm=np.divide,
+    median_only: bool = False,
+) -> dict:
     # Compute the bounding box and get the local image data.
     bb = tuple(
         slice(max(0, int(ce - radius)), min(int(ce + radius), sh)) for ce, sh in zip(center, image.shape)
@@ -136,9 +154,17 @@ def _normalize_background(measures, image, mask, center, radius, norm, median_on
 
 
 def _default_object_features(
-    seg_id, table, image, segmentation, resolution,
-    background_mask=None, background_radius=None, norm=np.divide, median_only=False, dilation=None
-):
+    seg_id: int,
+    table: pd.DataFrame,
+    image: np.typing.ArrayLike,
+    segmentation: np.typing.ArrayLike,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    background_mask: Optional[np.typing.ArrayLike] = None,
+    background_radius: Optional[float] = None,
+    norm=np.divide,
+    median_only: bool = False,
+    dilation: Optional[int] = None,
+) -> dict:
     bb, center = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
 
     local_image = image[bb]
@@ -169,8 +195,6 @@ def _default_object_features(
 
     # Do the volume and surface measurement.
     if not median_only:
-        if isinstance(resolution, float):
-            resolution = (resolution,) * 3
         volume, surface = _measure_volume_and_surface(mask, resolution)
         measures["volume"] = volume
         measures["surface"] = surface
@@ -186,15 +210,21 @@ def _morphology_features(seg_id, table, image, segmentation, resolution, **kwarg
     # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
     # resolution = (3.0, 0.76, 0.76)
 
-    if isinstance(resolution, float):
-        resolution = (resolution,) * 3
     volume, surface = _measure_volume_and_surface(mask, resolution)
     measures["volume"] = volume
     measures["surface"] = surface
     return measures
 
 
-def _regionprops_features(seg_id, table, image, segmentation, resolution, background_mask=None, dilation=None):
+def _regionprops_features(
+    seg_id: int,
+    table: pd.DataFrame,
+    image: np.typing.ArrayLike,
+    segmentation: np.typing.ArrayLike,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    background_mask: Optional[np.typing.ArrayLike] = None,
+    dilation: int = None,
+) -> dict:
     bb, _ = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
 
     local_image = image[bb]
@@ -220,7 +250,10 @@ def _regionprops_features(seg_id, table, image, segmentation, resolution, backgr
     return features
 
 
-def get_object_measures_from_table(arr_seg, table, keyword="median"):
+def get_object_measures_from_table(
+    arr_seg: np.typing.ArrayLike,
+    table: pd.DataFrame,
+) -> pd.DataFrame:
     """Return object measurements for label IDs wthin array.
     """
     # iterate through segmentation ids in reference mask
@@ -230,11 +263,11 @@ def get_object_measures_from_table(arr_seg, table, keyword="median"):
     if len(object_ids) < len(ref_ids):
         warnings.warn(f"Not all IDs were found in measurement table. Using {len(object_ids)}/{len(ref_ids)}.")
 
-    median_values = [table.at[table.index[table["label_id"] == label_id][0], keyword] for label_id in object_ids]
+    median_values = [table.at[table.index[table["label_id"] == label_id][0], "median"] for label_id in object_ids]
 
     measures = pd.DataFrame({
         "label_id": object_ids,
-        keyword: median_values,
+        "median": median_values,
     })
     return measures
 
@@ -265,7 +298,7 @@ def compute_object_measures_impl(
     image: np.typing.ArrayLike,
     segmentation: np.typing.ArrayLike,
     n_threads: Optional[int] = None,
-    resolution: float = 0.38,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
     table: Optional[pd.DataFrame] = None,
     feature_set: str = "default",
     background_mask: Optional[np.typing.ArrayLike] = None,
@@ -292,7 +325,7 @@ def compute_object_measures_impl(
         The table with per object measurements.
     """
     if table is None:
-        table = compute_table_on_the_fly(segmentation, resolution=resolution)
+        table = compute_table_on_the_fly(segmentation, resolution=resolution[1])
 
     if feature_set not in FEATURE_FUNCTIONS:
         raise ValueError
@@ -336,7 +369,7 @@ def compute_object_measures(
     image_key: Optional[str] = None,
     segmentation_key: Optional[str] = None,
     n_threads: Optional[int] = None,
-    resolution: Union[float, Tuple[float, ...]] = 0.38,
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
     force: bool = False,
     feature_set: str = "default",
     component_list: List[int] = [],
@@ -523,7 +556,7 @@ def object_measures_single(
     force_overwrite: bool = False,
     component_list: List[int] = [1],
     use_bg_mask: bool = False,
-    resolution: List[float] = [0.38, 0.38, 0.38],
+    resolution: Tuple[float] = (0.38, 0.38, 0.38),
     cochlea: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
@@ -554,7 +587,6 @@ def object_measures_single(
         if len(resolution) == 1:
             resolution = resolution * 3
         assert len(resolution) == 3
-        resolution = np.array(resolution)[::-1]
     else:
         resolution = (resolution,) * 3
 
