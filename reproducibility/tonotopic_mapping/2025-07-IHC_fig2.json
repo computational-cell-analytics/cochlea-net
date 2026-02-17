@@ -1,21 +1,21 @@
 [
 	{
-		"cochlea": "M_LR_000226_L",
+		"dataset_name": "M_LR_000226_L",
 		"segmentation_channel": "IHC_v4c",
 		"cell_type": "ihc"
 	},
 	{
-		"cochlea": "M_LR_000226_R",
+		"dataset_name": "M_LR_000226_R",
 		"segmentation_channel": "IHC_v4c",
 		"cell_type": "ihc"
 	},
 	{
-		"cochlea": "M_LR_000227_L",
+		"dataset_name": "M_LR_000227_L",
 		"segmentation_channel": "IHC_v4c",
 		"cell_type": "ihc"
 	},
 	{
-		"cochlea": "M_LR_000227_R",
+		"dataset_name": "M_LR_000227_R",
 		"segmentation_channel": "IHC_v4c",
 		"cell_type": "ihc"
 	}

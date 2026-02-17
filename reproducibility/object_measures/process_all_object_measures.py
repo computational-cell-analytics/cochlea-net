@@ -52,7 +52,7 @@ def process_cochlea(cochlea, start_slurm):
     if not os.path.exists(json_path):
         print("Write json to", json_path)
         # TODO: We may need to replace the component list for some.
-        json_template[0]["cochlea"] = cochlea
+        json_template[0]["dataset_name"] = cochlea
         with open(json_path, "w") as f:
             json.dump(json_template, f, indent=4)
 

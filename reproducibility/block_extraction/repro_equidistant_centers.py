@@ -45,7 +45,7 @@ def wrapper_equidistant_centers(
             output_path = ddict
 
         for params in param_dicts:
-            cochlea = params["cochlea"]
+            cochlea = params["dataset_name"]
             seg_channel = params["segmentation_channel"]
 
             s3_path = os.path.join(f"{cochlea}", "tables", f"{seg_channel}", "default.tsv")

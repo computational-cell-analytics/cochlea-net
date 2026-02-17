@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "G_EK_000049_R",
+		"dataset_name": "G_EK_000049_R",
 		"image_channel": [
 			"GFP",
 			"PV",

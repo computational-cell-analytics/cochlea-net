@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "LaVision-OTOF25R",
+		"dataset_name": "LaVision-OTOF25R",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_LOWRES-v3",
 		"component_list": [

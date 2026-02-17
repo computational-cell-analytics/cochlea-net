@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "LaVision-Mar05",
+		"dataset_name": "LaVision-Mar05",
 		"image_channel": [
 			"MYO",
 			"PV",

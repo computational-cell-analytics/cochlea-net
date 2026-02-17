@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_N139_L",
+		"dataset_name": "M_AMD_N139_L",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -8,7 +8,7 @@
 		]
 	},
 	{
-		"cochlea": "M_AMD_N139_R",
+		"dataset_name": "M_AMD_N139_R",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -16,7 +16,7 @@
 		]
 	},
 	{
-		"cochlea": "M_AMD_N153_L",
+		"dataset_name": "M_AMD_N153_L",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -24,7 +24,7 @@
 		]
 	},
 	{
-		"cochlea": "M_AMD_N153_R",
+		"dataset_name": "M_AMD_N153_R",
 		"cell_type": "sgn",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
@@ -32,7 +32,7 @@
 		]
 	},
 	{
-		"cochlea": "M_AMD_N139_L",
+		"dataset_name": "M_AMD_N139_L",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [
@@ -43,7 +43,7 @@
 		"min_component_length": 20
 	},
 	{
-		"cochlea": "M_AMD_N139_R",
+		"dataset_name": "M_AMD_N139_R",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [
@@ -55,7 +55,7 @@
 		"min_component_length": 20
 	},
 	{
-		"cochlea": "M_AMD_N153_L",
+		"dataset_name": "M_AMD_N153_L",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [
@@ -64,7 +64,7 @@
 		"max_edge_distance": 40
 	},
 	{
-		"cochlea": "M_AMD_N153_R",
+		"dataset_name": "M_AMD_N153_R",
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v4b",
 		"component_list": [

@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "LaVision-OTOF23R",
+		"dataset_name": "LaVision-OTOF23R",
 		"image_channel": [
 			"CR",
 			"rbOtof",
@@ -44,7 +44,7 @@
 		]
 	},
 	{
-		"cochlea": "LaVision-OTOF25R",
+		"dataset_name": "LaVision-OTOF25R",
 		"image_channel": [
 			"CR",
 			"rbOtof",
@@ -87,7 +87,7 @@
 		]
 	},
 	{
-		"cochlea": "LaVision-OTOF36R",
+		"dataset_name": "LaVision-OTOF36R",
 		"image_channel": [
 			"CR",
 			"rbOtof",

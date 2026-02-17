@@ -1,11 +1,11 @@
 [
 	{
-		"cochlea": "G_EK_000233_L",
+		"dataset_name": "G_EK_000233_L",
 		"segmentation_channel": "IHC_v6",
 		"cell_type": "ihc"
 	},
 	{
-		"cochlea": "G_LR_000233_R",
+		"dataset_name": "G_LR_000233_R",
 		"segmentation_channel": "IHC_v6",
 		"cell_type": "ihc"
 	}

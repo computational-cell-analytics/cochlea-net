@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_LR_N152_R",
+		"dataset_name": "M_LR_N152_R",
 		"image_channel": [
 			"Calb1",
 			"Ntng1",

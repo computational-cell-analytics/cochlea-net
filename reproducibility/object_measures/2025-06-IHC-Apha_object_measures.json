@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_OTOF1_L",
+		"dataset_name": "M_AMD_OTOF1_L",
 		"image_channel": [
 			"Apha"
 		],
@@ -11,7 +11,7 @@
 		]
 	},
 	{
-		"cochlea": "M_AMD_OTOF2_L",
+		"dataset_name": "M_AMD_OTOF2_L",
 		"image_channel": [
 			"Apha"
 		],

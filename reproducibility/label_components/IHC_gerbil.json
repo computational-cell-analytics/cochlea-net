@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "G_EK_000233_L",
+		"dataset_name": "G_EK_000233_L",
 		"image_channel": "VGlut3",
 		"cell_type": "ihc",
 		"unet_version": "v5"

@@ -1,36 +1,36 @@
 [
 	{
-		"cochlea": "M_AMD_N62_L",
+		"dataset_name": "M_AMD_N62_L",
 		"segmentation_channel": "PV_SGN_v2",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_AMD_Runx1_L",
+		"dataset_name": "M_AMD_Runx1_L",
 		"segmentation_channel": "PV_SGN_v2",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_000099_L",
+		"dataset_name": "M_LR_000099_L",
 		"segmentation_channel": "PV_SGN_v2",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_000214_L",
+		"dataset_name": "M_LR_000214_L",
 		"segmentation_channel": "PV_SGN_v2",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_AMD_N180_L",
+		"dataset_name": "M_AMD_N180_L",
 		"segmentation_channel": "SGN_merged",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_AMD_N180_R",
+		"dataset_name": "M_AMD_N180_R",
 		"segmentation_channel": "SGN_merged",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_N152_L",
+		"dataset_name": "M_LR_N152_L",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
 			1,
@@ -39,7 +39,7 @@
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_000098_L",
+		"dataset_name": "M_LR_000098_L",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
 			1,
@@ -48,25 +48,17 @@
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_N110_L",
+		"dataset_name": "M_LR_N110_L",
 		"segmentation_channel": "SGN_v2",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_N110_R",
+		"dataset_name": "M_LR_N110_R",
 		"segmentation_channel": "SGN_v2",
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_N152_R",
-		"segmentation_channel": "SGN_v2",
-		"component_list": [
-			1
-		],
-		"cell_type": "sgn"
-	},
-	{
-		"cochlea": "M_LR_N98_R",
+		"dataset_name": "M_LR_N152_R",
 		"segmentation_channel": "SGN_v2",
 		"component_list": [
 			1
@@ -74,7 +66,15 @@
 		"cell_type": "sgn"
 	},
 	{
-		"cochlea": "M_LR_N127_L",
+		"dataset_name": "M_LR_N98_R",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1
+		],
+		"cell_type": "sgn"
+	},
+	{
+		"dataset_name": "M_LR_N127_L",
 		"segmentation_channel": "SGN_v2",
 		"cell_type": "sgn"
 	}

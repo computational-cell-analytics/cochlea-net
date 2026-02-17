@@ -1,6 +1,6 @@
 [
 	{
-		"cochlea": "M_AMD_000111_R",
+		"dataset_name": "M_AMD_000111_R",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
@@ -10,7 +10,7 @@
 		"max_edge_distance": 50
 	},
 	{
-		"cochlea": "M_AMD_000112_L",
+		"dataset_name": "M_AMD_000112_L",
 		"segmentation_channel": "IHC_v4b",
 		"cell_type": "ihc",
 		"component_list": [
