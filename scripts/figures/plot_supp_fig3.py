@@ -79,10 +79,11 @@ def supp_fig_03_thresholds(
     """
     input_dir = THRESHOLD_DIR
 
-    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name]
+    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name
+                or "_crop-intensity.json" in entry.name]
     cochlea_str = cochlea.replace('_', '-')
     om_paths = [p for p in om_paths if cochlea_str in p]
-    stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_om")[0] for p in om_paths]
+    stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_")[0] for p in om_paths]
 
     assert len(save_paths) == len(stains)
 

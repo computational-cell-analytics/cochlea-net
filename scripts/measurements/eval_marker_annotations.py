@@ -5,9 +5,9 @@ from typing import List, Optional
 
 import pandas as pd
 
+import flamingo_tools.intensity_annotation.eval_annotations as eval_utils
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.postprocessing.chreef_utils import localize_median_intensities, find_annotations
 
 MARKER_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/ChReef_PV-GFP/2025-07_PV_GFP_SGN"
 # The cochlea for the CHReef analysis.
@@ -27,119 +27,6 @@ COCHLEAE = [
     "G_EK_000049_L",
     "G_EK_000049_R",
 ]
-
-
-def get_length_fraction_from_center(table, center_str, halo_size=20):
-    """Get 'length_fraction' parameter for center coordinate by averaging nearby segmentation instances.
-    """
-    center_coord = tuple([int(c) for c in center_str.split("-")])
-    (cx, cy, cz) = center_coord
-    subset = table[
-        (cx - halo_size < table["anchor_x"]) &
-        (table["anchor_x"] < cx + halo_size) &
-        (cy - halo_size < table["anchor_y"]) &
-        (table["anchor_y"] < cy + halo_size) &
-        (cz - halo_size < table["anchor_z"]) &
-        (table["anchor_z"] < cz + halo_size)
-    ]
-    length_fraction = list(subset["length_fraction"])
-    length_fraction = float(sum(length_fraction) / len(length_fraction))
-    return length_fraction
-
-
-def apply_nearest_threshold(intensity_dic, table_seg, table_meas, halo_size=20):
-    """Apply threshold to nearest segmentation instances.
-    Crop centers are transformed into the "length fraction" parameter of the segmentation table.
-    This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
-    """
-    # assign crop centers to length fraction of Rosenthal"s canal
-    lf_intensity = {}
-    for key in intensity_dic.keys():
-        length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
-        intensity_dic[key]["length_fraction"] = length_fraction
-        lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
-
-    # get limits for checking marker thresholds
-    lf_intensity = dict(sorted(lf_intensity.items()))
-    lf_fractions = list(lf_intensity.keys())
-    # start of cochlea
-    lf_limits = [0]
-    # half distance between block centers
-    for i in range(len(lf_fractions) - 1):
-        lf_limits.append((lf_fractions[i] + lf_fractions[i+1]) / 2)
-    # end of cochlea
-    lf_limits.append(1)
-
-    marker_labels = [0 for _ in range(len(table_seg))]
-    table_seg.loc[:, "marker_labels"] = marker_labels
-    for num, fraction in enumerate(lf_fractions):
-        subset_seg = table_seg[
-            (table_seg["length_fraction"] > lf_limits[num]) &
-            (table_seg["length_fraction"] < lf_limits[num + 1])
-        ]
-        # assign values based on limits
-        threshold = lf_intensity[fraction]["threshold"]
-        label_ids_seg = subset_seg["label_id"]
-
-        subset_measurement = table_meas[table_meas["label_id"].isin(label_ids_seg)]
-        subset_positive = subset_measurement[subset_measurement["median"] >= threshold]
-        subset_negative = subset_measurement[subset_measurement["median"] < threshold]
-        label_ids_pos = list(subset_positive["label_id"])
-        label_ids_neg = list(subset_negative["label_id"])
-
-        table_seg.loc[table_seg["label_id"].isin(label_ids_pos), "marker_labels"] = 1
-        table_seg.loc[table_seg["label_id"].isin(label_ids_neg), "marker_labels"] = 2
-
-    return table_seg
-
-
-def find_thresholds(cochlea_annotations, cochlea, data_seg, table_meas, resolution=0.38):
-    # Find the median intensities by averaging the individual annotations for specific crops
-    annotation_dics = {}
-    annotated_centers = []
-    for annotation_dir in cochlea_annotations:
-        print(f"Localizing threshold with median intensities for {os.path.basename(annotation_dir)}.")
-        annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg, table_meas,
-                                                     resolution=resolution)
-        annotated_centers.extend(annotation_dic["center_strings"])
-        annotation_dics[annotation_dir] = annotation_dic
-
-    annotated_centers = list(set(annotated_centers))
-    intensity_dic = {}
-    # loop over all annotated blocks
-    for annotated_center in annotated_centers:
-        intensities = []
-        annotator_success = []
-        annotator_failure = []
-        annotator_missing = []
-        # loop over annotated block from single user
-        for annotator_key in annotation_dics.keys():
-            if annotated_center not in annotation_dics[annotator_key]["center_strings"]:
-                annotator_missing.append(os.path.basename(annotator_key))
-                continue
-            else:
-                median_intensity = annotation_dics[annotator_key][annotated_center]["median_intensity"]
-                if median_intensity is None:
-                    print(f"No threshold for {os.path.basename(annotator_key)} and crop {annotated_center}.")
-                    annotator_failure.append(os.path.basename(annotator_key))
-                else:
-                    intensities.append(median_intensity)
-                    annotator_success.append(os.path.basename(annotator_key))
-
-        if len(intensities) == 0:
-            print(f"No viable annotation for cochlea {cochlea} and crop {annotated_center}.")
-            median_int_avg = None
-        else:
-            median_int_avg = float(sum(intensities) / len(intensities)),
-
-        intensity_dic[annotated_center] = {
-            "median_intensity": median_int_avg,
-            "annotation_success": annotator_success,
-            "annotation_failure": annotator_failure,
-            "annotation_missing": annotator_missing,
-        }
-
-    return intensity_dic
 
 
 def eval_marker_annotation(
@@ -187,7 +74,7 @@ def eval_marker_annotation(
         resolution = [1.887779, 1.887779, 3.0]
     else:
         halo_size = 20
-        resolution = 0.38
+        resolution = (0.38, 0.38, 0.38)
 
     if annotation_dirs is None:
         if "MARKER_DIR" in globals():
@@ -218,10 +105,12 @@ def eval_marker_annotation(
 
         # check for legacy formatting, e.g. M_LR_000143_L instead of M-LR-000143-L
         search_str = cochlea_str
-        annotations = [a for a in annotation_dirs if len(find_annotations(a, search_str)["center_strings"]) != 0]
+        annotations = [a for a in annotation_dirs if
+                       len(eval_utils.find_annotations(a, search_str)["center_strings"]) != 0]
         if len(annotations) == 0:
             search_str = cochlea
-            annotations = [a for a in annotation_dirs if len(find_annotations(a, search_str)["center_strings"]) != 0]
+            annotations = [a for a in annotation_dirs if
+                           len(eval_utils.find_annotations(a, search_str)["center_strings"]) != 0]
 
         print(f"Evaluating data for cochlea {cochlea} in {annotations}.")
 
@@ -264,8 +153,8 @@ def eval_marker_annotation(
             table_meas = pd.read_csv(table_meas_path, sep="\t")
 
         # Find the thresholds from the annotated blocks and save it if specified.
-        intensity_dic = find_thresholds(annotations, search_str, data_seg, table_meas,
-                                        resolution=resolution)
+        intensity_dic, _ = eval_utils.find_thresholds(annotations, search_str, data_seg, table_meas,
+                                                      resolution=resolution)
         if threshold_save_dir is not None:
             os.makedirs(threshold_save_dir, exist_ok=True)
             threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")
@@ -273,7 +162,7 @@ def eval_marker_annotation(
                 json.dump(intensity_dic, f, sort_keys=True, indent=4)
 
         # Apply the threshold to all SGNs.
-        table_seg = apply_nearest_threshold(intensity_dic, table_seg, table_meas, halo_size=halo_size)
+        table_seg = eval_utils.apply_nearest_threshold(intensity_dic, table_seg, table_meas, halo_size=halo_size)
 
         # Save the table with positives / negatives for all SGNs.
         table_seg.to_csv(out_path, sep="\t", index=False)

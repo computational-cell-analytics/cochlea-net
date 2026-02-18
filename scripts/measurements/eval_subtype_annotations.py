@@ -5,183 +5,12 @@ from typing import List, Optional
 
 import pandas as pd
 
+import flamingo_tools.intensity_annotation.eval_annotations as eval_utils
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.postprocessing.chreef_utils import localize_median_intensities, find_annotations
 from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
 
 MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/SGN_subtypes"
-
-
-def get_length_fraction_from_center(table, center_str):
-    """Get 'length_fraction' parameter for center coordinate by averaging nearby segmentation instances.
-    """
-    center_coord = tuple([int(c) for c in center_str.split("-")])
-    (cx, cy, cz) = center_coord
-    offset = 20
-    subset = table[
-        (cx - offset < table["anchor_x"]) &
-        (table["anchor_x"] < cx + offset) &
-        (cy - offset < table["anchor_y"]) &
-        (table["anchor_y"] < cy + offset) &
-        (cz - offset < table["anchor_z"]) &
-        (table["anchor_z"] < cz + offset)
-    ]
-    length_fraction = list(subset["length_fraction"])
-    length_fraction = float(sum(length_fraction) / len(length_fraction))
-    return length_fraction
-
-
-def apply_nearest_threshold(intensity_dic, table_seg, table_meas,
-                            column="median", suffix="labels", threshold_dic=None):
-    """Apply threshold to nearest segmentation instances.
-    Crop centers are transformed into the "length fraction" parameter of the segmentation table.
-    This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
-    """
-    # assign crop centers to length fraction of Rosenthal"s canal
-    lf_intensity = {}
-    for key in intensity_dic.keys():
-        length_fraction = get_length_fraction_from_center(table_seg, key)
-        intensity_dic[key]["length_fraction"] = length_fraction
-        if threshold_dic is None:
-            lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
-        else:
-            if isinstance(threshold_dic, (int, float)):
-                custom_threshold = threshold_dic
-            else:
-                custom_threshold = threshold_dic[key]["manual"]
-            print(f"Using custom threshold {custom_threshold} for crop {key}.")
-            lf_intensity[length_fraction] = {"threshold": custom_threshold}
-
-    # get limits for checking marker thresholds
-    lf_intensity = dict(sorted(lf_intensity.items()))
-    lf_fractions = list(lf_intensity.keys())
-    # start of cochlea
-    lf_limits = [0]
-    # half distance between block centers
-    for i in range(len(lf_fractions) - 1):
-        lf_limits.append((lf_fractions[i] + lf_fractions[i+1]) / 2)
-    # end of cochlea
-    lf_limits.append(1)
-
-    marker_labels = [0 for _ in range(len(table_seg))]
-    table_seg.loc[:, f"marker_{suffix}"] = marker_labels
-    for num, fraction in enumerate(lf_fractions):
-        subset_seg = table_seg[
-            (table_seg["length_fraction"] > lf_limits[num]) &
-            (table_seg["length_fraction"] < lf_limits[num + 1])
-        ]
-        # assign values based on limits
-        threshold = lf_intensity[fraction]["threshold"]
-        label_ids_seg = subset_seg["label_id"]
-
-        subset_measurement = table_meas[table_meas["label_id"].isin(label_ids_seg)]
-        subset_positive = subset_measurement[subset_measurement[column] >= threshold]
-        subset_negative = subset_measurement[subset_measurement[column] < threshold]
-        label_ids_pos = list(subset_positive["label_id"])
-        label_ids_neg = list(subset_negative["label_id"])
-
-        table_seg.loc[table_seg["label_id"].isin(label_ids_pos), f"marker_{suffix}"] = 1
-        table_seg.loc[table_seg["label_id"].isin(label_ids_neg), f"marker_{suffix}"] = 2
-
-    return table_seg
-
-
-def find_thresholds(cochlea_annotations, cochlea, data_seg, table_meas, column="median", pattern=None):
-    # Find the median intensities by averaging the individual annotations for specific crops
-    annotation_dics = {}
-    annotated_centers = []
-    for annotation_dir in cochlea_annotations:
-        print(f"Localizing threshold with median intensities for {os.path.basename(annotation_dir)}.")
-        annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg,
-                                                     table_meas, column=column, pattern=pattern)
-        annotated_centers.extend(annotation_dic["center_strings"])
-        annotation_dics[annotation_dir] = annotation_dic
-
-    annotated_centers = list(set(annotated_centers))
-    intensity_dic = {}
-    # loop over all annotated blocks
-    for annotated_center in annotated_centers:
-        intensities = []
-        annotator_success = []
-        annotator_failure = []
-        annotator_missing = []
-        # loop over annotated block from single user
-        for annotator_key in annotation_dics.keys():
-            if annotated_center not in annotation_dics[annotator_key]["center_strings"]:
-                annotator_missing.append(os.path.basename(annotator_key))
-                continue
-            else:
-                median_intensity = annotation_dics[annotator_key][annotated_center]["median_intensity"]
-                if median_intensity is None:
-                    print(f"No threshold for {os.path.basename(annotator_key)} and crop {annotated_center}.")
-                    annotator_failure.append(os.path.basename(annotator_key))
-                else:
-                    intensities.append(median_intensity)
-                    annotator_success.append(os.path.basename(annotator_key))
-
-        if len(intensities) == 0:
-            print(f"No viable annotation for cochlea {cochlea} and crop {annotated_center}.")
-            median_int_avg = None
-        else:
-            median_int_avg = float(sum(intensities) / len(intensities)),
-
-        intensity_dic[annotated_center] = {
-            "median_intensity": median_int_avg,
-            "annotation_success": annotator_success,
-            "annotation_failure": annotator_failure,
-            "annotation_missing": annotator_missing,
-        }
-
-    return intensity_dic, annotation_dics
-
-
-def get_annotation_table(annotation_dics, subtype):
-    """Create table containing information about SGNs within crops.
-    """
-    rows = []
-    for annotation_dir, annotation_dic in annotation_dics.items():
-
-        annotator_dir = os.path.basename(annotation_dir)
-        annotator = annotator_dir.split("_")[1]
-        for center_str in annotation_dic["center_strings"]:
-            row = {"annotator": annotator}
-            row["subtype_stains"] = subtype
-            row["center_str"] = center_str
-            row["median_intensity"] = annotation_dic[center_str]["median_intensity"]
-            row["inbetween_ids"] = len(annotation_dic[center_str]["inbetween_ids"])
-            row["allweak_pos"] = len(annotation_dic[center_str]["allweak_pos"])
-            row["allweak_neg"] = len(annotation_dic[center_str]["allweak_neg"])
-            row["negexc_pos"] = len(annotation_dic[center_str]["negexc_pos"])
-            row["negexc_neg"] = len(annotation_dic[center_str]["negexc_neg"])
-
-            row["allweak_pos_mean"] = annotation_dic[center_str]["allweak_pos_mean"]
-            row["allweak_neg_mean"] = annotation_dic[center_str]["allweak_neg_mean"]
-            row["negexc_pos_mean"] = annotation_dic[center_str]["negexc_pos_mean"]
-            row["negexc_neg_mean"] = annotation_dic[center_str]["negexc_neg_mean"]
-            rows.append(row)
-
-    df = pd.DataFrame(rows)
-    return df
-
-
-def get_object_measures(annotation_dics, intensity_dic, intensity_mode, subtype_stain):
-    """Get information to create table containing object measure information.
-    """
-    om_dic = {}
-    center_strings = list(intensity_dic.keys())
-    om_dic["center_strings"] = center_strings
-    om_dic["subtype_stains"] = subtype_stain
-    om_dic["intensity_mode"] = intensity_mode
-    for center_str in center_strings:
-        crop_dic = {}
-        crop_dic["median_intensity"] = intensity_dic[center_str]["median_intensity"]
-        for _, annotation_dic in annotation_dics.items():
-            if center_str in list(annotation_dic.keys()):
-                crop_dic["seg_ids"] = [int(i) for i in annotation_dic[center_str]["seg_ids"]]
-
-        om_dic[center_str] = crop_dic
-    return om_dic
 
 
 def eval_subtype_annotation(
@@ -216,7 +45,6 @@ def eval_subtype_annotation(
         seg_name: Identifier for segmentation.
         threshold_save_dir: Optional directory for saving the thresholds.
         force_overwrite: Whether to overwrite already existing results.
-        legacy_formatting: Use legacy formatting of thresholds with underscores, e.g. M_LR_N127_L.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -239,11 +67,11 @@ def eval_subtype_annotation(
         else:
             output_seg = seg_name
 
+        stains = COCHLEAE[cochlea]["subtype_stains"]
         seg_string = output_seg.replace('_', '-')
         cochlea_str = cochlea.replace('_', '-')
-        stains = COCHLEAE[cochlea]["subtype_stains"]
+        subtype_str = "-".join(stains)
         print(f"Cochlea {cochlea} with subtype stains {stains}.")
-        subtype_str = "_".join(stains)
 
         if output_dir is None:
             if s3:
@@ -259,7 +87,7 @@ def eval_subtype_annotation(
         else:
             os.makedirs(output_dir, exist_ok=True)
             out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
-            annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annotations.tsv")
+            annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annot-overview.tsv")
 
         if os.path.exists(out_path) and os.path.exists(annot_out) and not force_overwrite:
             print(f"Skipping {out_path}. Output already exists.")
@@ -321,32 +149,35 @@ def eval_subtype_annotation(
             # check for legacy formatting, e.g. M_LR_000143_L instead of M-LR-000143-L
             search_str = cochlea_str
             annotations = [a for a in annotation_dirs
-                           if len(find_annotations(a, search_str, stain)["center_strings"]) != 0]
+                           if len(eval_utils.find_annotations(a, search_str, stain)["center_strings"]) != 0]
             if len(annotations) == 0:
                 search_str = cochlea
                 annotations = [a for a in annotation_dirs
-                               if len(find_annotations(a, search_str, stain)["center_strings"]) != 0]
+                               if len(eval_utils.find_annotations(a, search_str, stain)["center_strings"]) != 0]
 
             print(f"Evaluating data for cochlea {cochlea} in {annotations}.")
 
             # Find the thresholds from the annotated blocks and save them if specified.
-            intensity_dic, annot_dic = find_thresholds(annotations, search_str, data_seg,
-                                                       table_meas, column=column, pattern=stain)
+            intensity_dic, annot_dic = eval_utils.find_thresholds(annotations, search_str, data_seg,
+                                                                  table_meas, column=column, pattern=stain)
 
             if annot_table is None:
-                annot_table = get_annotation_table(annot_dic, stain)
+                annot_table = eval_utils.get_annotation_table(annot_dic, stain)
             else:
-                annot_table = pd.concat([annot_table, get_annotation_table(annot_dic, stain)], ignore_index=True)
+                annot_table = pd.concat(
+                    [annot_table, eval_utils.get_annotation_table(annot_dic, stain)],
+                    ignore_index=True,
+                )
 
             # create dictionary containing median intensity and segmentation ids for every crop
-            om_dic = get_object_measures(annot_dic, intensity_dic, intensity_mode, stain)
-            om_out_path = os.path.join(output_dir, f"{cochlea_str}_{stain}_om.json")
+            om_dic = eval_utils.get_object_measures(annot_dic, intensity_dic, intensity_mode, stain)
+            om_out_path = os.path.join(output_dir, f"{cochlea_str}_{stain}_{seg_string}_crop-intensity.json")
             with open(om_out_path, "w") as f:
                 json.dump(om_dic, f, sort_keys=True, indent=4)
 
             if threshold_save_dir is not None:
                 os.makedirs(threshold_save_dir, exist_ok=True)
-                threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{stain}_{seg_string}.json")
+                threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{stain}_{seg_string}_annot.json")
                 with open(threshold_out_path, "w") as f:
                     json.dump(intensity_dic, f, sort_keys=True, indent=4)
 
@@ -365,7 +196,7 @@ def eval_subtype_annotation(
             else:
                 custom_threshold_dic = None
 
-            table_seg = apply_nearest_threshold(
+            table_seg = eval_utils.apply_nearest_threshold(
                 intensity_dic, table_seg, table_meas, column=column, suffix=stain,
                 threshold_dic=custom_threshold_dic,
             )
@@ -373,6 +204,7 @@ def eval_subtype_annotation(
         # Save the table with positives / negatives for all SGNs.
         if not os.path.exists(out_path) or force_overwrite:
             table_seg.to_csv(out_path, sep="\t", index=False)
+
         if not os.path.exists(annot_out) or force_overwrite:
             annot_table.to_csv(annot_out, sep="\t", index=False)
 

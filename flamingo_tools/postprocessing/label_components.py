@@ -231,44 +231,6 @@ def filter_segmentation(
     return n_ids, n_ids_filtered
 
 
-def erode_subset(
-    table: pd.DataFrame,
-    iterations: int = 1,
-    min_cells: Optional[int] = None,
-    threshold: int = 35,
-    keyword: str = "distance_nn100",
-) -> pd.DataFrame:
-    """Erode coordinates of dataframe according to a keyword and a threshold.
-    Use a copy of the dataframe as an input, if it should not be edited.
-
-    Args:
-        table: Dataframe of segmentation table.
-        iterations: Number of steps for erosion process.
-        min_cells: Minimal number of rows. The erosion is stopped after falling below this limit.
-        threshold: Upper threshold for removing elements according to the given keyword.
-        keyword: Keyword of dataframe for erosion.
-
-    Returns:
-        The dataframe containing elements left after the erosion.
-    """
-    print(f"Initial length: {len(table)}")
-    n_neighbors = 100
-    for i in range(iterations):
-        table = table[table[keyword] < threshold]
-
-        distance_avg = nearest_neighbor_distance(table, n_neighbors=n_neighbors)
-
-        if min_cells is not None and len(distance_avg) < min_cells:
-            print(f"{i}-th iteration, length of subset {len(table)}, stopping erosion")
-            break
-
-        table.loc[:, 'distance_nn'+str(n_neighbors)] = list(distance_avg)
-
-        print(f"{i}-th iteration, length of subset {len(table)}")
-
-    return table
-
-
 def downscaled_centroids(
     centroids: np.ndarray,
     scale_factor: int,
@@ -483,6 +445,7 @@ def label_components_ihc(
         entries_filtered_01 = table[table[keyword] < min_nn_100_distance]
         table = table[table[keyword] >= min_nn_100_distance]
         entries_filtered = pd.concat([entries_filtered, entries_filtered_01], ignore_index=True)
+        table = table.drop(columns="distance_nn100")
 
     components = components_ihc(table, min_component_length=min_component_length,
                                 max_edge_distance=max_edge_distance)

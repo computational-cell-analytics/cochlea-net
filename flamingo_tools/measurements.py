@@ -593,7 +593,7 @@ def object_measures_single(
         resolution = (resolution,) * 3
 
     if bg_cache_paths is None:
-        bg_cache_paths = [None for i in len(image_paths)]
+        bg_cache_paths = [None for _ in range(len(image_paths))]
 
     for (img_path, out_path, bg_cache_path) in zip(image_paths, out_paths, bg_cache_paths):
         n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
@@ -744,8 +744,8 @@ def object_measures_json_wrapper(
             assert len(image_channels) == len(out_paths)
             out_paths_tmp = out_paths.copy()
 
+        bg_cache_paths_tmp = None
         if use_bg_mask:
-            bg_cache_paths_tmp = []
             # create output path in local MoBIE project
             if len(bg_cache_paths) == 0:
                 bg_cache_paths_tmp = [None for _ in range(len(image_channels))]
