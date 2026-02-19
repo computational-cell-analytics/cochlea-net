@@ -10,9 +10,9 @@ from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label
 from tqdm import tqdm
 
-from ..file_utils import read_image_data
-from ..measurements import _get_bounding_box_and_center
-from .postprocessing import compute_table_on_the_fly
+from flamingo_tools.file_utils import read_image_data
+from flamingo_tools.measurements import _get_bounding_box_and_center
+from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly
 
 
 def _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threads, resolution):

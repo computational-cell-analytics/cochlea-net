@@ -218,6 +218,16 @@ This can either be a single component or multiple components if the cochlea is b
 However, it makes sense to still keep other entries in case they may be relevant for later analysis.
 Therefore, a table with the main parameters is created based on the `default.tsv` segmentation table and other object measures.
 
+#### Changes for the main table
+The main table adds a `volume[µm³]` column, which is the `n_pixels` column multiplied by the voxel size.
+The distance from the center to the RC can be found in the column `offset` in the original segmentation table. When the main table is created, it is renamed into `dist_from_center[µm]` for SGNs.
+It also includes entries for the mean intensity within a cell, if a table with the object measures is provided. I would recommend to test this without calculating the background subtracted mean intensity, because this step currently takes quite long.
+
+#### Not yet included
+The columns for colocalization thresholding are currently added independently from this function using the `scripts/measurements/eval_marker_annotations.py` and `scripts/measurements/eval_subtype_annotations.py` scripts (see above).
+The added columns are `marker_labels` for GFP/rbOtof and `marker_<stain>` for subtypes. Additionally, a column `subtype_label` is added for subtype analysis.
+
+#### Example
 The following example shows a series of commands for the cochlea `M_LR_000153_L` which was used for the publication.
 
 ```bash
