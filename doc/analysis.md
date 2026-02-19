@@ -176,14 +176,14 @@ It is not required that every annotator has annotated every crop.
 A summary of the intensities for all crops and annotators will be created as `<cochlea>_<stain>_<seg_name>_annotations.tsv`.
 
 ```bash
-python /path/to/cochlea-net-repository/flamingo-tools/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
+python /path/to/cochlea-net-repo/flamingo-tools/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
     -o /path/to/output_dir -t /optional/path/to/output_dir \
     -a /path/to/annotation/results/Results{LR,AMD,EK} \
     --seg_name SGN_v2 --marker_name GFP --s3
 ```
 This command is equivalent to the one above, but specifies the input paths explicitly.
 ```bash
-python ~/flamingo-tools/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
+python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
     -o /path/to/output_dir -t /optional/path/to/output_dir \
     -a /path/to/annotation/results/Results{LR,AMD,EK} \
     --seg_data M_LR_000143_L/images/ome-zarr/SGN_v2.ome.zarr \
@@ -193,7 +193,7 @@ python ~/flamingo-tools/scripts/measurements/eval_marker_annotations.py -c M_LR_
 ```
 The analysis can also be performed locally. If the paths are as expected (see previous command), passing the `--mobie_dir` argument is sufficient:
 ```bash
-python ~/flamingo-tools/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
+python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
     -o /path/to/output_dir -t /optional/path/to/output_dir \
     -a /path/to/annotation/results/Results{LR,AMD,EK} \
     --mobie_dir <local_mobie_dir> \
@@ -204,8 +204,44 @@ If no output directory is passed, the output will be saved as a table in `<mobie
 ### 4a - Subtype analysis
 The same functionality applies to subtype analysis as to marker annotation.
 ```bash
-python ~/flamingo-tools/scripts/measurements/eval_subtype_annotations.py -c M_LR_N152_L \
+python /path/to/cochlea-net-repo/scripts/measurements/eval_subtype_annotations.py -c M_LR_N152_L \
     -o /path/to/output_dir -t /optional/path/to/output_dir \
     -a /path/to/annotation/results/Results{LR,AMD,EK} \
     --s3
+```
+
+
+### Example for standard output table
+
+For an easier analysis, it makes sense to limit entries in the segmentation table to segmentation instances in specific components.
+This can either be a single component or multiple components if the cochlea is broken.
+However, it makes sense to still keep other entries in case they may be relevant for later analysis.
+Therefore, a table with the main parameters is created based on the `default.tsv` segmentation table and other object measures.
+
+The following example shows a series of commands for the cochlea `M_LR_000153_L` which was used for the publication.
+
+```bash
+# label components
+flamingo_tools.label_components -i MLR153L_default.tsv -o MLR153L_labeled.tsv --cell_type sgn -c 1 2 3
+
+# tonotopic mapping
+flamingo_tools.tonotopic_mapping -i MLR153L_labeled.tsv -o MLR153L_tonotopic.tsv --cell_type sgn -c 1 2 3 --animal mouse
+
+# this create a JSON dictionary, which can be used as input for further analysis
+flamingo_tools.json_block_extraction -o M_LR_000153_L.json -d M_LR_000153_L -i PV CR GFP SGN_v2 --cell_type sgn -c 1 2 3  -n 6 --roi_halo 256 256 64 -s SGN_v2
+
+# this creates object measures without using a background mask,
+flamingo_tools.object_measures -o . --json_info M_LR_000153_L.json --s3
+
+# this creates object measures with using a background mask
+flamingo_tools.object_measures -o . --json_info M_LR_000153_L.json --s3 --bg_mask
+
+# explicit paths for a single stain (PV) using a background mask
+flamingo_tools.object_measures --image_paths M_LR_000153_L/images/ome-zarr/PV.ome.zarr --seg_table M_LR_000153_L/tables/SGN_v2/default.tsv --seg_path M_LR_000153_L/images/ome-zarr/SGN_v2.ome.zarr -c 1 2 3 --bg_mask --s3
+
+# example with object measures
+python /path/to/cochlea-net/scripts/create_main_table.py --input MLR153L_tonotopic.tsv \
+    --json_info M_LR_000153_L.json \
+    --meas_tables M-LR-000153-L_GFP_SGN-v2_object-measures-bg-mask.tsv M-LR-000153-L_PV_SGN-v2_object-measures.tsv M-LR-000153-L_GFP_SGN-v2_object-measures.tsv  M-LR-000153-L_CR_SGN-v2_object-measures.tsv \
+    --output MLR153L_filtered.tsv
 ```
