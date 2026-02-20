@@ -714,7 +714,7 @@ def export_for_annotation():
 def main():
     # These scripts are for computing the intensity tables etc.
     missing_tables = check_processing_status()
-    print("missing tables",  missing_tables)
+    print("missing tables", missing_tables)
     # require_missing_tables(missing_tables)
     compile_data_for_subtype_analysis()
 

@@ -77,7 +77,7 @@ def extract_block():
     parser.add_argument("--output_key", type=str, default=None,
                         help="Output key for data in output file with n5 format. Default: TIF file.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Voxel size of input in micrometer.")
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--roi_halo", type=int, nargs="+", default=[128, 128, 64],
                         help="ROI halo around center coordinate [pixel]. Default: 128 128 64")
 
@@ -244,7 +244,7 @@ def object_measures():
                         help="JSON file with parameters for object_measures.")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Voxel size of input in micrometer.")
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--bg_mask", action="store_true", help="Use background mask for calculating object measures.")
     parser.add_argument("--bg_cache_paths", type=str, nargs="+", default=[],
                         help="Cache path(s) for background mask in zarr format. Either directory or specific file(s).")

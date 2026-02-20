@@ -59,8 +59,8 @@ def get_supervised_loader(
     assert len(image_paths) > 0
     sampling = None if anisotropy is None else (anisotropy, 1.0, 1.0)
     label_transform = torch_em.transform.label.PerObjectDistanceTransform(
-            distances=True, boundary_distances=True, foreground=True, sampling=sampling,
-        )
+        distances=True, boundary_distances=True, foreground=True, sampling=sampling,
+    )
     sampler = torch_em.data.sampler.MinInstanceSampler(p_reject=0.8)
     loader = torch_em.default_segmentation_loader(
         raw_paths=image_paths, raw_key=image_key, label_paths=label_paths, label_key=label_key,

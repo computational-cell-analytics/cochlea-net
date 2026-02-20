@@ -42,7 +42,7 @@ def nearest_neighbor_distance(table: pd.DataFrame, n_neighbors: int = 10) -> np.
     centroids = np.array(centroids)
 
     # Nearest neighbor is always itself, so n_neighbors+=1.
-    nbrs = NearestNeighbors(n_neighbors=n_neighbors+1).fit(centroids)
+    nbrs = NearestNeighbors(n_neighbors=n_neighbors + 1).fit(centroids)
     distances, indices = nbrs.kneighbors(centroids)
 
     # Average distance to nearest neighbors
@@ -504,7 +504,7 @@ def dilate_and_trim(
                         if arr_orig[x, y, z] == 0:
                             min_dist = float('inf')
                             for dx, dy, dz in border_coords:
-                                nx, ny, nz = x+dx, y+dy, z+dz
+                                nx, ny, nz = x + dx, y + dy, z + dz
                                 if arr_orig[nx, ny, nz] == 1:
                                     min_dist = min([min_dist, edt[nx, ny, nz]])
                             if edt[x, y, z] >= min_dist - offset:

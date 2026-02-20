@@ -26,7 +26,7 @@ def main():
                         help="Component labels of SGN_detect.")
     parser.add_argument("-d", "--extension_distance", type=float, default=12, help="Extension distance.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[3.0, 1.887779, 1.887779],
-                        help="Voxel size of input in micrometer.")
+                        help="Voxel size of input in micrometer. Default: [3.0, 1.887779, 1.887779]")
 
     args = parser.parse_args()
 

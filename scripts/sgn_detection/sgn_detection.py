@@ -16,7 +16,7 @@ def main():
 
     parser.add_argument("-d", "--extension_distance", type=float, default=12, help="Extension distance.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[3.0, 1.887779, 1.887779],
-                        help="Voxel size of input in micrometer.")
+                        help="Voxel size of input in micrometer. Default: [3.0, 1.887779, 1.887779]")
 
     parser.add_argument("--s3", action="store_true", help="Use S3 bucket.")
     parser.add_argument("--s3_credentials", type=str, default=None,

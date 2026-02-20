@@ -249,7 +249,7 @@ def density_analysis_mice():
     ]
     # Right un-injected cochleae.
     uninjected_cochleae = [
-        "M_LR_000144_R", "M_LR_000145_R",  "M_LR_000155_R", "M_LR_000189_R",
+        "M_LR_000144_R", "M_LR_000145_R", "M_LR_000155_R", "M_LR_000189_R",
     ]
     # Left injected cochleae.
     injected_cochleae = [

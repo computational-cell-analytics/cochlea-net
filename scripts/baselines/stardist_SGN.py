@@ -20,7 +20,7 @@ model_dir = os.path.join(cochlea_dir, "/other_models/Stardist/Codes/segmentation
 data_dir = os.path.join(cochlea_dir, "AnnotatedImageCrops")
 
 # SGN specific
-sgn_dir = os.path.join(data_dir,  "F1ValidationSGNs", "for_consensus_annotation")
+sgn_dir = os.path.join(data_dir, "F1ValidationSGNs", "for_consensus_annotation")
 image_files = [entry.path for entry in os.scandir(sgn_dir) if entry.is_file() and ".tif" in entry.path]
 
 # output folder

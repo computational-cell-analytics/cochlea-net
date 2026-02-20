@@ -300,7 +300,7 @@ def fig_01a(
     lookup = dict(zip(subset["label_id"].astype(int), subset[column].astype(float)))
 
     # load IHC segmentation
-    internal_path = os.path.join(cochlea, "images",  "ome-zarr", f"{seg_name}.ome.zarr")
+    internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
     input_key = "s3"
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME)
     with zarr.open(s3_store, mode="r") as f:

@@ -68,8 +68,8 @@ def main():
                         help="Input key for data in input file with n5/OME-ZARR format.")
     parser.add_argument("--output_key", type=str, default=None,
                         help="Output key for data in output file with n5 format. Default: TIF file.")
-    parser.add_argument("-v", "--voxel_size", type=float, default=0.38,
-                        help="Voxel size of input in micrometer. Default: 0.38")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--roi_halo", type=int, nargs="+", default=[128, 128, 64],
                         help="ROI halo around center coordinate [pixel]. Default: 128 128 64")
 

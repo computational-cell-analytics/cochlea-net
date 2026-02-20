@@ -1,5 +1,5 @@
 import os
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -133,7 +133,7 @@ def marker_detection(
     model_path: str,
     mask_input_key: Optional[str] = "s4",
     max_distance: float = 3,
-    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
 ):
     """Streamlined workflow for marker detection, mapping, and filtering.
 
@@ -147,6 +147,12 @@ def marker_detection(
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
         voxel_size: The voxel size of the data in micrometer.
     """
+    if not isinstance(voxel_size, float):
+        if len(voxel_size) == 1:
+            voxel_size = voxel_size * 3
+        assert len(voxel_size) == 3
+    else:
+        voxel_size = (voxel_size,) * 3
 
     # 1.) Determine mask for inference based on the IHC segmentation.
     # Best approach: load IHC segmentation at a low scale level, binarize it,

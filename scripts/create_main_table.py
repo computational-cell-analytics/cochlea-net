@@ -17,7 +17,7 @@ def main():
     parser.add_argument("-c", "--component_list", type=int, nargs="+", default=[1],
                         help="List of connected components.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Voxel size of input in micrometer.")
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("--intensity_keyword", type=str, default="median",

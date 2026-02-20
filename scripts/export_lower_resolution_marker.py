@@ -14,7 +14,7 @@ def filter_marker_instances(cochlea, segmentation, seg_name, group=None):
     """Filter segmentation with marker labels.
     Positive segmentation instances are set to 1, negative to 2.
     """
-    internal_path = os.path.join(cochlea, "tables",  seg_name, "default.tsv")
+    internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
     tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
     with fs.open(tsv_path, "r") as f:
         table_seg = pd.read_csv(f, sep="\t")
@@ -65,7 +65,7 @@ def export_lower_resolution(args):
                     continue
 
                 print("Exporting channel", channel)
-                internal_path = os.path.join(args.cochlea, "images",  "ome-zarr", f"{channel}.ome.zarr")
+                internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
                 s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
                 with zarr.open(s3_store, mode="r") as f:
                     data = f[input_key][:].astype("float32")

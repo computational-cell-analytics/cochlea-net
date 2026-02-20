@@ -81,7 +81,7 @@ def main():
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
 
     # options for equidistant centers
-    parser.add_argument('-n', "--n_blocks", type=int, default=6,
+    parser.add_argument("-n", "--n_blocks", type=int, default=6,
                         help="Number of blocks to find equidistant centers for. Default: 6")
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")

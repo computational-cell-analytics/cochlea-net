@@ -818,7 +818,7 @@ def fig_04e(
 
     # Add main octave band labels above sublabels
     for i, label in enumerate(bin_labels):
-        ax.text(i, ax.get_ylim()[0] - band_label_offset_y*(ax.get_ylim()[1]-ax.get_ylim()[0]),
+        ax.text(i, ax.get_ylim()[0] - band_label_offset_y * (ax.get_ylim()[1] - ax.get_ylim()[0]),
                 label, ha='center', va='top', fontsize=tick_label_size, fontweight='bold')
 
     ax.set_xlabel("Octave band [kHz]", fontsize=label_size)
@@ -874,7 +874,7 @@ def main():
 
     # D: The expression efficiency. We also plot GFP intensities.
     fig_04d(chreef_data,
-            save_path=os.path.join(args.figure_dir,  f"fig_04d_transduction.{FILE_EXTENSION}"),
+            save_path=os.path.join(args.figure_dir, f"fig_04d_transduction.{FILE_EXTENSION}"),
             plot=args.plot, use_alias=use_alias)
 
     # E: The expression efficiency per octave band.

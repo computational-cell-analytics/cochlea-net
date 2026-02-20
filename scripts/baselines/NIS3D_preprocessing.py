@@ -32,12 +32,12 @@ train_dict_02 = {
 
 # contains 1, 3, 4
 train_dict_03 = {
-   "data_dir": os.path.join(NIS3D_DIR, "suggestive_splitting/cross-image/train"),
-   "name": "MusMusculus_2",
-   "conf_file": "scoreOfConfidence.tif",
-   "gt_file": "gt.tif",
-   "output_dir": TRAIN_DIR,
-   "output_name": "MusMusculus_2_annotations.tif",
+    "data_dir": os.path.join(NIS3D_DIR, "suggestive_splitting/cross-image/train"),
+    "name": "MusMusculus_2",
+    "conf_file": "scoreOfConfidence.tif",
+    "gt_file": "gt.tif",
+    "output_dir": TRAIN_DIR,
+    "output_name": "MusMusculus_2_annotations.tif",
 }
 
 # ---Validation data---

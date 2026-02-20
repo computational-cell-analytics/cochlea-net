@@ -26,7 +26,7 @@ def main():
                         help="Input key for data in reference segmentation.")
 
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Voxel size of input in micrometer.")
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--tif", action="store_true", help="Store output as tif file.")
     parser.add_argument("--crop", action="store_true", help="Process crop of original array.")
 

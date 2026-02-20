@@ -76,7 +76,7 @@ def filter_subtypes(cochlea, segmentation, seg_name, subtype):
     """Filter segmentation with marker labels.
     Positive segmentation instances are set to 1, negative to 2.
     """
-    internal_path = os.path.join(cochlea, "tables",  seg_name, "default.tsv")
+    internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
     tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
     with fs.open(tsv_path, "r") as f:
         table_seg = pd.read_csv(f, sep="\t")
@@ -166,7 +166,7 @@ def export_lower_resolution(args):
                 continue
 
             input_key = f"s{scale}"
-            internal_path = os.path.join(cochlea, "images",  "ome-zarr", f"{seg_name}.ome.zarr")
+            internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             with zarr.open(s3_store, mode="r") as f:
                 data = f[input_key][:]

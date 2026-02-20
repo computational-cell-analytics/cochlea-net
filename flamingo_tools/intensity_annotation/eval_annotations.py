@@ -33,8 +33,8 @@ def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> 
         return center_str
 
     if pattern is not None:
-        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name
-                         and pattern in entry.name]
+        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name and
+                         pattern in entry.name]
     else:
         cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name]
     dic = {"cochlea": cochlea}
@@ -314,7 +314,7 @@ def apply_nearest_threshold(
     lf_limits = [0]
     # half distance between block centers
     for i in range(len(lf_fractions) - 1):
-        lf_limits.append((lf_fractions[i] + lf_fractions[i+1]) / 2)
+        lf_limits.append((lf_fractions[i] + lf_fractions[i + 1]) / 2)
     # end of cochlea
     lf_limits.append(1)
 
