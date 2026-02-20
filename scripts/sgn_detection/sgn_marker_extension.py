@@ -25,18 +25,18 @@ def main():
     parser.add_argument("--component_labels", type=int, nargs="+", default=[1],
                         help="Component labels of SGN_detect.")
     parser.add_argument("-d", "--extension_distance", type=float, default=12, help="Extension distance.")
-    parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[3.0, 1.887779, 1.887779],
-                        help="Resolution of input in micrometer.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[3.0, 1.887779, 1.887779],
+                        help="Voxel size of input in micrometer.")
 
     args = parser.parse_args()
 
     block_shape = (128, 128, 128)
     chunks = (128, 128, 128)
 
-    if len(args.resolution) == 1:
-        resolution = tuple(args.resolution, args.resolution, args.resolution)
+    if len(args.voxel_size) == 1:
+        voxel_size = tuple(args.voxel_size, args.voxel_size, args.voxel_size)
     else:
-        resolution = tuple(args.resolution)
+        voxel_size = tuple(args.voxel_size)
 
     if args.input is not None:
         data = read_image_data(args.input, None)
@@ -53,9 +53,9 @@ def main():
             table = pd.read_csv(f, sep="\t")
 
         table = table.loc[table["component_labels"].isin(args.component_labels)]
-        markers = list(zip(table["anchor_x"] / resolution[0],
-                           table["anchor_y"] / resolution[1],
-                           table["anchor_z"] / resolution[2]))
+        markers = list(zip(table["anchor_x"] / voxel_size[0],
+                           table["anchor_y"] / voxel_size[1],
+                           table["anchor_z"] / voxel_size[2]))
         markers = np.array(markers)
 
         s3_path = os.path.join(f"{args.cochlea}", "images", "ome-zarr", f"{args.seg_channel}.ome.zarr")
@@ -79,7 +79,7 @@ def main():
         markers=markers,
         output=output_dataset,
         extension_distance=args.extension_distance,
-        sampling=resolution,
+        sampling=voxel_size,
         block_shape=block_shape,
         n_threads=16,
     )

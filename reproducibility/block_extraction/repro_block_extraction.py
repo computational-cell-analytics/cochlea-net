@@ -55,8 +55,8 @@ def main():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument('-o', "--output", type=str, required=True, help="Output directory or file.")
-    parser.add_argument('-i', '--input', type=str, default=None,
+    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory or file.")
+    parser.add_argument("-i", "--input", type=str, default=None,
                         help="Input path to data in n5/ome-zarr/TIF format.")
     parser.add_argument("-j", "--json", type=str, default=None, help="Input JSON dictionary.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
@@ -64,12 +64,12 @@ def main():
     # options for block etraction
     parser.add_argument("-c", "--coords", type=int, nargs="+", default=[],
                         help="3D coordinate as center of extracted block [µm].")
-    parser.add_argument('-k', "--input_key", type=str, default=None,
+    parser.add_argument("-k", "--input_key", type=str, default=None,
                         help="Input key for data in input file with n5/OME-ZARR format.")
     parser.add_argument("--output_key", type=str, default=None,
                         help="Output key for data in output file with n5 format. Default: TIF file.")
-    parser.add_argument('-r', "--resolution", type=float, default=0.38,
-                        help="Resolution of input in micrometer [µm]. Default: 0.38")
+    parser.add_argument("-v", "--voxel_size", type=float, default=0.38,
+                        help="Voxel size of input in micrometer. Default: 0.38")
     parser.add_argument("--roi_halo", type=int, nargs="+", default=[128, 128, 64],
                         help="ROI halo around center coordinate [pixel]. Default: 128 128 64")
 
@@ -93,7 +93,7 @@ def main():
         force_overwrite=args.force,
         input_key=args.input_key,
         output_key=args.output_key,
-        resolution=args.resolution,
+        voxel_size=args.voxel_size,
         roi_halo=args.roi_halo,
         s3=args.s3,
         s3_credentials=args.s3_credentials,

@@ -2,7 +2,7 @@ import math
 import multiprocessing as mp
 import os
 from concurrent import futures
-from typing import Callable, List, Optional, Tuple
+from typing import Callable, List, Optional, Tuple, Union
 
 import elf.parallel as parallel
 import numpy as np
@@ -118,7 +118,10 @@ def neighbors_in_radius(table: pd.DataFrame, radius: float = 15) -> np.ndarray:
 #
 
 
-def compute_table_on_the_fly(segmentation: np.typing.ArrayLike, resolution: float) -> pd.DataFrame:
+def compute_table_on_the_fly(
+    segmentation: np.typing.ArrayLike,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
+) -> pd.DataFrame:
     """Compute a segmentation table compatible with MoBIE.
 
     The table contains information about the number of pixels per object,
@@ -126,18 +129,25 @@ def compute_table_on_the_fly(segmentation: np.typing.ArrayLike, resolution: floa
 
     Args:
         segmentation: The segmentation for which to compute the table.
-        resolution: The physical voxel spacing of the data.
+        voxel_size: The physical voxel spacing of the data.
 
     Returns:
         The segmentation table.
     """
+    if not isinstance(voxel_size, float):
+        if len(voxel_size) == 1:
+            voxel_size = voxel_size * 3
+        assert len(voxel_size) == 3
+    else:
+        voxel_size = (voxel_size,) * 3
+
     props = measure.regionprops(segmentation)
     label_ids = np.array([prop.label for prop in props])
     coordinates = np.array([prop.centroid for prop in props]).astype("float32")
     # transform pixel distance to physical units
-    coordinates = coordinates * resolution
-    bb_min = np.array([prop.bbox[:3] for prop in props]).astype("float32") * resolution
-    bb_max = np.array([prop.bbox[3:] for prop in props]).astype("float32") * resolution
+    coordinates = coordinates * np.array(voxel_size)
+    bb_min = np.array([prop.bbox[:3] for prop in props]).astype("float32") * np.array(voxel_size)
+    bb_max = np.array([prop.bbox[3:] for prop in props]).astype("float32") * np.array(voxel_size)
     sizes = np.array([prop.area for prop in props])
     table = pd.DataFrame({
         "label_id": label_ids,
@@ -162,7 +172,7 @@ def filter_segmentation(
     threshold: float,
     min_size: int = 1000,
     table: Optional[pd.DataFrame] = None,
-    resolution: float = 0.38,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
     output_key: str = "segmentation_postprocessed",
     **spatial_statistics_kwargs,
 ) -> Tuple[int, int]:
@@ -178,7 +188,7 @@ def filter_segmentation(
         threshold: Distance in micrometer to check for neighbors.
         min_size: Minimal number of pixels for filtering small instances.
         table: Dataframe of segmentation table.
-        resolution: Resolution of segmentation in micrometer.
+        voxel_size: Voxel size of segmentation in micrometer.
         output_key: Output key for postprocessed segmentation.
         spatial_statistics_kwargs: Arguments for spatial statistics function.
 
@@ -188,7 +198,7 @@ def filter_segmentation(
     """
     # Compute the table on the fly. This doesn't work for large segmentations.
     if table is None:
-        table = compute_table_on_the_fly(segmentation, resolution=resolution)
+        table = compute_table_on_the_fly(segmentation, voxel_size=voxel_size)
     n_ids = len(table)
 
     # First apply the size filter.
@@ -507,7 +517,7 @@ def filter_cochlea_volume_single(
     table: pd.DataFrame,
     components: Optional[List[int]] = [1],
     scale_factor: int = 48,
-    resolution: float = 0.38,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     dilation_iterations: int = 12,
     padding: int = 1200,
 ) -> np.ndarray:
@@ -519,7 +529,7 @@ def filter_cochlea_volume_single(
         table: Segmentation table.
         components: Component labels for filtering segmentation table.
         scale_factor: Down-sampling factor for filtering.
-        resolution: Resolution of pixel in µm.
+        voxel_size: Voxel size of data in micrometer.
         dilation_iterations: Iterations for dilating binary segmentation mask. A negative value omits binary closing.
         padding: Padding in pixel to apply to guessed dimensions based on centroid coordinates.
 
@@ -531,14 +541,14 @@ def filter_cochlea_volume_single(
         table = table[table["component_labels"].isin(components)]
 
     # identify approximate input dimensions for down-scaling
-    centroids = list(zip(table["anchor_x"] / resolution,
-                         table["anchor_y"] / resolution,
-                         table["anchor_z"] / resolution))
+    centroids = list(zip(table["anchor_x"] / voxel_size[0],
+                         table["anchor_y"] / voxel_size[1],
+                         table["anchor_z"] / voxel_size[2]))
 
     # padding the array allows for dilation without worrying about array borders
-    max_x = table["anchor_x"].max() / resolution + padding
-    max_y = table["anchor_y"].max() / resolution + padding
-    max_z = table["anchor_z"].max() / resolution + padding
+    max_x = table["anchor_x"].max() / voxel_size[0] + padding
+    max_y = table["anchor_y"].max() / voxel_size[1] + padding
+    max_z = table["anchor_z"].max() / voxel_size[2] + padding
     ref_dimensions = (max_x, max_y, max_z)
 
     # down-scale arrays
@@ -562,7 +572,7 @@ def filter_cochlea_volume(
     sgn_components: Optional[List[int]] = [1],
     ihc_components: Optional[List[int]] = [1],
     scale_factor: int = 48,
-    resolution: float = 0.38,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     dilation_iterations: int = 12,
     padding: int = 1200,
     dilation_method: str = "individual",
@@ -577,7 +587,7 @@ def filter_cochlea_volume(
         sgn_components: Component labels for filtering SGN segmentation table.
         ihc_components: Component labels for filtering IHC segmentation table.
         scale_factor: Down-sampling factor for filtering.
-        resolution: Resolution of pixel in µm.
+        voxel_size: voxel_size of pixel in µm.
         dilation_iterations: Iterations for dilating binary segmentation mask.
         padding: Padding in pixel to apply to guessed dimensions based on centroid coordinates.
         dilation_method: Dilation style for SGN and IHC segmentation, either 'individual', 'combined' or no dilation.
@@ -592,17 +602,17 @@ def filter_cochlea_volume(
         ihc_table = ihc_table[ihc_table["component_labels"].isin(ihc_components)]
 
     # identify approximate input dimensions for down-scaling
-    centroids_sgn = list(zip(sgn_table["anchor_x"] / resolution,
-                             sgn_table["anchor_y"] / resolution,
-                             sgn_table["anchor_z"] / resolution))
-    centroids_ihc = list(zip(ihc_table["anchor_x"] / resolution,
-                             ihc_table["anchor_y"] / resolution,
-                             ihc_table["anchor_z"] / resolution))
+    centroids_sgn = list(zip(sgn_table["anchor_x"] / voxel_size[0],
+                             sgn_table["anchor_y"] / voxel_size[1],
+                             sgn_table["anchor_z"] / voxel_size[2]))
+    centroids_ihc = list(zip(ihc_table["anchor_x"] / voxel_size[0],
+                             ihc_table["anchor_y"] / voxel_size[1],
+                             ihc_table["anchor_z"] / voxel_size[2]))
 
     # padding the array allows for dilation without worrying about array borders
-    max_x = max([sgn_table["anchor_x"].max(), ihc_table["anchor_x"].max()]) / resolution + padding
-    max_y = max([sgn_table["anchor_y"].max(), ihc_table["anchor_y"].max()]) / resolution + padding
-    max_z = max([sgn_table["anchor_z"].max(), ihc_table["anchor_z"].max()]) / resolution + padding
+    max_x = max([sgn_table["anchor_x"].max(), ihc_table["anchor_x"].max()]) / voxel_size[0] + padding
+    max_y = max([sgn_table["anchor_y"].max(), ihc_table["anchor_y"].max()]) / voxel_size[1] + padding
+    max_z = max([sgn_table["anchor_z"].max(), ihc_table["anchor_z"].max()]) / voxel_size[2] + padding
     ref_dimensions = (max_x, max_y, max_z)
 
     # down-scale arrays

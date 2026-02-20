@@ -80,9 +80,9 @@ def export_synapse_detections(
             shape = f[input_key].shape
 
         # Scale the coordinates according to the scale level.
-        resolution = 0.38
+        voxel_size = 0.38
         coordinates = syn_table[["z", "y", "x"]].values
-        coordinates /= resolution
+        coordinates /= voxel_size
         coordinates /= (2 ** scale)
         coordinates = np.round(coordinates, 0).astype("int")
 
@@ -93,7 +93,7 @@ def export_synapse_detections(
             assert halo is not None
             center = json.loads(position)
             assert len(halo) == len(center)
-            center = [int(ce / (resolution * (2 ** scale))) for ce in center[::-1]]
+            center = [int(ce / (voxel_size * (2 ** scale))) for ce in center[::-1]]
             start = np.array([max(0, ce - ha) for ce, ha in zip(center, halo)])[None]
             stop = np.array([min(sh, ce + ha) for ce, ha, sh in zip(center, halo, shape)])[None]
 

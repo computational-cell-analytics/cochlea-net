@@ -14,18 +14,19 @@ def main():
     parser = argparse.ArgumentParser(
         description="Script to postprocess IHC segmentation based on the number of synapses per IHC.")
 
-    parser.add_argument('--base_path', type=str, required=True, help="Base segmentation. WARNING: Will be edited.")
-    parser.add_argument('--ref_path', type=str, required=True, help="Reference segmentation.")
-    parser.add_argument('--out_path_tif', type=str, default=None, help="Output segmentation for tif output.")
+    parser.add_argument("--base_path", type=str, required=True, help="Base segmentation. WARNING: Will be edited.")
+    parser.add_argument("--ref_path", type=str, required=True, help="Reference segmentation.")
+    parser.add_argument("--out_path_tif", type=str, default=None, help="Output segmentation for tif output.")
 
-    parser.add_argument('--base_table', type=str, required=True, help="Synapse per IHC table of base segmentation.")
+    parser.add_argument("--base_table", type=str, required=True, help="Synapse per IHC table of base segmentation.")
 
     parser.add_argument("--base_key", type=str, default=None,
                         help="Input key for data in base segmentation.")
     parser.add_argument("--ref_key", type=str, default=None,
                         help="Input key for data in reference segmentation.")
 
-    parser.add_argument('-r', "--resolution", type=float, default=0.38, help="Resolution of input in micrometer.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer.")
     parser.add_argument("--tif", action="store_true", help="Store output as tif file.")
     parser.add_argument("--crop", action="store_true", help="Process crop of original array.")
 
@@ -60,7 +61,7 @@ def main():
     else:
         output_ = ihc_synapse_postprocessing.postprocess_ihc_synapse(
             data_base, data_ref, table_base=table_base, synapse_limit=25, min_overlap=0.5,
-            resolution=0.38, roi_pad=40,
+            voxel_size=args.voxel_size, roi_pad=40,
         )
 
     if args.tif:

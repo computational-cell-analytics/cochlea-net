@@ -10,7 +10,7 @@ from elf.io import open_file
 from mobie import add_bdv_image, add_image, add_segmentation
 from mobie.metadata.dataset_metadata import read_dataset_metadata
 
-DEFAULT_RESOLUTION = (0.38, 0.38, 0.38)
+DEFAULT_VOXEL_SIZE = (0.38, 0.38, 0.38)
 DEFAULT_SCALE_FACTORS = [[2, 2, 2]] * 5
 DEFAULT_CHUNKS = (128, 128, 128)
 DEFAULT_UNIT = "micrometer"
@@ -24,10 +24,10 @@ def _source_exists(mobie_project, mobie_dataset, source_name):
 
 
 def _parse_spatial_args(
-    resolution, scale_factors, chunks, input_path, input_key
+    voxel_size, scale_factors, chunks, input_path, input_key
 ):
-    if resolution is None:
-        resolution = DEFAULT_RESOLUTION
+    if voxel_size is None:
+        voxel_size = DEFAULT_VOXEL_SIZE
     if scale_factors is None:
         scale_factors = DEFAULT_SCALE_FACTORS
     if chunks is None:
@@ -36,7 +36,7 @@ def _parse_spatial_args(
         else:
             with open_file(input_path, "r") as f:
                 chunks = f[input_key].chunks
-    return resolution, scale_factors, chunks
+    return voxel_size, scale_factors, chunks
 
 
 def add_raw_to_mobie(
@@ -47,7 +47,7 @@ def add_raw_to_mobie(
     skip_existing: bool = True,
     input_key: Optional[str] = None,
     setup_id: int = 0,
-    resolution: Optional[Tuple[float, float, float]] = None,
+    voxel_size: Optional[Tuple[float, float, float]] = None,
     scale_factors: Optional[Tuple[Tuple[int, int, int]]] = None,
     chunks: Optional[Tuple[int, int, int]] = None,
 ) -> None:
@@ -67,7 +67,7 @@ def add_raw_to_mobie(
         input_key: The key of the input data. This only has to be specified if the input is
             a n5 / hdf5 / zarr file.
         setup_id: The setup_id that will be added to MoBIE. This is only used if the input data is an xml file.
-        resolution: The resolution / voxel size of the data.
+        voxel_size: The voxel size of the data in micrometer.
         scale_factors: The factors to use for downsampling the data when creating the multi-level image pyramid.
         chunks: The output chunks for writing the data.
     """
@@ -99,8 +99,8 @@ def add_raw_to_mobie(
                 assert input_key is None
             else:
                 input_key = "setup0/timepoint0/s0" if input_key is None else input_key
-            resolution, scale_factors, chunks = _parse_spatial_args(
-                resolution, scale_factors, chunks, input_path, input_key
+            voxel_size, scale_factors, chunks = _parse_spatial_args(
+                voxel_size, scale_factors, chunks, input_path, input_key
             )
             add_image(
                 input_path=input_path,
@@ -108,7 +108,7 @@ def add_raw_to_mobie(
                 root=mobie_project,
                 dataset_name=mobie_dataset,
                 image_name=source_name,
-                resolution=resolution,
+                resolution=voxel_size,
                 scale_factors=scale_factors,
                 chunks=chunks,
                 tmp_folder=tmpdir,
@@ -124,7 +124,7 @@ def add_segmentation_to_mobie(
     source_name: str,
     segmentation_path: str,
     segmentation_key: str,
-    resolution: Optional[Tuple[float, float, float]] = None,
+    voxel_size: Optional[Tuple[float, float, float]] = None,
     scale_factors: Optional[Tuple[Tuple[int, int, int]]] = None,
     chunks: Optional[Tuple[int, int, int]] = None,
     skip_existing: bool = True,
@@ -137,7 +137,7 @@ def add_segmentation_to_mobie(
         source_name: The name of the data to use in MoBIE.
         segmentation_path: The path to the data.
         segmentation_key: The key of the data.
-        resolution: The resolution / voxel size of the data.
+        voxel_size: The voxel size of the data in micrometer.
         scale_factors: The factors to use for downsampling the data when creating the multi-level image pyramid.
         chunks: The output chunks for writing the data.
         skip_existing: Whether to skip existing dataset.
@@ -153,8 +153,8 @@ def add_segmentation_to_mobie(
     elif have_source:
         raise NotImplementedError
 
-    resolution, scale_factors, chunks = _parse_spatial_args(
-        resolution, scale_factors, chunks, segmentation_path, segmentation_key
+    voxel_size, scale_factors, chunks = _parse_spatial_args(
+        voxel_size, scale_factors, chunks, segmentation_path, segmentation_key
     )
 
     max_jobs = min(16, mp.cpu_count())
@@ -163,7 +163,7 @@ def add_segmentation_to_mobie(
             input_path=segmentation_path, input_key=segmentation_key,
             root=mobie_project, dataset_name=mobie_dataset,
             segmentation_name=source_name,
-            resolution=resolution,
+            resolution=voxel_size,
             scale_factors=scale_factors,
             chunks=chunks,
             tmp_folder=tmpdir,

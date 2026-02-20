@@ -31,10 +31,10 @@ from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 def _measure_volume_and_surface(
     mask: np.typing.ArrayLike,
-    resolution: Tuple[float],
+    voxel_size: Tuple[float, float, float],
 ) -> Tuple[float, float]:
     # Use marching_cubes for 3D data
-    verts, faces, normals, _ = marching_cubes(mask, spacing=resolution)
+    verts, faces, normals, _ = marching_cubes(mask, spacing=voxel_size)
 
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
     surface = mesh.area
@@ -49,7 +49,7 @@ def _measure_volume_and_surface(
 def _get_bounding_box_and_center(
     table: pd.DataFrame,
     seg_id: int,
-    resolution: Tuple[float],
+    voxel_size: Tuple[float, float, float],
     shape: Tuple[int],
     dilation: int,
 ) -> Tuple[Tuple[int], Tuple[int]]:
@@ -61,12 +61,12 @@ def _get_bounding_box_and_center(
         bb_extension = 2
 
     bb_min = np.array([
-        row.bb_min_z.item() / resolution[0], row.bb_min_y.item() / resolution[1], row.bb_min_x.item() / resolution[2]
+        row.bb_min_z.item() / voxel_size[0], row.bb_min_y.item() / voxel_size[1], row.bb_min_x.item() / voxel_size[2]
     ]).astype("float32")
     bb_min = np.round(bb_min, 0).astype("int32")
 
     bb_max = np.array([
-        row.bb_max_z.item() / resolution[0], row.bb_max_y.item() / resolution[1], row.bb_max_x.item() / resolution[2]
+        row.bb_max_z.item() / voxel_size[0], row.bb_max_y.item() / voxel_size[1], row.bb_max_x.item() / voxel_size[2]
     ]).astype("float32")
     bb_max = np.round(bb_max, 0).astype("int32")
 
@@ -76,9 +76,9 @@ def _get_bounding_box_and_center(
     )
 
     center = (
-        int(row.anchor_z.item() / resolution[0]),
-        int(row.anchor_y.item() / resolution[1]),
-        int(row.anchor_x.item() / resolution[2]),
+        int(row.anchor_z.item() / voxel_size[0]),
+        int(row.anchor_y.item() / voxel_size[1]),
+        int(row.anchor_x.item() / voxel_size[2]),
     )
 
     return bb, center
@@ -158,14 +158,14 @@ def _default_object_features(
     table: pd.DataFrame,
     image: np.typing.ArrayLike,
     segmentation: np.typing.ArrayLike,
-    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     background_mask: Optional[np.typing.ArrayLike] = None,
     background_radius: Optional[float] = None,
     norm=np.divide,
     median_only: bool = False,
     dilation: Optional[int] = None,
 ) -> dict:
-    bb, center = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
+    bb, center = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation)
 
     local_image = image[bb]
     mask = segmentation[bb] == seg_id
@@ -188,29 +188,29 @@ def _default_object_features(
 
     if background_radius is not None:
         # The radius passed is given in micrometer.
-        # The resolution is given in micrometer per pixel.
-        # So we have to divide by the resolution to obtain the radius in pixel.
-        radius_in_pixel = background_radius / resolution[1]
+        # The voxel size is given in micrometer per pixel.
+        # So we have to divide by the voxel size to obtain the radius in pixel.
+        radius_in_pixel = background_radius / voxel_size[1]
         measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm, median_only)
 
     # Do the volume and surface measurement.
     if not median_only:
-        volume, surface = _measure_volume_and_surface(mask, resolution)
+        volume, surface = _measure_volume_and_surface(mask, voxel_size)
         measures["volume"] = volume
         measures["surface"] = surface
     return measures
 
 
-def _morphology_features(seg_id, table, image, segmentation, resolution, **kwargs):
+def _morphology_features(seg_id, table, image, segmentation, voxel_size, **kwargs):
     measures = {"label_id": seg_id}
 
-    bb, center = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation=0)
+    bb, center = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation=0)
     mask = segmentation[bb] == seg_id
 
     # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
-    # resolution = (3.0, 0.76, 0.76)
+    # voxel_size = (3.0, 0.76, 0.76)
 
-    volume, surface = _measure_volume_and_surface(mask, resolution)
+    volume, surface = _measure_volume_and_surface(mask, voxel_size)
     measures["volume"] = volume
     measures["surface"] = surface
     return measures
@@ -221,11 +221,11 @@ def _regionprops_features(
     table: pd.DataFrame,
     image: np.typing.ArrayLike,
     segmentation: np.typing.ArrayLike,
-    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     background_mask: Optional[np.typing.ArrayLike] = None,
     dilation: int = None,
 ) -> dict:
-    bb, _ = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation)
+    bb, _ = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation)
 
     local_image = image[bb]
     local_segmentation = segmentation[bb]
@@ -298,7 +298,7 @@ def compute_object_measures_impl(
     image: np.typing.ArrayLike,
     segmentation: np.typing.ArrayLike,
     n_threads: Optional[int] = None,
-    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     table: Optional[pd.DataFrame] = None,
     feature_set: str = "default",
     background_mask: Optional[np.typing.ArrayLike] = None,
@@ -313,7 +313,7 @@ def compute_object_measures_impl(
         image: The image data.
         segmentation: The segmentation.
         n_threads: The number of threads to use for computation.
-        resolution: The resolution / voxel size of the data.
+        voxel_size: The voxel size of the data.
         table: The segmentation table. Will be computed on the fly if it is not given.
         feature_set: The features to compute for each object. Refer to `FEATURE_FUNCTIONS` for details.
         background_mask: An optional mask indicating the area to use for computing background correction values.
@@ -325,7 +325,7 @@ def compute_object_measures_impl(
         The table with per object measurements.
     """
     if table is None:
-        table = compute_table_on_the_fly(segmentation, resolution=resolution[1])
+        table = compute_table_on_the_fly(segmentation, voxel_size=voxel_size)
 
     if feature_set not in FEATURE_FUNCTIONS:
         raise ValueError
@@ -334,7 +334,7 @@ def compute_object_measures_impl(
         table=table,
         image=image,
         segmentation=segmentation,
-        resolution=resolution,
+        voxel_size=voxel_size,
         background_mask=background_mask,
         median_only=median_only,
         dilation=dilation,
@@ -369,7 +369,7 @@ def compute_object_measures(
     image_key: Optional[str] = None,
     segmentation_key: Optional[str] = None,
     n_threads: Optional[int] = None,
-    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     force: bool = False,
     feature_set: str = "default",
     component_list: List[int] = [],
@@ -396,7 +396,7 @@ def compute_object_measures(
         image_key: The key (= internal path) for the image data. Not needed fir tif.
         segmentation_key: The key (= internal path) for the segmentation data. Not needed for tif.
         n_threads: The number of threads to use for computation.
-        resolution: The resolution / voxel size of the data.
+        voxel_size: The voxel size of the data.
         force: Whether to overwrite an existing output table.
         feature_set: The features to compute for each object. Refer to `FEATURE_FUNCTIONS` for details.
         component_list:
@@ -433,7 +433,7 @@ def compute_object_measures(
     segmentation = read_image_data(segmentation_path, segmentation_key, from_s3=s3)
 
     measures = compute_object_measures_impl(
-        image, segmentation, n_threads, resolution, table=table, feature_set=feature_set,
+        image, segmentation, n_threads, voxel_size, table=table, feature_set=feature_set,
         median_only=median_only, dilation=dilation, background_mask=background_mask,
     )
     measures.to_csv(output_table_path, sep="\t", index=False)
@@ -509,7 +509,7 @@ def compute_sgn_background_mask(
 
     low_res_mask = np.zeros(downsampled_shape, dtype="bool")
 
-    # This corresponds to a block shape of 128 x 512 x 512 in the original resolution,
+    # This corresponds to a block shape of 128 x 512 x 512 in the original voxel_size,
     # which roughly corresponds to the size of the blocks we use for the GFP annotation.
     chunk_shape = (8, 32, 32)
 
@@ -558,7 +558,7 @@ def object_measures_single(
     component_list: List[int] = [1],
     use_bg_mask: bool = False,
     bg_cache_paths: Optional[List[str]] = None,
-    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -576,7 +576,7 @@ def object_measures_single(
         component_list: Only calculate object measures for specific components.
         use_bg_mask: Use background mask for calculating object measures.
         bg_cache_paths: Cache path(s) for background mask in zarr format. Either directory or specific file(s).
-        resolution: Resolution of input in micrometer.
+        voxel_size: Voxel size of input in micrometer.
         s3: Use S3 file paths.
         s3_credentials:
         s3_bucket_name:
@@ -585,12 +585,12 @@ def object_measures_single(
     input_key = "s0"
     out_paths = [os.path.realpath(o) for o in out_paths]
 
-    if not isinstance(resolution, float):
-        if len(resolution) == 1:
-            resolution = resolution * 3
-        assert len(resolution) == 3
+    if not isinstance(voxel_size, float):
+        if len(voxel_size) == 1:
+            voxel_size = voxel_size * 3
+        assert len(voxel_size) == 3
     else:
-        resolution = (resolution,) * 3
+        voxel_size = (voxel_size,) * 3
 
     if bg_cache_paths is None:
         bg_cache_paths = [None for _ in range(len(image_paths))]
@@ -652,7 +652,7 @@ def object_measures_single(
                 median_only=median_only,
                 background_mask=background_mask,
                 n_threads=n_threads,
-                resolution=resolution,
+                voxel_size=voxel_size,
                 s3=s3,
                 s3_credentials=s3_credentials,
                 s3_bucket_name=s3_bucket_name,

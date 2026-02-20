@@ -6,7 +6,7 @@
 			"PV",
 			"IHC_LOWRES-v3"
 		],
-		"resolution" : [
+		"voxel_size" : [
 			1.887779,
 			1.887779,
 			3.0

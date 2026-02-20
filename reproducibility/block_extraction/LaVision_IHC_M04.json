@@ -5,7 +5,7 @@
 			"MYO",
 			"IHC_LOWRES-v1"
 		],
-		"resolution" : [
+		"voxel_size" : [
 			1.887779,
 			1.887779,
 			3.0

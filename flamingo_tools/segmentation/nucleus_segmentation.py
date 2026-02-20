@@ -15,15 +15,15 @@ from flamingo_tools.measurements import _get_bounding_box_and_center
 from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly
 
 
-def _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threads, resolution):
+def _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threads, voxel_size):
     opening_iterations = 3
 
     # Compute the table on the fly if it wasn't given.
     if table is None:
-        table = compute_table_on_the_fly(segmentation, resolution=resolution)
+        table = compute_table_on_the_fly(segmentation, voxel_size=voxel_size)
 
     def segment_nucleus(seg_id):
-        bb = _get_bounding_box_and_center(table, seg_id, resolution, image.shape, dilation=None)
+        bb = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation=None)
         image_local, seg_local = image[bb], segmentation[bb]
         mask = seg_local == seg_id
 
@@ -57,7 +57,7 @@ def naive_nucleus_segmentation(
     image_key: Optional[str] = None,
     segmentation_key: Optional[str] = None,
     n_threads: Optional[int] = None,
-    resolution: float = 0.38,
+    voxel_size: float = 0.38,
 ):
     """Segment nuclei per object with an otsu threshold.
 
@@ -72,13 +72,20 @@ def naive_nucleus_segmentation(
         image_key: The key (= internal path) for the image data. Not needed fir tif.
         segmentation_key: The key (= internal path) for the segmentation data. Not needed for tif.
         n_threads: The number of threads to use for computation.
-        resolution: The resolution / voxel size of the data.
+        voxel_size: The voxel size of the data in micrometer.
     """
     # First, we load the pre-computed segmentation table from MoBIE.
     if segmentation_table_path is None:
         table = None
     else:
         table = pd.read_csv(segmentation_table_path, sep="\t")
+
+    if not isinstance(voxel_size, float):
+        if len(voxel_size) == 1:
+            voxel_size = voxel_size * 3
+        assert len(voxel_size) == 3
+    else:
+        voxel_size = (voxel_size,) * 3
 
     # Then, open the volumes.
     image = read_image_data(image_path, image_key)
@@ -92,4 +99,4 @@ def naive_nucleus_segmentation(
         )
 
         # And run the nucleus segmentation.
-        _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threads, resolution)
+        _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threads, voxel_size)

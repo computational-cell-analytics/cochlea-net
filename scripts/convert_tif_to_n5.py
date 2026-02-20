@@ -34,8 +34,8 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(
         description="Script to transform file from tif into n5 format.")
 
-    parser.add_argument('-i', '--input', required=True, type=str, help="Input file")
-    parser.add_argument('-o', "--output", type=str, default=None, help="Output file. Default: <basename>.n5")
+    parser.add_argument("-i", "--input", required=True, type=str, help="Input file")
+    parser.add_argument("-o", "--output", type=str, default=None, help="Output file. Default: <basename>.n5")
 
     args = parser.parse_args()
 

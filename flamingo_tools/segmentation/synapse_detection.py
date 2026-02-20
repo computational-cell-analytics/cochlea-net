@@ -16,7 +16,7 @@ def map_and_filter_detections(
     segmentation: np.ndarray,
     detections: pd.DataFrame,
     max_distance: float,
-    resolution: float = 0.38,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     n_threads: Optional[int] = None,
     verbose: bool = True,
 ) -> pd.DataFrame:
@@ -26,7 +26,7 @@ def map_and_filter_detections(
         segmentation: The IHC segmentation.
         detections: The synapse marker detections.
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
-        resolution: The resolution / voxel size of the data in micrometer.
+        voxel_size: The voxel size of the data in micrometer.
         n_threads: The number of threads for parallelizing the mapping of detections to objects.
         verbose: Whether to print the progress of the mapping procedure.
 
@@ -34,14 +34,19 @@ def map_and_filter_detections(
         The filtered dataframe with the detections mapped to the segmentation.
     """
     # Get the point coordinates in pixel by scaling with resolution, rounding, and conversion to integers
-    points = detections[["z", "y", "x"]].mul(1 / resolution).round().values.astype("int")
+    scaling_factors = {"x": 1 / voxel_size[0], "y": 1 / voxel_size[1], "z": 1 / voxel_size[2]}
+    points = detections[["z", "y", "x"]].mul(scaling_factors).round().values.astype("int")
 
     # Set the block shape (this could also be exposed as a parameter; it should not matter much though).
     block_shape = (128, 128, 128)
 
     # Determine the halo. We set it to 2 pixels + the max-distance in pixels, to ensure all distances
     # that are smaller than the max distance are measured.
-    halo = (2 + int(np.ceil(max_distance / resolution)),) * 3
+    halo = (
+        2 + int(np.ceil(max_distance / voxel_size[0])),
+        2 + int(np.ceil(max_distance / voxel_size[1])),
+        2 + int(np.ceil(max_distance / voxel_size[2])),
+    )
 
     # Map the detections to the objects in the (IHC) segmentation.
     object_ids, object_distances = map_points_to_objects(
@@ -49,7 +54,7 @@ def map_and_filter_detections(
         points=points,
         block_shape=block_shape,
         halo=halo,
-        sampling=resolution,
+        sampling=voxel_size,
         n_threads=n_threads,
         verbose=verbose,
     )
@@ -58,7 +63,7 @@ def map_and_filter_detections(
 
     # Add matched ids and distances to the dataframe.
     detections["matched_ihc"] = object_ids
-    detections["distance_to_ihc"] = object_distances * resolution
+    detections["distance_to_ihc"] = object_distances * voxel_size
 
     # Filter the dataframe by the max distance.
     detections = detections[detections.distance_to_ihc <= max_distance]
@@ -72,7 +77,7 @@ def run_prediction(
     model_path: str,
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
-    resolution: float = 0.38,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ):
     """Run prediction for synapse detection.
 
@@ -83,7 +88,7 @@ def run_prediction(
         model_path: Path to model for synapse detection.
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
-        resolution: The resolution / voxel size of the data in micrometer.
+        voxel_size: The voxel size of the data in micrometer.
     """
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
@@ -113,9 +118,9 @@ def run_prediction(
         detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
 
         # scale coordinates
-        detections["x"] *= resolution
-        detections["y"] *= resolution
-        detections["z"] *= resolution
+        detections["x"] *= voxel_size[0]
+        detections["y"] *= voxel_size[1]
+        detections["z"] *= voxel_size[2]
 
         detections.to_csv(detection_path, index=False, sep="\t")
 
@@ -128,7 +133,7 @@ def marker_detection(
     model_path: str,
     mask_input_key: Optional[str] = "s4",
     max_distance: float = 3,
-    resolution: float = 0.38,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ):
     """Streamlined workflow for marker detection, mapping, and filtering.
 
@@ -140,7 +145,7 @@ def marker_detection(
         model_path: Path to model for synapse detection.
         mask_input_key: Key to undersampled IHC segmentation for masking input for synapse detection.
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
-        resolution: The resolution / voxel size of the data in micrometer.
+        voxel_size: The voxel size of the data in micrometer.
     """
 
     # 1.) Determine mask for inference based on the IHC segmentation.
@@ -198,9 +203,9 @@ def marker_detection(
         detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
 
         # scale coordinates
-        detections["x"] *= resolution
-        detections["y"] *= resolution
-        detections["z"] *= resolution
+        detections["x"] *= voxel_size[0]
+        detections["y"] *= voxel_size[1]
+        detections["z"] *= voxel_size[2]
 
         detections.to_csv(detection_path, index=False, sep="\t")
 
@@ -216,7 +221,7 @@ def marker_detection(
             segmentation=input_,
             detections=detections,
             max_distance=max_distance,
-            resolution=resolution,
+            voxel_size=voxel_size,
         )
 
         # Save the result in MoBIE compatible format.
