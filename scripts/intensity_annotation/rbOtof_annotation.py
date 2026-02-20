@@ -68,6 +68,8 @@ def main():
                         help="The prefix of the files to open with the annotation tool.")
     parser.add_argument("-m", "--meas_table", type=str, default=None,
                         help="Measurement table containing intensity information about segmentation.")
+    parser.add_argument("--intensity_keyword", type=str, default="median",
+                        help="Keyword for intensity information of object measures. Default: median")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -84,6 +86,7 @@ def main():
     otof_annotation(
         args.prefix,
         measurement_table_path=args.meas_table,
+        statistics_keyword=args.intensity_keyword,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

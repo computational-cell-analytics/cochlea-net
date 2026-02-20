@@ -83,6 +83,8 @@ def main():
     parser.add_argument("--otof", action="store_true",
                         help="Whether to run the annotation tool for otof samples with VGlut3, "
                         "Alphatag and IHC segmentation.")
+    parser.add_argument("--intensity_keyword", type=str, default="median",
+                        help="Keyword for intensity information of object measures. Default: median")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -99,6 +101,7 @@ def main():
     gfp_annotation(
         args.prefix,
         measurement_table_path=args.meas_table,
+        statistics_keyword=args.intensity_keyword,
         is_otof=args.otof,
         s3=args.s3,
         s3_credentials=args.s3_credentials,

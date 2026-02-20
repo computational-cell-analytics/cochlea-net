@@ -42,8 +42,8 @@ def main():
         cell_type=args_dict["cell_type"],
         resolution=args_dict["resolution"],
         meas_tables=args_dict["meas_tables"],
-        s3_seg=args_dict["s3_meas"],
-        s3_meas=args_dict["s3_seg"],
+        s3_seg=args_dict["s3_seg"],
+        s3_meas=args_dict["s3_meas"],
         intensity_keyword=args_dict["intensity_keyword"],
     )
 

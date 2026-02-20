@@ -153,8 +153,6 @@ def create_main_table(
     else:
         df = pd.read_csv(input_path, sep="\t")
 
-    df = pd.read_csv(input_path, sep="\t")
-
     df = filter_table(df, column_subset=component_list)
 
     volume_keyword = "volume[µm³]"

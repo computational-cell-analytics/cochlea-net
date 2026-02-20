@@ -79,6 +79,8 @@ def main():
                         help="Measurement table containing intensity information about segmentation.")
     parser.add_argument("--subtype", type=str, default=None,
                         help="Supply SGN subtype, e.g. Calb1, Prph, Lypd1, ...")
+    parser.add_argument("--intensity_keyword", type=str, default="median",
+                        help="Keyword for intensity information of object measures. Default: median")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -95,6 +97,7 @@ def main():
     sgn_subtype_annotation(
         args.prefix,
         measurement_table_path=args.meas_table,
+        statistics_keyword=args.intensity_keyword,
         subtype=args.subtype,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
