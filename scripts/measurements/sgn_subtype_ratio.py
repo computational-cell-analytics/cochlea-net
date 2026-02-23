@@ -52,7 +52,7 @@ def get_subtype_stain_ratio(
             reference_channel = "CR"
 
         if s3:
-            table_seg_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
+            table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
             table_path_s3, fs = get_s3_path(table_seg_path, bucket_name=s3_bucket_name,
                                             service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
             with fs.open(table_path_s3, "r") as f:
@@ -75,7 +75,7 @@ def get_subtype_stain_ratio(
             table_name = f"{channel}_{seg_name.replace('_', '-')}_object-measures.tsv"
 
             if s3:
-                table_meas_path = os.path.join(cochlea, "tables", seg_name, table_name)
+                table_meas_path = f"{cochlea}/tables/{seg_name}/{table_name}"
                 table_path_s3, fs = get_s3_path(table_meas_path, bucket_name=s3_bucket_name,
                                                 service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
                 with fs.open(table_path_s3, "r") as f:

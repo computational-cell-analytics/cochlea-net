@@ -96,7 +96,7 @@ def eval_subtype_annotation(
         # get the segmentation data and the segmentation table
         if data_seg_path is None:
             if s3:
-                data_seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+                data_seg_path = f"{cochlea}/images/ome-zarr/{seg_name}.ome.zarr"
             else:
                 data_seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
         if s3:
@@ -106,7 +106,7 @@ def eval_subtype_annotation(
 
         if table_seg_path is None:
             if s3:
-                table_seg_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
+                table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
             else:
                 table_seg_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, "default.tsv")
         if s3:
@@ -135,7 +135,7 @@ def eval_subtype_annotation(
                     raise ValueError("Choose either 'ratio' or 'median' as intensity mode.")
 
                 if s3:
-                    table_meas_path = os.path.join(cochlea, "tables", seg_name, table_meas_name)
+                    table_meas_path = f"{cochlea}/tables/{seg_name}/{table_meas_name}"
                 else:
                     table_meas_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, table_meas_name)
 

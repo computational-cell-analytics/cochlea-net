@@ -145,7 +145,7 @@ def extract_block_json_wrapper(
 
         for image_channel in image_channels:
             if s3:
-                input_path = os.path.join(cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+                input_path = f"{cochlea}/images/ome-zarr/{image_channel}.ome.zarr"
             else:
                 input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
 
@@ -195,7 +195,9 @@ def extract_central_block_from_json(
         dic = json.loads(f.read())
 
     if s3:
-        table_path = os.path.join(dic["dataset_name"], "tables", dic["segmentation_channel"], "default.tsv")
+        s3_name = dic["dataset_name"]
+        s3_seg_channel = dic["segmentation_channel"]
+        table_path = f"{s3_name}/tables/{s3_seg_channel}/default.tsv"
     else:
         table_path = os.path.join(mobie_dir, dic["dataset_name"], "tables", dic["segmentation_channel"], "default.tsv")
 

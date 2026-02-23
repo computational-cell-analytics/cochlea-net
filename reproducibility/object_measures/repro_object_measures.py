@@ -93,10 +93,10 @@ def wrapper_object_measures(
                     bg_cache_paths_tmp = bg_cache_paths.copy()
 
             if s3:
-                image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr"
                                for ch in image_channels]
-                seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
-                seg_table = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
+                seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
+                table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
             else:
                 image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
                                for ch in image_channels]

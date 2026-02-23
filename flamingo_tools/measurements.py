@@ -767,12 +767,12 @@ def object_measures_json_wrapper(
         # create paths based on JSON parameters
         if s3:
             if image_paths is None:
-                image_paths = [os.path.join(cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr"
                                for ch in image_channels]
             if seg_path is None:
-                seg_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
+                seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
             if table_path is None:
-                table_path = os.path.join(cochlea, "tables", f"{seg_channel}", "default.tsv")
+                table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
         else:
             if image_paths is None:
                 image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
