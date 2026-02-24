@@ -8,7 +8,7 @@ from mobie import add_segmentation
 from mobie.metadata import add_remote_project_metadata
 
 MODEL_PATH = "/mnt/vast-nhr/home/pape41/u12086/Work/my_projects/flamingo-tools/scripts/training/checkpoints/cochlea_distance_unet_low-res-sgn-v2"  # noqa
-RESOLUTION = (3.0, 1.887779, 1.887779)
+VOXEL_SIZE = (3.0, 1.887779, 1.887779)
 SEG_NAME = "SGN_LOWRES-v2"
 
 
@@ -32,7 +32,7 @@ def add_to_mobie(output_folder, mobie_dir, dataset_name):
         segmentation_path, segmentation_key,
         mobie_dir, dataset_name=dataset_name,
         segmentation_name=SEG_NAME,
-        resolution=RESOLUTION,
+        resolution=VOXEL_SIZE,
         scale_factors=scale_factors, chunks=chunks,
         unit="micrometer",
     )

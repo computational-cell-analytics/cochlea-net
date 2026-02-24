@@ -9,7 +9,7 @@ from flamingo_tools.measurements import compute_object_measures
 
 
 def compute_volume(
-    cochlea, output_path, voxel_spacing, seg_name="SGN_v2", component_list=None,
+    cochlea, output_path, voxel_size, seg_name="SGN_v2", component_list=None,
 ):
     img_path = f"{cochlea}/images/ome-zarr/PV.ome.zarr"
     seg_path = f"{cochlea}/images/ome-zarr/{seg_name}.ome.zarr"
@@ -27,7 +27,7 @@ def compute_volume(
         segmentation_path=seg_path,
         segmentation_table_path=segmentation_table_path,
         output_table_path=output_path,
-        resolution=voxel_spacing,
+        resolution=voxel_size,
         feature_set=feature_set,
         component_list=component_list,
         s3_flag=True,
@@ -40,24 +40,24 @@ def compute_sgn_volumes_flamingo():
     output_folder = "./data/volumes_flamingo"
     os.makedirs(output_folder, exist_ok=True)
     cochleae = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
-    voxel_spacing = (0.38, 0.38, 0.38)
+    voxel_size = (0.38, 0.38, 0.38)
     for cochlea in cochleae:
         output_path = os.path.join(output_folder, f"{cochlea}.tsv")
         if os.path.exists(output_path):
             continue
-        compute_volume(cochlea, output_path, voxel_spacing)
+        compute_volume(cochlea, output_path, voxel_size)
 
 
 def compute_ihc_volumes_flamingo():
     output_folder = "./data/ihc_volumes_flamingo"
     os.makedirs(output_folder, exist_ok=True)
     cochleae = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
-    voxel_spacing = (0.38, 0.38, 0.38)
+    voxel_size = (0.38, 0.38, 0.38)
     for cochlea in cochleae:
         output_path = os.path.join(output_folder, f"{cochlea}.tsv")
         if os.path.exists(output_path):
             continue
-        compute_volume(cochlea, output_path, voxel_spacing, seg_name="IHC_v4c")
+        compute_volume(cochlea, output_path, voxel_size, seg_name="IHC_v4c")
 
 
 def compute_sgn_volumes_lavision():
@@ -67,13 +67,13 @@ def compute_sgn_volumes_lavision():
     # Note: we used a wrong voxel spacing in MoBIE (1.9 micron in-plane instead of 0.76)
     # We solved this here in a hacky fashion by hard-coding the resolution for the volume
     # calculation temporariliy in the measurement function.
-    voxel_spacing = (3.0, 1.887779, 1.887779)
-    # voxel_spacing = (3.0, 0.76, 0.76)
+    voxel_size = (3.0, 1.887779, 1.887779)
+    # voxel_size = (3.0, 0.76, 0.76)
     for cochlea in cochleae:
         output_path = os.path.join(output_folder, f"{cochlea}.tsv")
         if os.path.exists(output_path):
             continue
-        compute_volume(cochlea, output_path, voxel_spacing, seg_name="SGN_LOWRES-v5c")
+        compute_volume(cochlea, output_path, voxel_size, seg_name="SGN_LOWRES-v5c")
 
 
 def compute_ihc_volumes_lavision():
@@ -83,15 +83,15 @@ def compute_ihc_volumes_lavision():
     # Note: we used a wrong voxel spacing in MoBIE (1.9 micron in-plane instead of 0.76)
     # We solved this here in a hacky fashion by hard-coding the resolution for the volume
     # calculation temporariliy in the measurement function.
-    voxel_spacing = (3.0, 1.887779, 1.887779)
-    # voxel_spacing = (3.0, 0.76, 0.76)
+    voxel_size = (3.0, 1.887779, 1.887779)
+    # voxel_size = (3.0, 0.76, 0.76)
     component_lists = [[1, 2], [1]]
     for cochlea, component_list in zip(cochleae, component_lists):
         output_path = os.path.join(output_folder, f"{cochlea}.tsv")
         if os.path.exists(output_path):
             continue
         compute_volume(
-            cochlea, output_path, voxel_spacing, seg_name="IHC_LOWRES-v3", component_list=component_list,
+            cochlea, output_path, voxel_size, seg_name="IHC_LOWRES-v3", component_list=component_list,
         )
 
 
