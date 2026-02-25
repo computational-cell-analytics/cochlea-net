@@ -1,8 +1,8 @@
 import os
 from flamingo_tools.extract_block_util import extract_block_single
 
-RESOLUTION_LA_VISION = (1.887779, 1.887779, 3.000000)
-RESOLUTION_FLAMINGO = (0.38, 0.38, 0.38)
+VOXEL_SIZE_LA_VISION = (1.887779, 1.887779, 3.000000)
+VOXEL_SIZE_FLAMINGO = (0.38, 0.38, 0.38)
 
 POSITIONS = [
     [2451.991261845771, 2497.0312568466725, 504.00000000000017],
@@ -28,8 +28,12 @@ def download_lavision_crops():
     for pos in POSITIONS:
         halo = [128, 128, 32]
         extract_block_single(
-            input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
-            tif=True, s3=True,
+            input_path, pos, output_folder,
+            input_key=input_key,
+            output_key=output_key,
+            voxel_size=VOXEL_SIZE_LA_VISION,
+            halo=halo,
+            s3=True,
         )
 
     output_folder = "./LA_VISION_M04_empty"
@@ -37,8 +41,12 @@ def download_lavision_crops():
     for pos in EMPTY_POSITIONS:
         halo = [128, 128, 32]
         extract_block_single(
-            input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
-            tif=True, s3=True,
+            input_path, pos, output_folder,
+            input_key=input_key,
+            output_key=output_key,
+            voxel_size=VOXEL_SIZE_LA_VISION,
+            halo=halo,
+            s3=True,
         )
 
 
@@ -73,7 +81,7 @@ def downscale_segmentation():
 
     input_key = "s2"
     halo = [128, 128, 128]
-    resolution = [1.52,] * 3
+    voxel_size = [1.52,] * 3
     output_key = None
 
     image_out_folder = "./downscaled_sgn_labels/images"
@@ -85,12 +93,22 @@ def downscale_segmentation():
         seg_path = f"{cochlea}/images/ome-zarr/SGN_v2.ome.zarr"
         for position in positions:
             extract_block_single(
-                input_path, position, image_out_folder, input_key, output_key, resolution, halo,
-                tif=True, s3=True, scale_factor=(0.5, 1, 1),
+                input_path, position, image_out_folder,
+                input_key=input_key,
+                output_key=output_key,
+                voxel_size=voxel_size,
+                halo=halo,
+                s3=True,
+                scale_factor=(0.5, 1, 1),
             )
             extract_block_single(
-                seg_path, position, label_out_folder, input_key, output_key, resolution, halo,
-                tif=True, s3=True, scale_factor=(0.5, 1, 1),
+                seg_path, position, label_out_folder,
+                input_key=input_key,
+                output_key=output_key,
+                voxel_size=voxel_size,
+                halo=halo,
+                s3=True,
+                scale_factor=(0.5, 1, 1),
             )
 
 
@@ -115,8 +133,12 @@ def download_lavision_crops2():
     for pos in new_positions_m04:
         halo = [128, 128, 32]
         extract_block_single(
-            input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
-            tif=True, s3=True,
+            input_path, pos, output_folder,
+            input_key=input_key,
+            output_key=output_key,
+            voxel_size=VOXEL_SIZE_LA_VISION,
+            halo=halo,
+            s3=True,
         )
 
     # Position in Marmoset:
@@ -129,8 +151,12 @@ def download_lavision_crops2():
     for pos in new_positions_mar05:
         halo = [128, 128, 32]
         extract_block_single(
-            input_path, pos, output_folder, input_key, output_key, RESOLUTION_LA_VISION, halo,
-            tif=True, s3=True,
+            input_path, pos, output_folder,
+            input_key=input_key,
+            output_key=output_key,
+            voxel_size=VOXEL_SIZE_LA_VISION,
+            halo=halo,
+            s3=True,
         )
 
 

@@ -136,7 +136,7 @@ def supp_fig_02(
             "distance_unet": {
                 "label": "CochleaNet",
                 "precision": 0.693,
-                "recall": 	0.567,
+                "recall": 0.567,
                 "f1-score": 0.618,
                 "marker": "s",
                 "runtime": 69.01,
@@ -170,13 +170,13 @@ def supp_fig_02(
 
             plt.scatter([x_pos - offset], precision, label="Precision manual",
                         color=COLOR_P, marker=marker, s=marker_size)
-            plt.scatter([x_pos],         recall, label="Recall manual",
+            plt.scatter([x_pos], recall, label="Recall manual",
                         color=COLOR_R, marker=marker, s=marker_size)
             plt.scatter([x_pos + offset], f1score, label="F1-score manual",
                         color=COLOR_F, marker=marker, s=marker_size)
 
         # Labels and formatting
-        x_pos = np.arange(1, len(labels)+1)
+        x_pos = np.arange(1, len(labels) + 1)
         plt.xticks(x_pos, labels, fontsize=main_tick_size, rotation=tick_rotation)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
@@ -201,7 +201,7 @@ def supp_fig_02(
             x_pos = x_pos + 1
 
         # Labels and formatting
-        x_pos = np.arange(1, len(labels)+1)
+        x_pos = np.arange(1, len(labels) + 1)
         plt.xticks(x_pos, labels, fontsize=16, rotation=tick_rotation)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Processing time [s]", fontsize=main_label_size)

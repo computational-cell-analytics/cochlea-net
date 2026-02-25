@@ -24,23 +24,23 @@ from skimage.transform import rescale
 from .file_utils import read_tif, read_raw
 
 
-def _read_resolution_and_unit_flamingo(mdata_path):
-    resolution = None
+def _read_voxel_size_and_unit_flamingo(mdata_path):
+    voxel_size = None
     with open(mdata_path, "r") as f:
         for line in f.readlines():
             line = line.strip().rstrip("\n")
             if line.startswith("Plane spacing"):
-                resolution = float(line.split(" ")[-1])
+                voxel_size = float(line.split(" ")[-1])
                 break
-    if resolution is None:
+    if voxel_size is None:
         raise RuntimeError
 
     unit = "micrometer"
 
-    # NOTE: The resolution for the flamingo system is isotropic.
+    # NOTE: The voxel size for the flamingo system is isotropic.
     # So we can just return the plane spacing value to get it.
-    resolution = [resolution] * 3
-    return resolution, unit
+    voxel_size = [voxel_size] * 3
+    return voxel_size, unit
 
 
 def _read_start_position_flamingo(path):
@@ -75,7 +75,7 @@ def read_metadata_flamingo(
 ) -> Tuple[List[float], str, List[float]]:
     """Read acquisition metadata from a flamingo metadata file.
 
-    This will read the resolution, the physical unit, and optionally the
+    This will read the voxel size, the physical unit, and optionally the
     voxel grid transformation from the metadata file. The voxel grid transformation
     places tile at their correct tile position.
 
@@ -85,13 +85,13 @@ def read_metadata_flamingo(
         parse_affine: Whether to read the affine transformation from the metadata.
 
     Returns:
-        The resolution / voxel size of the data.
+        The voxel size of the data.
         The physical unit of the voxel size.
         The affine voxel grid transformation of the data.
     """
-    resolution, unit = None, None
+    voxel_size, unit = None, None
 
-    resolution, unit = _read_resolution_and_unit_flamingo(metadata_path)
+    voxel_size, unit = _read_voxel_size_and_unit_flamingo(metadata_path)
     start_position = _read_start_position_flamingo(metadata_path)
 
     def _pos_to_trafo(pos):
@@ -105,14 +105,14 @@ def read_metadata_flamingo(
 
         # The calibration: scale factors on the diagonals.
         calib_trafo = [
-            scale * resolution[0], 0.0, 0.0, 0.0,
-            0.0, scale * resolution[1], 0.0, 0.0,
-            0.0, 0.0, scale * resolution[2], 0.0,
+            scale * voxel_size[0], 0.0, 0.0, 0.0,
+            0.0, scale * voxel_size[1], 0.0, 0.0,
+            0.0, 0.0, scale * voxel_size[2], 0.0,
         ]
         # The translation to the grid position.
         # Note that the translations are given in mm,
         # so they need to multiplied by a factor of 1000
-        # to match the resolution given in microns.
+        # to match the voxel_size given in microns.
         grid_trafo = [
             1.0, 0.0, 0.0, scale * pos[0] * 1000,
             0.0, 1.0, 0.0, scale * pos[1] * 1000,
@@ -132,8 +132,8 @@ def read_metadata_flamingo(
             0.0, 1.0, 0.0, 0.0,
             0.0, 0.0, 1.0, 0.0,
         ]
-    # We have to reverse the resolution because pybdv expects ZYX.
-    return resolution[::-1], unit, transformation
+    # We have to reverse the voxel_size because pybdv expects ZYX.
+    return voxel_size[::-1], unit, transformation
 
 
 # TODO derive the scale factors from the shape rather than hard-coding it to 5 levels
@@ -142,7 +142,7 @@ def _derive_scale_factors(shape):
     return scale_factors
 
 
-def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes, unit, resolution):
+def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes, unit, voxel_size):
     n_threads = mp.cpu_count()
     chunks = (128, 128, 128)
 
@@ -169,7 +169,7 @@ def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes,
         g.attrs.update(attributes)
 
     # Write the ome zarr metadata.
-    metadata_dict = {"unit": unit, "resolution": resolution}
+    metadata_dict = {"unit": unit, "voxel_size": voxel_size}
     write_format_metadata(
         "ome.zarr", out_path, metadata_dict, scale_factors=scale_factors, prefix=base_key
     )
@@ -267,7 +267,7 @@ def convert_lightsheet_to_bdv(
     metadata_root: Optional[str] = None,
     metadata_type: str = "flamingo",
     center_tiles: bool = False,
-    resolution: Optional[List[float]] = None,
+    voxel_size: Optional[List[float]] = None,
     unit: Optional[str] = None,
     scale_factors: Optional[List[List[int]]] = None,
     n_threads: Optional[int] = None,
@@ -292,8 +292,8 @@ def convert_lightsheet_to_bdv(
         metadata_root: Different root folder for the metadata. By default 'root' is used here as well.
         metadata_type: The type of the metadata (for now only 'flamingo' is supported).
         center_tiles: Whether to move the tiles to the origin.
-        resolution: The physical size of one pixel. This is only used if the metadata is not read from file.
-        unit: The unit of the given resolution. This is only used if the metadata is not read from file.
+        voxel_size: The physical size of one pixel. This is only used if the metadata is not read from file.
+        unit: The unit of the given voxel size. This is only used if the metadata is not read from file.
         scale_factors: The scale factors for downsampling the image data.
             By default sensible factors will be determined based on the shape of the data.
             If you want to set the scale factors manually then you have to pass them as a list with the
@@ -362,16 +362,16 @@ def convert_lightsheet_to_bdv(
         if metadata_file is None:  # No metadata given.
             # We don't use any tile transformation.
             tile_transformation = None
-            # Set resolution and unit to their default values if they were not passed.
-            if resolution is None:
-                resolution = [1.0, 1.0, 1.0]
+            # Set voxel_size and unit to their default values if they were not passed.
+            if voxel_size is None:
+                voxel_size = [1.0, 1.0, 1.0]
             if unit is None:
                 unit = "pixel"
 
         else:  # We have metadata and read it.
             # NOTE: we don't add the calibration transformation here, as this
             # leads to issues with the BigStitcher export.
-            resolution, unit, tile_transformation = read_metadata_flamingo(
+            voxel_size, unit, tile_transformation = read_metadata_flamingo(
                 metadata_file, offset, parse_affine=False
             )
 
@@ -381,13 +381,13 @@ def convert_lightsheet_to_bdv(
             scale_factors = _derive_scale_factors(data.shape)
 
         if convert_to_ome_zarr:
-            _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes, unit, resolution)
+            _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes, unit, voxel_size)
         else:
             pybdv.make_bdv(
                 data, out_path,
                 downscale_factors=scale_factors, downscale_mode="mean",
                 n_threads=n_threads,
-                resolution=resolution, unit=unit,
+                resolution=voxel_size, unit=unit,
                 attributes=attributes,
                 affine=tile_transformation,
                 timepoint=timepoint,

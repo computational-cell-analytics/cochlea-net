@@ -62,7 +62,7 @@ def export_to_mobie(xml_path, segmentation_folder, output_folder, scale, mobie_d
         segmentation_key=seg_key,
         resolution=seg_resolution,
         unit=unit,
-        scale_factors=4*[[2, 2, 2]],
+        scale_factors=4 * [[2, 2, 2]],
         chunks=chunks,
     )
 
@@ -76,7 +76,7 @@ def export_to_mobie(xml_path, segmentation_folder, output_folder, scale, mobie_d
         segmentation_key=seg_key,
         resolution=seg_resolution,
         unit=unit,
-        scale_factors=4*[[2, 2, 2]],
+        scale_factors=4 * [[2, 2, 2]],
         chunks=chunks,
     )
 

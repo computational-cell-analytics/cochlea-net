@@ -55,7 +55,7 @@ def filter_subtypes(cochlea, seg_name, subtype, stains=None):
     """Filter segmentation with marker labels.
     Positive segmentation instances are set to 1, negative to 2.
     """
-    internal_path = os.path.join(cochlea, "tables",  seg_name, "default.tsv")
+    internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
     tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
     with fs.open(tsv_path, "r") as f:
         table_seg = pd.read_csv(f, sep="\t")

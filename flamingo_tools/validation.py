@@ -41,7 +41,7 @@ def _parse_annotation_path(annotation_path):
 
 
 def _get_table(fs, cochlea, seg_name):
-    internal_path = os.path.join(BUCKET_NAME, cochlea, "tables",  seg_name, "default.tsv")
+    internal_path = os.path.join(BUCKET_NAME, cochlea, "tables", seg_name, "default.tsv")
     with fs.open(internal_path, "r") as f:
         table = pd.read_csv(f, sep="\t")
     return table
@@ -95,7 +95,7 @@ def fetch_data_for_evaluation(
         _, slice_id = _parse_annotation_path(annotation_path)
 
     # Open the S3 connection, get the path to the SGN segmentation in S3.
-    internal_path = os.path.join(cochlea, "images",  "ome-zarr", f"{seg_name}.ome.zarr")
+    internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
 
     # Compute the roi for the given z-extent.
@@ -138,7 +138,7 @@ def fetch_data_for_evaluation(
         imageio.imwrite(cache_path, segmentation, compression="zlib")
 
     if extra_data is not None:
-        internal_path = os.path.join(cochlea, "images",  "ome-zarr", f"{extra_data}.ome.zarr")
+        internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{extra_data}.ome.zarr")
         s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
         input_key = "s0"
         with zarr.open(s3_store, mode="r") as f:
@@ -321,7 +321,7 @@ def create_consensus_annotations(
     edges = []
     for i, annA in enumerate(trees):
         idxA, treeA = idx_by_ann[annA], trees[annA]
-        for annB in list(trees)[i+1:]:
+        for annB in list(trees)[i + 1:]:
             idxB, treeB = idx_by_ann[annB], trees[annB]
 
             # A -> B

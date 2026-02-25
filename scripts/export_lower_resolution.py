@@ -16,7 +16,7 @@ from flamingo_tools.postprocessing.label_components import filter_cochlea_volume
 
 def filter_component(fs, segmentation, cochlea, seg_name, components):
     # First, we download the MoBIE table for this segmentation.
-    internal_path = os.path.join(BUCKET_NAME, cochlea, "tables",  seg_name, "default.tsv")
+    internal_path = os.path.join(BUCKET_NAME, cochlea, "tables", seg_name, "default.tsv")
     with fs.open(internal_path, "r") as f:
         table = pd.read_csv(f, sep="\t")
 
@@ -70,13 +70,13 @@ def filter_cochlea(
         raise ValueError("Channels supplied for filtering cochlea volume do not contain an IHC or SGN segmentation.")
 
     if sgn_channel is not None:
-        internal_path = os.path.join(cochlea, "tables",  sgn_channel, "default.tsv")
+        internal_path = os.path.join(cochlea, "tables", sgn_channel, "default.tsv")
         tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
         with fs.open(tsv_path, "r") as f:
             table_sgn = pd.read_csv(f, sep="\t")
 
     if ihc_channel is not None:
-        internal_path = os.path.join(cochlea, "tables",  ihc_channel, "default.tsv")
+        internal_path = os.path.join(cochlea, "tables", ihc_channel, "default.tsv")
         tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
         with fs.open(tsv_path, "r") as f:
             table_ihc = pd.read_csv(f, sep="\t")
@@ -152,7 +152,7 @@ def export_lower_resolution(args):
                 continue
 
             print("Exporting channel", channel)
-            internal_path = os.path.join(args.cochlea, "images",  "ome-zarr", f"{channel}.ome.zarr")
+            internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             with zarr.open(s3_store, mode="r") as f:
                 data = f[input_key][:].astype("float32")

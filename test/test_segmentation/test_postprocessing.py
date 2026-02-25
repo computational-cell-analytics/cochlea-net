@@ -55,8 +55,8 @@ class TestPostprocessing(unittest.TestCase):
             _, seg_path, _ = get_test_volume_and_segmentation(tmp_dir)
             segmentation = imageio.imread(seg_path)
 
-        resolution = 0.38
-        table = compute_table_on_the_fly(segmentation, resolution=resolution)
+        voxel_size = 0.38
+        table = compute_table_on_the_fly(segmentation, voxel_size=voxel_size)
 
         properties = ("label", "bbox", "centroid")
         expected_table = regionprops_table(segmentation, properties=properties)
@@ -70,7 +70,7 @@ class TestPostprocessing(unittest.TestCase):
         ]:
             values = table[col].values.copy()
             if col != "label_id":
-                values /= resolution
+                values /= voxel_size
             self.assertTrue(np.allclose(values, expected_table[col_exp].values))
 
 

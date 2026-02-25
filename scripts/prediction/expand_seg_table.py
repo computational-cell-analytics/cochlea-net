@@ -47,19 +47,19 @@ def main(
                 raise ValueError(f"Number of neighbors {n_neighbor} exceeds elements in dataframe: {len(tsv_table)}.")
 
             distance_avg = postprocessing.nearest_neighbor_distance(table=tsv_table, n_neighbors=n_neighbor)
-            tsv_table['distance_nn'+str(n_neighbor)] = list(distance_avg)
+            tsv_table['distance_nn' + str(n_neighbor)] = list(distance_avg)
 
     if local_ripley_radius is not None:
         for lr_radius in local_ripley_radius:
             local_k = postprocessing.local_ripleys_k(table=tsv_table, radius=lr_radius)
-            tsv_table['local_ripley_radius'+str(lr_radius)] = list(local_k)
+            tsv_table['local_ripley_radius' + str(lr_radius)] = list(local_k)
 
     if r_neighbors is not None:
         for r_neighbor in r_neighbors:
             neighbor_counts = postprocessing.neighbors_in_radius(table=tsv_table, radius=r_neighbor)
             neighbor_counts = list(neighbor_counts)
             neighbor_counts = [n[0] for n in neighbor_counts]
-            tsv_table['neighbors_in_radius'+str(r_neighbor)] = neighbor_counts
+            tsv_table['neighbors_in_radius' + str(r_neighbor)] = neighbor_counts
 
     tsv_table.to_csv(out_path, sep="\t", index=False)
 

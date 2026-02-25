@@ -71,10 +71,10 @@ def eval_marker_annotation(
 
     if marker_name == "rbOtof":
         halo_size = 150
-        resolution = [1.887779, 1.887779, 3.0]
+        voxel_size = [1.887779, 1.887779, 3.0]
     else:
         halo_size = 20
-        resolution = (0.38, 0.38, 0.38)
+        voxel_size = (0.38, 0.38, 0.38)
 
     if annotation_dirs is None:
         if "MARKER_DIR" in globals():
@@ -154,7 +154,7 @@ def eval_marker_annotation(
 
         # Find the thresholds from the annotated blocks and save it if specified.
         intensity_dic, _ = eval_utils.find_thresholds(annotations, search_str, data_seg, table_meas,
-                                                      resolution=resolution)
+                                                      voxel_size=voxel_size)
         if threshold_save_dir is not None:
             os.makedirs(threshold_save_dir, exist_ok=True)
             threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")

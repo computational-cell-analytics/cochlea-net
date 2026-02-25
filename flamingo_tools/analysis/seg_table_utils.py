@@ -20,13 +20,13 @@ def filter_table(
 def add_volume_column(
     df: pd.DataFrame,
     keyword: str = "volume[µm³]",
-    resolution: Tuple[float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> pd.DataFrame:
     """Add column featuring volume in µm³ based on number of pixels and voxel size.
     """
     if keyword not in df.columns:
         n_pixels = df["n_pixels"].values
-        volume = n_pixels * resolution[0] * resolution[1] * resolution[2]
+        volume = n_pixels * voxel_size[0] * voxel_size[1] * voxel_size[2]
         df[keyword] = volume
     return df
 
@@ -123,7 +123,7 @@ def create_main_table(
     output_path: str,
     component_list: List[int] = [1],
     cell_type: str = "sgn",
-    resolution: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     meas_tables: Optional[List[str]] = None,
     s3_seg: bool = False,
     s3_meas: bool = False,
@@ -137,7 +137,7 @@ def create_main_table(
         output_path: Output path for main table.
         component_list: List of component labels of segmentation components.
         cell_type: Cell type. Either "ihc" or "sgn".
-        resolution: Voxel size of image data.
+        voxel_size: Voxel size of data in micrometer.
         meas_tables: List of tables featuring object measures for stain/seg combinations.
         s3_seg: File path of segmentation table on S3 bucket.
         s3_meas: File path of measurement table on S3 bucket.
@@ -157,7 +157,7 @@ def create_main_table(
 
     volume_keyword = "volume[µm³]"
     if volume_keyword not in list(df.columns):
-        df = add_volume_column(df, keyword=volume_keyword, resolution=resolution)
+        df = add_volume_column(df, keyword=volume_keyword, voxel_size=voxel_size)
 
     if "offset" in list(df.columns) and cell_type == "sgn":
         df = dist_from_center(df)

@@ -16,8 +16,8 @@ def main():
                         help="Optional dictionary for component_list and cell_type information.")
     parser.add_argument("-c", "--component_list", type=int, nargs="+", default=[1],
                         help="List of connected components.")
-    parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Resolution of input in micrometer.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("--intensity_keyword", type=str, default="median",
@@ -40,7 +40,7 @@ def main():
         output_path=args_dict["output"],
         component_list=args_dict["component_list"],
         cell_type=args_dict["cell_type"],
-        resolution=args_dict["resolution"],
+        voxel_size=args_dict["voxel_size"],
         meas_tables=args_dict["meas_tables"],
         s3_seg=args_dict["s3_seg"],
         s3_meas=args_dict["s3_meas"],

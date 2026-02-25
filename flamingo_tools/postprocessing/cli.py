@@ -55,8 +55,8 @@ def extract_block():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument('-o', "--output", type=str, required=True, help="Output directory or file.")
-    parser.add_argument('-i', '--input', type=str, default=None, help="Input path to data in n5/ome-zarr/TIF format.")
+    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory or file.")
+    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to data in n5/ome-zarr/TIF format.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
     parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
                         help="Directory containing MoBIE project. Only used for '--json_info'.")
@@ -72,12 +72,12 @@ def extract_block():
                         help="3D coordinate as center of extracted block [µm].")
     parser.add_argument("--json_info", type=str, default=None,
                         help="JSON file with crop information.")
-    parser.add_argument('-k', "--input_key", type=str, default=None,
+    parser.add_argument("-k", "--input_key", type=str, default=None,
                         help="Input key for data in input file with n5/OME-ZARR format.")
     parser.add_argument("--output_key", type=str, default=None,
                         help="Output key for data in output file with n5 format. Default: TIF file.")
-    parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Resolution of input in micrometer.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--roi_halo", type=int, nargs="+", default=[128, 128, 64],
                         help="ROI halo around center coordinate [pixel]. Default: 128 128 64")
 
@@ -104,7 +104,7 @@ def extract_central_blocks():
     parser = argparse.ArgumentParser(
         description="Script to extract multiple blocks for intensity annotation based on a JSON file.")
 
-    parser.add_argument('-i', '--input', type=str, default=None, help="Input JSON dictionary.")
+    parser.add_argument("-i", "--input", type=str, default=None, help="Input JSON dictionary.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output directory for extracted blocks.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
@@ -243,8 +243,8 @@ def object_measures():
     parser.add_argument("--json_info", type=str, default=None,
                         help="JSON file with parameters for object_measures.")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
-    parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Resolution of input in micrometer.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--bg_mask", action="store_true", help="Use background mask for calculating object measures.")
     parser.add_argument("--bg_cache_paths", type=str, nargs="+", default=[],
                         help="Cache path(s) for background mask in zarr format. Either directory or specific file(s).")
@@ -270,7 +270,7 @@ def object_measures():
         mobie_dir=args.mobie_dir,
         json_file=args.json_info,
         component_list=args.components,
-        resolution=args.resolution,
+        voxel_size=args.voxel_size,
         use_bg_mask=args.bg_mask,
         bg_cache_paths=args.bg_cache_paths,
         s3=args.s3,

@@ -16,7 +16,7 @@ def segment_nuclei():
     segmentation = imageio.imread(SEG_PATH)
 
     nuclei = np.zeros_like(segmentation, dtype=segmentation.dtype)
-    _naive_nucleus_segmentation_impl(image, segmentation, table=None, output=nuclei, n_threads=8, resolution=0.38)
+    _naive_nucleus_segmentation_impl(image, segmentation, table=None, output=nuclei, n_threads=8, voxel_size=0.38)
 
     imageio.imwrite(NUC_PATH, nuclei, compression="zlib")
 

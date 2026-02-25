@@ -83,10 +83,10 @@ def download_seg(ds, seg_channel, output_folder, apply_filter=True, scale=1):
     if os.path.exists(output_path):
         return
 
-    internal_path = os.path.join(ds, "images",  "ome-zarr", f"{seg_channel}.ome.zarr")
+    internal_path = os.path.join(ds, "images", "ome-zarr", f"{seg_channel}.ome.zarr")
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
 
-    table_path = os.path.join(BUCKET_NAME, ds, "tables",  seg_channel, "default.tsv")
+    table_path = os.path.join(BUCKET_NAME, ds, "tables", seg_channel, "default.tsv")
     with fs.open(table_path, "r") as f:
         table = pd.read_csv(f, sep="\t")
 
@@ -130,7 +130,7 @@ def download_dataset(
         if os.path.exists(output_path):
             continue
 
-        internal_path = os.path.join(ds, "images",  "ome-zarr", f"{channel}.ome.zarr")
+        internal_path = os.path.join(ds, "images", "ome-zarr", f"{channel}.ome.zarr")
         s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
         with zarr.open(s3_store, mode="r") as f:
             data = f[input_key][:]

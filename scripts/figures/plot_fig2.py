@@ -102,11 +102,11 @@ def fig_02c(
     main_tick_size = 16
 
     plt.scatter(x_manual - offset, precision_manual, label="Precision manual", color=COLOR_P, marker="o", s=80)
-    plt.scatter(x_manual,         recall_manual, label="Recall manual", color=COLOR_R, marker="o", s=80)
+    plt.scatter(x_manual, recall_manual, label="Recall manual", color=COLOR_R, marker="o", s=80)
     plt.scatter(x_manual + offset, f1score_manual, label="F1-score manual", color=COLOR_F, marker="o", s=80)
 
     plt.scatter(x_automatic - offset, precision_automatic, label="Precision automatic", color=COLOR_P, marker="s", s=80)
-    plt.scatter(x_automatic,         recall_automatic, label="Recall automatic", color=COLOR_R, marker="s", s=80)
+    plt.scatter(x_automatic, recall_automatic, label="Recall automatic", color=COLOR_R, marker="s", s=80)
     plt.scatter(x_automatic + offset, f1score_automatic, label="F1-score automatic", color=COLOR_F, marker="s", s=80)
 
     # Labels and formatting

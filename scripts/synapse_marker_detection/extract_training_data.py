@@ -16,7 +16,7 @@ def get_voxel_size(imaris_file):
         ext = [[float(b"".join(info.attrs[f"ExtMin{i}"]).decode()),
                 float(b"".join(info.attrs[f"ExtMax{i}"]).decode())] for i in range(3)]
         size = [int(b"".join(info.attrs[dim]).decode()) for dim in ["X", "Y", "Z"]]
-        vsize = np.array([(max_-min_)/s for (min_, max_), s in zip(ext, size)])
+        vsize = np.array([(max_ - min_) / s for (min_, max_), s in zip(ext, size)])
     return vsize
 
 
@@ -30,8 +30,8 @@ def get_transformation(imaris_file):
 
     # build 4×4 affine: world → index
     T = np.eye(4)
-    T[:3, :3] = np.diag(1/spacing)            # scale
-    T[:3, 3] = -ext_min/spacing              # translate
+    T[:3, :3] = np.diag(1 / spacing)            # scale
+    T[:3, 3] = -ext_min / spacing              # translate
 
     return T
 

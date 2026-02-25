@@ -23,7 +23,7 @@ def extract_block_single(
     channel_name: Optional[str] = None,
     input_key: Optional[str] = None,
     output_key: Optional[str] = None,
-    resolution: Union[float, Tuple[float, float, float]] = 0.38,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
     roi_halo: List[int] = [128, 128, 64],
     s3: Optional[bool] = False,
     s3_credentials: Optional[str] = None,
@@ -43,6 +43,7 @@ def extract_block_single(
         output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
+        voxel_size: The voxel size of the data in micrometer.
         roi_halo: ROI halo of extracted 3D volume.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
@@ -82,10 +83,10 @@ def extract_block_single(
         print(f"Skipping block extration because {output_path} already exists.")
 
     coords = np.array(coords).astype("float")
-    if not isinstance(resolution, float):
-        assert len(resolution) == 3
-        resolution = np.array(resolution)[::-1]
-    coords = coords / resolution
+    if not isinstance(voxel_size, float):
+        assert len(voxel_size) == 3
+        voxel_size = np.array(voxel_size)[::-1]
+    coords = coords / voxel_size
     coords = np.round(coords).astype(np.int32)
 
     roi = tuple(slice(co - rh, co + rh) for co, rh in zip(coords, roi_halo))

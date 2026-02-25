@@ -1,10 +1,16 @@
 import os
 import sys
 
-script_dir = "/user/schilling40/u15000/flamingo-tools/scripts/prediction"
-sys.path.append(script_dir)
+import importlib.util
+from pathlib import Path
 
-import run_prediction_distance_unet
+# load run_prediction distance unet
+current_dir = Path(__file__).resolve().parent
+module_path = os.path.join(current_dir.parent, "prediction", "run_prediction_distance_unet.py")
+
+spec = importlib.util.spec_from_file_location("run_prediction_distance_unet", module_path)
+run_prediction_distance_unet = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(run_prediction_distance_unet)
 
 checkpoint_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/nucleus"
 model_name = "NIS3D_supervised_2025-07-17"
@@ -30,7 +36,7 @@ images = [entry.path for entry in os.scandir(image_dir) if entry.is_file() and "
 
 for image in images:
     sys.argv = [
-        os.path.join(script_dir, "run_prediction_distance_unet.py"),
+        module_path,
         f"--input={image}",
         f"--output_folder={out_dir}",
         f"--model={model_dir}",

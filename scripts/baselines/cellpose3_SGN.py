@@ -28,7 +28,7 @@ if not input_dir.exists():
 image_ext = ".tif"
 
 # list all files
-files = natsorted([f for f in input_dir.glob("*"+image_ext) if "_masks" not in f.name and "_flows" not in f.name])
+files = natsorted([f for f in input_dir.glob("*" + image_ext) if "_masks" not in f.name and "_flows" not in f.name])
 
 if len(files) == 0:
     raise FileNotFoundError("no image files found, did you specify the correct folder and extension?")

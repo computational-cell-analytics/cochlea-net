@@ -1,4 +1,4 @@
-from typing import List, Tuple
+from typing import List, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -131,7 +131,7 @@ def postprocess_ihc_synapse(
     synapse_limit: int = 25,
     min_overlap: float = 0.5,
     roi_pad: int = 40,
-    resolution: float = 0.38,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
 ) -> np.typing.ArrayLike:
     """Postprocess IHC segmentation based on number of synapse per IHC count.
     Segmentations from a base segmentation are analysed and replaced with
@@ -145,7 +145,7 @@ def postprocess_ihc_synapse(
         synapse_limit: Limit of synapses per IHC to consider replacement of base segmentation.
         min_overlap: Minimal fraction of overlap between ref and base isntances to consider replacement.
         roi_pad: Padding added to bounding box to analyze overlapping segmentation masks in a ROI.
-        resolution: Resolution of pixels in µm.
+        voxel_size: The voxel size of the data in micrometer.
 
     Returns:
         Base array with updated content.
@@ -155,12 +155,19 @@ def postprocess_ihc_synapse(
 
     running_label_id = int(table_base["label_id"].max() + 1)
 
+    if not isinstance(voxel_size, float):
+        if len(voxel_size) == 1:
+            voxel_size = voxel_size * 3
+        assert len(voxel_size) == 3
+    else:
+        voxel_size = (voxel_size,) * 3
+
     for _, row in table_edit.iterrows():
         # access array in image space (pixels)
         coords_max = [row["bb_max_x"], row["bb_max_y"], row["bb_max_z"]]
-        coords_max = [int(round(c / resolution)) for c in coords_max]
+        coords_max = [int(round(c / voxel_size[num])) for num, c in enumerate(coords_max)]
         coords_min = [row["bb_min_x"], row["bb_min_y"], row["bb_min_z"]]
-        coords_min = [int(round(c / resolution)) for c in coords_min]
+        coords_min = [int(round(c / voxel_size[num])) for num, c in enumerate(coords_min)]
 
         coords_max.reverse()
         coords_min.reverse()

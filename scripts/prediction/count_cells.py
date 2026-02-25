@@ -14,7 +14,7 @@ def main():
     parser.add_argument("-o", "--output_folder", type=str, default=None,
                         help="Output directory containing segmentation.zarr.")
 
-    parser.add_argument('-k', "--input_key", type=str, default="segmentation",
+    parser.add_argument("-k", "--input_key", type=str, default="segmentation",
                         help="The key / internal path of the segmentation.")
     parser.add_argument("-m", "--min_size", type=int, default=1000,
                         help="Minimal number of voxel size for counting object.")

@@ -17,7 +17,7 @@ def get_scale_factor():
     original_shape = tifffile.memmap(original_path).shape
 
     cochlea = "M_LR_000169_R"
-    internal_path = os.path.join(cochlea, "images",  "ome-zarr", "SGN_v2.ome.zarr")
+    internal_path = os.path.join(cochlea, "images", "ome-zarr", "SGN_v2.ome.zarr")
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
 
     input_key = "s0"
@@ -39,7 +39,7 @@ def get_shape():
     for source in info["sources"].keys():
         print(source)
 
-    internal_path = os.path.join(cochlea, "images",  "ome-zarr", "PV.ome.zarr")
+    internal_path = os.path.join(cochlea, "images", "ome-zarr", "PV.ome.zarr")
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
 
     input_key = "s0"

@@ -43,7 +43,7 @@ def get_test_volume_and_segmentation(folder: str) -> Tuple[str, str, str]:
     imageio.imwrite(image_path, nuclei)
 
     table_path = os.path.join(folder, "default.tsv")
-    table = compute_table_on_the_fly(segmentation, resolution=0.38)
+    table = compute_table_on_the_fly(segmentation, voxel_size=0.38)
     table.to_csv(table_path, sep="\t", index=False)
 
     return image_path, segmentation_path, table_path
@@ -70,7 +70,7 @@ def create_image_data_and_segmentation(folder: str, size: int = 256) -> Tuple[st
     imageio.imwrite(segmentation_path, seg)
 
     table_path = os.path.join(folder, "default.tsv")
-    table = compute_table_on_the_fly(seg, resolution=0.38)
+    table = compute_table_on_the_fly(seg, voxel_size=0.38)
     table.to_csv(table_path, sep="\t", index=False)
 
     return image_path, segmentation_path, table_path

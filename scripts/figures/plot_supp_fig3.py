@@ -79,8 +79,8 @@ def supp_fig_03_thresholds(
     """
     input_dir = THRESHOLD_DIR
 
-    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name
-                or "_crop-intensity.json" in entry.name]
+    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name or
+                "_crop-intensity.json" in entry.name]
     cochlea_str = cochlea.replace('_', '-')
     om_paths = [p for p in om_paths if cochlea_str in p]
     stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_")[0] for p in om_paths]
@@ -127,7 +127,7 @@ def supp_fig_03_thresholds(
         main_label_size = 20
         x_label_size = 16
         main_tick_size = 16
-        fig, axes = plt.subplots(rows, columns, figsize=(columns*2.5, rows*2.5), sharex=sharex, sharey=sharey)
+        fig, axes = plt.subplots(rows, columns, figsize=(columns * 2.5, rows * 2.5), sharex=sharex, sharey=sharey)
         plt.xlim([-0.1, 8])
         ax = axes.flatten()
         table_path_s3, fs = get_s3_path(table_measurement_path)
@@ -167,7 +167,7 @@ def supp_fig_03_thresholds(
             if title_type == "center_str":
                 ax[num].set_title(center_str, fontsize=main_label_size)
             else:
-                ax[num].set_title(f"Crop {str(num+1).zfill(1)}")
+                ax[num].set_title(f"Crop {str(num + 1).zfill(1)}")
 
         # alias = ALIAS[cochlea]
         # fig.suptitle(f"{alias} - {stain}", fontsize=30)
@@ -412,11 +412,11 @@ def supp_fig_03_offset(
             dist_right = dic[cochlea]["Type II"]
 
             color = list(COLORS_OFFSET.values())[num % len(COLORS_OFFSET)]
-            alias_name = alias[num] if num < len(alias) else f"C{num+1}"
+            alias_name = alias[num] if num < len(alias) else f"C{num + 1}"
 
             # random horizontal jitter so points don’t overlap
-            x_left_jitter = x_left + offset*num + np.random.uniform(-jitter, jitter, size=len(dist_left))
-            x_right_jitter = x_right + offset*num + np.random.uniform(-jitter, jitter, size=len(dist_right))
+            x_left_jitter = x_left + offset * num + np.random.uniform(-jitter, jitter, size=len(dist_left))
+            x_right_jitter = x_right + offset * num + np.random.uniform(-jitter, jitter, size=len(dist_right))
 
             # plot all individual points
             ax.scatter(x_left_jitter, dist_left,

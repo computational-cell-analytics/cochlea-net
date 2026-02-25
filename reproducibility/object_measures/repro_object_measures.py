@@ -134,8 +134,8 @@ def main():
 
     # options for object measures
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of components.")
-    parser.add_argument("-r", "--resolution", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Resolution of input in micrometer.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--bg_mask", action="store_true", help="Use background mask for calculating object measures.")
     parser.add_argument("--bg_cache_paths", type=str, nargs="+", default=[],
                         help="Cache path(s) for background mask in zarr format. Either directory or specific file(s).")
@@ -160,7 +160,7 @@ def main():
         ddict=args.json,
         force_overwrite=args.force,
         component_list=args.components,
-        resolution=args.resolution,
+        voxel_size=args.voxel_size,
         use_bg_mask=args.bg_mask,
         bg_cache_paths=args.bg_cache_paths,
         s3=args.s3,

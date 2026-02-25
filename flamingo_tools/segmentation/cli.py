@@ -161,7 +161,8 @@ def run_detection():
         "Synapses with a larger distance will be filtered from the result."
     )
     parser.add_argument(
-        "--resolution", type=float, default=0.38, help="The resolution of the data (in microns)."
+        "-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38"
     )
     args = parser.parse_args()
     if args.model_type not in detection_models:
@@ -172,5 +173,5 @@ def run_detection():
         input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
         mask_path=args.mask_path, mask_input_key=args.mask_key,
-        max_distance=args.max_distance, resolution=args.resolution,
+        max_distance=args.max_distance, voxel_size=args.voxel_size,
     )

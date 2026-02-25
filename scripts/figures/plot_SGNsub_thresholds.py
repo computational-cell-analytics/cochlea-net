@@ -19,8 +19,8 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
     """
     os.makedirs(output_dir, exist_ok=True)
 
-    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name
-                or "_crop-intensity.json" in entry.name]
+    om_paths = [entry.path for entry in os.scandir(input_dir) if "_om.json" in entry.name or
+                "_crop-intensity.json" in entry.name]
     cochlea_str = cochlea.replace('_', '-')
     om_paths = [p for p in om_paths if cochlea_str in p]
     stains = [os.path.basename(p).split(f"{cochlea_str}_")[1].split("_")[0] for p in om_paths]
@@ -71,7 +71,7 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
 
         main_label_size = 20
         main_tick_size = 16
-        fig, axes = plt.subplots(rows, columns, figsize=(columns*2.5, rows*2.5), sharex=sharex)
+        fig, axes = plt.subplots(rows, columns, figsize=(columns * 2.5, rows * 2.5), sharex=sharex)
         ax = axes.flatten()
         table_path_s3, fs = get_s3_path(table_measurement_path)
         with fs.open(table_path_s3, "r") as f:
@@ -91,15 +91,16 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
 
                     bins = np.linspace(min(neg_values + pos_values), max(neg_values + pos_values), 30)
 
-                    ax[enum*columns + num].hist(pos_values, bins=bins, alpha=0.6, label='Positive', color='tab:blue')
-                    ax[enum*columns + num].hist(neg_values, bins=bins, alpha=0.6, label='Negative', color='tab:orange')
-                    ax[enum*columns + num].set_ylabel('Count', fontsize=main_label_size)
-                    ax[enum*columns + num].set_xlabel('Intensity', fontsize=main_label_size)
-                    ax[enum*columns + num].legend()
+                    ax[enum * columns + num].hist(pos_values, bins=bins, alpha=0.6, label='Positive', color='tab:blue')
+                    ax[enum * columns + num].hist(neg_values, bins=bins, alpha=0.6,
+                                                  label='Negative', color='tab:orange')
+                    ax[enum * columns + num].set_ylabel('Count', fontsize=main_label_size)
+                    ax[enum * columns + num].set_xlabel('Intensity', fontsize=main_label_size)
+                    ax[enum * columns + num].legend()
                     if title_type == "center_str":
-                        ax[enum*columns + num].set_title(center_str)
+                        ax[enum * columns + num].set_title(center_str)
                     else:
-                        ax[enum*columns + num].set_title(f"Crop {str(num+1).zfill(1)}")
+                        ax[enum * columns + num].set_title(f"Crop {str(num + 1).zfill(1)}")
             else:
                 threshold_dic = CUSTOM_THRESHOLDS[cochlea][stain]
                 for num, center_str in enumerate(center_strs):
@@ -117,19 +118,19 @@ def plot_intensity_thresholds(input_dir, output_dir, cochlea, plot=False, sharex
 
                     bins = np.linspace(min(neg_values + pos_values), max(neg_values + pos_values), 30)
 
-                    ax[enum*columns + num].hist(pos_values, bins=bins, alpha=0.6,
-                                                label='Positive', color='tab:blue')
-                    ax[enum*columns + num].hist(neg_values, bins=bins, alpha=0.6,
-                                                label='Negative', color='tab:orange')
-                    ax[enum*columns + num].set_ylabel('Count', fontsize=main_label_size)
-                    ax[enum*columns + num].set_xlabel('Intensity', fontsize=main_label_size)
-                    ax[enum*columns + num].tick_params(axis='x', labelsize=main_tick_size)
-                    ax[enum*columns + num].tick_params(axis='y', labelsize=main_tick_size)
-                    ax[enum*columns + num].legend()
+                    ax[enum * columns + num].hist(pos_values, bins=bins, alpha=0.6,
+                                                  label='Positive', color='tab:blue')
+                    ax[enum * columns + num].hist(neg_values, bins=bins, alpha=0.6,
+                                                  label='Negative', color='tab:orange')
+                    ax[enum * columns + num].set_ylabel('Count', fontsize=main_label_size)
+                    ax[enum * columns + num].set_xlabel('Intensity', fontsize=main_label_size)
+                    ax[enum * columns + num].tick_params(axis='x', labelsize=main_tick_size)
+                    ax[enum * columns + num].tick_params(axis='y', labelsize=main_tick_size)
+                    ax[enum * columns + num].legend()
                     if title_type == "center_str":
-                        ax[enum*columns + num].set_title(center_str, fontsize=main_label_size)
+                        ax[enum * columns + num].set_title(center_str, fontsize=main_label_size)
                     else:
-                        ax[enum*columns + num].set_title(f"Crop {str(num+1).zfill(1)}")
+                        ax[enum * columns + num].set_title(f"Crop {str(num + 1).zfill(1)}")
 
         alias = ALIAS[cochlea]
         fig.suptitle(f"{alias} - {stain}", fontsize=30)

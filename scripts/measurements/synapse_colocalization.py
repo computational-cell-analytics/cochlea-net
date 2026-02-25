@@ -107,8 +107,8 @@ def check_synapse_predictions():
     # pred_path_riba = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_LR_000215_R/RibA_synapses_v3"  # noqa
 
     location_mobie = [836.654754589637, 1255.8010489404858, 677.1537312920972]
-    resolution = 0.38
-    location = [int(loc / resolution) for loc in location_mobie[::-1]]
+    voxel_size = 0.38
+    location = [int(loc / voxel_size) for loc in location_mobie[::-1]]
 
     halo = (32, 256, 256)
     start = np.array([loc - ha for loc, ha in zip(location, halo)])
@@ -118,7 +118,7 @@ def check_synapse_predictions():
     print("Loading tables ...")
     _, ctbp2_table, _ = _get_synapse_tables()
     ids = ctbp2_table.spot_id.values
-    coords = ctbp2_table[["z", "y", "x"]].values / resolution
+    coords = ctbp2_table[["z", "y", "x"]].values / voxel_size
     mask = np.logical_and(
         (coords > start[None, :]).all(axis=1),
         (coords < stop[None, :]).all(axis=1),

@@ -55,7 +55,10 @@ def central_path_edt_graph(
     dt = distance_transform_edt(mask)
     G = nx.Graph()
     shape = mask.shape
-    def idx_to_node(z, y, x): return z*shape[1]*shape[2] + y*shape[2] + x
+
+    def idx_to_node(z, y, x):
+        return z * shape[1] * shape[2] + y * shape[2] + x
+
     border_coords = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
     for z in range(shape[0]):
         for y in range(shape[1]):
@@ -64,7 +67,7 @@ def central_path_edt_graph(
                     continue
                 u = idx_to_node(z, y, x)
                 for dz, dy, dx in border_coords:
-                    nz, ny, nx_ = z+dz, y+dy, x+dx
+                    nz, ny, nx_ = z + dz, y + dy, x + dx
                     if nz >= 0 and nz < shape[0] and mask[nz, ny, nx_]:
                         v = idx_to_node(nz, ny, nx_)
                         w = 1.0 / (1e-3 + min(dt[z, y, x], dt[nz, ny, nx_]))
@@ -74,9 +77,7 @@ def central_path_edt_graph(
     if not nx.has_path(G, source=s, target=t):
         return None
     path = nx.shortest_path(G, source=s, target=t, weight="weight")
-    coords = [(p//(shape[1]*shape[2]),
-               (p//shape[2]) % shape[1],
-               p % shape[2]) for p in path]
+    coords = [(p // (shape[1] * shape[2]), (p // shape[2]) % shape[1], p % shape[2]) for p in path]
     return np.array(coords)
 
 
@@ -146,7 +147,7 @@ def measure_run_length_sgns_multi_component(
 
         # find two endpoints: min/max along principal axis
         c_mean = pts.mean(axis=0)
-        cov = np.cov((pts-c_mean).T)
+        cov = np.cov((pts - c_mean).T)
         evals, evecs = np.linalg.eigh(cov)
         axis = evecs[:, np.argmax(evals)]
         proj = (pts - c_mean) @ axis
@@ -188,10 +189,10 @@ def measure_run_length_sgns_multi_component(
 
     # Order other components from start to end
     for num in range(0, len(total_path) - 1):
-        dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num+1][0, :])
-        dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num+1][-1, :])
+        dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
+        dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
         if dist_connecting_nodes_2 < dist_connecting_nodes_1:
-            total_path[num+1] = np.flip(total_path[num+1], axis=0)
+            total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
 
     # 3) Assign base/apex position to path
     # compare y-value to not get into confusion with MoBIE dimensions
@@ -212,7 +213,7 @@ def measure_run_length_sgns_multi_component(
         if num == 0:
             path_dict[0] = {"pos": total_path[0][0], "length_fraction": 0}
         else:
-            path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index-1]["length_fraction"]}
+            path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index - 1]["length_fraction"]}
 
         index += 1
         for enum, p in enumerate(pa[1:]):
@@ -221,7 +222,7 @@ def measure_run_length_sgns_multi_component(
             rel_dist = accumulated / total_distance
             path_dict[index] = {"pos": p, "length_fraction": rel_dist}
             index += 1
-    path_dict[index-1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
+    path_dict[index - 1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
 
     # 5) Concatenate individual paths to form total path
     path = np.concatenate(total_path, axis=0)
@@ -262,7 +263,7 @@ def measure_run_length_sgns(
 
     # 3) Find two endpoints: min/max along principal axis.
     c_mean = pts.mean(axis=0)
-    cov = np.cov((pts-c_mean).T)
+    cov = np.cov((pts - c_mean).T)
     evals, evecs = np.linalg.eigh(cov)
     axis = evecs[:, np.argmax(evals)]
     proj = (pts - c_mean) @ axis
@@ -394,10 +395,10 @@ def measure_run_length_ihcs_multi_component(
 
     # Order other components from start to end
     for num in range(0, len(total_path) - 1):
-        dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num+1][0, :])
-        dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num+1][-1, :])
+        dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
+        dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
         if dist_connecting_nodes_2 < dist_connecting_nodes_1:
-            total_path[num+1] = np.flip(total_path[num+1], axis=0)
+            total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
 
     # 3) Assign base/apex position to path
     # compare y-value to not get into confusion with MoBIE dimensions
@@ -418,7 +419,7 @@ def measure_run_length_ihcs_multi_component(
         if num == 0:
             path_dict[0] = {"pos": total_path[0][0], "length_fraction": 0}
         else:
-            path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index-1]["length_fraction"]}
+            path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index - 1]["length_fraction"]}
 
         index += 1
         for enum, p in enumerate(pa[1:]):
@@ -427,7 +428,7 @@ def measure_run_length_ihcs_multi_component(
             rel_dist = accumulated / total_distance
             path_dict[index] = {"pos": p, "length_fraction": rel_dist}
             index += 1
-    path_dict[index-1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
+    path_dict[index - 1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
 
     # 5) Concatenate individual paths to form total path
     path = np.concatenate(total_path, axis=0)
@@ -734,7 +735,7 @@ def node_dict_from_path_dict(
             "length_fraction": path_dict[nearest_node]["length_fraction"],
             "pos": path_dict[nearest_node]["length_fraction"],
             "offset": min_dist,
-            }
+        }
     return node_dict
 
 
@@ -781,7 +782,7 @@ def equidistant_centers(
     else:
         if len(component_label) == 1:
             total_distance, path, _ = measure_run_length_sgns(centroids)
-            return get_centers_from_path(path,  total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
+            return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
         else:
             centroids_components = []

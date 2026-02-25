@@ -33,8 +33,8 @@ def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> 
         return center_str
 
     if pattern is not None:
-        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name
-                         and pattern in entry.name]
+        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name and
+                         pattern in entry.name]
     else:
         cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name]
     dic = {"cochlea": cochlea}
@@ -62,14 +62,14 @@ def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> 
 def get_roi(
     coord: tuple,
     roi_halo: tuple,
-    resolution: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> Tuple[int]:
     """Get parameters for loading ROI of segmentation.
 
     Args:
         coord: Center coordinate.
         roi_halo: Halo for roi.
-        resolution: Resolution of array in µm.
+        voxel_size: Voxel size of array in micrometer.
 
     Returns:
         The region of interest.
@@ -78,7 +78,7 @@ def get_roi(
     # reverse dimensions for correct extraction
     coords.reverse()
     coords = np.array(coords)
-    coords = coords / resolution
+    coords = coords / voxel_size
     coords = np.round(coords).astype(np.int32)
 
     roi = tuple(slice(co - rh, co + rh) for co, rh in zip(coords, roi_halo))
@@ -159,7 +159,7 @@ def get_crop_parameters(
     data_seg: np.typing.ArrayLike,
     table_measure: pd.DataFrame,
     column: str = "median",
-    resolution: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> dict:
     """Obtain parameters for a specific crop by analyzing the intensity annotations.
 
@@ -170,7 +170,7 @@ def get_crop_parameters(
         data_seg: Segmentation data.
         table_measure: Table containing object measures.
         column: Name of column in measurement table.
-        resolution: Voxel size in micrometer.
+        voxel_size: Voxel size in micrometer.
 
     Returns:
         parameter dictionary featuring analysis of crop
@@ -179,7 +179,7 @@ def get_crop_parameters(
     arr_allweak = tifffile.imread(file_allweak)
 
     roi_halo = tuple([r // 2 for r in arr_negexc.shape])
-    roi = get_roi(center, roi_halo, resolution=resolution)
+    roi = get_roi(center, roi_halo, voxel_size=voxel_size)
 
     roi_seg = data_seg[roi]
     inbetween_ids, allweak_pos, negexc_neg, allweak_neg, negexc_pos = find_inbetween_ids(arr_negexc,
@@ -232,7 +232,7 @@ def localize_median_intensities(
     table_measure: pd.DataFrame,
     column: str = "median",
     pattern: Optional[str] = None,
-    resolution: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> str:
     """Find median intensities in blocks and assign them to center positions of cropped block.
     """
@@ -245,7 +245,7 @@ def localize_median_intensities(
         file_pos = annotation_dic[center_str]["file_pos"]
         file_neg = annotation_dic[center_str]["file_neg"]
         param_dic = get_crop_parameters(file_neg, file_pos, center_coord, data_seg,
-                                        table_measure, column=column, resolution=resolution)
+                                        table_measure, column=column, voxel_size=voxel_size)
 
         median_intensity = param_dic["median_intensity"]
         if median_intensity is None:
@@ -314,7 +314,7 @@ def apply_nearest_threshold(
     lf_limits = [0]
     # half distance between block centers
     for i in range(len(lf_fractions) - 1):
-        lf_limits.append((lf_fractions[i] + lf_fractions[i+1]) / 2)
+        lf_limits.append((lf_fractions[i] + lf_fractions[i + 1]) / 2)
     # end of cochlea
     lf_limits.append(1)
 
@@ -348,7 +348,7 @@ def find_thresholds(
     table_meas: pd.DataFrame,
     column: str = "median",
     pattern: Optional[str] = None,
-    resolution: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> Tuple[dict, dict]:
     # Find the median intensities by averaging the individual annotations for specific crops
     annotation_dics = {}
@@ -356,7 +356,8 @@ def find_thresholds(
     for annotation_dir in cochlea_annotations:
         print(f"Localizing threshold with median intensities for {os.path.basename(annotation_dir)}.")
         annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg,
-                                                     table_meas, column=column, pattern=pattern)
+                                                     table_meas, column=column, pattern=pattern,
+                                                     voxel_size=voxel_size)
         annotated_centers.extend(annotation_dic["center_strings"])
         annotation_dics[annotation_dir] = annotation_dic
 
