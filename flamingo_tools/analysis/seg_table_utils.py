@@ -191,3 +191,55 @@ def create_main_table(
             df = add_stain_intensity(df, table_meas, stain, bg_mask=bg_mask, keyword=intensity_keyword)
 
     df.to_csv(output_path, sep="\t", index=False)
+
+
+def add_column_from_ref(
+    ref_path: str,
+    target_path: str,
+    ref_column: str,
+    target_column: Optional[str] = None,
+    output_path: Optional[str] = None,
+    s3_ref: bool = False,
+    s3_target: bool = False,
+):
+    """Add a column from a reference dataframe to a target dataframe.
+    If the target dataframe is on an S3 bucket, a local copy with the same base name is created.
+
+    Args:
+        ref_path: File path to reference table which features the column which should be added.
+        target_path: File path to target table which acts as a base to which the ref column is added.
+        ref_column: Name of reference column in reference table.
+        target_column: Target name for added column.
+        output_path: Optional output path to store new table.
+        s3_ref: File path to reference table is on S3 bucket.
+        s3_target: File path to target table is on S3 bucket.
+    """
+    if s3_ref:
+        tsv_path, fs = get_s3_path(ref_path)
+        with fs.open(tsv_path, "r") as f:
+            df_ref = pd.read_csv(f, sep="\t")
+    else:
+        df_ref = pd.read_csv(ref_path, sep="\t")
+
+    if s3_target:
+        tsv_path, fs = get_s3_path(target_path)
+        with fs.open(tsv_path, "r") as f:
+            df_target = pd.read_csv(f, sep="\t")
+    else:
+        df_target = pd.read_csv(target_path, sep="\t")
+
+    if s3_target and output_path is None:
+        raise ValueError(f"Copying to S3 bucket not yet supported. Provide an output path using --output.")
+
+    if output_path is None:
+        output_path = target_path
+
+    if target_column in list(df_target.columns):
+        print(f"Replacing column {target_column} with reference.")
+        df_target = df_target.drop(columns=[target_column])
+
+    df_target = df_target.merge(df_ref[["label_id", ref_column]], on="label_id", how="left")
+    if target_column is not None:
+        df_target.rename(columns={ref_column: target_column}, inplace=True)
+
+    df_target.to_csv(output_path, sep="\t", index=False)
