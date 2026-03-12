@@ -229,7 +229,7 @@ def add_column_from_ref(
         df_target = pd.read_csv(target_path, sep="\t")
 
     if s3_target and output_path is None:
-        raise ValueError(f"Copying to S3 bucket not yet supported. Provide an output path using --output.")
+        raise ValueError("Copying to S3 bucket not yet supported. Provide an output path using --output.")
 
     if output_path is None:
         output_path = target_path

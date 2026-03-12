@@ -1,6 +1,7 @@
 import json
 import math
 import os
+from itertools import combinations
 from typing import List, Optional, Tuple
 
 import networkx as nx
@@ -467,8 +468,35 @@ def find_max_min_distance(coords):
     return max_min_distance
 
 
+def minimal_connection_distance(points):
+    """Find minimal distance threshold of a set of 3D coordinates.
+    The function creates a minimal spanning tree using networkx and then checks for the maximal edge length.
+
+    Args:
+        points: List of (x, y, z) tuples.
+
+    Returns:
+        minimal distance threshold required to make the graph connected
+    """
+    G = nx.Graph()
+    for i, p in enumerate(points):
+        G.add_node(i, pos=p)
+
+    # add all pairwise edges with euclidean distance
+    for (i, p1), (j, p2) in combinations(enumerate(points), 2):
+        dist = math.dist(p1, p2)
+        G.add_edge(i, j, weight=dist)
+
+    # compute minimum spanning tree
+    mst = nx.minimum_spanning_tree(G, weight="weight")
+    max_edge = max(data["weight"] for _, _, data in mst.edges(data=True))
+
+    return max_edge
+
+
 def measure_run_length_ihcs(
     centroids: np.ndarray,
+    centroids_components: Optional[List[np.ndarray]],
     max_edge_distance: float = 30,
     apex_higher: bool = True,
     component_label: List[int] = [1],
@@ -492,6 +520,9 @@ def measure_run_length_ihcs(
         Path as an nd.array of positions.
         A dictionary containing the position and the length fraction of each point in the path.
     """
+    if centroids_components is None:
+        centroids_components = [centroids]
+
     graph = nx.Graph()
     coords = {}
     labels = [int(i) for i in range(len(centroids))]
@@ -501,7 +532,13 @@ def measure_run_length_ihcs(
     for num, pos in coords.items():
         graph.add_node(num, pos=pos)
 
-    max_edge_distance = max([round(find_max_min_distance(centroids) + 0.5), max_edge_distance])
+    max_edge_distance = 0
+    for centroids_comp in centroids_components:
+        min_connect_dist = minimal_connection_distance(centroids_comp)
+        max_edge_distance = max([max_edge_distance, min_connect_dist])
+
+    max_edge_distance = round(max_edge_distance + 0.5)
+    print("Automatically determined max edge distance", max_edge_distance)
     # create edges between points whose distance is less than threshold max_edge_distance
     for num_i, pos_i in coords.items():
         for num_j, pos_j in coords.items():
@@ -775,7 +812,7 @@ def equidistant_centers(
                 subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
                 centroids_components.append(subset_centroids)
             total_distance, path, path_dict = measure_run_length_ihcs_multi_component(
-                centroids_components,
+                centroids_components, skip_gap=True,
             )
             return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
@@ -827,8 +864,15 @@ def tonotopic_mapping(
         component_mapping = component_label
 
     if cell_type == "ihc":
+        if len(component_mapping) != 1:
+            centroids_components = []
+            for label in component_mapping:
+                subset = table[table["component_labels"] == label]
+                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
+                centroids_components.append(subset_centroids)
+
         total_distance, _, path_dict = measure_run_length_ihcs(
-            centroids, component_label=component_label, apex_higher=apex_higher,
+            centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
         )
 
     else:

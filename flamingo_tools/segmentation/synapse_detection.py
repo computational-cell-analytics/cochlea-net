@@ -63,7 +63,9 @@ def map_and_filter_detections(
 
     # Add matched ids and distances to the dataframe.
     detections["matched_ihc"] = object_ids
-    detections["distance_to_ihc"] = object_distances * voxel_size
+    # FIXME: currently only works for isotropic resolution
+    # distances should be calculated taking physical units into account
+    detections["distance_to_ihc"] = object_distances * voxel_size[0]
 
     # Filter the dataframe by the max distance.
     detections = detections[detections.distance_to_ihc <= max_distance]
