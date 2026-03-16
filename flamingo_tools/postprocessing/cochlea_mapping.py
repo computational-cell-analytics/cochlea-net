@@ -864,12 +864,11 @@ def tonotopic_mapping(
         component_mapping = component_label
 
     if cell_type == "ihc":
-        if len(component_mapping) != 1:
-            centroids_components = []
-            for label in component_mapping:
-                subset = table[table["component_labels"] == label]
-                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-                centroids_components.append(subset_centroids)
+        centroids_components = []
+        for label in component_mapping:
+            subset = table[table["component_labels"] == label]
+            subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
+            centroids_components.append(subset_centroids)
 
         total_distance, _, path_dict = measure_run_length_ihcs(
             centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
