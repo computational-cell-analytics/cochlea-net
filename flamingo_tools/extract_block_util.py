@@ -91,13 +91,15 @@ def extract_block_single(
 
     roi = tuple(slice(co - rh, co + rh) for co, rh in zip(coords, roi_halo))
 
-    if s3:
-        input_path, fs = get_s3_path(
-            input_path, bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint, credential_file=s3_credentials
-        )
+    data_ = read_image_data(input_path, input_key, from_s3=s3,
+                            bucket_name=s3_bucket_name,
+                            service_endpoint=s3_service_endpoint,
+                            credential_file=s3_credentials)
 
-    data_ = read_image_data(input_path, input_key)
+    for (dim, co, rh) in zip(data_.shape, coords, roi_halo):
+        if co - rh < 0 or co + rh > dim:
+            print("Skipping block extraction for {coords} because ROI lies outside of image bounds.")
+
     data_roi = data_[roi]
     if scale_factor is not None:
         kwargs = {"preserve_range": True}
@@ -135,33 +137,34 @@ def extract_block_json_wrapper(
         s3: Flag for accessing data stored on S3 bucket.
     """
     if json_file is not None:
-        input_key = "s0"
         with open(json_file, "r") as f:
-            params = json.loads(f.read())
-        cochlea = params["dataset_name"]
-        if isinstance(params["image_channel"], list):
-            image_channels = params["image_channel"]
-        else:
-            image_channels = [params["image_channel"]]
-
-        for image_channel in image_channels:
-            if s3:
-                input_path = f"{cochlea}/images/ome-zarr/{image_channel}.ome.zarr"
+            param_dicts = json.loads(f.read())
+        if not isinstance(param_dicts, list):
+            param_dicts = [param_dicts]
+        for params in param_dicts:
+            cochlea = params["dataset_name"]
+            if isinstance(params["image_channel"], list):
+                image_channels = params["image_channel"]
             else:
-                input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+                image_channels = [params["image_channel"]]
 
-            for coords in params["crop_centers"]:
-                kwargs.update(params)
-                extract_block_single(
-                    input_path=input_path,
-                    input_key=input_key,
-                    coords=coords,
-                    output_path=output_path,
-                    channel_name=image_channel,
-                    force_overwrite=force,
-                    s3=s3,
-                    **kwargs,
-                )
+            for image_channel in image_channels:
+                if s3:
+                    input_path = f"{cochlea}/images/ome-zarr/{image_channel}.ome.zarr"
+                else:
+                    input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+
+                for coords in params["crop_centers"]:
+                    kwargs.update(params)
+                    extract_block_single(
+                        input_path=input_path,
+                        coords=coords,
+                        output_path=output_path,
+                        channel_name=image_channel,
+                        force_overwrite=force,
+                        s3=s3,
+                        **kwargs,
+                    )
 
     else:
         if input_path is None:

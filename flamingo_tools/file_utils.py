@@ -87,7 +87,12 @@ def read_tif(file_path: str) -> Union[np.ndarray, np.memmap]:
 
 
 def read_image_data(
-    input_path: Union[str, Store], input_key: Optional[str], from_s3: bool = False
+    input_path: Union[str, Store],
+    input_key: Optional[str],
+    from_s3: bool = False,
+    bucket_name: Optional[str] = None,
+    service_endpoint: Optional[str] = None,
+    credential_file: Optional[str] = None,
 ) -> np.typing.ArrayLike:
     """Read flamingo image data, stored in various formats.
 
@@ -104,7 +109,7 @@ def read_image_data(
     """
     if from_s3:
         assert input_key is not None
-        s3_store, fs = get_s3_path(input_path)
+        s3_store, fs = get_s3_path(input_path, bucket_name, service_endpoint, credential_file)
         return zarr.open(s3_store, mode="r")[input_key]
 
     if input_key is None:

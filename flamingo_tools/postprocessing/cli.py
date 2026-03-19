@@ -72,7 +72,7 @@ def extract_block():
                         help="3D coordinate as center of extracted block [µm].")
     parser.add_argument("--json_info", type=str, default=None,
                         help="JSON file with crop information.")
-    parser.add_argument("-k", "--input_key", type=str, default=None,
+    parser.add_argument("-k", "--input_key", type=str, default="s0",
                         help="Input key for data in input file with n5/OME-ZARR format.")
     parser.add_argument("--output_key", type=str, default=None,
                         help="Output key for data in output file with n5 format. Default: TIF file.")
@@ -94,8 +94,9 @@ def extract_block():
     args = parser.parse_args()
     args_dict = vars(args)
     extract_block_json_wrapper(
-        input_path=args_dict["input"],
-        output_path=args_dict["output"],
+        input_path=args_dict.pop("input"),
+        output_path=args_dict.pop("output"),
+        json_file=args_dict.pop("json_info"),
         **args_dict,
     )
 
