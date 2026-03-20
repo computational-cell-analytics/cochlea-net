@@ -56,6 +56,29 @@
 			1
 		],
 		"max_edge_distance": 50
+	},
+	{
+		"dataset_name": "M_AMD_N163_L_v2",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			4,
+			6,
+			2,
+			1,
+			3,
+			5
+		],
+		"max_edge_distance": 70
+	},
+	{
+		"dataset_name": "M_AMD_N163_R_v2",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			1,
+			2
+		],
+		"max_edge_distance": 70
 	}
-
 ]

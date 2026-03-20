@@ -98,7 +98,7 @@ def extract_block_single(
 
     for (dim, co, rh) in zip(data_.shape, coords, roi_halo):
         if co - rh < 0 or co + rh > dim:
-            print("Skipping block extraction for {coords} because ROI lies outside of image bounds.")
+            print(f"Skipping block extraction for {coords} because ROI is {dim} for shape {data_.shape}.")
 
     data_roi = data_[roi]
     if scale_factor is not None:
@@ -139,6 +139,7 @@ def extract_block_json_wrapper(
     if json_file is not None:
         with open(json_file, "r") as f:
             param_dicts = json.loads(f.read())
+        os.makedirs(output_path, exist_ok=True)
         if not isinstance(param_dicts, list):
             param_dicts = [param_dicts]
         for params in param_dicts:

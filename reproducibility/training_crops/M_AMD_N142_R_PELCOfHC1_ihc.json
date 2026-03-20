@@ -1,0 +1,55 @@
+[
+	{
+		"dataset_name": "M_AMD_N142_R",
+		"image_channel": [
+			"PV",
+			"Vglut3",
+			"IHC_v4b"
+		],
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"n_blocks": 6,
+		"roi_halo": [
+			128,
+			256,
+			256
+		],
+		"component_list": [
+			2,
+			4,
+			3
+		],
+		"crop_centers": [
+			[
+				818,
+				1353,
+				331
+			],
+			[
+				477,
+				765,
+				124
+			],
+			[
+				922,
+				428,
+				309
+			],
+			[
+				1213,
+				848,
+				665
+			],
+			[
+				875,
+				1118,
+				956
+			],
+			[
+				868,
+				463,
+				1046
+			]
+		]
+	}
+]

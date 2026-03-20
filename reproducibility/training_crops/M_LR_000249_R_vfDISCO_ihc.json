@@ -1,0 +1,38 @@
+[
+	{
+		"dataset_name": "M_LR_000249_R",
+		"image_channel": [
+			"PV",
+			"Vglut3",
+			"IHC_v4b"
+		],
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"n_blocks": 3,
+		"roi_halo": [
+			128,
+			256,
+			256
+		],
+		"component_list": [
+			1
+		],
+		"crop_centers": [
+			[
+				609,
+				1430,
+				651
+			],
+			[
+				844,
+				763,
+				1247
+			],
+			[
+				800,
+				680,
+				277
+			]
+		]
+	}
+]
