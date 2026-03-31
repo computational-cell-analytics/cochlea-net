@@ -1,6 +1,6 @@
 import json
 import os
-from typing import List, Optional
+from typing import List, Optional, Tuple
 
 import imageio.v3 as imageio
 import numpy as np
@@ -73,24 +73,20 @@ def add_metadata_to_crop_table(
     df.to_csv(table_out, sep="\t", index=False)
 
 
-def check_overlapping_crops(center1, center2, size):
-    """
-    Check if two 3D crops overlap in space.
+def check_overlapping_crops(
+    center1: Tuple[float],
+    center2: Tuple[float],
+    size: Tuple[int],
+) -> bool:
+    """Check if two 3D crops overlap in space.
 
-    Parameters:
-    -----------
-    center1 : tuple or array-like
-        Center coordinates of first crop (x, y, z)
-    size1 : tuple or array-like
-        Size of first crop (dx, dy, dz)
-    center2 : tuple or array-like
-        Center coordinates of second crop (x, y, z)
-    size2 : tuple or array-like
-        Size of second crop (dx, dy, dz)
+    Args:
+        center1: Center coordinates of first crop (x, y, z)
+        center2: Center coordinates of second crop (x, y, z)
+        size: size of crops (dx, dy, dz)
 
     Returns:
-    --------
-    bool : True if crops overlap, False otherwise
+        True if crops overlap, False otherwise
     """
     center1 = np.array(center1)
     center2 = np.array(center2)
@@ -114,18 +110,18 @@ def check_overlapping_crops(center1, center2, size):
     return overlap_x and overlap_y and overlap_z
 
 
-def check_all_crops_overlap(crop_centers, size=(128, 256, 256)):
-    """
-    Check if any pair of crops in a list overlaps.
+def check_all_crops_overlap(
+    crop_centers: List[Tuple[float]],
+    size: Tuple[int] = (128, 256, 256),
+) -> bool:
+    """Check if any pair of crops in a list overlaps.
 
-    Parameters:
-    -----------
-    crops : list of tuples
-        Each tuple contains (center, size) for a crop
+    Args:
+        crops : List of tuples, each the center coordinates of a crop.
+        size: Size of the crop.
 
     Returns:
-    --------
-    bool : True if any pair overlaps, False otherwise
+        True if any pair overlaps, False otherwise
     """
     n = len(crop_centers)
     if n == 1:
@@ -137,14 +133,33 @@ def check_all_crops_overlap(crop_centers, size=(128, 256, 256)):
     return np.any(overlap_list)
 
 
-def find_crop_centers_ihc(df, component_labels, crop_size=(128, 256, 256), max_crops_per_comp=10):
+def find_crop_centers_ihc(
+    df: pd.DataFrame,
+    component_labels: List[int],
+    crop_size: Tuple[int] = (128, 256, 256),
+    max_crops_per_comp: int = 10,
+) -> List[Tuple[int]]:
+    """Find crop centers for IHC segmentation.
+    The function will go through each component individually.
+    It will find the maximal number of equidistant crops with the given size which do not overlap.
+
+    Args:
+        df: Dataframe of segmentation table.
+        component_labels: List of components.
+        crop_size: Size of the ROI.
+        max_crops_per_comp: Maximum number of crops per component.
+
+        Returns: List of crop centers for all components.
+    """
     n_blocks_try = [i + 1 for i in range(max_crops_per_comp)]
     n_blocks_try = sorted(n_blocks_try, reverse=True)
     total_centers = []
+    # iterate through components
     for label in component_labels:
         subset = df[df["component_labels"] == label]
         length_sect = list(subset["length_fraction"])
         length_sect.sort()
+        # try decreasing number of blocks
         for n_blocks in n_blocks_try:
             target_s = np.linspace(length_sect[0], length_sect[-1], n_blocks * 2 + 1)
             target_s = [s for num, s in enumerate(target_s) if num % 2 == 1]
@@ -156,6 +171,7 @@ def find_crop_centers_ihc(df, component_labels, crop_size=(128, 256, 256), max_c
                 centers.append(center_physical)
             centers = [[round(c) for c in center] for center in centers]
             overlap = check_all_crops_overlap(centers, size=crop_size)
+            # found maximal number of blocks
             if not overlap:
                 print(f"Using {n_blocks} block(s) for label {label}.")
                 best_centers = centers
@@ -171,8 +187,28 @@ def export_crop_centers(
     segmentation_channel: str = "IHC_v4b",
     halo_size: List[int] = [128, 256, 256],
     suffix: str = "crop",
-):
+) -> str:
+    """Export JSON dictionary for the creation of crops for annotation.
+
+    Args:
+        cochlea: Name of the cochlea dataset.
+        component_labels: List of component labels.
+        out_dir: Output directory for JSONs.
+        segmentation_channel: Name of the segmentation channel.
+        halo_size: Size of the halo of the ROI. ROI will be twice the size.
+        suffix: Suffix for JSON dictionary.
+
+    Returns:
+        Output path of the JSON dictionary.
+    """
     cell_type = segmentation_channel.split("_")[0]
+    output_path = os.path.join(out_dir, f"{cochlea}_{suffix}_{cell_type.lower()}.json")
+    if os.path.isfile(output_path):
+        print(f"JSON dictionary {output_path} already exists. Skipping creation.")
+        return output_path
+    else:
+        print(f"Exporting crop centers for cochlea {cochlea}.")
+
     if cell_type in ["ihc", "IHC"]:
         # check training on PV
         image_channel = ["PV", "Vglut3"]
@@ -201,6 +237,7 @@ def export_crop_centers(
     crop_dict["component_list"] = component_labels
     crop_dict["crop_centers"] = total_centers
 
-    output_path = os.path.join(out_dir, f"{cochlea}_{suffix}_{cell_type.lower()}.json")
     with open(output_path, "w") as f:
         json.dump([crop_dict], f, indent='\t', separators=(',', ': '))
+
+    return output_path
