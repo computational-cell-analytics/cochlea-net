@@ -14,6 +14,36 @@ from flamingo_tools.postprocessing.label_components import downscaled_centroids
 from flamingo_tools.s3_utils import get_s3_path
 
 
+def path_dict_to_central_path_table(path_dict):
+    central_path_dict = []
+    for key, item in path_dict.items():
+        dict_tmp = {}
+        dict_tmp["spot_id"] = key
+        pos = item["pos"]
+        dict_tmp["x"] = int(round(pos[0]))
+        dict_tmp["y"] = int(round(pos[1]))
+        dict_tmp["z"] = int(round(pos[2]))
+        dict_tmp["length_fraction"] = item["length_fraction"]
+        dict_tmp["length[µm]"] = item["length[µm]"]
+        dict_tmp["frequency[kHz]"] = item["frequency[kHz]"]
+        central_path_dict.append(dict_tmp)
+
+    return pd.DataFrame(central_path_dict)
+
+
+def central_path_table_to_path_dict(central_path_df):
+    path_dict = {}
+    for _, row in central_path_df.iterrows():
+        ddict = {}
+        ddict["pos"] = (row["x"], row["y"], row["z"])
+        ddict["length_fraction"] = row["length_fraction"]
+        ddict["length[µm]"] = row["length[µm]"]
+        ddict["frequency[kHz]"] = row["frequency[kHz]"]
+        spot_id = int(row["spot_id"])
+        path_dict[spot_id] = ddict
+    return path_dict
+
+
 def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -> Tuple[float, float]:
     """Find the most distant nodes in a graph.
 
@@ -611,7 +641,7 @@ def measure_run_length_ihcs(
     return total_distance, path, path_dict
 
 
-def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False) -> pd.DataFrame:
+def map_frequency(path_dict: dict, animal: str = "mouse", otof: bool = False) -> pd.DataFrame:
     """Map the frequency range of SGNs in the cochlea
     using Greenwood function f(x) = A * (10 **(ax) - K).
     Values for humans: a=2.1, k=0.88, A = 165.4 [kHz].
@@ -625,7 +655,23 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
     Returns:
         Dataframe containing frequency in an additional column 'frequency[kHz]'.
     """
-    if animal == "mouse":
+    if otof and animal == "mouse":
+        # freq_min = 4.84 kHz
+        # freq_max = 78.8 kHz
+        # Mueller, Hearing Research 202 (2005) 63-73, https://doi.org/10.1016/j.heares.2004.08.011
+        # function has format f(x) = 10 ** (a * (k - (1-x)))
+        var_a = 100 / 82.5
+        var_k = 1.565
+        var_A = 1
+        # bring it into same format as previous equation:
+        # f(x) = 10 ** (a * (k - (1-x)))
+        # f(x) = 10 ** (ax - (-a * (k-1)))
+        # f(x) = 10 ** (ax - c) with c = (-a * (k-1))
+        var_a = 100 / 82.5
+        var_k = -0.684848485
+        var_A = 1
+
+    elif animal == "mouse":
         # freq_min = 1.5 kHz
         # freq_max = 86 kHz
         # ou bohne 2000 Hear res, "EDGES"
@@ -644,29 +690,10 @@ def map_frequency(table: pd.DataFrame, animal: str = "mouse", otof: bool = False
     else:
         raise ValueError("Animal not supported. Use either 'mouse' or 'gerbil'.")
 
-    table.loc[table['offset'] >= 0, 'frequency[kHz]'] = var_A * (10 ** (var_a * table["length_fraction"]) - var_k)
-    table.loc[table['offset'] < 0, 'frequency[kHz]'] = 0
+    for key in path_dict.keys():
+        path_dict[key]["frequency[kHz]"] = var_A * (10 ** (var_a * path_dict[key]["length_fraction"]) - var_k)
 
-    if otof and animal == "mouse":
-        # freq_min = 4.84 kHz
-        # freq_max = 78.8 kHz
-        # Mueller, Hearing Research 202 (2005) 63-73, https://doi.org/10.1016/j.heares.2004.08.011
-        # function has format f(x) = 10 ** (a * (k - (1-x)))
-        var_a = 100 / 82.5
-        var_k = 1.565
-        var_A = 1
-        # bring it into same format as previous equation:
-        # f(x) = 10 ** (a * (k - (1-x)))
-        # f(x) = 10 ** (ax - (-a * (k-1)))
-        # f(x) = 10 ** (ax - c) with c = (-a * (k-1))
-        var_a = 100 / 82.5
-        var_k = -0.684848485
-        var_A = 1
-        table.loc[table['offset'] >= 0, 'frequency[kHz]'] = var_A * (10 ** (var_a * table["length_fraction"]) - var_k)
-
-        table.loc[table['offset'] < 0, 'frequency-mueller[kHz]'] = 0
-
-    return table
+    return path_dict
 
 
 def get_centers_from_path(
@@ -770,7 +797,9 @@ def node_dict_from_path_dict(
         node_dict[c] = {
             "label_id": c,
             "length_fraction": path_dict[nearest_node]["length_fraction"],
-            "pos": path_dict[nearest_node]["length_fraction"],
+            "length[µm]": path_dict[nearest_node]["length[µm]"],
+            "pos": path_dict[nearest_node]["pos"],
+            "frequency[kHz]": path_dict[nearest_node]["frequency[kHz]"],
             "offset": min_dist,
         }
     return node_dict
@@ -839,6 +868,7 @@ def tonotopic_mapping(
     animal: str = "mouse",
     apex_higher: bool = True,
     otof: bool = False,
+    central_path_df: Optional[pd.DataFrame] = None,
 ) -> pd.DataFrame:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
@@ -851,6 +881,7 @@ def tonotopic_mapping(
         animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+        central_path_df: Dataframe featuring the spots for the central path through the segmentation.
 
     Returns:
         Table with tonotopic label for cells.
@@ -863,53 +894,67 @@ def tonotopic_mapping(
     if component_mapping is None:
         component_mapping = component_label
 
-    if cell_type == "ihc":
-        centroids_components = []
-        for label in component_mapping:
-            subset = table[table["component_labels"] == label]
-            subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-            centroids_components.append(subset_centroids)
+    if central_path_df is None:
 
-        total_distance, _, path_dict = measure_run_length_ihcs(
-            centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
-        )
-
-    else:
-        if len(component_mapping) == 1:
-            total_distance, _, path_dict = measure_run_length_sgns(
-                centroids, apex_higher=apex_higher,
-            )
-
-        else:
+        if cell_type == "ihc":
             centroids_components = []
             for label in component_mapping:
                 subset = table[table["component_labels"] == label]
                 subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
                 centroids_components.append(subset_centroids)
-            total_distance, _, path_dict = measure_run_length_sgns_multi_component(
-                centroids_components, apex_higher=apex_higher,
+
+            total_distance, _, path_dict = measure_run_length_ihcs(
+                centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
             )
 
-    node_dict = node_dict_from_path_dict(path_dict, label_ids, centroids)
+        else:
+            if len(component_mapping) == 1:
+                total_distance, _, path_dict = measure_run_length_sgns(
+                    centroids, apex_higher=apex_higher,
+                )
+
+            else:
+                centroids_components = []
+                for label in component_mapping:
+                    subset = table[table["component_labels"] == label]
+                    subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
+                    centroids_components.append(subset_centroids)
+                total_distance, _, path_dict = measure_run_length_sgns_multi_component(
+                    centroids_components, apex_higher=apex_higher,
+                )
+
+        for key, items in path_dict.items():
+            path_dict[key]["length[µm]"] = items["length_fraction"] * total_distance
+
+        path_dict = map_frequency(path_dict, animal=animal, otof=otof)
+        node_dict = node_dict_from_path_dict(path_dict, label_ids, centroids)
+        central_path_df = path_dict_to_central_path_table(path_dict)
+    else:
+        path_dict = central_path_table_to_path_dict(central_path_df)
 
     offset = [-1 for _ in range(len(table))]
     offset = list(np.float64(offset))
     table.loc[:, "offset"] = offset
-    # 'label_id' of dataframe starting at 1
-    for key in list(node_dict.keys()):
-        table.loc[table["label_id"] == key, "offset"] = node_dict[key]["offset"]
 
     length_fraction = [0 for _ in range(len(table))]
     length_fraction = list(np.float64(length_fraction))
     table.loc[:, "length_fraction"] = length_fraction
-    for num, key in enumerate(list(node_dict.keys())):
+
+    length_abs = [0 for _ in range(len(table))]
+    length_abs = list(np.float64(length_abs))
+    table.loc[:, "length[µm]"] = length_abs
+
+    frequency = [0 for _ in range(len(table))]
+    frequency = list(np.float64(frequency))
+    table.loc[:, "frequency[kHz]"] = frequency
+
+    for key in list(node_dict.keys()):
+        table.loc[table["label_id"] == key, "offset"] = node_dict[key]["offset"]
         table.loc[table["label_id"] == key, "length_fraction"] = node_dict[key]["length_fraction"]
+        table.loc[table["label_id"] == key, "length[µm]"] = node_dict[key]["length[µm]"]
+        table.loc[table["label_id"] == key, "frequency[kHz]"] = node_dict[key]["frequency[kHz]"]
 
-    table.loc[:, "length[µm]"] = table["length_fraction"] * total_distance
-
-    table = map_frequency(table, animal=animal, otof=otof)
-
-    return table
+    return table, central_path_df
 
 
 def tonotopic_mapping_single(
@@ -922,6 +967,7 @@ def tonotopic_mapping_single(
     apex_position: str = "apex_higher",
     component_list: List[int] = [1],
     component_mapping: Optional[List[int]] = None,
+    central_spots_path: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -946,7 +992,8 @@ def tonotopic_mapping_single(
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         apex_position: Identify position of apex and base. Apex is set to node with higher y-value per default.
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
-        components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
+        component_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
+        central_spots_path: Provide table featuring spots for central path through segmentation for tonotopic mapping.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -970,6 +1017,11 @@ def tonotopic_mapping_single(
     else:
         table = pd.read_csv(table_path, sep="\t")
 
+    if central_spots_path is not None and os.path.isfile(central_spots_path):
+        central_path_df = pd.read_csv(central_spots_path, sep="\t")
+    else:
+        central_path_df = None
+
     apex_higher = (apex_position == "apex_higher")
 
     # overwrite input file
@@ -980,12 +1032,15 @@ def tonotopic_mapping_single(
         print(f"Skipping {out_path}. Table already exists.")
 
     else:
-        table = tonotopic_mapping(table, component_label=component_list, animal=animal,
-                                  cell_type=cell_type, component_mapping=component_mapping,
-                                  apex_higher=apex_higher,
-                                  otof=otof)
+        table, central_path_df = tonotopic_mapping(table, component_label=component_list, animal=animal,
+                                                   cell_type=cell_type, component_mapping=component_mapping,
+                                                   apex_higher=apex_higher,
+                                                   central_path_df=central_path_df,
+                                                   otof=otof)
 
         table.to_csv(out_path, sep="\t", index=False)
+        if central_spots_path is not None:
+            central_path_df.to_csv(central_spots_path, sep="\t", index=False)
 
 
 def equidistant_centers_single(
@@ -1053,3 +1108,76 @@ def equidistant_centers_single(
 
     with open(output_path, "w") as f:
         json.dump(dic, f, indent='\t', separators=(',', ': '))
+
+
+def _load_json_as_list(ddict_path: str) -> List[dict]:
+    with open(ddict_path, "r") as f:
+        data = json.loads(f.read())
+    # ensure the result is always a list
+    return data if isinstance(data, list) else [data]
+
+
+def tonotopic_mapping_json_wrapper(
+    out_path: str,
+    table_path: Optional[str] = None,
+    json_file: Optional[str] = None,
+    central_spots_path: Optional[str] = None,
+    force: bool = False,
+    animal: str = "mouse",
+    otof: bool = False,
+    s3: bool = False,
+    **kwargs
+):
+    """Wrapper function for tonotopic mapping using a segmentation table.
+    The function is used to distinguish between a passed parameter dictionary in JSON format
+    and the explicit setting of parameters.
+
+    Args:
+        output_path: Output path to segmentation table with new column "component_labels".
+        table_path: File path to segmentation table.
+        json_file: JSON file containing parameters for tonotopic mapping.
+        central_spots_path: Provide table featuring spots for central path through segmentation for tonotopic mapping.
+        force: Forcefully overwrite existing output path.
+        animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
+        otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+        s3: Use data path of S3 bucket for segmentation table.
+    """
+    if json_file is None:
+        tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, ototf=otof,
+                                 central_spots_path=central_spots_path,
+                                 force_overwrite=force, s3=s3, **kwargs)
+    else:
+        if out_path is None:
+            raise ValueError("Specify an output path when supplying a JSON dictionary.")
+        param_dicts = _load_json_as_list(json_file)
+        for params in param_dicts:
+
+            cochlea = params["dataset_name"]
+            print(f"\n{cochlea}")
+            seg_channel = params["segmentation_channel"]
+            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
+
+            if "OTOF" in cochlea:
+                otof = True
+            else:
+                otof = False
+
+            if cochlea[0] in ["M", "m"]:
+                animal = "mouse"
+            elif cochlea[0] in ["G", "g"]:
+                animal = "gerbil"
+            else:
+                animal = "mouse"
+
+            if os.path.isdir(out_path):
+                cochlea_str = cochlea.replace('_', '-')
+                table_str = seg_channel.replace('_', '-')
+                save_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
+                if central_spots_path is None:
+                    central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
+            else:
+                save_path = out_path
+
+            tonotopic_mapping_single(table_path=table_path, out_path=save_path, animal=animal, otof=otof,
+                                     force_overwrite=force, central_spots_path=central_spots_path,
+                                     s3=s3, **params)
