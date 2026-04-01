@@ -1,0 +1,53 @@
+[
+	{
+		"dataset_name": "M_AMD_N153_L",
+		"image_channel": [
+			"PV",
+			"Vglut3",
+			"IHC_v4b"
+		],
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"n_blocks": 6,
+		"roi_halo": [
+			128,
+			256,
+			256
+		],
+		"component_list": [
+			1
+		],
+		"crop_centers": [
+			[
+				912,
+				1329,
+				709
+			],
+			[
+				1197,
+				749,
+				511
+			],
+			[
+				704,
+				583,
+				1064
+			],
+			[
+				478,
+				1191,
+				754
+			],
+			[
+				704,
+				814,
+				162
+			],
+			[
+				731,
+				114,
+				523
+			]
+		]
+	}
+]

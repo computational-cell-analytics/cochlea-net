@@ -1,0 +1,53 @@
+[
+	{
+		"dataset_name": "M_AMD_000088_R",
+		"image_channel": [
+			"PV",
+			"Vglut3",
+			"IHC_v4b"
+		],
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"n_blocks": 6,
+		"roi_halo": [
+			128,
+			256,
+			256
+		],
+		"component_list": [
+			1
+		],
+		"crop_centers": [
+			[
+				176,
+				854,
+				259
+			],
+			[
+				723,
+				383,
+				381
+			],
+			[
+				735,
+				517,
+				1044
+			],
+			[
+				397,
+				1135,
+				871
+			],
+			[
+				797,
+				1042,
+				322
+			],
+			[
+				1106,
+				696,
+				771
+			]
+		]
+	}
+]

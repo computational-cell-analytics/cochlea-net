@@ -1,0 +1,74 @@
+[
+	{
+		"dataset_name": "M_LR_000226_L",
+		"image_channel": [
+			"PV",
+			"Vglut3"
+		],
+		"roi_halo": [
+			128,
+			128,
+			32
+		],
+		"voxel_size" : [
+            1,
+            1,
+            1
+        ],
+		"crop_centers": [
+			[
+				516,
+				1274,
+				1078
+			]
+		]
+	},
+	{
+		"dataset_name": "M_LR_000226_L",
+		"image_channel": [
+			"PV",
+			"Vglut3"
+		],
+		"roi_halo": [
+			256,
+			256,
+			64
+		],
+		"voxel_size" : [
+            1,
+            1,
+            1
+        ],
+		"crop_centers": [
+			[
+				2021,
+				3268,
+				1902
+			]
+		]
+	},
+	{
+		"dataset_name": "M_LR_000226_L",
+		"image_channel": [
+			"PV",
+			"Vglut3"
+		],
+		"roi_halo": [
+			128,
+			128,
+			48
+		],
+		"voxel_size" : [
+            1,
+            1,
+            1
+        ],
+		"crop_centers": [
+			[
+				2216,
+				850,
+				1675
+			]
+		]
+	}
+]

@@ -1,0 +1,39 @@
+[
+	{
+		"dataset_name": "M_AMD_N75_L",
+		"image_channel": [
+			"PV",
+			"Vglut3",
+			"IHC_v4b"
+		],
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"n_blocks": 3,
+		"roi_halo": [
+			128,
+			256,
+			256
+		],
+		"component_list": [
+			1,
+			3
+		],
+		"crop_centers": [
+			[
+				864,
+				643,
+				355
+			],
+			[
+				866,
+				564,
+				1193
+			],
+			[
+				805,
+				1405,
+				846
+			]
+		]
+	}
+]
