@@ -14,15 +14,17 @@ def add_metadata_to_crop_table(
     data_dir: str,
     table_out: Optional[str] = None,
     min_size: int = 1000,
+    label_dir: str = None,
 ):
     """Add meta information like volume and crop dimension to an existing table,
     which compiles the crops used for training and validation of a segmentation network.
 
     Args:
         table_in: File path to TSV table.
-        data_dir: Directory featuring sub-directories 'train' and 'val'.
+        data_dir: Directory featuring sub-directories with datasets, e.g. 'train' and 'val'.
         table_out: Output path for extended table.
         min_size: Minimal number of pixels per instance.
+        label_dir: Directory containing annotations.
     """
     if table_out is None:
         table_out = table_in
@@ -37,7 +39,10 @@ def add_metadata_to_crop_table(
     for _, row in df.iterrows():
         file_name = row["Original"]
         dataset = row["Dataset"]
-        seg_file = os.path.join(data_dir, dataset, f"{file_name}_annotations.tif")
+        if label_dir is None:
+            seg_file = os.path.join(data_dir, dataset, f"{file_name}_annotations.tif")
+        else:
+            seg_file = os.path.join(label_dir, f"{file_name}_annotations.tif")
         arr = imageio.imread(seg_file)
         unique_labels, counts = np.unique(arr, return_counts=True)
         samples = len(unique_labels) - 1
@@ -56,11 +61,11 @@ def add_metadata_to_crop_table(
                 samples += 1
                 counts_filtered.append(count)
 
-        n_samples.append(samples)
-        n_samples_undercut.append(samples_undercut)
+        n_samples.append(int(samples))
+        n_samples_undercut.append(int(samples_undercut))
         mean_vol.append(round(np.mean(counts_filtered), 1))
-        min_vol.append(min(counts_filtered))
-        max_vol.append(max(counts_filtered))
+        min_vol.append(int(min(counts_filtered)))
+        max_vol.append(int(max(counts_filtered)))
         dimensions.append(str(arr.shape))
 
     df.loc[:, "dim"] = dimensions
