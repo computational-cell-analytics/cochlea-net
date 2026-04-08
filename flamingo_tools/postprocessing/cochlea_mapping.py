@@ -265,6 +265,7 @@ def measure_run_length_sgns(
         centroids: np.ndarray,
         scale_factor: int = 10,
         apex_higher: bool = True,
+        extension_length: Optional[float] = None,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the SGN segmentation by finding a central path through Rosenthal's canal.
     1) Create a binary mask based on down-scaled centroids.
@@ -279,6 +280,7 @@ def measure_run_length_sgns(
         centroids: Centroids of the SGN segmentation, ndarray of shape (N, 3).
         scale_factor: Downscaling factor for finding the central path.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
+        extension_length: Extend central path between segmentation instances. Adds nodes in regular interval [µm].
 
     Returns:
         Total distance of the path.
@@ -313,8 +315,20 @@ def measure_run_length_sgns(
     # 5) Identify a central path based on the 3D Euclidean distance transform.
     path = central_path_edt_graph(mask, apex, base)
     # 6) The path is up-scaled and smoothed using a moving average filter.
-    path = path * scale_factor
-    path = moving_average_3d(path, window=5)
+    path_pos = path * scale_factor
+
+    if extension_length is not None:
+        path_extended = []
+        for num in range(len(path_pos) - 1):
+            dist = math.dist(path_pos[num], path_pos[num + 1])
+            extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist))
+            path_extended.append(path_pos[num])
+            path_extended.extend(extended_space)
+        path_extended.append(path_pos[-1])
+        path = moving_average_3d(np.array(path_extended), window=3)
+    else:
+        path = moving_average_3d(path_pos, window=5)
+
     total_distance = sum([math.dist(path[num + 1], path[num]) for num in range(len(path) - 1)])
 
     # 7) The points of the path are fed into a dictionary along with the fractional length.
@@ -336,6 +350,7 @@ def measure_run_length_ihcs_multi_component(
     max_edge_distance: float = 30,
     apex_higher: bool = True,
     component_label: List[int] = [1],
+    extension_length: Optional[float] = None,
 ) -> Tuple[float, np.ndarray, dict]:
     """Adaptation of measure_run_length_sgns_multi_component to IHCs.
 
@@ -408,7 +423,17 @@ def measure_run_length_ihcs_multi_component(
 
         path = nx.shortest_path(graph, source=apex_node, target=base_node)
         path_pos = np.array([graph.nodes[p]["pos"] for p in path])
-        path = moving_average_3d(path_pos, window=5)
+        if extension_length is not None:
+            path_extended = []
+            for num in range(len(path_pos) - 1):
+                dist = math.dist(path_pos[num], path_pos[num + 1])
+                extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist))
+                path_extended.append(path_pos[num])
+                path_extended.extend(extended_space)
+            path_extended.append(path_pos[-1])
+            path = moving_average_3d(np.array(path_extended), window=3)
+        else:
+            path = moving_average_3d(path_pos, window=5)
         total_path.append(path)
 
     # 2) Order paths to have consistent start/end points
@@ -530,6 +555,7 @@ def measure_run_length_ihcs(
     max_edge_distance: float = 30,
     apex_higher: bool = True,
     component_label: List[int] = [1],
+    extension_length: Optional[float] = None,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the IHC segmentation
     by determining the shortest path between the most distant nodes of a graph.
@@ -544,6 +570,7 @@ def measure_run_length_ihcs(
         max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         component_label: List of component labels. Determines the order of components to connect.
+        extension_length: Extend central path between segmentation instances. Adds nodes in regular interval [µm].
 
     Returns:
         Total distance of the path.
@@ -623,20 +650,31 @@ def measure_run_length_ihcs(
 
     path = nx.shortest_path(graph, source=apex_node, target=base_node)
     total_distance = nx.path_weight(graph, path, weight="weight")
+    path_pos = [graph.nodes[p]["pos"] for p in path]
+
+    if extension_length is not None:
+        path_extended = []
+        for num in range(len(path_pos) - 1):
+            dist = math.dist(path_pos[num], path_pos[num + 1])
+            extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist))
+            path_extended.append(path_pos[num])
+            path_extended.extend(extended_space)
+        path_extended.append(path_pos[-1])
+        path = moving_average_3d(np.array(path_extended), window=3)
+        path_pos = path_extended
+    else:
+        path = moving_average_3d(np.array(path_pos), window=5)
 
     # assign relative distance to points on path
     path_dict = {}
-    path_dict[0] = {"pos": graph.nodes[path[0]]["pos"], "length_fraction": 0}
+    path_dict[0] = {"pos": path_pos[0], "length_fraction": 0}
     accumulated = 0
-    for num, p in enumerate(path[1:-1]):
-        distance = math.dist(graph.nodes[path[num]]["pos"], graph.nodes[p]["pos"])
+    for num, p in enumerate(path_pos[1:-1]):
+        distance = math.dist(path_pos[num], p)
         accumulated += distance
         rel_dist = accumulated / total_distance
-        path_dict[num + 1] = {"pos": graph.nodes[p]["pos"], "length_fraction": rel_dist}
-    path_dict[len(path)] = {"pos": graph.nodes[path[-1]]["pos"], "length_fraction": 1}
-
-    path_pos = np.array([graph.nodes[p]["pos"] for p in path])
-    path = moving_average_3d(path_pos, window=5)
+        path_dict[num + 1] = {"pos": p, "length_fraction": rel_dist}
+    path_dict[len(path_pos)] = {"pos": path_pos[-1], "length_fraction": 1}
 
     return total_distance, path, path_dict
 
@@ -869,6 +907,7 @@ def tonotopic_mapping(
     apex_higher: bool = True,
     otof: bool = False,
     central_path_df: Optional[pd.DataFrame] = None,
+    extension_length: Optional[float] = None,
 ) -> pd.DataFrame:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
@@ -882,6 +921,7 @@ def tonotopic_mapping(
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         central_path_df: Dataframe featuring the spots for the central path through the segmentation.
+        extension_length: Extend central path between segmentation instances. Adds nodes in regular interval [µm].
 
     Returns:
         Table with tonotopic label for cells.
@@ -905,12 +945,14 @@ def tonotopic_mapping(
 
             total_distance, _, path_dict = measure_run_length_ihcs(
                 centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
+                extension_length=extension_length,
             )
 
         else:
             if len(component_mapping) == 1:
                 total_distance, _, path_dict = measure_run_length_sgns(
                     centroids, apex_higher=apex_higher,
+                    extension_length=extension_length,
                 )
 
             else:
@@ -921,6 +963,7 @@ def tonotopic_mapping(
                     centroids_components.append(subset_centroids)
                 total_distance, _, path_dict = measure_run_length_sgns_multi_component(
                     centroids_components, apex_higher=apex_higher,
+                    extension_length=extension_length,
                 )
 
         for key, items in path_dict.items():
@@ -931,6 +974,7 @@ def tonotopic_mapping(
         central_path_df = path_dict_to_central_path_table(path_dict)
     else:
         path_dict = central_path_table_to_path_dict(central_path_df)
+        node_dict = node_dict_from_path_dict(path_dict, label_ids, centroids)
 
     offset = [-1 for _ in range(len(table))]
     offset = list(np.float64(offset))
@@ -1036,10 +1080,12 @@ def tonotopic_mapping_single(
                                                    cell_type=cell_type, component_mapping=component_mapping,
                                                    apex_higher=apex_higher,
                                                    central_path_df=central_path_df,
-                                                   otof=otof)
+                                                   otof=otof,
+                                                   extension_length=1)
 
         table.to_csv(out_path, sep="\t", index=False)
-        if central_spots_path is not None:
+        if central_spots_path is not None and not os.path.isfile(out_path):
+            print("Saving path", central_spots_path)
             central_path_df.to_csv(central_spots_path, sep="\t", index=False)
 
 
@@ -1122,7 +1168,7 @@ def tonotopic_mapping_json_wrapper(
     table_path: Optional[str] = None,
     json_file: Optional[str] = None,
     central_spots_path: Optional[str] = None,
-    force: bool = False,
+    force_overwrite: bool = False,
     animal: str = "mouse",
     otof: bool = False,
     s3: bool = False,
@@ -1145,7 +1191,7 @@ def tonotopic_mapping_json_wrapper(
     if json_file is None:
         tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, ototf=otof,
                                  central_spots_path=central_spots_path,
-                                 force_overwrite=force, s3=s3, **kwargs)
+                                 force_overwrite=force_overwrite, s3=s3, **kwargs)
     else:
         if out_path is None:
             raise ValueError("Specify an output path when supplying a JSON dictionary.")
@@ -1173,11 +1219,10 @@ def tonotopic_mapping_json_wrapper(
                 cochlea_str = cochlea.replace('_', '-')
                 table_str = seg_channel.replace('_', '-')
                 save_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
-                if central_spots_path is None:
-                    central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
+                # central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
             else:
                 save_path = out_path
 
             tonotopic_mapping_single(table_path=table_path, out_path=save_path, animal=animal, otof=otof,
-                                     force_overwrite=force, central_spots_path=central_spots_path,
+                                     force_overwrite=force_overwrite, central_spots_path=central_spots_path,
                                      s3=s3, **params)
