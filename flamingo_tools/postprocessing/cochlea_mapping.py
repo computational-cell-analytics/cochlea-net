@@ -112,7 +112,7 @@ def central_path_edt_graph(
     return np.array(coords)
 
 
-def moving_average_3d(path: np.ndarray, window: int = 5) -> np.ndarray:
+def moving_average_3d(path: np.ndarray, window: int = 3) -> np.ndarray:
     """Smooth a 3D path with a simple moving average filter.
 
     Args:
@@ -134,13 +134,47 @@ def moving_average_3d(path: np.ndarray, window: int = 5) -> np.ndarray:
     return smooth_path
 
 
-def measure_run_length_sgns_multi_component(
+def extend_path(
+    path_pos,
+    extension_length: Optional[float] = None,
+    max_edge_distance: float = 30,
+):
+    """Extend path of nodes by adding additional points inbetween.
+    Additional nodes are added linearly between existing ones in regular intervals.
+    The interval can be specified using the extension length.
+
+    Args:
+        path_pos: List of coordinates in 3D space.
+        extension_length: Length for the extension between existing nodes
+        max_edge_distance: Maximal distance between two nodes which are viable for extension.
+
+    Returns:
+        Extended coordinates
+    """
+    if extension_length is not None:
+        print(f"Extending nodes every {extension_length}µm.")
+        path_extended = []
+        for num in range(len(path_pos) - 1):
+            dist = math.dist(path_pos[num], path_pos[num + 1])
+            # section between two components
+            if dist > max_edge_distance:
+                path_extended.append(path_pos[num])
+                continue
+            extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist / extension_length))
+            path_extended.extend(extended_space[:-1])
+        path_extended.append(path_pos[-1])
+        return np.array(path_extended)
+    else:
+        return np.array(path_pos)
+
+
+def measure_run_length_sgns(
         centroids_components: List[np.ndarray],
         scale_factor: int = 10,
         apex_higher: bool = True,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the SGN segmentation by finding a central path through Rosenthal's canal.
-    This function handles the case were the cochlea has been torn into multiple components.
+    This function handles cases with a single or multiple components.
     The List of centroids has to be in order of neighboring components.
     For each component:
     1) Process centroids of each component:
@@ -167,7 +201,7 @@ def measure_run_length_sgns_multi_component(
         A dictionary containing the position and the length fraction of each point in the path.
     """
     total_path = []
-    print(f"Evaluating {len(centroids_components)} components.")
+    print(f"Evaluating {len(centroids_components)} component(s).")
 
     def _find_central_path_through_downscaled_mask(centroids, downscaling_factor):
         # Check for the existence of and the shortest path between the most distant nodes in the downscaled volume.
@@ -202,28 +236,29 @@ def measure_run_length_sgns_multi_component(
             path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
 
         path = path * scale_factor
-        path = moving_average_3d(path, window=5)
+        path = moving_average_3d(path, window=3)
         total_path.append(path)
 
     # 2) Order paths to have consistent start/end points
-    # Find starting order of first two components
-    c1a = total_path[0][0, :]
-    c1b = total_path[0][-1, :]
+    if len(total_path) > 1:
+        # Find starting order of first two components
+        c1a = total_path[0][0, :]
+        c1b = total_path[0][-1, :]
 
-    c2a = total_path[1][0, :]
-    c2b = total_path[1][-1, :]
+        c2a = total_path[1][0, :]
+        c2b = total_path[1][-1, :]
 
-    distances = [math.dist(c1a, c2a), math.dist(c1a, c2b), math.dist(c1b, c2a), math.dist(c1b, c2b)]
-    min_index = distances.index(min(distances))
-    if min_index in [0, 1]:
-        total_path[0] = np.flip(total_path[0], axis=0)
+        distances = [math.dist(c1a, c2a), math.dist(c1a, c2b), math.dist(c1b, c2a), math.dist(c1b, c2b)]
+        min_index = distances.index(min(distances))
+        if min_index in [0, 1]:
+            total_path[0] = np.flip(total_path[0], axis=0)
 
-    # Order other components from start to end
-    for num in range(0, len(total_path) - 1):
-        dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
-        dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
-        if dist_connecting_nodes_2 < dist_connecting_nodes_1:
-            total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
+        # Order other components from start to end
+        for num in range(0, len(total_path) - 1):
+            dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
+            dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
+            if dist_connecting_nodes_2 < dist_connecting_nodes_1:
+                total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
 
     # 3) Assign base/apex position to path
     # compare y-value to not get into confusion with MoBIE dimensions
@@ -237,6 +272,7 @@ def measure_run_length_sgns_multi_component(
 
     # 4) Assign distance of nodes by skipping intermediate space between separate components
     total_distance = sum([math.dist(p[num + 1], p[num]) for p in total_path for num in range(len(p) - 1)])
+    print("total dist", total_distance)
     path_dict = {}
     accumulated = 0
     index = 0
@@ -259,268 +295,6 @@ def measure_run_length_sgns_multi_component(
     path = np.concatenate(total_path, axis=0)
 
     return total_distance, path, path_dict
-
-
-def measure_run_length_sgns(
-        centroids: np.ndarray,
-        scale_factor: int = 10,
-        apex_higher: bool = True,
-        extension_length: Optional[float] = None,
-) -> Tuple[float, np.ndarray, dict]:
-    """Measure the run lengths of the SGN segmentation by finding a central path through Rosenthal's canal.
-    1) Create a binary mask based on down-scaled centroids.
-    2) Dilate the mask and close holes to ensure a filled structure.
-    3) Determine the endpoints of the structure using the principal axis.
-    4) Assign base/apex position to path.
-    5) Identify a central path based on the 3D Euclidean distance transform.
-    6) The path is up-scaled and smoothed using a moving average filter.
-    7) The points of the path are fed into a dictionary along with the fractional length.
-
-    Args:
-        centroids: Centroids of the SGN segmentation, ndarray of shape (N, 3).
-        scale_factor: Downscaling factor for finding the central path.
-        apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
-        extension_length: Extend central path between segmentation instances. Adds nodes in regular interval [µm].
-
-    Returns:
-        Total distance of the path.
-        Path as an nd.array of positions.
-        A dictionary containing the position and the length fraction of each point in the path.
-    """
-    # 1) Create a binary mask based on down-scaled centroids.
-    mask = downscaled_centroids(centroids, scale_factor=scale_factor, downsample_mode="capped")
-    # 2) Dilate the mask and close holes to ensure a filled structure.
-    mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
-    mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
-    pts = np.argwhere(mask == 1)
-
-    # 3) Find two endpoints: min/max along principal axis.
-    c_mean = pts.mean(axis=0)
-    cov = np.cov((pts - c_mean).T)
-    evals, evecs = np.linalg.eigh(cov)
-    axis = evecs[:, np.argmax(evals)]
-    proj = (pts - c_mean) @ axis
-    start_voxel = tuple(pts[proj.argmin()])
-    end_voxel = tuple(pts[proj.argmax()])
-
-    # 4) Assign base/apex position to path.
-    # compare y-value to not get into confusion with MoBIE dimensions
-    if start_voxel[1] > end_voxel[1]:
-        apex = start_voxel if apex_higher else end_voxel
-        base = end_voxel if apex_higher else start_voxel
-    else:
-        apex = end_voxel if apex_higher else start_voxel
-        base = start_voxel if apex_higher else end_voxel
-
-    # 5) Identify a central path based on the 3D Euclidean distance transform.
-    path = central_path_edt_graph(mask, apex, base)
-    # 6) The path is up-scaled and smoothed using a moving average filter.
-    path_pos = path * scale_factor
-
-    if extension_length is not None:
-        path_extended = []
-        for num in range(len(path_pos) - 1):
-            dist = math.dist(path_pos[num], path_pos[num + 1])
-            extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist))
-            path_extended.append(path_pos[num])
-            path_extended.extend(extended_space)
-        path_extended.append(path_pos[-1])
-        path = moving_average_3d(np.array(path_extended), window=3)
-    else:
-        path = moving_average_3d(path_pos, window=5)
-
-    total_distance = sum([math.dist(path[num + 1], path[num]) for num in range(len(path) - 1)])
-
-    # 7) The points of the path are fed into a dictionary along with the fractional length.
-    path_dict = {}
-    path_dict[0] = {"pos": path[0], "length_fraction": 0}
-    accumulated = 0
-    for num, p in enumerate(path[1:-1]):
-        distance = math.dist(path[num], p)
-        accumulated += distance
-        rel_dist = accumulated / total_distance
-        path_dict[num + 1] = {"pos": p, "length_fraction": rel_dist}
-    path_dict[len(path)] = {"pos": path[-1], "length_fraction": 1}
-
-    return total_distance, path, path_dict
-
-
-def measure_run_length_ihcs_multi_component(
-    centroids_components: List[np.ndarray],
-    max_edge_distance: float = 30,
-    apex_higher: bool = True,
-    component_label: List[int] = [1],
-    extension_length: Optional[float] = None,
-) -> Tuple[float, np.ndarray, dict]:
-    """Adaptation of measure_run_length_sgns_multi_component to IHCs.
-
-    """
-    total_path = []
-    print(f"Evaluating {len(centroids_components)} components.")
-    # 1) Process centroids for each component
-    for centroids in centroids_components:
-        max_edge_dist_tmp = max([round(find_max_min_distance(centroids) + 0.5), max_edge_distance])
-        graph = nx.Graph()
-        coords = {}
-        labels = [int(i) for i in range(len(centroids))]
-        for index, element in zip(labels, centroids):
-            coords[index] = element
-
-        for num, pos in coords.items():
-            graph.add_node(num, pos=pos)
-
-        # create edges between points whose distance is less than threshold max_edge_distance
-        for num_i, pos_i in coords.items():
-            for num_j, pos_j in coords.items():
-                if num_i < num_j:
-                    dist = math.dist(pos_i, pos_j)
-                    if dist <= max_edge_dist_tmp:
-                        graph.add_edge(num_i, num_j, weight=dist)
-
-        components = [list(c) for c in nx.connected_components(graph)]
-        len_c = [len(c) for c in components]
-        len_c, components = zip(*sorted(zip(len_c, components), reverse=True))
-
-        # combine separate connected components by adding edges between nodes which are closest together
-        if len(components) > 1:
-            print(f"Graph consists of {len(components)} connected components.")
-            if len(component_label) != len(components):
-                raise ValueError(f"Length of graph components {len(components)} "
-                                 f"does not match number of component labels {len(component_label)}.")
-
-            # Order connected components in order of component labels
-            # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
-            # get re-ordered to [300, 400, 600, 55]
-            components_sorted = [
-                c[1] for _, c in sorted(zip(sorted(range(len(component_label)), key=lambda i: component_label[i]),
-                                            sorted(zip(len_c, components), key=lambda x: x[0], reverse=True)))]
-
-            # Connect nodes of neighboring components that are closest together
-            for num in range(0, len(components_sorted) - 1):
-                min_dist = float("inf")
-                closest_pair = None
-
-                # Compare only nodes between two neighboring components
-                for node_a in components_sorted[num]:
-                    for node_b in components_sorted[num + 1]:
-                        dist = math.dist(graph.nodes[node_a]["pos"], graph.nodes[node_b]["pos"])
-                        if dist < min_dist:
-                            min_dist = dist
-                            closest_pair = (node_a, node_b)
-                graph.add_edge(closest_pair[0], closest_pair[1], weight=min_dist)
-
-            print("Connect components in order of component labels.")
-
-        start_node, end_node = find_most_distant_nodes(graph)
-
-        # compare y-value to not get into confusion with MoBIE dimensions
-        if graph.nodes[start_node]["pos"][1] > graph.nodes[end_node]["pos"][1]:
-            apex_node = start_node if apex_higher else end_node
-            base_node = end_node if apex_higher else start_node
-        else:
-            apex_node = end_node if apex_higher else start_node
-            base_node = start_node if apex_higher else end_node
-
-        path = nx.shortest_path(graph, source=apex_node, target=base_node)
-        path_pos = np.array([graph.nodes[p]["pos"] for p in path])
-        if extension_length is not None:
-            path_extended = []
-            for num in range(len(path_pos) - 1):
-                dist = math.dist(path_pos[num], path_pos[num + 1])
-                extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist))
-                path_extended.append(path_pos[num])
-                path_extended.extend(extended_space)
-            path_extended.append(path_pos[-1])
-            path = moving_average_3d(np.array(path_extended), window=3)
-        else:
-            path = moving_average_3d(path_pos, window=5)
-        total_path.append(path)
-
-    # 2) Order paths to have consistent start/end points
-    # Find starting order of first two components
-    c1a = total_path[0][0, :]
-    c1b = total_path[0][-1, :]
-
-    c2a = total_path[1][0, :]
-    c2b = total_path[1][-1, :]
-
-    distances = [math.dist(c1a, c2a), math.dist(c1a, c2b), math.dist(c1b, c2a), math.dist(c1b, c2b)]
-    min_index = distances.index(min(distances))
-    if min_index in [0, 1]:
-        total_path[0] = np.flip(total_path[0], axis=0)
-
-    # Order other components from start to end
-    for num in range(0, len(total_path) - 1):
-        dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
-        dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
-        if dist_connecting_nodes_2 < dist_connecting_nodes_1:
-            total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
-
-    # 3) Assign base/apex position to path
-    # compare y-value to not get into confusion with MoBIE dimensions
-    if total_path[0][0, 1] > total_path[-1][-1, 1]:
-        if not apex_higher:
-            total_path.reverse()
-            total_path = [np.flip(t) for t in total_path]
-    elif apex_higher:
-        total_path.reverse()
-        total_path = [np.flip(t) for t in total_path]
-
-    # 4) Assign distance of nodes by skipping intermediate space between separate components
-    total_distance = sum([math.dist(p[num + 1], p[num]) for p in total_path for num in range(len(p) - 1)])
-    path_dict = {}
-    accumulated = 0
-    index = 0
-    for num, pa in enumerate(total_path):
-        if num == 0:
-            path_dict[0] = {"pos": total_path[0][0], "length_fraction": 0}
-        else:
-            path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index - 1]["length_fraction"]}
-
-        index += 1
-        for enum, p in enumerate(pa[1:]):
-            distance = math.dist(total_path[num][enum], p)
-            accumulated += distance
-            rel_dist = accumulated / total_distance
-            path_dict[index] = {"pos": p, "length_fraction": rel_dist}
-            index += 1
-    path_dict[index - 1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
-
-    # 5) Concatenate individual paths to form total path
-    path = np.concatenate(total_path, axis=0)
-
-    return total_distance, path, path_dict
-
-
-def find_max_min_distance(coords):
-    """
-    Find the maximum of the minimum distances from each point to any other point.
-
-    Args:
-        coords: Array of shape (n, 3) containing 3D coordinates
-
-    Returns:
-        float: Maximum of the minimum distances
-    """
-    coords = np.array(coords)
-
-    # Compute all pairwise distances using broadcasting
-    # Shape: (n, n, 3) - all pairwise differences
-    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
-
-    # Compute squared distances (avoiding sqrt for efficiency)
-    squared_distances = np.sum(diff**2, axis=2)
-
-    # Set diagonal to infinity to exclude distance to self
-    np.fill_diagonal(squared_distances, np.inf)
-
-    # Find minimum distance for each point
-    min_distances = np.sqrt(np.min(squared_distances, axis=1))
-
-    # Find the maximum of these minimum distances
-    max_min_distance = np.max(min_distances)
-
-    return max_min_distance
 
 
 def minimal_connection_distance(points):
@@ -551,17 +325,16 @@ def minimal_connection_distance(points):
 
 def measure_run_length_ihcs(
     centroids: np.ndarray,
-    centroids_components: Optional[List[np.ndarray]],
+    centroids_components: Optional[List[np.ndarray]] = None,
     max_edge_distance: float = 30,
     apex_higher: bool = True,
     component_label: List[int] = [1],
-    extension_length: Optional[float] = None,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the IHC segmentation
     by determining the shortest path between the most distant nodes of a graph.
     The graph is created based on the maximal edge distance between nodes.
 
-    If the graph consists of more than one connected components, a list of component labels must be supplied.
+    If the graph consists of more than one connected component, a list of component labels must be supplied.
     The components are then connected with edges between nodes of neighboring components which are closest together.
     Gaps between individual components are ignored and do not count towards the path length.
 
@@ -570,7 +343,6 @@ def measure_run_length_ihcs(
         max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         component_label: List of component labels. Determines the order of components to connect.
-        extension_length: Extend central path between segmentation instances. Adds nodes in regular interval [µm].
 
     Returns:
         Total distance of the path.
@@ -618,6 +390,7 @@ def measure_run_length_ihcs(
         # Order connected components in order of component labels
         # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
         # get re-ordered to [300, 400, 600, 55]
+        # TODO: Find more robust way to sort components
         components_sorted = [
             c[1] for _, c in sorted(zip(sorted(range(len(component_label)), key=lambda i: component_label[i]),
                                         sorted(zip(len_c, components), key=lambda x: x[0], reverse=True)))]
@@ -651,19 +424,7 @@ def measure_run_length_ihcs(
     path = nx.shortest_path(graph, source=apex_node, target=base_node)
     total_distance = nx.path_weight(graph, path, weight="weight")
     path_pos = [graph.nodes[p]["pos"] for p in path]
-
-    if extension_length is not None:
-        path_extended = []
-        for num in range(len(path_pos) - 1):
-            dist = math.dist(path_pos[num], path_pos[num + 1])
-            extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist))
-            path_extended.append(path_pos[num])
-            path_extended.extend(extended_space)
-        path_extended.append(path_pos[-1])
-        path = moving_average_3d(np.array(path_extended), window=3)
-        path_pos = path_extended
-    else:
-        path = moving_average_3d(np.array(path_pos), window=5)
+    path = moving_average_3d(path_pos, window=3)
 
     # assign relative distance to points on path
     path_dict = {}
@@ -867,7 +628,7 @@ def equidistant_centers(
     centroids = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
 
     if cell_type == "ihc":
-        if len(component_label) == 1:
+        if len(component_label) != 1:
             total_distance, path, _ = measure_run_length_ihcs(
                 centroids, component_label=component_label,
             )
@@ -878,23 +639,21 @@ def equidistant_centers(
                 subset = table[table["component_labels"] == label]
                 subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
                 centroids_components.append(subset_centroids)
-            total_distance, path, path_dict = measure_run_length_ihcs_multi_component(
-                centroids_components, skip_gap=True,
+            total_distance, path, path_dict = measure_run_length_ihcs(
+                centroids_components,
             )
             return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
     else:
+        centroids_components = []
+        for label in component_label:
+            subset = table[table["component_labels"] == label]
+            subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
+            centroids_components.append(subset_centroids)
+        total_distance, path, path_dict = measure_run_length_sgns(centroids_components)
         if len(component_label) == 1:
-            total_distance, path, _ = measure_run_length_sgns(centroids)
             return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
-
         else:
-            centroids_components = []
-            for label in component_label:
-                subset = table[table["component_labels"] == label]
-                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-                centroids_components.append(subset_centroids)
-            total_distance, path, path_dict = measure_run_length_sgns_multi_component(centroids_components)
             return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
 
@@ -907,7 +666,6 @@ def tonotopic_mapping(
     apex_higher: bool = True,
     otof: bool = False,
     central_path_df: Optional[pd.DataFrame] = None,
-    extension_length: Optional[float] = None,
 ) -> pd.DataFrame:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
@@ -921,7 +679,6 @@ def tonotopic_mapping(
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         central_path_df: Dataframe featuring the spots for the central path through the segmentation.
-        extension_length: Extend central path between segmentation instances. Adds nodes in regular interval [µm].
 
     Returns:
         Table with tonotopic label for cells.
@@ -936,7 +693,7 @@ def tonotopic_mapping(
 
     if central_path_df is None:
 
-        if cell_type == "ihc":
+        if cell_type in ["ihc", "IHC"]:
             centroids_components = []
             for label in component_mapping:
                 subset = table[table["component_labels"] == label]
@@ -945,26 +702,20 @@ def tonotopic_mapping(
 
             total_distance, _, path_dict = measure_run_length_ihcs(
                 centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
-                extension_length=extension_length,
+            )
+
+        elif cell_type in ["sgn", "SGN"]:
+            centroids_components = []
+            for label in component_mapping:
+                subset = table[table["component_labels"] == label]
+                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
+                centroids_components.append(subset_centroids)
+            total_distance, _, path_dict = measure_run_length_sgns(
+                centroids_components, apex_higher=apex_higher,
             )
 
         else:
-            if len(component_mapping) == 1:
-                total_distance, _, path_dict = measure_run_length_sgns(
-                    centroids, apex_higher=apex_higher,
-                    extension_length=extension_length,
-                )
-
-            else:
-                centroids_components = []
-                for label in component_mapping:
-                    subset = table[table["component_labels"] == label]
-                    subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-                    centroids_components.append(subset_centroids)
-                total_distance, _, path_dict = measure_run_length_sgns_multi_component(
-                    centroids_components, apex_higher=apex_higher,
-                    extension_length=extension_length,
-                )
+            raise ValueError(f"Unrecognized cell type: {cell_type}. Choose either 'sgn' or 'ihc'.")
 
         for key, items in path_dict.items():
             path_dict[key]["length[µm]"] = items["length_fraction"] * total_distance
@@ -974,6 +725,7 @@ def tonotopic_mapping(
         central_path_df = path_dict_to_central_path_table(path_dict)
     else:
         path_dict = central_path_table_to_path_dict(central_path_df)
+        path_dict = map_frequency(path_dict, animal=animal, otof=otof)
         node_dict = node_dict_from_path_dict(path_dict, label_ids, centroids)
 
     offset = [-1 for _ in range(len(table))]
@@ -1080,11 +832,10 @@ def tonotopic_mapping_single(
                                                    cell_type=cell_type, component_mapping=component_mapping,
                                                    apex_higher=apex_higher,
                                                    central_path_df=central_path_df,
-                                                   otof=otof,
-                                                   extension_length=1)
+                                                   otof=otof)
 
         table.to_csv(out_path, sep="\t", index=False)
-        if central_spots_path is not None and not os.path.isfile(out_path):
+        if central_spots_path is not None and not os.path.isfile(central_spots_path):
             print("Saving path", central_spots_path)
             central_path_df.to_csv(central_spots_path, sep="\t", index=False)
 
