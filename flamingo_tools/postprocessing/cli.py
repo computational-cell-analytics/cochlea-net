@@ -308,6 +308,8 @@ def tonotopic_mapping():
         "-c", "--components", type=int, nargs="+", default=[1],
         help="List of connected components. The order has to match the order within the cochlear volume.",
     )
+    parser.add_argument("--include_gap", action="store_true",
+                        help="Include gaps between components for calculating the length of the central path.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -332,6 +334,7 @@ def tonotopic_mapping():
         apex_position=args.apex_position,
         cell_type=args.cell_type,
         component_list=args.components,
+        include_gap=args.include_gap,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

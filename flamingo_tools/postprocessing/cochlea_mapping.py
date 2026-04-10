@@ -174,6 +174,7 @@ def measure_run_length_sgns(
         centroids_components: List[np.ndarray],
         scale_factor: int = 10,
         apex_higher: bool = True,
+        include_gap: bool = False,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the SGN segmentation by finding a central path through Rosenthal's canal.
     This function handles cases with a single or multiple components.
@@ -196,6 +197,7 @@ def measure_run_length_sgns(
         centroids_components: List of centroids of the SGN segmentation, ndarray of shape (N, 3).
         scale_factor: Downscaling factor for finding the central path.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
+        include_gap: Include the distance between different components for calculating the run length.
 
     Returns:
         Total distance of the path.
@@ -273,14 +275,20 @@ def measure_run_length_sgns(
         total_path = [np.flip(t) for t in total_path]
 
     # 4) Assign distance of nodes by skipping intermediate space between separate components
+    if include_gap:
+        # flatten the list of components
+        total_path = [[node for comp_path in total_path for node in comp_path]]
     total_distance = sum([math.dist(p[num + 1], p[num]) for p in total_path for num in range(len(p) - 1)])
-    print("total dist", total_distance)
+    print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
+
     path_dict = {}
     accumulated = 0
     index = 0
     for num, pa in enumerate(total_path):
+        # first node of first path segment
         if num == 0:
             path_dict[0] = {"pos": total_path[0][0], "length_fraction": 0}
+        # first node of other path segments
         else:
             path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index - 1]["length_fraction"]}
 
@@ -291,6 +299,7 @@ def measure_run_length_sgns(
             rel_dist = accumulated / total_distance
             path_dict[index] = {"pos": p, "length_fraction": rel_dist}
             index += 1
+    # add last node of last path segment
     path_dict[index - 1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
 
     # 5) Concatenate individual paths to form total path
@@ -331,6 +340,7 @@ def measure_run_length_ihcs(
     max_edge_distance: float = 30,
     apex_higher: bool = True,
     component_label: List[int] = [1],
+    include_gap: bool = False,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the IHC segmentation
     by determining the shortest path between the most distant nodes of a graph.
@@ -345,6 +355,7 @@ def measure_run_length_ihcs(
         max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         component_label: List of component labels. Determines the order of components to connect.
+        include_gap: Include the distance between different components for calculating the run length.
 
     Returns:
         Total distance of the path.
@@ -426,6 +437,14 @@ def measure_run_length_ihcs(
     path = nx.shortest_path(graph, source=apex_node, target=base_node)
     total_distance = nx.path_weight(graph, path, weight="weight")
     path_pos = [graph.nodes[p]["pos"] for p in path]
+    if not include_gap:
+        # remove distances between components which are larger than the max edge distance
+        total_distance = sum([math.dist(path_pos[num], path_pos[num + 1]) for num in range(len(path_pos) - 1) if
+                              math.dist(path_pos[num], path_pos[num + 1]) <= max_edge_distance])
+    else:
+        total_distance = sum([math.dist(path_pos[num], path_pos[num + 1]) for num in range(len(path_pos) - 1)])
+
+    print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
     path = moving_average_3d(path_pos, window=3)
 
     # assign relative distance to points on path
@@ -434,7 +453,8 @@ def measure_run_length_ihcs(
     accumulated = 0
     for num, p in enumerate(path_pos[1:-1]):
         distance = math.dist(path_pos[num], p)
-        accumulated += distance
+        if include_gap or distance <= max_edge_distance:
+            accumulated += distance
         rel_dist = accumulated / total_distance
         path_dict[num + 1] = {"pos": p, "length_fraction": rel_dist}
     path_dict[len(path_pos)] = {"pos": path_pos[-1], "length_fraction": 1}
@@ -630,21 +650,10 @@ def equidistant_centers(
     centroids = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
 
     if cell_type == "ihc":
-        if len(component_label) != 1:
-            total_distance, path, _ = measure_run_length_ihcs(
-                centroids, component_label=component_label,
-            )
-            return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
-        else:
-            centroids_components = []
-            for label in component_label:
-                subset = table[table["component_labels"] == label]
-                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-                centroids_components.append(subset_centroids)
-            total_distance, path, path_dict = measure_run_length_ihcs(
-                centroids_components,
-            )
-            return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
+        total_distance, path, path_dict = measure_run_length_ihcs(
+            centroids, component_label=component_label, include_gap=True,
+        )
+        return get_centers_from_path_dict(path_dict, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
     else:
         centroids_components = []
@@ -652,7 +661,7 @@ def equidistant_centers(
             subset = table[table["component_labels"] == label]
             subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
             centroids_components.append(subset_centroids)
-        total_distance, path, path_dict = measure_run_length_sgns(centroids_components)
+        total_distance, path, path_dict = measure_run_length_sgns(centroids_components, include_gap=True)
         if len(component_label) == 1:
             return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
         else:
@@ -668,6 +677,7 @@ def tonotopic_mapping(
     apex_higher: bool = True,
     otof: bool = False,
     central_path_df: Optional[pd.DataFrame] = None,
+    include_gap: bool = False,
 ) -> pd.DataFrame:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
@@ -681,6 +691,7 @@ def tonotopic_mapping(
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         central_path_df: Dataframe featuring the spots for the central path through the segmentation.
+        include_gap: Include the distance between different components for calculating the run length.
 
     Returns:
         Table with tonotopic label for cells.
@@ -704,6 +715,7 @@ def tonotopic_mapping(
 
             total_distance, _, path_dict = measure_run_length_ihcs(
                 centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
+                include_gap=include_gap,
             )
 
         elif cell_type in ["sgn", "SGN"]:
@@ -714,6 +726,7 @@ def tonotopic_mapping(
                 centroids_components.append(subset_centroids)
             total_distance, _, path_dict = measure_run_length_sgns(
                 centroids_components, apex_higher=apex_higher,
+                include_gap=include_gap,
             )
 
         else:
@@ -766,6 +779,7 @@ def tonotopic_mapping_single(
     component_list: List[int] = [1],
     component_mapping: Optional[List[int]] = None,
     central_spots_path: Optional[str] = None,
+    include_gap: bool = False,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -792,6 +806,7 @@ def tonotopic_mapping_single(
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
         component_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         central_spots_path: Provide table featuring spots for central path through segmentation for tonotopic mapping.
+        include_gap: Include the distance between different components for calculating the run length.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -834,6 +849,7 @@ def tonotopic_mapping_single(
                                                    cell_type=cell_type, component_mapping=component_mapping,
                                                    apex_higher=apex_higher,
                                                    central_path_df=central_path_df,
+                                                   include_gap=include_gap,
                                                    otof=otof)
 
         table.to_csv(out_path, sep="\t", index=False)
