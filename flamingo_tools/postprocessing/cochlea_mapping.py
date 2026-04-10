@@ -122,6 +122,8 @@ def moving_average_3d(path: np.ndarray, window: int = 3) -> np.ndarray:
     Returns:
         smoothed path: ndarray of same shape.
     """
+    if not isinstance(path, np.ndarray):
+        path = np.array(path)
     kernel_size = 2 * window + 1
     kernel = np.ones(kernel_size) / kernel_size
 
