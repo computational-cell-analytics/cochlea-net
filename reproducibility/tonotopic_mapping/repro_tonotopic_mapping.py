@@ -17,6 +17,7 @@ def wrapper_tonotopic_mapping(
     output_path: str,
     table_path: Optional[str] = None,
     ddict: Optional[str] = None,
+    central_spots_path: Optional[str] = None,
     force_overwrite: bool = False,
     animal: str = "mouse",
     otof: bool = False,
@@ -65,11 +66,14 @@ def wrapper_tonotopic_mapping(
                 cochlea_str = cochlea.replace('_', '-')
                 table_str = seg_channel.replace('_', '-')
                 save_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
+                if central_spots_path is None:
+                    central_spots_path = os.path.join(output_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
             else:
                 save_path = output_path
 
             tonotopic_mapping_single(table_path=table_path, out_path=save_path, animal=animal, otof=otof,
-                                     force_overwrite=force_overwrite, s3=s3, **params)
+                                     force_overwrite=force_overwrite, central_spots_path=central_spots_path,
+                                     s3=s3, **params)
 
 
 def main():
@@ -129,5 +133,4 @@ def main():
 
 
 if __name__ == "__main__":
-
     main()

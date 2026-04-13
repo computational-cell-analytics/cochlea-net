@@ -3,7 +3,7 @@
 import argparse
 
 from .label_components import label_components_single
-from .cochlea_mapping import tonotopic_mapping_single, equidistant_centers_single
+from .cochlea_mapping import tonotopic_mapping_json_wrapper, equidistant_centers_single
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
@@ -285,12 +285,16 @@ def tonotopic_mapping():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument("-i", "--input", type=str, required=True, help="Input path to segmentation table.")
+    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output path for segmentation table. Default: Overwrite input table.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for tonotopic mapping
+    parser.add_argument("--json_info", type=str, default=None,
+                        help="JSON file with dataset information.")
+    parser.add_argument("--central_spots_path", type=str, default=None,
+                        help="Dataframe containing spots of the central path of the segmentation.")
     parser.add_argument("--animal", type=str, default="mouse",
                         help="Animal type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
     parser.add_argument("--otof", action="store_true", help="Use frequency mapping for OTOF cochleae.")
@@ -304,6 +308,8 @@ def tonotopic_mapping():
         "-c", "--components", type=int, nargs="+", default=[1],
         help="List of connected components. The order has to match the order within the cochlear volume.",
     )
+    parser.add_argument("--include_gap", action="store_true",
+                        help="Include gaps between components for calculating the length of the central path.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -317,15 +323,18 @@ def tonotopic_mapping():
 
     args = parser.parse_args()
 
-    tonotopic_mapping_single(
+    tonotopic_mapping_json_wrapper(
         table_path=args.input,
         out_path=args.output,
+        json_file=args.json_info,
+        central_spots_path=args.central_spots_path,
         force_overwrite=args.force,
         animal=args.animal,
         otof=args.otof,
         apex_position=args.apex_position,
         cell_type=args.cell_type,
         component_list=args.components,
+        include_gap=args.include_gap,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
