@@ -143,7 +143,7 @@ def find_crop_centers_ihc(
     component_labels: List[int],
     crop_size: Tuple[int] = (128, 256, 256),
     max_crops_per_comp: int = 10,
-) -> List[Tuple[int]]:
+) -> Tuple[List[Tuple[int]], List[float]]:
     """Find crop centers for IHC segmentation.
     The function will go through each component individually.
     It will find the maximal number of equidistant crops with the given size which do not overlap.
@@ -154,11 +154,14 @@ def find_crop_centers_ihc(
         crop_size: Size of the ROI.
         max_crops_per_comp: Maximum number of crops per component.
 
-        Returns: List of crop centers for all components.
+    Returns:
+        List of crop centers for all components.
+        List of length fractions for crop centers.
     """
     n_blocks_try = [i + 1 for i in range(max_crops_per_comp)]
     n_blocks_try = sorted(n_blocks_try, reverse=True)
     total_centers = []
+    total_length_fractions = []
     # iterate through components
     for label in component_labels:
         subset = df[df["component_labels"] == label]
@@ -169,20 +172,25 @@ def find_crop_centers_ihc(
             target_s = np.linspace(length_sect[0], length_sect[-1], n_blocks * 2 + 1)
             target_s = [s for num, s in enumerate(target_s) if num % 2 == 1]
             centers = []
+            fractions = []
             for target in target_s:
                 idx = (subset["length_fraction"] - target).abs().idxmin()
                 closest_row = subset.loc[idx]
                 center_physical = [closest_row["anchor_x"], closest_row["anchor_y"], closest_row["anchor_z"]]
                 centers.append(center_physical)
+                fractions.append(closest_row["length_fraction"])
             centers = [[round(c) for c in center] for center in centers]
+            fractions = [round(fr, 3) for fr in fractions]
             overlap = check_all_crops_overlap(centers, size=crop_size)
             # found maximal number of blocks
             if not overlap:
                 print(f"Using {n_blocks} block(s) for label {label}.")
                 best_centers = centers
+                centers_length_fraction = fractions
                 break
         total_centers.extend(best_centers)
-    return total_centers
+        total_length_fractions.extend(centers_length_fraction)
+    return total_centers, total_length_fractions
 
 
 def export_crop_centers(
@@ -192,6 +200,7 @@ def export_crop_centers(
     segmentation_channel: str = "IHC_v4b",
     halo_size: List[int] = [128, 256, 256],
     suffix: str = "crop",
+    force_overwrite: str = False,
 ) -> str:
     """Export JSON dictionary for the creation of crops for annotation.
 
@@ -202,13 +211,14 @@ def export_crop_centers(
         segmentation_channel: Name of the segmentation channel.
         halo_size: Size of the halo of the ROI. ROI will be twice the size.
         suffix: Suffix for JSON dictionary.
+        force_overwrite: Forcefully overwrite JSON dictionary.
 
     Returns:
         Output path of the JSON dictionary.
     """
     cell_type = segmentation_channel.split("_")[0]
     output_path = os.path.join(out_dir, f"{cochlea}_{suffix}_{cell_type.lower()}.json")
-    if os.path.isfile(output_path):
+    if os.path.isfile(output_path) and not force_overwrite:
         print(f"JSON dictionary {output_path} already exists. Skipping creation.")
         return output_path
     else:
@@ -229,7 +239,7 @@ def export_crop_centers(
         df = pd.read_csv(f, sep="\t")
 
     crop_size = [i * 2 for i in halo_size]
-    total_centers = find_crop_centers_ihc(df, component_labels, crop_size=crop_size)
+    total_centers, total_length_fractions = find_crop_centers_ihc(df, component_labels, crop_size=crop_size)
     n_blocks = len(total_centers)
 
     crop_dict = {}
@@ -241,8 +251,49 @@ def export_crop_centers(
     crop_dict["roi_halo"] = halo_size
     crop_dict["component_list"] = component_labels
     crop_dict["crop_centers"] = total_centers
+    crop_dict["length_fraction_centers"] = total_length_fractions
 
     with open(output_path, "w") as f:
         json.dump([crop_dict], f, indent='\t', separators=(',', ': '))
 
     return output_path
+
+
+def export_position_for_crop_centers(
+    json_files: List[str],
+    save_path: str,
+):
+    """Create an Excel spreadsheet or a CSV table which summarizes the location of the crops.
+    """
+    dict_list = []
+    for json_file in json_files:
+        with open(json_file, "r") as f:
+            param_dicts = json.loads(f.read())
+        if not isinstance(param_dicts, list):
+            param_dicts = [param_dicts]
+        for params in param_dicts:
+            cochlea = params["dataset_name"]
+            total_centers = params["crop_centers"]
+            total_length_fractions = params["length_fraction_centers"]
+            for center, fraction in zip(total_centers, total_length_fractions):
+                center_dic = {"Cochlea": cochlea}
+                center_dic["X"] = center[0]
+                center_dic["Y"] = center[1]
+                center_dic["Z"] = center[2]
+                center_dic["length_fraction"] = fraction
+                dict_list.append(center_dic)
+
+    data = pd.DataFrame(dict_list)
+
+    ext = os.path.splitext(save_path)[1]
+    if ext == "":  # No file extension given, By default we save to CSV.
+        file_path = f"{save_path}.csv"
+        data.to_csv(file_path, index=False)
+    elif ext == ".csv":  # Extension was specified as csv
+        file_path = save_path
+        data.to_csv(file_path, index=False)
+    elif ext == ".xlsx":  # We also support excel.
+        file_path = save_path
+        data.to_excel(file_path, index=False)
+    else:
+        raise ValueError("Invalid extension for table: {ext}. We support .csv or .xlsx.")

@@ -21,6 +21,7 @@ TRAINING_COCHLEAE = [
 def create_crop_dictionaries(
     cochleae: List[str],
     out_dir: str,
+    force_overwrite: bool = False,
 ) -> Tuple[List[str], List[str]]:
     """Create a JSON dictionary featuring information for creating crops from an IHC segmentation.
     Per default, the dictionary is used to extract the PV, Vglut3, and IHC_v4b channels.
@@ -42,7 +43,9 @@ def create_crop_dictionaries(
         else:
             component_labels = [1]
         suffix = SYNAPSE_DICT[cochlea]["protocol"]
-        json_file = export_crop_centers(cochlea, component_labels, out_dir, suffix=suffix)
+        json_file = export_crop_centers(
+            cochlea, component_labels, out_dir, suffix=suffix, force_overwrite=force_overwrite,
+        )
         cochlea_names.append(f"{cochlea}_{suffix}")
         json_files.append(json_file)
     return cochlea_names, json_files
@@ -56,6 +59,7 @@ def main():
                         help="Cochlea(e) to analyze.")
     parser.add_argument("-j", "--json_dir", type=str, required=True,
                         help="Output directory for JSON dictionaries which feature parameters for crop extraction.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite JSON dictionaries.")
     parser.add_argument("-o", "--output_folder", type=str, default=None,
                         help="Output directory for extracted crops in TIF format.")
     args = parser.parse_args()
@@ -64,7 +68,12 @@ def main():
     cochlea_names, json_files = create_crop_dictionaries(
         cochleae=args.cochlea,
         out_dir=args.json_dir,
+        force_overwrite=args.force,
     )
+
+    # from flamingo_tools.analysis.training_data_utils import create_xlsx_for_crops
+    # save_path = os.path.join(args.json_dir, "ihc_center_location.xlsx")
+    # export_position_for_crop_centers(json_files, save_path=save_path)
 
     if args.output_folder is not None:
         # extract crops for cochlea(e)
