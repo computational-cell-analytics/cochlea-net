@@ -1,0 +1,14 @@
+[
+	{
+		"dataset_name": "M_AMD_Roe310_L",
+		"image_channel": [
+			"PV",
+			"CR",
+			"Lypd1"
+		],
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1
+		]
+	}
+]
