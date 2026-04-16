@@ -269,10 +269,10 @@ def measure_run_length_sgns(
     if total_path[0][0, 1] > total_path[-1][-1, 1]:
         if not apex_higher:
             total_path.reverse()
-            total_path = [np.flip(t) for t in total_path]
+            total_path = [np.flip(t, axis=0) for t in total_path]
     elif apex_higher:
         total_path.reverse()
-        total_path = [np.flip(t) for t in total_path]
+        total_path = [np.flip(t, axis=0) for t in total_path]
 
     # 4) Assign distance of nodes by skipping intermediate space between separate components
     if include_gap:
@@ -549,8 +549,6 @@ def get_centers_from_path(
         print("Using extrapolation to fill values.")
         f = interp1d(cum_len, path, axis=0, fill_value="extrapolate")
         centers = f(target_s)
-    # TODO figure out why exactly coordinates need to be flipped
-    centers = [np.flip(c) for c in centers]
     return centers
 
 
@@ -586,7 +584,6 @@ def get_centers_from_path_dict(
                 min_dist = dist
                 nearest_node = key
         centers.append(path_dict[nearest_node]["pos"])
-    centers = [np.flip(c) for c in centers]
     return centers
 
 
