@@ -50,6 +50,9 @@ def add_metadata_to_crop_table(
         if len(unique_labels) > 1 and unique_labels[0] == 0:
             unique_labels = unique_labels[1:]
             counts = counts[1:]
+        # empty crop
+        else:
+            unique_labels = []
 
         samples_undercut = 0
         samples = 0

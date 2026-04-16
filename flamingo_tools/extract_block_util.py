@@ -174,6 +174,8 @@ def extract_block_json_wrapper(
             input_path=input_path,
             output_path=output_path,
             force_overwrite=force,
+            coords=coords,
+            s3=s3,
             **kwargs,
         )
 
