@@ -199,6 +199,7 @@ def extract_central_block_from_json(
         mobie_dir: Local MoBIE directory used for creating data paths.
     """
     with open(json_file, "r") as f:
+        # TODO adapt script and subscripts, e.g. equidistant_centers_single, for multiple dictionaries in one JSON file
         dic = json.loads(f.read())
 
     if s3:
@@ -219,11 +220,13 @@ def extract_central_block_from_json(
     )
 
     os.makedirs(output_path, exist_ok=True)
+    input_key = "s0"
 
     extract_block_json_wrapper(
         output_path=output_path,
         json_file=json_file,
         s3=s3,
+        input_key=input_key,
         mobie_dir=mobie_dir,
         force=force_overwrite,
         **kwargs,

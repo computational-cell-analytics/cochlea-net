@@ -277,7 +277,7 @@ def measure_run_length_sgns(
     # 4) Assign distance of nodes by skipping intermediate space between separate components
     if include_gap:
         # flatten the list of components
-        total_path = [[node for comp_path in total_path for node in comp_path]]
+        total_path = [np.array([node for comp_path in total_path for node in comp_path])]
     total_distance = sum([math.dist(p[num + 1], p[num]) for p in total_path for num in range(len(p) - 1)])
     print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
 
@@ -549,6 +549,8 @@ def get_centers_from_path(
         print("Using extrapolation to fill values.")
         f = interp1d(cum_len, path, axis=0, fill_value="extrapolate")
         centers = f(target_s)
+    # TODO figure out why exactly coordinates need to be flipped
+    centers = [np.flip(c) for c in centers]
     return centers
 
 
@@ -584,7 +586,7 @@ def get_centers_from_path_dict(
                 min_dist = dist
                 nearest_node = key
         centers.append(path_dict[nearest_node]["pos"])
-
+    centers = [np.flip(c) for c in centers]
     return centers
 
 
@@ -632,6 +634,7 @@ def equidistant_centers(
     cell_type: str = "sgn",
     n_blocks: int = 10,
     offset_blocks: bool = True,
+    include_gap: bool = False,
 ) -> np.ndarray:
     """Find equidistant centers within the central path of the Rosenthal's canal.
 
@@ -641,6 +644,7 @@ def equidistant_centers(
         cell_type: Cell type of the segmentation.
         n_blocks: Number of equidistant centers for block creation.
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
+        include_gap: Include the distance between different components for calculating the run length.
 
     Returns:
         Equidistant centers as float values
@@ -651,7 +655,7 @@ def equidistant_centers(
 
     if cell_type == "ihc":
         total_distance, path, path_dict = measure_run_length_ihcs(
-            centroids, component_label=component_label, include_gap=True,
+            centroids, component_label=component_label, include_gap=include_gap,
         )
         return get_centers_from_path_dict(path_dict, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
@@ -661,11 +665,8 @@ def equidistant_centers(
             subset = table[table["component_labels"] == label]
             subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
             centroids_components.append(subset_centroids)
-        total_distance, path, path_dict = measure_run_length_sgns(centroids_components, include_gap=True)
-        if len(component_label) == 1:
-            return get_centers_from_path(path, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
-        else:
-            return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
+        total_distance, path, path_dict = measure_run_length_sgns(centroids_components, include_gap=include_gap)
+        return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
 
 def tonotopic_mapping(
