@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 import imageio.v3 as imageio
 import numpy as np
 import pandas as pd
+from scipy.ndimage import label as label_structures
 
 from flamingo_tools.s3_utils import get_s3_path
 
@@ -300,3 +301,61 @@ def export_position_for_crop_centers(
         data.to_excel(file_path, index=False)
     else:
         raise ValueError("Invalid extension for table: {ext}. We support .csv or .xlsx.")
+
+
+def filter_segmentation_3d(
+    segmentation_array: np.ndarray,
+    min_pixels_per_instance: int = 100,
+    min_pixels_per_component: int = 100,
+) -> np.ndarray:
+    """
+    Filter a 3D segmentation array by removing small instances and small components within instances.
+
+    Params:
+        segmentation_array: 3D numpy array (H, W, D) with integer label IDs.
+        min_pixels_per_instance: Minimum number of pixels an entire instance must have to be kept.
+        min_pixels_per_component: Minimum number of pixels a component within an instance must have to be kept.
+
+    Returns:
+        filtered_array: 3D numpy array with filtered components and original label IDs.
+    """
+    # Step 1: Get unique label IDs (excluding background, assuming 0 is background)
+    unique_labels = np.unique(segmentation_array)
+    # Remove background (0) if present
+    labels_to_process = unique_labels[unique_labels != 0]
+
+    # Create output array initialized with zeros (background)
+    filtered_array = np.zeros_like(segmentation_array, dtype=segmentation_array.dtype)
+
+    # Process each label ID
+    filtered_ids = 0
+    filtered_components = 0
+    for label_id in labels_to_process:
+        # Create binary mask for current label
+        mask = (segmentation_array == label_id).astype(np.uint8)
+
+        # Count total pixels for this instance
+        total_pixels = np.sum(mask)
+
+        # Skip if below threshold
+        if total_pixels < min_pixels_per_instance:
+            filtered_ids += 1
+            continue
+
+        # Step 2: Find connected components within this label
+        labeled_components, num_components = label_structures(mask)
+
+        # Step 3: Check each component
+        for comp_id in range(1, num_components + 1):
+            comp_mask = (labeled_components == comp_id).astype(np.uint8)
+            comp_pixels = np.sum(comp_mask)
+
+            # Keep component if it meets the threshold
+            if comp_pixels >= min_pixels_per_component:
+                # Add this component back with original label ID
+                filtered_array += comp_mask * label_id
+            else:
+                filtered_components += 1
+    print(f"Filtered {filtered_ids} IDs and {filtered_components} components.")
+
+    return filtered_array
