@@ -1,3 +1,4 @@
+import argparse
 import os
 import sys
 from glob import glob
@@ -6,18 +7,16 @@ from sklearn.model_selection import train_test_split
 from detection_dataset import DetectionDataset, MinPointSampler
 
 sys.path.append("/home/pape/Work/my_projects/czii-protein-challenge")
-sys.path.append("/user/pape41/u12086/Work/my_projects/czii-protein-challenge")
+sys.path.append("/user/schilling40/u15000/czii-protein-challenge/detection")
 
 from utils.training.training import supervised_training  # noqa
 
-ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v3"  # noqa
-TRAIN_ROOT = os.path.join(ROOT, "images")
-LABEL_ROOT = os.path.join(ROOT, "labels")
+ROOT_SYNAPSE_DATA = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data"  # noqa
 
 
-def get_paths(split):
-    image_paths = sorted(glob(os.path.join(TRAIN_ROOT, "*.zarr")))
-    label_paths = sorted(glob(os.path.join(LABEL_ROOT, "*.csv")))
+def get_paths(image_dir, label_dir, split):
+    image_paths = sorted(glob(os.path.join(image_dir, "*.zarr")))
+    label_paths = sorted(glob(os.path.join(label_dir, "*.csv")))
     assert len(image_paths) == len(label_paths)
 
     train_images, val_images, train_labels, val_labels = train_test_split(
@@ -34,12 +33,13 @@ def get_paths(split):
     return image_paths, label_paths
 
 
-def train():
+def train(root_data_dir, version="v4"):
+    image_dir = os.path.join(root_data_dir, version, "images")
+    label_dir = os.path.join(root_data_dir, version, "labels")
+    model_name = f"synapse_detection_{version}"
 
-    model_name = "synapse_detection_v3"
-
-    train_paths, train_label_paths = get_paths("train")
-    val_paths, val_label_paths = get_paths("val")
+    train_paths, train_label_paths = get_paths(image_dir, label_dir, "train")
+    val_paths, val_label_paths = get_paths(image_dir, label_dir, "val")
     # We need to give the paths for the test loader, although it's never used.
     test_paths, test_label_paths = val_paths, val_label_paths
 
@@ -62,7 +62,7 @@ def train():
         check=check,
         lr=1e-4,
         n_iterations=int(1e5),
-        out_channels=1,
+        out_channels=5,
         augmentations=None,
         eps=1e-5,
         sigma=1,
@@ -79,7 +79,15 @@ def train():
 
 
 def main():
-    train()
+    parser = argparse.ArgumentParser(
+        description="Train a network for synapse detection."
+    )
+
+    parser.add_argument("-i", "--input_dir", type=str, default=ROOT_SYNAPSE_DATA)
+    parser.add_argument("-v", "--version", type=str, default="v4")
+
+    args = parser.parse_args()
+    train(args.input_dir, args.version)
 
 
 if __name__ == "__main__":
