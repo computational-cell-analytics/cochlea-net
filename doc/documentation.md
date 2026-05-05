@@ -14,7 +14,7 @@ In addition, it contains functionality for data pre-processing and different kin
 
 The networks and analysis methods were primarily developed for high-resolution isotropic data from a [custom light-sheet microscope](https://www.nature.com/articles/s41587-025-02882-8).
 The networks work best for the respective fluorescent stains they were trained on, but will work for similar stains.
-For example, we have successfully applied the network for SGN segmentation on a calretinin (CR) stain and the network for IHC segmentation on a Myosin VII A stain. 
+For example, we have successfully applied the network for SGN segmentation on a calretinin (CR) stain and the network for IHC segmentation on a Myosin VII A stain.
 In addition, CochleaNet provides networks for the segmentation of SGNs and IHCs in anisotropic data from a [commercial light-sheet microscope](https://www.miltenyibiotec.com/DE-en/products/macs-imaging-and-spatial-biology/ultramicroscope-platform.html).
 
 For more information on CochleaNet, check out our [preprint](https://doi.org/10.1101/2025.11.16.688700).
@@ -53,7 +53,7 @@ conda install -c conda-forge napari pyqt
 CochleaNet can be used via:
 - The [napari plugin](#napari-plugin): enables prediction with the pre-trained CochleaNet deep neural networks.
 - The [command line interface](#command-line-interface): enables data conversion, model prediction, and selected analysis workflows for large image data.
-- The [python library](#python-library): implements CochleaNet's functionality and can be used to implement flexible prediction and data analysis workflows for large image data. 
+- The [python library](#python-library): implements CochleaNet's functionality and can be used to implement flexible prediction and data analysis workflows for large image data.
 
 **Note: the napari plugin was not optimized for processing large data. Please use the CLI or python library for processing large data.**
 
@@ -92,6 +92,16 @@ Use `--file_ext .raw` if the data is stored in raw files. The the output data fo
 flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -m SGN
 ```
 Here, `-m` determines which model is used. See also [available models](#available-models).
+
+**Note: If you want to run the segmentation in environments without internet access, you must download the models beforehand and transfer them for use at inference time.**
+The models can be downloaded using `flamingo_tools.download_model` for all or individual models:
+```bash
+# Download all models
+flamingo_tools.download_model
+# Download a single model
+flamingo_tools.download_model -m SGN
+```
+
 To use a custom trained model you can use the argument `--checkpoint_path` (`-c`).
 
 `flamingo_tools.run_detection`: To detect synapses in volumetric light microscopy data. The command is used similarly to `flamingo_tools.run_segmentation`.

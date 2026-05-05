@@ -13,6 +13,7 @@ setup(
             "flamingo_tools.convert_data = flamingo_tools.data_conversion:convert_lightsheet_to_bdv_cli",
             "flamingo_tools.run_segmentation = flamingo_tools.segmentation.cli:run_segmentation",
             "flamingo_tools.run_detection = flamingo_tools.segmentation.cli:run_detection",
+            "flamingo_tools.download_model = flamingo_tools.model_utils:download_model",
             "flamingo_tools.equidistant_centers = flamingo_tools.postprocessing.cli:equidistant_centers",
             "flamingo_tools.extract_block = flamingo_tools.postprocessing.cli:extract_block",
             "flamingo_tools.extract_central_blocks = flamingo_tools.postprocessing.cli:extract_central_blocks",
