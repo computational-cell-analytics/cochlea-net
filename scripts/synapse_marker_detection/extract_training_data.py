@@ -4,7 +4,6 @@ from pathlib import Path
 
 import h5py
 import imageio.v3 as imageio
-import napari
 import numpy as np
 import pandas as pd
 import zarr
@@ -69,6 +68,7 @@ def extract_training_data(imaris_file, output_folder, tif_file=None, crop=True):
         original_data = imageio.imread(tif_file)
 
     if output_folder is None:
+        import napari
         v = napari.Viewer()
         v.add_image(data)
         if ihc_data is not None:
@@ -191,6 +191,42 @@ def process_training_data_v3(visualize=True):
             extract_training_data(imaris_file, output_folder, tif_file=None, crop=True)
 
 
+def process_training_data_v4(visualize=False):
+    input_root = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/Synapses_2026-04"
+
+    train_output = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v4"  # noqa
+    test_output = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/test_data/v4"  # noqa
+
+    train_folders_v4 = [input_root]
+
+    input_v3 = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/ImageCropsIHC_synapses"
+    train_folders = ["synapse_stains", "M78L_IHC-synapse_crops", "M226R_IHC-synapsecrops"]
+    test_folders = ["M226L_IHC-synapse_crops"]
+
+    train_folders_v3 = [os.path.join(input_v3, tf) for tf in train_folders]
+    test_folders_v3 = [os.path.join(input_v3, tf) for tf in test_folders]
+
+    train_folders_total = train_folders_v3 + train_folders_v4
+    for folder in train_folders_total + test_folders_v3:
+        if folder in train_folders_total:
+            output_folder = train_output
+        else:
+            output_folder = test_output
+        exclude_names = []
+        if visualize:
+            output_folder = None
+        else:
+            output_folder = train_output
+            os.makedirs(output_folder, exist_ok=True)
+
+        imaris_files = sorted(glob(os.path.join(folder, "*.ims")))
+        for imaris_file in imaris_files:
+            if os.path.basename(imaris_file) in exclude_names:
+                print("Skipping", imaris_file)
+                continue
+            extract_training_data(imaris_file, output_folder, tif_file=None, crop=True)
+
+
 def process_eval_data(visualize=False):
     input_root = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/SynapseValidation"  # noqa
     test_folders = ["M227R_IHC-synapsecrops", "MLR227L_IHC-synapsecrops"]
@@ -216,7 +252,8 @@ def main():
     # process_training_data_v1()
     # process_training_data_v2(visualize=True)
     # process_training_data_v3(visualize=False)
-    process_eval_data(visualize=False)
+    # process_eval_data(visualize=False)
+    process_training_data_v4(visualize=False)
 
 
 if __name__ == "__main__":
