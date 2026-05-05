@@ -3,19 +3,12 @@ import os
 from datetime import datetime
 
 import numpy as np
+
+from torch_em.transform.raw import normalize
 from micro_sam.training import default_sam_loader, train_instance_segmentation
 
 ROOT_TRAINING_DATA = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data"
 ROOT_SGN_DATA = f"{ROOT_TRAINING_DATA}/SGN/2026-04_SGN-v2-data_micro-sam"
-
-
-def raw_transform(x):
-    x = x.astype("float32")
-    min_, max_ = np.percentile(x, 1), np.percentile(x, 99)
-    x -= min_
-    x /= max_
-    x = np.clip(x, 0, 1)
-    return x * 255
 
 
 def main():
@@ -62,7 +55,7 @@ def main():
         raw_paths=train_image_paths, raw_key=None, label_paths=train_label_paths, label_key=None,
         patch_shape=patch_shape, with_segmentation_decoder=True,
         train_instance_segmentation_only=True,
-        raw_transform=raw_transform,
+        raw_transform=normalize,
         num_workers=6, batch_size=batch_size, is_train=True,
         min_size=min_size,
     )
@@ -70,7 +63,7 @@ def main():
         raw_paths=val_image_paths, raw_key=None, label_paths=val_label_paths, label_key=None,
         patch_shape=patch_shape, with_segmentation_decoder=True,
         train_instance_segmentation_only=True,
-        raw_transform=raw_transform,
+        raw_transform=normalize,
         num_workers=6, batch_size=1, is_train=False,
         min_size=min_size,
     )

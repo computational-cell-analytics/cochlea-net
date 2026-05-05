@@ -307,8 +307,8 @@ def export_position_for_crop_centers(
 def create_2d_training_data(
     input_dir,
     output_dir,
-    skip_empty = False,
-    empty_blocks = 0,
+    skip_empty=False,
+    empty_blocks=0,
 ):
     """Create 2D training data based on 3D image crops.
 
