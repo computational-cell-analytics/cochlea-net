@@ -47,6 +47,38 @@ pip install .
 ```
 conda install -c conda-forge napari pyqt
 ```
+## Available Models
+
+CochleaNet provides four different segmentation models:
+- `SGN`: for segmenting spiral ganglion neurons (SGNs) in high-resolution, isotropic light-sheet microscopy data.
+    - This model was trained on image data with parvalbumin (PV) stain, with a voxel size of 0.38 micrometer.
+- `IHC`: for segmenting inner hair cells (IHCs) in high-resolution, isotropic light-sheet microscopy data.
+    - This model was trained on image data with Vglut3 stain, with a voxel size of 0.38 micrometer.
+- `SGN-lowres`: for segmenting SGNs in lower-resolution, anisotropic light-sheet microscopy data.
+    - This model was trained on image data with PV stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
+- `IHC-lowres`: for segmenting IHCs in lower-resolution, anisotropic light-sheet microscopy data.
+    - This model was trained on image data with Myosin VIIa stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
+
+It provides one detection model:
+- `Synapses`: for detecting afferent ribbon synapses in high-resolution isotropic light-sheet microscopy data.
+    - This model was trained on image data with CtBP2 stain, with a voxel size of 0.38 micrometer.
+
+**Note: If you want to run the segmentation in environments without internet access, you must download the models beforehand and transfer them for use at inference time.**
+
+The models can be downloaded from ownCloud:
+- [SGN](https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download),
+- [IHC](https://owncloud.gwdg.de/index.php/s/wB7d2MjV5LRTP06/download),
+- [Synapses](https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download),
+- [SGN-lowres](https://owncloud.gwdg.de/index.php/s/OS7985CKaTTBT5g/download), and
+- [IHC-lowres](https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download).
+
+Alternatively, after installation, the models can be downloaded using `flamingo_tools.download_model` for all or individual models:
+```bash
+# Download all models
+flamingo_tools.download_model
+# Download a single model
+flamingo_tools.download_model -m SGN
+```
 
 ## Usage
 
@@ -93,15 +125,6 @@ flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -
 ```
 Here, `-m` determines which model is used. See also [available models](#available-models).
 
-**Note: If you want to run the segmentation in environments without internet access, you must download the models beforehand and transfer them for use at inference time.**
-The models can be downloaded using `flamingo_tools.download_model` for all or individual models:
-```bash
-# Download all models
-flamingo_tools.download_model
-# Download a single model
-flamingo_tools.download_model -m SGN
-```
-
 To use a custom trained model you can use the argument `--checkpoint_path` (`-c`).
 
 `flamingo_tools.run_detection`: To detect synapses in volumetric light microscopy data. The command is used similarly to `flamingo_tools.run_segmentation`.
@@ -117,20 +140,3 @@ CochleaNet's functionality is implemented in the `flamingo_tools` python library
 - `flamingo_tools.mobie`: functionality to export flamingo image data or segmentation results to a MoBIE project.
 - `flamingo_tools.segmentation`: functionality to apply segmentation and detection models to large volumetric image data.
 - `flamingo_tools.training`: functionality to train segmentation and detection networks.
-
-
-## Available Models
-
-CochleaNet provides four different segmentation models:
-- `SGN`: for segmenting spiral ganglion neurons (SGNs) in high-resolution, isotropic light-sheet microscopy data.
-    - This model was trained on image data with parvalbumin (PV) stain, with a voxel size of 0.38 micrometer.
-- `IHC`: for segmenting inner hair cells (IHCs) in high-resolution, isotropic light-sheet microscopy data.
-    - This model was trained on image data with Vglut3 stain, with a voxel size of 0.38 micrometer.
-- `SGN-lowres`: for segmenting SGNs in lower-resolution, anisotropic light-sheet microscopy data.
-    - This model was trained on image data with PV stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
-- `IHC-lowres`: for segmenting IHCs in lower-resolution, anisotropic light-sheet microscopy data.
-    - This model was trained on image data with Myosin VIIa stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
-
-It provides one detection model:
-- `Synapses`: for detecting afferent ribbon synapses in high-resolution isotropic light-sheet microscopy data.
-    - This model was trained on image data with CtBP2 stain, with a voxel size of 0.38 micrometer.
