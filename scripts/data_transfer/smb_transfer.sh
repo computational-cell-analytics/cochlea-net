@@ -6,7 +6,7 @@ Transfer files from UKON to the GWDG NHR. The password is given via a prompt.
 username 			GWDG username, e.g. schilling40
 remote_parent_dir	Remote parent directory on the SMB share
 remote_file/folder	Remote file/folder on the SMB share
--r output_dir		Output directory. Default: Current directory
+-o output_dir		Output directory. Default: Current directory
 EOF
 )
 

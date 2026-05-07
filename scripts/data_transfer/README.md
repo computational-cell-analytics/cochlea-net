@@ -6,7 +6,7 @@ Current approach to the data transfer:
 - Log in to SCC login node:
   $ ssh -i ~/.ssh/id_rsa_scc pape41@transfer-mdc.hpc.gwdg.de
 - Go to "/scratch1/projects/cca/data/moser"
-- Create subfolder <NAME> for cochlea to be copied 
+- Create subfolder <NAME> for cochlea to be copied
 - Log in via $ smbclient \\\\wfs-medizin.top.gwdg.de\\ukon-all\$\\ukon100 -U GWDG\\pape41"
 - Go to the folder with the cochlea to copy (cd works)
 - Copy the folder via:
@@ -18,12 +18,19 @@ Current approach to the data transfer:
   $ rsync -e "ssh -i ~/.ssh/id_rsa_hlrn" -avz pape41@login-mdc.hpc.gwdg.de:/scratch1/projects/cca/data/moser/<NAME> /mnt/lustre-grete/usr/u12086/moser/lightsheet/<NAME>
 - Remove on SCC
 
-## Next files
+## Transfer without manual navigation on UKON
 
-- UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\2024\M171_2R_converted_n5
-- UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\2024\155_1L_converted_n5
-- UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\2024\MLR151_2R_converted_n5
-- UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\2024\G11_1L_converted_n5
+The automatic transfer from files to the HPC without the need to navigate within UKON is possible with `smb_transfer.sh`.
+
+**Example**:
+```bash
+FILE="keppeler-et-al-2021-PNAS.pdf"
+UKON_FOLDER="\UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\MartinS\forMartin"
+bash /path/to/cochlea-net/scripts/data_transfer/smb_transfer.sh <GWDG-username> "$UKON_FOLDER" "$FILE"
+```
+You are then prompted to enter your password.
+Enter your password and press Enter.
+The file transfer should start automatically.
 
 ## Improvements
 
