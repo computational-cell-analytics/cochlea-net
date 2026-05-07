@@ -14,6 +14,7 @@ setup(
             "flamingo_tools.run_segmentation = flamingo_tools.segmentation.cli:run_segmentation",
             "flamingo_tools.run_detection = flamingo_tools.segmentation.cli:run_detection",
             "flamingo_tools.download_model = flamingo_tools.model_utils:download_model",
+            "flamingo_tools.info = flamingo_tools.info:module_info",
             "flamingo_tools.equidistant_centers = flamingo_tools.postprocessing.cli:equidistant_centers",
             "flamingo_tools.extract_block = flamingo_tools.postprocessing.cli:extract_block",
             "flamingo_tools.extract_central_blocks = flamingo_tools.postprocessing.cli:extract_central_blocks",

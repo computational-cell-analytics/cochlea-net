@@ -63,7 +63,7 @@ It provides one detection model:
 - `Synapses`: for detecting afferent ribbon synapses in high-resolution isotropic light-sheet microscopy data.
     - This model was trained on image data with CtBP2 stain, with a voxel size of 0.38 micrometer.
 
-**Note: If you want to run the segmentation in environments without internet access, you must download the models beforehand and transfer them for use at inference time.**
+**Note: If you want to run the segmentation in environments without internet access, you must download the models beforehand and transfer them for use at inference time. Transfer the models to the local cache directory, which can be identified by using flamingo_tools.info**
 
 The models can be downloaded from ownCloud:
 - [SGN](https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download),
@@ -78,6 +78,11 @@ Alternatively, after installation, the models can be downloaded using `flamingo_
 flamingo_tools.download_model
 # Download a single model
 flamingo_tools.download_model -m SGN
+```
+
+They can be checked using
+```bash
+flamingo_tools.info
 ```
 
 ## Usage
