@@ -5,3 +5,7 @@ converted/
 checkpoints/
 logs/
 *.csv
+
+# And some other files
+*.pt
+
