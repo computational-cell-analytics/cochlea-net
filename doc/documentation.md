@@ -63,7 +63,7 @@ It provides one detection model:
 - `Synapses`: for detecting afferent ribbon synapses in high-resolution isotropic light-sheet microscopy data.
     - This model was trained on image data with CtBP2 stain, with a voxel size of 0.38 micrometer.
 
-**Note: If you want to run the segmentation in environments without internet access, you must download the models beforehand and transfer them for use at inference time. Transfer the models to the local cache directory, which can be identified by using flamingo_tools.info**
+**Note: If you want to run the segmentation in a environment without internet access, you must download the models beforehand and copy them to CocheaNet's `Model directory`. The model directory can be identified with the command `flamingo_tools.info`.**
 
 The models can be downloaded from ownCloud:
 - [SGN](https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download),
@@ -84,6 +84,13 @@ They can be checked using
 ```bash
 flamingo_tools.info
 ```
+which will output something like this:
+```
+Version: 0.1.0
+Model directory: /home/pape/.cache/cochlea-net/models
+Downloaded models: ['IHC-lowres', 'SGN', 'Synapses', 'SGN-lowres', 'IHC']
+```
+In case you download models manually, copy them to the `Model directory` and rerun `flamingo_tools.info` to check that they are correctly identified.
 
 ## Usage
 
