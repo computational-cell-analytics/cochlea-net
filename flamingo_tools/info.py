@@ -1,8 +1,8 @@
 import argparse
 import os
-import runpy
 
 from flamingo_tools.file_utils import get_cache_dir
+from flamingo_tools.version import __version__ as version
 
 
 def module_info():
@@ -20,7 +20,6 @@ def module_info():
     _ = parser.parse_args()
 
     # Return version
-    version = runpy.run_path("flamingo_tools/version.py")["__version__"]
     print(f"Version: {version}")
 
     # Check downloaded models in cache directory
