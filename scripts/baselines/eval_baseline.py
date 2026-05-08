@@ -64,9 +64,11 @@ def eval_all_sgn():
     baselines = [
         "spiner2D",
         "cellpose3",
+        "cellpose3_finetuned",
         "cellpose-sam",
         "distance_unet",
         "micro-sam",
+        "micro-sam_finetuned",
         "stardist",
     ]
 
@@ -95,15 +97,16 @@ def eval_all_ihc():
         eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
 
 
-def eval_segmentation(seg_dir, annotation_dir, filter=True):
+def eval_segmentation(seg_dir, annotation_dir, filter=True, verbose=False):
     """Evaluate 3D segmentation from baseline methods.
 
     Args:
         seg_dir: Directory containing segmentation output of baseline methods.
         annotation_dir: Directory containing annotations in CSV format.
         filter: Bool for filtering segmentation based on size. Per default size between 3000 and 50000 pixels.
+        verbise: Output already existing dictionaries.
     """
-    print(f"Evaluating segmentation in directory {seg_dir}")
+    print(f"\nEvaluating segmentation in directory {seg_dir}")
     segs = [entry.path for entry in os.scandir(seg_dir) if entry.is_file() and ".tif" in entry.path]
 
     seg_dicts = []
@@ -141,7 +144,7 @@ def eval_segmentation(seg_dir, annotation_dir, filter=True):
             eval_seg_dict(seg_dic, dic_out)
 
             seg_dicts.append(seg_dic)
-        else:
+        elif verbose:
             print(f"Dictionary for {basename} already exists")
 
     json_out = os.path.join(seg_dir, "eval_seg.json")
@@ -267,10 +270,13 @@ def print_accuracy_sgn():
     baselines = [
         "spiner2D",
         "cellpose3",
+        "cellpose3_finetuned",
         "cellpose-sam",
         "distance_unet",
         "micro-sam",
-        "stardist"]
+        "micro-sam_finetuned",
+        "stardist",
+    ]
     for baseline in baselines:
         print(f"Evaluating baseline {baseline}")
         print_accuracy(os.path.join(seg_dir, baseline))
@@ -286,7 +292,8 @@ def print_accuracy_ihc():
         "cellpose3",
         "cellpose-sam",
         "distance_unet_v4b",
-        "micro-sam"]
+        "micro-sam",
+    ]
 
     for baseline in baselines:
         print(f"Evaluating baseline {baseline}")
@@ -294,7 +301,15 @@ def print_accuracy_ihc():
 
 
 def runtimes_sgn():
-    for_comparison = ["distance_unet", "micro-sam", "cellpose3", "cellpose-sam", "stardist"]
+    for_comparison = [
+        "distance_unet",
+        "micro-sam",
+        "micro-sam_finetuned",
+        "cellpose3",
+        "cellpose3_finetuned",
+        "cellpose-sam",
+        "stardist",
+    ]
 
     cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     val_sgn_dir = f"{cochlea_dir}/predictions/val_sgn"
@@ -350,6 +365,7 @@ def main():
     print_accuracy_ihc()
 
     # average runtimes and standard deviation
+    print("\nAverage runtimes and their standard deviation.")
     print("SGNs:")
     runtimes_sgn()
     print()
