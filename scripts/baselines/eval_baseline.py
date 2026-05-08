@@ -9,8 +9,32 @@ from pathlib import Path
 
 from flamingo_tools.validation import compute_matches_for_annotated_slice
 
+SGN_BASELINES = [
+    "spiner2D",
+    "cellpose3",
+    "cellpose3_finetuned",
+    "cellpose-sam",
+    "distance_unet",
+    "micro-sam",
+    "micro-sam_finetuned",
+    "stardist",
+]
 
-def filter_seg(seg_arr: np.typing.ArrayLike, min_count: int = 3000, max_count: int = 50000):
+IHC_BASELINES = [
+    "cellpose3",
+    "cellpose-sam",
+    "distance_unet_v4b",
+    "micro-sam",
+]
+
+COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
+
+
+def filter_seg(
+    seg_arr: np.typing.ArrayLike,
+    min_count: int = 3000,
+    max_count: int = 50000,
+) -> np.ndarray:
     """Filter segmentation based on minimal and maximal number of pixels of the segmented object.
 
     Args:
@@ -28,7 +52,10 @@ def filter_seg(seg_arr: np.typing.ArrayLike, min_count: int = 3000, max_count: i
     return seg_arr
 
 
-def eval_seg_dict(dic: dict, out_path: str):
+def eval_seg_dict(
+    dic: dict,
+    out_path: str,
+) -> None:
     """Format dictionary entries and write dictionary to output path.
 
     Args:
@@ -50,27 +77,18 @@ def eval_seg_dict(dic: dict, out_path: str):
         json.dump(dic, f, indent='\t', separators=(',', ': '))
 
 
-def eval_all_sgn():
+def eval_all_sgn(
+    baselines: list[str] = SGN_BASELINES,
+    cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
+) -> None:
     """Evaluate all SGN baselines.
     """
-    cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     seg_dir = os.path.join(cochlea_dir, "predictions/val_sgn")
     annotation_dir = os.path.join(cochlea_dir,
                                   "AnnotatedImageCrops",
                                   "F1ValidationSGNs",
                                   "final_annotations",
                                   "final_consensus_annotations")
-
-    baselines = [
-        "spiner2D",
-        "cellpose3",
-        "cellpose3_finetuned",
-        "cellpose-sam",
-        "distance_unet",
-        "micro-sam",
-        "micro-sam_finetuned",
-        "stardist",
-    ]
 
     for baseline in baselines:
         if "spiner" in baseline:
@@ -80,24 +98,25 @@ def eval_all_sgn():
             eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
 
 
-def eval_all_ihc():
+def eval_all_ihc(
+    baselines: list[str] = IHC_BASELINES,
+    cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
+) -> None:
     """Evaluate all IHC baselines.
     """
-    cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     seg_dir = os.path.join(cochlea_dir, "predictions/val_ihc")
     annotation_dir = os.path.join(cochlea_dir, "AnnotatedImageCrops/F1ValidationIHCs/consensus_annotation")
-    baselines = [
-        "cellpose3",
-        "cellpose-sam",
-        "distance_unet_v4b",
-        "micro-sam",
-    ]
 
     for baseline in baselines:
         eval_segmentation(os.path.join(seg_dir, baseline), annotation_dir=annotation_dir)
 
 
-def eval_segmentation(seg_dir, annotation_dir, filter=True, verbose=False):
+def eval_segmentation(
+    seg_dir: str,
+    annotation_dir: str,
+    filter: bool = True,
+    verbose: bool = False,
+) -> None:
     """Evaluate 3D segmentation from baseline methods.
 
     Args:
@@ -152,7 +171,10 @@ def eval_segmentation(seg_dir, annotation_dir, filter=True, verbose=False):
         json.dump(seg_dicts, f, indent='\t', separators=(',', ': '))
 
 
-def eval_segmentation_spiner(seg_dir, annotation_dir):
+def eval_segmentation_spiner(
+    seg_dir: str,
+    annotation_dir: str,
+) -> None:
     """Evaluate 2D spiner segmentation: https://github.com/reubenrosenNCSU/cellannotation
     The segmentation tool, which is used inside a browser, exports bounding boxes in the CSV format.
     An instance segmentation is created based on the CSV data and used for evaluation.
@@ -209,7 +231,9 @@ def eval_segmentation_spiner(seg_dir, annotation_dir):
         json.dump(seg_dicts, f, indent='\t', separators=(',', ': '))
 
 
-def print_accuracy(eval_dir):
+def print_accuracy(
+    eval_dir: str,
+) -> None:
     """Print 'Precision', 'Recall', and 'F1-score' for dictionaries in a given directory.
     The directory is scanned for files containing ".dic.json" and evaluates segmentation accuracy and runtime.
 
@@ -261,46 +285,37 @@ def print_accuracy(eval_dir):
         print(names[num], sum(lis) / len(lis))
 
 
-def print_accuracy_sgn():
+def print_accuracy_sgn(
+    baselines: list[str] = SGN_BASELINES,
+    cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
+) -> None:
     """Print 'Precision', 'Recall', and 'F1-score' for all SGN baselines.
     """
     print("Evaluating SGN segmentation")
-    cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     seg_dir = os.path.join(cochlea_dir, "predictions/val_sgn")
-    baselines = [
-        "spiner2D",
-        "cellpose3",
-        "cellpose3_finetuned",
-        "cellpose-sam",
-        "distance_unet",
-        "micro-sam",
-        "micro-sam_finetuned",
-        "stardist",
-    ]
+
     for baseline in baselines:
         print(f"Evaluating baseline {baseline}")
         print_accuracy(os.path.join(seg_dir, baseline))
 
 
-def print_accuracy_ihc():
+def print_accuracy_ihc(
+    baselines: list[str] = IHC_BASELINES,
+    cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
+) -> None:
     """Print 'Precision', 'Recall', and 'F1-score' for all IHC baselines.
     """
     print("Evaluating IHC segmentation")
-    cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     seg_dir = os.path.join(cochlea_dir, "predictions/val_ihc")
-    baselines = [
-        "cellpose3",
-        "cellpose-sam",
-        "distance_unet_v4b",
-        "micro-sam",
-    ]
 
     for baseline in baselines:
         print(f"Evaluating baseline {baseline}")
         print_accuracy(os.path.join(seg_dir, baseline))
 
 
-def runtimes_sgn():
+def runtimes_sgn(
+    cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
+) -> None:
     for_comparison = [
         "distance_unet",
         "micro-sam",
@@ -311,7 +326,6 @@ def runtimes_sgn():
         "stardist",
     ]
 
-    cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     val_sgn_dir = f"{cochlea_dir}/predictions/val_sgn"
     image_dir = f"{cochlea_dir}/AnnotatedImageCrops/F1ValidationSGNs/for_consensus_annotation"
 
@@ -332,10 +346,11 @@ def runtimes_sgn():
         print(name, ":", np.mean(rts), "+-", np.std(rts))
 
 
-def runtimes_ihc():
+def runtimes_ihc(
+    cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
+) -> None:
     for_comparison = ["distance_unet_v3", "micro-sam", "cellpose3", "cellpose-sam"]
 
-    cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
     val_sgn_dir = f"{cochlea_dir}/predictions/val_ihc"
     image_dir = f"{cochlea_dir}/AnnotatedImageCrops/F1ValidationIHCs"
 
