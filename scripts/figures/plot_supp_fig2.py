@@ -68,6 +68,15 @@ def supp_fig_02(
                 "runtime": 407.5,
                 "runtime_std": 107.5
             },
+            "micro_sam_finetuned": {
+                "label": "µSAM finetuned",
+                "precision": 0.440,
+                "recall": 0.642,
+                "f1-score": 0.488,
+                "marker": "D",
+                "runtime": 789.582,
+                "runtime_std": 205.166
+            },
             "cellpose_3": {
                 "label": "Cellpose 3",
                 "precision": 0.117,
@@ -76,6 +85,15 @@ def supp_fig_02(
                 "marker": "v",
                 "runtime": 167.9116359,
                 "runtime_std": 40.2,
+            },
+            "cellpose_3_finetuned": {
+                "label": "Cellpose 3 finetuned",
+                "precision": 0.581,
+                "recall": 0.727,
+                "f1-score": 0.621,
+                "marker": "v",
+                "runtime": 94.021,
+                "runtime_std": 23.098,
             },
             "cellpose_sam": {
                 "label": "Cellpose-SAM",

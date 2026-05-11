@@ -6,6 +6,7 @@ import imageio.v3 as imageio
 import numpy as np
 import pandas as pd
 from scipy.ndimage import label as label_structures
+from tqdm import tqdm
 
 from flamingo_tools.s3_utils import get_s3_path
 
@@ -301,6 +302,86 @@ def export_position_for_crop_centers(
         data.to_excel(file_path, index=False)
     else:
         raise ValueError("Invalid extension for table: {ext}. We support .csv or .xlsx.")
+
+
+def create_2d_training_data(
+    input_dir,
+    output_dir,
+    skip_empty=False,
+    empty_blocks=0,
+):
+    """Create 2D training data based on 3D image crops.
+
+    Args:
+        input_dir: Directory containing data in TIF format.
+        output_dir: Output directory for 2D slice data.
+        skip_empty: Skip empty 3D blocks and 2D slices.
+        empty_blocks: Create 2D data for the first n empty 3D blocks.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    image_paths = [entry.path for entry in os.scandir(input_dir) if
+                   ".tif" in entry.name and
+                   "annotations" not in entry.name]
+    label_paths = [entry.path for entry in os.scandir(input_dir) if
+                   ".tif" in entry.name and
+                   "annotations" in entry.name]
+    image_paths.sort()
+    label_paths.sort()
+
+    def create_2d_data_from_3d(img, seg, output_dir, file_name, skip_empty_slices=False):
+        z_dim = img.shape[0]
+        removed_slices = 0
+        for i in range(z_dim):
+            zstr = str(i).zfill(3)
+            seg_slice = seg[i, :, :]
+            suffix = ""
+            if len(np.unique(seg_slice)) == 1:
+                if skip_empty_slices:
+                    removed_slices += 1
+                    continue
+                elif "empty" not in file_name:
+                    print(file_name)
+                    suffix = "_empty"
+            seg_out_path = os.path.join(output_dir, f"{file_name}_z{zstr}{suffix}_annotations.tif")
+            imageio.imwrite(seg_out_path, seg_slice)
+
+            img_out_path = os.path.join(output_dir, f"{file_name}_z{zstr}{suffix}.tif")
+            img_slice = img[i, :, :]
+            imageio.imwrite(img_out_path, img_slice)
+        return removed_slices
+
+    removed_data = 0
+    removed_slices = 0
+    shapes = []
+    # iterate through all 3D datasets
+    for image_path, label_path in tqdm(
+        zip(image_paths, label_paths), total=len(image_paths), desc="Creating 2D data from training files",
+    ):
+        file_name = os.path.basename(image_path).split(".")[0]
+        seg = imageio.imread(label_path)
+        if seg.shape not in shapes:
+            shapes.append(seg.shape)
+        if len(np.unique(seg)) == 1:
+            if skip_empty:
+                if empty_blocks == 0:
+                    removed_data += 1
+                    continue
+                else:
+                    img = imageio.imread(image_path)
+                    removed_slices += create_2d_data_from_3d(
+                        img, seg, output_dir=output_dir, file_name=file_name, skip_empty_slices=False,
+                    )
+                    empty_blocks -= 1
+                    continue
+
+        img = imageio.imread(image_path)
+        removed_slices += create_2d_data_from_3d(
+            img, seg, output_dir=output_dir, file_name=file_name, skip_empty_slices=skip_empty,
+        )
+
+    print(f"Data shapes of crops: {shapes}")
+    print(f"Removed crops: {removed_data}")
+    print(f"Removed slices: {removed_slices}")
 
 
 def filter_segmentation_3d(
