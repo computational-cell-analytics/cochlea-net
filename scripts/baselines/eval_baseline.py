@@ -1,5 +1,6 @@
 import os
 import json
+import argparse
 
 import imageio.v3 as imageio
 import numpy as np
@@ -236,6 +237,75 @@ def eval_segmentation_spiner(
         json.dump(seg_dicts, f, indent='\t', separators=(',', ': '))
 
 
+def compute_accuracy(eval_dir: str) -> dict:
+    """Compute average precision, recall, F1-score, and runtime from per-crop dictionaries.
+
+    Args:
+        eval_dir: Directory containing per-crop *_dic.json files.
+
+    Returns:
+        Dict with keys 'precision', 'recall', 'f1-score', 'runtime', 'runtime_std'.
+    """
+    eval_dicts = [entry.path for entry in os.scandir(eval_dir) if entry.is_file() and "dic.json" in entry.path]
+    precision_list, recall_list, f1_list, time_list = [], [], [], []
+    for eval_dic in eval_dicts:
+        with open(eval_dic, "r") as f:
+            d = json.load(f)
+        tp = len(d["tp_objects"])
+        fp = len(d["fp"])
+        fn = len(d["fn"])
+
+        precision = tp / (tp + fp) if tp + fp != 0 else 0
+        recall = tp / (tp + fn) if tp + fn != 0 else 0
+        f1 = 2 * precision * recall / (precision + recall) if precision + recall != 0 else 0
+
+        precision_list.append(precision)
+        recall_list.append(recall)
+        f1_list.append(f1)
+        if d["time"] is not None:
+            time_list.append(d["time"])
+
+    runtime_mean = float(np.mean(time_list)) if time_list else None
+    runtime_std = float(np.std(time_list)) if time_list else None
+
+    return {
+        "precision": round(float(np.mean(precision_list)), 3),
+        "recall": round(float(np.mean(recall_list)), 3),
+        "f1-score": round(float(np.mean(f1_list)), 3),
+        "runtime": round(runtime_mean, 3) if runtime_mean is not None else None,
+        "runtime_std": round(runtime_std, 3) if runtime_std is not None else None,
+    }
+
+
+def save_accuracy_json(
+    segm_type: str,
+    baselines: list[str],
+    seg_dir: str,
+    output_dir: str,
+) -> None:
+    """Compute and save accuracy metrics for all baselines to a JSON file.
+
+    Args:
+        segm_type: Segmentation type, 'SGN' or 'IHC'.
+        baseline_keys: Mapping from baseline directory name to plot key.
+        seg_dir: Directory containing per-baseline subdirectories.
+        output_dir: Output directory for the JSON file.
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    result = {}
+    for baseline in baselines:
+        baseline_dir = os.path.join(seg_dir, baseline)
+        if not os.path.isdir(baseline_dir):
+            print(f"Warning: {baseline_dir} not found, skipping.")
+            continue
+        result[baseline] = compute_accuracy(baseline_dir)
+
+    out_path = os.path.join(output_dir, f"{segm_type}.json")
+    with open(out_path, "w") as f:
+        json.dump(result, f, indent="\t", separators=(",", ": "))
+    print(f"Saved accuracy metrics to {out_path}")
+
+
 def print_accuracy(
     eval_dir: str,
 ) -> None:
@@ -379,6 +449,13 @@ def runtimes_ihc(
 
 
 def main():
+    parser = argparse.ArgumentParser(description="Evaluate baseline segmentation methods.")
+    parser.add_argument(
+        "--output_dir", "-o", type=str, default=None,
+        help="Optional directory to save accuracy JSON files (e.g. flamingo_tools/reproducibility/model_accuracy).",
+    )
+    args = parser.parse_args()
+
     eval_all_sgn()
     eval_all_ihc()
     print_accuracy_sgn()
@@ -391,6 +468,12 @@ def main():
     print()
     print("IHCs:")
     runtimes_ihc()
+
+    if args.output_dir is not None:
+        sgn_seg_dir = os.path.join(COCHLEA_DIR, "predictions/val_sgn")
+        ihc_seg_dir = os.path.join(COCHLEA_DIR, "predictions/val_ihc")
+        save_accuracy_json("SGN", SGN_BASELINES, sgn_seg_dir, args.output_dir)
+        save_accuracy_json("IHC", IHC_BASELINES, ihc_seg_dir, args.output_dir)
 
 
 if __name__ == "__main__":

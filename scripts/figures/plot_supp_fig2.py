@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import numpy as np
@@ -14,6 +15,27 @@ COLOR_P = "#9C5027"
 COLOR_R = "#67279C"
 COLOR_F = "#9C276F"
 COLOR_T = "#279C52"
+
+# Plotting metadata (label and marker) per segmentation type and baseline key.
+# Key order determines the left-to-right order on the x-axis.
+PLOT_METADATA = {
+    "SGN": {
+        "stardist": {"label": "Stardist", "marker": "*"},
+        "micro-sam": {"label": "µSAM", "marker": "D"},
+        "micro-sam_finetuned": {"label": "µSAM finetuned", "marker": "D"},
+        "cellpose3": {"label": "Cellpose 3", "marker": "v"},
+        "cellpose3_finetuned": {"label": "Cellpose 3 finetuned", "marker": "v"},
+        "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
+        "spiner2D": {"label": "Spiner", "marker": "o"},
+        "distance_unet": {"label": "CochleaNet", "marker": "s"},
+    },
+    "IHC": {
+        "micro-sam": {"label": "µSAM", "marker": "D"},
+        "cellpose3": {"label": "Cellpose 3", "marker": "v"},
+        "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
+        "distance_unet": {"label": "CochleaNet", "marker": "s"},
+    },
+}
 
 
 def plot_legend_supp_fig02(save_path):
@@ -38,6 +60,7 @@ def supp_fig_02(
     plot: bool = False,
     segm: str = "SGN",
     mode: str = "precision",
+    data_dir: str = None,
 ):
     """Plot panels for Supplementary Figure 2.
 
@@ -46,128 +69,28 @@ def supp_fig_02(
         plot:
         segm: Segmentation type. Either "SGN" or "IHC".
         mode: Mode for plotting. Either "precision" or "runtime".
+        data_dir: Directory containing SGN.json and IHC.json accuracy files produced by
+            eval_baseline.py. When provided, metrics are loaded from these files instead of
+            the hardcoded fallback values.
     """
-    # SGN
-    value_dict = {
-        "SGN": {
-            "stardist": {
-                "label": "Stardist",
-                "precision": 0.706,
-                "recall": 0.630,
-                "f1-score": 0.628,
-                "marker": "*",
-                "runtime": 536.5,
-                "runtime_std": 148.4
-            },
-            "micro_sam": {
-                "label": "µSAM",
-                "precision": 0.140,
-                "recall": 0.782,
-                "f1-score": 0.228,
-                "marker": "D",
-                "runtime": 407.5,
-                "runtime_std": 107.5
-            },
-            "micro_sam_finetuned": {
-                "label": "µSAM finetuned",
-                "precision": 0.440,
-                "recall": 0.642,
-                "f1-score": 0.488,
-                "marker": "D",
-                "runtime": 789.582,
-                "runtime_std": 205.166
-            },
-            "cellpose_3": {
-                "label": "Cellpose 3",
-                "precision": 0.117,
-                "recall": 0.607,
-                "f1-score": 0.186,
-                "marker": "v",
-                "runtime": 167.9116359,
-                "runtime_std": 40.2,
-            },
-            "cellpose_3_finetuned": {
-                "label": "Cellpose 3 finetuned",
-                "precision": 0.581,
-                "recall": 0.727,
-                "f1-score": 0.621,
-                "marker": "v",
-                "runtime": 94.021,
-                "runtime_std": 23.098,
-            },
-            "cellpose_sam": {
-                "label": "Cellpose-SAM",
-                "precision": 0.250,
-                "recall": 0.003,
-                "f1-score": 0.005,
-                "marker": "^",
-                "runtime": 2232.007748,
-                "runtime_std": None,
-            },
-            "spiner2D": {
-                "label": "Spiner",
-                "precision": 0.373,
-                "recall": 0.340,
-                "f1-score": 0.326,
-                "marker": "o",
-                "runtime": None,
-                "runtime_std": None,
-            },
-            "distance_unet": {
-                "label": "CochleaNet",
-                "precision": 0.886,
-                "recall": 0.804,
-                "f1-score": 0.837,
-                "marker": "s",
-                "runtime": 168.8,
-                "runtime_std": 21.8
-            },
-        },
-        "IHC": {
-            "micro_sam": {
-                "label": "µSAM",
-                "precision": 0.053,
-                "recall": 0.684,
-                "f1-score": 0.094,
-                "marker": "D",
-                "runtime": 445.6,
-                "runtime_std": 106.6
-            },
-            "cellpose_3": {
-                "label": "Cellpose 3",
-                "precision": 0.375,
-                "recall": 0.554,
-                "f1-score": 0.329,
-                "marker": "v",
-                "runtime": 162.3493934,
-                "runtime_std": 30.1,
-            },
-            "cellpose_sam": {
-                "label": "Cellpose-SAM",
-                "precision": 0.636,
-                "recall": 0.025,
-                "f1-score": 0.047,
-                "marker": "^",
-                "runtime": 2137.944779,
-                "runtime_std": None
-            },
-            "distance_unet": {
-                "label": "CochleaNet",
-                "precision": 0.693,
-                "recall": 0.567,
-                "f1-score": 0.618,
-                "marker": "s",
-                "runtime": 69.01,
-                "runtime_std": None
-            },
-        }
-    }
+    if data_dir is not None:
+        json_path = os.path.join(data_dir, f"{segm}.json")
+        with open(json_path, "r") as f:
+            metrics = json.load(f)
+        segm_dict = {}
+        for key, meta in PLOT_METADATA[segm].items():
+            if key not in metrics:
+                continue
+            segm_dict[key] = {"label": meta["label"], "marker": meta["marker"], **metrics[key]}
+        value_dict = {segm: segm_dict}
+    else:
+        raise ValueError("Please provide a data directory containing accuracy values.")
 
     # Convert setting labels to numerical x positions
     offset = 0.08  # horizontal shift for scatter separation
 
     # Plot
-    tick_rotation = 0
+    tick_rotation = 45
 
     main_label_size = 20
     main_tick_size = 16
@@ -250,18 +173,31 @@ def main():
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.",
                         default="./panels/supp_fig2")
     parser.add_argument("--plot", action="store_true")
+    _default_data_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "reproducibility", "model_accuracy",
+    )
+    parser.add_argument(
+        "--data_dir", "-d", type=str, default=_default_data_dir,
+        help="Directory containing SGN.json and IHC.json accuracy files. "
+             f"Defaults to {_default_data_dir}.",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
 
+    data_dir = args.data_dir if os.path.isdir(args.data_dir) else None
+
     # Supplementary Figure 2: Comparing other methods in terms of segmentation accuracy and runtime
     plot_legend_supp_fig02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_legend_colors.{FILE_EXTENSION}"))
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"), segm="SGN")
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"), segm="IHC")
+    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"),
+                segm="SGN", data_dir=data_dir)
+    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"),
+                segm="IHC", data_dir=data_dir)
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_time.{FILE_EXTENSION}"),
-                segm="SGN", mode="runtime")
+                segm="SGN", mode="runtime", data_dir=data_dir)
     supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_time.{FILE_EXTENSION}"),
-                segm="IHC", mode="runtime")
+                segm="IHC", mode="runtime", data_dir=data_dir)
 
 
 if __name__ == "__main__":
