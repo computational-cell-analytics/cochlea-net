@@ -61,6 +61,7 @@ def supp_fig_02(
     segm: str = "SGN",
     mode: str = "precision",
     data_dir: str = None,
+    use_folds: bool = False,
 ):
     """Plot panels for Supplementary Figure 2.
 
@@ -72,10 +73,29 @@ def supp_fig_02(
         data_dir: Directory containing SGN.json and IHC.json accuracy files produced by
             eval_baseline.py. When provided, metrics are loaded from these files instead of
             the hardcoded fallback values.
+        use_folds: If True, replace the direct distance_unet value with the mean and standard
+            deviation computed across all cross-validation fold variants (keys matching
+            '<base>_f<digit>') found in the JSON. Applies to any key that has fold variants.
     """
     json_path = os.path.join(data_dir, f"{segm}.json")
     with open(json_path, "r") as f:
         metrics = json.load(f)
+
+    # Pre-compute fold mean ± std for any key that has fold variants in the JSON.
+    fold_stats = {}
+    if use_folds:
+        for key in PLOT_METADATA[segm]:
+            fold_keys = [k for k in metrics if k.startswith(f"{key}_f") and k[len(key) + 2:].isdigit()]
+            if not fold_keys:
+                continue
+            fs = {}
+            for metric in ("precision", "recall", "f1-score"):
+                vals = [metrics[k][metric] for k in fold_keys]
+                fs[metric] = (float(np.mean(vals)), float(np.std(vals)))
+            rt_vals = [metrics[k]["runtime"] for k in fold_keys if metrics[k]["runtime"] is not None]
+            fs["runtime"] = (float(np.mean(rt_vals)), float(np.std(rt_vals))) if rt_vals else (None, None)
+            fold_stats[key] = fs
+
     segm_dict = {}
     for key, meta in PLOT_METADATA[segm].items():
         if key not in metrics:
@@ -92,26 +112,39 @@ def supp_fig_02(
     main_label_size = 20
     main_tick_size = 16
     marker_size = 200
+    capsize = 4
 
     labels = [value_dict[segm][key]["label"] for key in value_dict[segm].keys()]
 
     if mode == "precision":
         fig, ax = plt.subplots(figsize=(10, 5))
-        # Convert setting labels to numerical x positions
-        offset = 0.08  # horizontal shift for scatter separation
+        offset = 0.08
         for num, key in enumerate(list(value_dict[segm].keys())):
-            precision = [value_dict[segm][key]["precision"]]
-            recall = [value_dict[segm][key]["recall"]]
-            f1score = [value_dict[segm][key]["f1-score"]]
             marker = value_dict[segm][key]["marker"]
             x_pos = num + 1
 
-            plt.scatter([x_pos - offset], precision, label="Precision manual",
-                        color=COLOR_P, marker=marker, s=marker_size)
-            plt.scatter([x_pos], recall, label="Recall manual",
-                        color=COLOR_R, marker=marker, s=marker_size)
-            plt.scatter([x_pos + offset], f1score, label="F1-score manual",
-                        color=COLOR_F, marker=marker, s=marker_size)
+            if use_folds and key in fold_stats:
+                precision, precision_std = fold_stats[key]["precision"]
+                recall, recall_std = fold_stats[key]["recall"]
+                f1score, f1score_std = fold_stats[key]["f1-score"]
+            else:
+                precision = value_dict[segm][key]["precision"]
+                recall = value_dict[segm][key]["recall"]
+                f1score = value_dict[segm][key]["f1-score"]
+                precision_std = recall_std = f1score_std = None
+
+            plt.scatter([x_pos - offset], [precision], color=COLOR_P, marker=marker, s=marker_size)
+            if precision_std is not None:
+                plt.errorbar([x_pos - offset], [precision], yerr=[precision_std],
+                             fmt="none", color="black", capsize=capsize)
+            plt.scatter([x_pos], [recall], color=COLOR_R, marker=marker, s=marker_size)
+            if recall_std is not None:
+                plt.errorbar([x_pos], [recall], yerr=[recall_std],
+                             fmt="none", color="black", capsize=capsize)
+            plt.scatter([x_pos + offset], [f1score], color=COLOR_F, marker=marker, s=marker_size)
+            if f1score_std is not None:
+                plt.errorbar([x_pos + offset], [f1score], yerr=[f1score_std],
+                             fmt="none", color="black", capsize=capsize)
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels) + 1)
@@ -119,7 +152,6 @@ def supp_fig_02(
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
         plt.ylim(-0.1, 1)
-        # plt.legend(loc="lower right", fontsize=legendsize)
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     elif mode == "runtime":
@@ -127,16 +159,21 @@ def supp_fig_02(
         if "Spiner" in labels:
             labels.remove("Spiner")
 
-        # Convert setting labels to numerical x positions
-        offset = 0.08  # horizontal shift for scatter separation
         x_pos = 1
         for num, key in enumerate(list(value_dict[segm].keys())):
-            runtime = [value_dict[segm][key]["runtime"]]
-            if runtime[0] is None:
+            if use_folds and key in fold_stats:
+                runtime, runtime_std = fold_stats[key]["runtime"]
+            else:
+                runtime = value_dict[segm][key]["runtime"]
+                runtime_std = None
+            if runtime is None:
                 continue
             marker = value_dict[segm][key]["marker"]
-            plt.scatter([x_pos], runtime, label="Runtime", color=COLOR_T, marker=marker, s=marker_size)
-            x_pos = x_pos + 1
+            plt.scatter([x_pos], [runtime], color=COLOR_T, marker=marker, s=marker_size)
+            if runtime_std is not None:
+                plt.errorbar([x_pos], [runtime], yerr=[runtime_std],
+                             fmt="none", color="black", capsize=capsize)
+            x_pos += 1
 
         # Labels and formatting
         x_pos = np.arange(1, len(labels) + 1)
@@ -145,7 +182,6 @@ def supp_fig_02(
         plt.ylabel("Processing time [s]", fontsize=main_label_size)
         plt.ylim(10, 2600)
         plt.yscale('log')
-        # plt.legend(loc="lower right", fontsize=legendsize)
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     else:
@@ -247,6 +283,10 @@ def main():
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.",
                         default="./panels/supp_fig2")
     parser.add_argument("--plot", action="store_true")
+    parser.add_argument(
+        "--use_folds", action="store_true",
+        help="Replace the CochleaNet point with the mean ± std across the five cross-validation folds.",
+    )
     _default_data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "reproducibility", "model_accuracy",
@@ -266,13 +306,13 @@ def main():
     plot_legend_supp_fig02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_legend_colors.{FILE_EXTENSION}"))
     if data_dir is not None:
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"),
-                    segm="SGN", data_dir=data_dir)
+                    segm="SGN", data_dir=data_dir, use_folds=args.use_folds)
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"),
-                    segm="IHC", data_dir=data_dir)
+                    segm="IHC", data_dir=data_dir, use_folds=args.use_folds)
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_time.{FILE_EXTENSION}"),
-                    segm="SGN", mode="runtime", data_dir=data_dir)
+                    segm="SGN", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_time.{FILE_EXTENSION}"),
-                    segm="IHC", mode="runtime", data_dir=data_dir)
+                    segm="IHC", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
         plot_fold_accuracy(
             save_path=os.path.join(args.figure_dir, f"supp_fig_sgn_folds.{FILE_EXTENSION}"),
             data_dir=data_dir,
