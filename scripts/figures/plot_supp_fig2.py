@@ -73,18 +73,15 @@ def supp_fig_02(
             eval_baseline.py. When provided, metrics are loaded from these files instead of
             the hardcoded fallback values.
     """
-    if data_dir is not None:
-        json_path = os.path.join(data_dir, f"{segm}.json")
-        with open(json_path, "r") as f:
-            metrics = json.load(f)
-        segm_dict = {}
-        for key, meta in PLOT_METADATA[segm].items():
-            if key not in metrics:
-                continue
-            segm_dict[key] = {"label": meta["label"], "marker": meta["marker"], **metrics[key]}
-        value_dict = {segm: segm_dict}
-    else:
-        raise ValueError("Please provide a data directory containing accuracy values.")
+    json_path = os.path.join(data_dir, f"{segm}.json")
+    with open(json_path, "r") as f:
+        metrics = json.load(f)
+    segm_dict = {}
+    for key, meta in PLOT_METADATA[segm].items():
+        if key not in metrics:
+            continue
+        segm_dict[key] = {"label": meta["label"], "marker": meta["marker"], **metrics[key]}
+    value_dict = {segm: segm_dict}
 
     # Convert setting labels to numerical x positions
     offset = 0.08  # horizontal shift for scatter separation
@@ -168,6 +165,83 @@ def supp_fig_02(
         plt.close()
 
 
+def plot_fold_accuracy(
+    save_path: str,
+    data_dir: str = None,
+    plot: bool = False,
+):
+    """Plot precision, recall, F1-score, and processing time per cross-validation fold.
+
+    Reads fold entries (keys matching 'distance_unet_f*') from SGN.json and plots all four
+    metrics in one figure: precision, recall, and F1-score on the left y-axis; processing
+    time on a log-scale right y-axis.
+
+    Args:
+        save_path: Path for saving figure.
+        data_dir: Directory containing SGN.json produced by eval_baseline.py.
+        plot: Whether to display the plot interactively.
+    """
+    if data_dir is None:
+        raise ValueError("Please provide a data directory containing SGN.json.")
+
+    json_path = os.path.join(data_dir, "SGN.json")
+    with open(json_path, "r") as f:
+        metrics = json.load(f)
+
+    fold_keys = sorted(k for k in metrics if k.startswith("distance_unet_f"))
+    labels = [k.replace("distance_unet_f", "Fold ") for k in fold_keys]
+    x_positions = np.arange(1, len(fold_keys) + 1)
+
+    marker = "s"
+    marker_size = 200
+    main_label_size = 20
+    main_tick_size = 16
+    offset = 0.08
+
+    fig, ax1 = plt.subplots(figsize=(8, 5))
+    ax2 = ax1.twinx()
+
+    for i, key in enumerate(fold_keys):
+        d = metrics[key]
+        x = x_positions[i]
+        ax1.scatter([x - offset], [d["precision"]], color=COLOR_P, marker=marker, s=marker_size)
+        ax1.scatter([x], [d["recall"]], color=COLOR_R, marker=marker, s=marker_size)
+        ax1.scatter([x + offset], [d["f1-score"]], color=COLOR_F, marker=marker, s=marker_size)
+        if d["runtime"] is not None:
+            ax2.scatter([x], [d["runtime"]], color=COLOR_T, marker=marker, s=marker_size)
+
+    ax1.set_xticks(x_positions)
+    ax1.set_xticklabels(labels, fontsize=main_tick_size)
+    ax1.set_ylim(-0.1, 1)
+    ax1.set_ylabel("Value", fontsize=main_label_size)
+    ax1.tick_params(axis="y", labelsize=main_tick_size)
+    # ax1.grid(axis="y", linestyle="solid", alpha=0.5)
+
+    ax2.set_ylabel("Processing time [s]", fontsize=main_label_size, color=COLOR_T)
+    ax2.set_ylim(95, 200)
+    # ax2.set_yscale("log")
+    ax2.tick_params(axis="y", labelsize=main_tick_size, labelcolor=COLOR_T)
+
+    color = [COLOR_P, COLOR_R, COLOR_F, COLOR_T]
+    label = ["Precision", "Recall", "F1-score", "Processing time"]
+
+    handles = [get_flatline_handle(c) for c in color]
+    plt.legend(handles, label, loc=(0, 1), ncol=len(label), framealpha=1, frameon=False)
+
+    plt.tight_layout()
+    prism_cleanup_axes(ax1)
+
+    if ".png" in save_path:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
+    else:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0)
+
+    if plot:
+        plt.show()
+    else:
+        plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plots for Supplementary Fig 2 of the cochlea paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.",
@@ -190,14 +264,22 @@ def main():
 
     # Supplementary Figure 2: Comparing other methods in terms of segmentation accuracy and runtime
     plot_legend_supp_fig02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_legend_colors.{FILE_EXTENSION}"))
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"),
-                segm="SGN", data_dir=data_dir)
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"),
-                segm="IHC", data_dir=data_dir)
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_time.{FILE_EXTENSION}"),
-                segm="SGN", mode="runtime", data_dir=data_dir)
-    supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_time.{FILE_EXTENSION}"),
-                segm="IHC", mode="runtime", data_dir=data_dir)
+    if data_dir is not None:
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"),
+                    segm="SGN", data_dir=data_dir)
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"),
+                    segm="IHC", data_dir=data_dir)
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_time.{FILE_EXTENSION}"),
+                    segm="SGN", mode="runtime", data_dir=data_dir)
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_time.{FILE_EXTENSION}"),
+                    segm="IHC", mode="runtime", data_dir=data_dir)
+        plot_fold_accuracy(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_sgn_folds.{FILE_EXTENSION}"),
+            data_dir=data_dir,
+            plot=args.plot,
+        )
+    else:
+        raise ValueError("Please provide a data directory containing dictionaries produced by eval_baseline.py")
 
 
 if __name__ == "__main__":
