@@ -1,0 +1,93 @@
+{
+	"spiner2D": {
+		"precision": 0.373,
+		"recall": 0.34,
+		"f1-score": 0.326,
+		"runtime": null,
+		"runtime_std": null
+	},
+	"cellpose3": {
+		"precision": 0.117,
+		"recall": 0.607,
+		"f1-score": 0.186,
+		"runtime": 167.912,
+		"runtime_std": 40.207
+	},
+	"cellpose3_finetuned": {
+		"precision": 0.581,
+		"recall": 0.727,
+		"f1-score": 0.621,
+		"runtime": 94.021,
+		"runtime_std": 23.098
+	},
+	"cellpose-sam": {
+		"precision": 0.218,
+		"recall": 0.723,
+		"f1-score": 0.313,
+		"runtime": 2232.008,
+		"runtime_std": 552.779
+	},
+	"distance_unet": {
+		"precision": 0.886,
+		"recall": 0.804,
+		"f1-score": 0.837,
+		"runtime": 168.835,
+		"runtime_std": 21.808
+	},
+	"distance_unet_f0": {
+		"precision": 0.887,
+		"recall": 0.807,
+		"f1-score": 0.839,
+		"runtime": 161.407,
+		"runtime_std": 20.783
+	},
+	"distance_unet_f1": {
+		"precision": 0.875,
+		"recall": 0.81,
+		"f1-score": 0.834,
+		"runtime": 158.267,
+		"runtime_std": 21.035
+	},
+	"distance_unet_f2": {
+		"precision": 0.827,
+		"recall": 0.855,
+		"f1-score": 0.834,
+		"runtime": 157.703,
+		"runtime_std": 20.492
+	},
+	"distance_unet_f3": {
+		"precision": 0.858,
+		"recall": 0.828,
+		"f1-score": 0.836,
+		"runtime": 157.753,
+		"runtime_std": 21.171
+	},
+	"distance_unet_f4": {
+		"precision": 0.876,
+		"recall": 0.808,
+		"f1-score": 0.833,
+		"runtime": 156.853,
+		"runtime_std": 21.1
+	},
+	"micro-sam": {
+		"precision": 0.14,
+		"recall": 0.782,
+		"f1-score": 0.228,
+		"runtime": 407.462,
+		"runtime_std": 107.494
+	},
+	"micro-sam_finetuned": {
+		"precision": 0.44,
+		"recall": 0.642,
+		"f1-score": 0.488,
+		"runtime": 789.582,
+		"runtime_std": 205.167
+	},
+	"stardist": {
+		"precision": 0.706,
+		"recall": 0.63,
+		"f1-score": 0.628,
+		"runtime": 536.52,
+		"runtime_std": 148.381
+	}
+}

@@ -1,0 +1,30 @@
+{
+	"cellpose3": {
+		"precision": 0.375,
+		"recall": 0.554,
+		"f1-score": 0.329,
+		"runtime": 162.349,
+		"runtime_std": 30.102
+	},
+	"cellpose-sam": {
+		"precision": 0.572,
+		"recall": 0.601,
+		"f1-score": 0.469,
+		"runtime": 2137.945,
+		"runtime_std": 304.285
+	},
+	"distance_unet_v4b": {
+		"precision": 0.693,
+		"recall": 0.567,
+		"f1-score": 0.618,
+		"runtime": 69.012,
+		"runtime_std": 73.538
+	},
+	"micro-sam": {
+		"precision": 0.053,
+		"recall": 0.684,
+		"f1-score": 0.094,
+		"runtime": 445.592,
+		"runtime_std": 106.585
+	}
+}
