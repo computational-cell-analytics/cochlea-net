@@ -4,7 +4,7 @@ import sys
 from glob import glob
 
 from sklearn.model_selection import train_test_split
-from detection_dataset import DetectionDataset, MinPointSampler
+from detection_dataset import DetectionDataset, MinPointSampler, CsvHeatmapFlowTransform
 
 sys.path.append("/home/pape/Work/my_projects/czii-protein-challenge")
 sys.path.append("/user/schilling40/u15000/czii-protein-challenge/detection")
@@ -64,6 +64,7 @@ def train(root_data_dir, version="v4"):
         n_iterations=int(1e5),
         out_channels=5,
         augmentations=None,
+        label_transform=CsvHeatmapFlowTransform(sigma=1, eps=1e-5),
         eps=1e-5,
         sigma=1,
         lower_bound=None,
@@ -75,6 +76,7 @@ def train(root_data_dir, version="v4"):
         n_samples_train=3200,
         n_samples_val=160,
         sampler=MinPointSampler(min_points=1, p_reject=0.8),
+        num_workers=8,
     )
 
 

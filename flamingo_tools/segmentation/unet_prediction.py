@@ -3,6 +3,7 @@ Parallelization using multiple GPUs is currently only possible by calling functi
 Functions for the parallelization end with '_slurm'
 and divide the process into preprocessing, prediction, and segmentation.
 """
+import importlib
 import json
 import multiprocessing as mp
 import os
@@ -29,6 +30,17 @@ from tqdm import tqdm
 
 import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.file_utils import read_image_data
+
+
+def _model_from_checkpoint(ckpt):
+    """Reconstruct a model from a torch_em-style trainer checkpoint dict."""
+    model_class_path = ckpt["init"]["model_class"]
+    model_kwargs = ckpt["init"]["model_kwargs"]
+    module_path, class_name = model_class_path.rsplit(".", 1)
+    model_class = getattr(importlib.import_module(module_path), class_name)
+    model = model_class(**model_kwargs)
+    model.load_state_dict(ckpt["model_state"])
+    return model
 
 
 class SelectChannel(SimpleTransformationWrapper):
@@ -93,7 +105,8 @@ def prediction_impl(
         if os.path.isdir(model_path):
             model = load_model(model_path)
         else:
-            model = torch.load(model_path, weights_only=False)
+            obj = torch.load(model_path, weights_only=False)
+            model = _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
 
     input_ = read_image_data(input_path, input_key)
     chunks = getattr(input_, "chunks", (64, 64, 64))
@@ -147,7 +160,11 @@ def prediction_impl(
             x[1] = vigra.filters.gaussianSmoothing(x[1], sigma=2.0)
             return x
     else:
-        postprocess = None if output_channels > 1 else lambda x: x.squeeze()
+        if output_channels > 1:
+            postprocess = None
+        else:
+
+            postprocess = lambda x: x[0] if x.ndim == 4 else x.squeeze()
 
     gpu_ids, block_shape, halo = _get_device_and_tiling(block_shape, halo, input_)
     shape = input_.shape
