@@ -4,6 +4,8 @@ from concurrent import futures
 
 import numpy as np
 import zarr
+import z5py
+
 from elf.evaluation.matching import label_overlap, intersection_over_union
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
 from nifty.tools import blocking
@@ -13,7 +15,7 @@ from tqdm import tqdm
 def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
     assert seg_a.shape == seg_b.shape
 
-    output_file = zarr.open(output_path, mode="a")
+    output_file = z5py.File(output_path, mode="a")
     output = output_file.create_dataset("segmentation", shape=seg_a.shape, dtype=seg_a.dtype, chunks=seg_a.chunks)
     blocks = blocking([0, 0, 0], seg_a.shape, seg_a.chunks)
 
@@ -63,21 +65,24 @@ def merge_sgns(cochlea, name_a, name_b, overlap_threshold=0.25):
     cumulative_overlap = overlap[1:, :].sum(axis=0)
     all_ids_b = np.unique(seg_b)
     ids_b = all_ids_b[cumulative_overlap < overlap_threshold]
+    if 0 in ids_b:  # Zero is likely in the ids due to the logic.
+        ids_b = ids_b[1:]
+    assert 0 not in ids_b
     offset = seg_a.max()
 
     # Get the segmentations at full resolution to merge them.
-    seg_a = get_segmentation(cochlea, seg_name=name_a, seg_key="s2")
-    seg_b = get_segmentation(cochlea, seg_name=name_b, seg_key="s2")
+    seg_a = get_segmentation(cochlea, seg_name=name_a, seg_key="s0")
+    seg_b = get_segmentation(cochlea, seg_name=name_b, seg_key="s0")
 
     # Write out the merged segmentations.
     output_folder = f"./data/{cochlea}"
     os.makedirs(output_folder, exist_ok=True)
-    output_path = os.path.join(output_folder, "SGN_merged.zarr")
+    output_path = os.path.join(output_folder, "SGN_merged.n5")
     merge_segmentations(seg_a, seg_b, ids_b, offset, output_path)
 
 
 def main():
-    # merge_sgns(cochlea="M_AMD_N180_L", name_a="CR_SGN_v2", name_b="Ntng1_SGN_v2")
+    merge_sgns(cochlea="M_AMD_N180_L", name_a="CR_SGN_v2", name_b="Ntng1_SGN_v2")
     merge_sgns(cochlea="M_AMD_N180_R", name_a="CR_SGN_v2", name_b="Ntng1_SGN_v2")
 
 
