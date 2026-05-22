@@ -163,7 +163,6 @@ def prediction_impl(
         if output_channels > 1:
             postprocess = None
         else:
-
             postprocess = lambda x: x[0] if x.ndim == 4 else x.squeeze()
 
     gpu_ids, block_shape, halo = _get_device_and_tiling(block_shape, halo, input_)

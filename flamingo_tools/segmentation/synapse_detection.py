@@ -1,15 +1,77 @@
 import os
+import warnings
 from typing import Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
+import torch
 import zarr
 from scipy.ndimage import binary_dilation
 
 from elf.parallel.local_maxima import find_local_maxima
 from elf.parallel.distance_transform import map_points_to_objects
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.segmentation.unet_prediction import prediction_impl
+from flamingo_tools.segmentation.unet_prediction import prediction_impl, SelectChannel
+
+# Must match the sigma used in CsvHeatmapFlowTransform during training.
+_HEATMAP_FLOW_SIGMA = 1
+
+
+def _get_model_out_channels(model_path):
+    """Return the number of output channels of a model file or trainer checkpoint."""
+    try:
+        import sys
+        import flamingo_tools.synapse_detection.detection_dataset as _dd
+        sys.modules.setdefault("detection_dataset", _dd)
+    except ImportError:
+        pass
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        obj = torch.load(model_path, map_location="cpu", weights_only=False)
+    if isinstance(obj, dict) and "model_state" in obj:
+        return obj["init"]["model_kwargs"].get("out_channels", 1)
+    return obj.state_dict()["out_conv.bias"].shape[0]
+
+
+def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n_threads):
+    """Detect peaks and refine their positions using stereographic flow channels.
+
+    Args:
+        pred: Zarr/array of shape (Z, Y, X) for single-channel models or
+              (5, Z, Y, X) for heatmap+flow models.
+        min_distance: Minimum distance between detected peaks in voxels.
+        threshold_abs: Absolute heatmap threshold for peak detection.
+        block_shape: Spatial block shape for parallel peak detection.
+        n_threads: Number of threads.
+
+    Returns:
+        (N, 3) float array of [z, y, x] coordinates (sub-voxel if flow applied).
+    """
+    have_flow = pred.ndim == 4 and pred.shape[0] >= 5
+    # SelectChannel presents the 4-D (C, Z, Y, X) zarr as a 3-D (Z, Y, X) view
+    # so find_local_maxima can work out-of-core without loading the full volume.
+    heatmap = SelectChannel(pred, 0) if have_flow else pred
+
+    peak_coords = find_local_maxima(
+        heatmap, block_shape=block_shape, min_distance=min_distance,
+        threshold_abs=threshold_abs, verbose=True, n_threads=n_threads,
+    )
+
+    if not have_flow or len(peak_coords) == 0:
+        return peak_coords.astype(float)
+
+    s = _HEATMAP_FLOW_SIGMA
+    adjusted = np.empty((len(peak_coords), 3), dtype=float)
+    for i, (z, y, x) in enumerate(peak_coords):
+        zi, yi, xi = int(z), int(y), int(x)
+        w  = float(pred[1, zi, yi, xi])
+        vz = float(pred[2, zi, yi, xi])
+        vy = float(pred[3, zi, yi, xi])
+        vx = float(pred[4, zi, yi, xi])
+        denom = 1.0 + w + 1e-8
+        adjusted[i] = [z + s * vz / denom, y + s * vy / denom, x + s * vx / denom]
+
+    return adjusted
 
 
 def map_and_filter_detections(
@@ -72,6 +134,50 @@ def map_and_filter_detections(
     return detections
 
 
+def synapse_detection_from_prediction(
+    prediction_path: str,
+    detection_path: str,
+    block_shape: Optional[Tuple[int, int, int]] = None,
+    prediction_key: str = "prediction",
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    force_overwrite: bool = False,
+):
+    """Run synapse detection for prediction.
+
+    Args:
+        prediction_path: Input path to synapse prediction in ZARR format.
+        detection_path: Output path for synapse detection.
+        block_shape: The block-shape for running the prediction.
+        prediction_key: Input key for prediction.
+        voxel_size: The voxel size of the data in micrometer.
+        force_overwrite: Forcefully overwrite output detection.
+    """
+
+    if not os.path.exists(detection_path) and not force_overwrite:
+        pred = zarr.open(prediction_path, "r")[prediction_key]
+        # Use spatial chunk shape (drop leading channel dim for multi-channel predictions).
+        det_block_shape = block_shape or tuple(pred.chunks[-3:])
+        detections = _flow_corrected_detections(
+            pred, min_distance=2, threshold_abs=0.5,
+            block_shape=det_block_shape, n_threads=16,
+        )
+        # Save the result in MoBIE compatible format.
+        detections = np.concatenate(
+            [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
+        )
+        detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
+
+        # scale coordinates
+        detections["x"] *= voxel_size[0]
+        detections["y"] *= voxel_size[1]
+        detections["z"] *= voxel_size[2]
+
+        detections.to_csv(detection_path, index=False, sep="\t")
+    else:
+        print(f"Skipping peak detection. {detection_path} already exists.")
+
+
+
 def run_prediction(
     input_path: str,
     input_key: str,
@@ -101,30 +207,20 @@ def run_prediction(
         skip_prediction = True
 
     if not skip_prediction:
+        out_channels = _get_model_out_channels(model_path)
         prediction_impl(
             input_path, input_key, output_folder, model_path,
             scale=None, block_shape=block_shape, halo=halo,
-            apply_postprocessing=False, output_channels=1,
+            apply_postprocessing=False, output_channels=out_channels,
         )
 
     detection_path = os.path.join(output_folder, "synapse_detection.tsv")
-    if not os.path.exists(detection_path):
-        input_ = zarr.open(output_path, "r")[prediction_key]
-        detections = find_local_maxima(
-            input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
-        )
-        # Save the result in MoBIE compatible format.
-        detections = np.concatenate(
-            [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
-        )
-        detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
-
-        # scale coordinates
-        detections["x"] *= voxel_size[0]
-        detections["y"] *= voxel_size[1]
-        detections["z"] *= voxel_size[2]
-
-        detections.to_csv(detection_path, index=False, sep="\t")
+    synapse_detection_from_prediction(
+        output_path, detection_path,
+        prediction_key=prediction_key,
+        block_shape=block_shape,
+        voxel_size=voxel_size,
+    )
 
 
 def marker_detection(
@@ -192,30 +288,16 @@ def marker_detection(
         skip_prediction = True
 
     if not skip_prediction:
+        out_channels = _get_model_out_channels(model_path)
         prediction_impl(
             input_path, input_key, output_folder, model_path,
-            scale=None, apply_postprocessing=False, output_channels=1,
+            scale=None, apply_postprocessing=False, output_channels=out_channels,
             block_shape=None, halo=None,
         )
 
     if not os.path.exists(detection_path):
-        input_ = zarr.open(output_path, "r")[prediction_key]
-        block_shape = tuple(input_.chunks)
-        detections = find_local_maxima(
-            input_, block_shape=block_shape, min_distance=2, threshold_abs=0.5, verbose=True, n_threads=16,
-        )
-        # Save the result in MoBIE compatible format.
-        detections = np.concatenate(
-            [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
-        )
-        detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
-
-        # scale coordinates
-        detections["x"] *= voxel_size[0]
-        detections["y"] *= voxel_size[1]
-        detections["z"] *= voxel_size[2]
-
-        detections.to_csv(detection_path, index=False, sep="\t")
+        synapse_detection_from_prediction(output_path, detection_path,
+                                          prediction_key=prediction_key, voxel_size=voxel_size)
 
     else:
         with open(detection_path, "r") as f:
