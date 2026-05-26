@@ -1,5 +1,5 @@
 import warnings
-from typing import Union
+from typing import List, Optional, Union
 
 import numpy as np
 import pandas as pd
@@ -64,6 +64,10 @@ def sgn_density_at_position(
             area_µm²            - cross-sectional area from convex hull (µm²)
             density_µm⁻²       - n_sgns / area_µm²
             axis                - axis used for slicing
+            bb_min              - [x, y, z] lower corner of 3D bounding box (µm)
+            bb_max              - [x, y, z] upper corner of 3D bounding box (µm)
+            bb_center           - [x, y, z] center of 3D bounding box (µm); pass as `coords`
+                                  to flamingo_tools.extract_block for block visualisation
     """
     if axis not in _AXIS_PROJECTION:
         raise ValueError(f"axis must be one of {list(_AXIS_PROJECTION)}, got '{axis}'")
@@ -126,6 +130,22 @@ def sgn_density_at_position(
     area = _compute_area(coords_2d)
     density = n_sgns / area if area > 0 else float("nan")
 
+    # 3D bounding box covering all selected SGN instance bounding boxes.
+    if n_sgns > 0:
+        bb_min = [
+            float(in_slice["bb_min_x"].min()),
+            float(in_slice["bb_min_y"].min()),
+            float(in_slice["bb_min_z"].min()),
+        ]
+        bb_max = [
+            float(in_slice["bb_max_x"].max()),
+            float(in_slice["bb_max_y"].max()),
+            float(in_slice["bb_max_z"].max()),
+        ]
+        bb_center = [(lo + hi) / 2.0 for lo, hi in zip(bb_min, bb_max)]
+    else:
+        bb_min = bb_max = bb_center = [float("nan"), float("nan"), float("nan")]
+
     return {
         "reference_fraction": ref_frac,
         "reference_label_id": ref_label_id,
@@ -136,6 +156,9 @@ def sgn_density_at_position(
         "area_µm²": area,
         "density_µm⁻²": density,
         "axis": axis,
+        "bb_min": bb_min,
+        "bb_max": bb_max,
+        "bb_center": bb_center,
     }
 
 
@@ -165,3 +188,46 @@ def _bbox_area(coords_2d: np.ndarray) -> float:
         return 0.0
     ranges = coords_2d.max(axis=0) - coords_2d.min(axis=0)
     return float(ranges[0] * ranges[1])
+
+
+def sgn_density_profile(
+    table: pd.DataFrame,
+    positions: Optional[List[Union[float, str]]] = None,
+    slice_thickness: float = 40.0,
+    run_length_tolerance: float = 0.1,
+    component_label: int = 1,
+    axis: str = "z",
+    length_fraction_column: str = "length_fraction",
+) -> dict:
+    """Compute SGN density at multiple cochlear positions.
+
+    Args:
+        table: SGN segmentation table (see sgn_density_at_position for required columns).
+        positions: List of positions to evaluate. Each entry is either a preset string
+                   ('apex', 'mid', 'base') or a float in [0, 1]. Default: ['apex', 'mid', 'base'].
+        slice_thickness: Total slice thickness in µm (default 40 µm).
+        run_length_tolerance: Max abs difference in length_fraction for inclusion (default 0.1).
+        component_label: Component label of the main RC component (default 1).
+        axis: Volume axis perpendicular to the slice plane (default 'z').
+        length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
+
+    Returns:
+        dict keyed by position label (preset name or string-formatted float), each value
+        being the result dict from sgn_density_at_position.
+    """
+    if positions is None:
+        positions = ["apex", "mid", "base"]
+
+    results = {}
+    for pos in positions:
+        key = pos if isinstance(pos, str) else str(pos)
+        results[key] = sgn_density_at_position(
+            table,
+            reference_position=pos,
+            slice_thickness=slice_thickness,
+            run_length_tolerance=run_length_tolerance,
+            component_label=component_label,
+            axis=axis,
+            length_fraction_column=length_fraction_column,
+        )
+    return results

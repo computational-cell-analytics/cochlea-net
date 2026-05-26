@@ -108,8 +108,55 @@ class TestSgnDensityAtPosition(unittest.TestCase):
         expected_keys = {
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "n_sgns", "area_µm²", "density_µm⁻²", "axis",
+            "bb_min", "bb_max", "bb_center",
         }
         self.assertEqual(set(result.keys()), expected_keys)
+
+    def test_bounding_box_shape(self):
+        result = self.fn(self.table, reference_position="mid", slice_thickness=40.0)
+        for key in ("bb_min", "bb_max", "bb_center"):
+            self.assertEqual(len(result[key]), 3, f"{key} should have 3 components")
+        # bb_min <= bb_center <= bb_max for each axis
+        for lo, center, hi in zip(result["bb_min"], result["bb_center"], result["bb_max"]):
+            self.assertLessEqual(lo, center)
+            self.assertLessEqual(center, hi)
+
+    def test_bounding_box_covers_slice_axis(self):
+        result = self.fn(self.table, reference_position="mid", slice_thickness=40.0, axis="z")
+        # The z range of the bounding box must contain the slice window.
+        self.assertLessEqual(result["bb_min"][2], result["slice_max"])
+        self.assertGreaterEqual(result["bb_max"][2], result["slice_min"])
+
+
+class TestSgnDensityProfile(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.analysis.density_utils import sgn_density_profile
+        self.fn = sgn_density_profile
+        self.table = _make_table()
+
+    def test_default_positions(self):
+        # Default produces three preset positions, but mid table only has mid data —
+        # use a table spanning all three preset fractions so each finds a closest match.
+        fracs = [0.15, 0.5, 0.85]
+        rows = [_make_table(n=20, frac_center=f, frac_spread=0.02) for f in fracs]
+        for i, t in enumerate(rows[1:], 1):
+            t["label_id"] += i * 100
+        combined = pd.concat(rows, ignore_index=True)
+        results = self.fn(combined, run_length_tolerance=0.05)
+        self.assertEqual(set(results.keys()), {"apex", "mid", "base"})
+        for key in results:
+            self.assertIn("density_µm⁻²", results[key])
+
+    def test_custom_positions(self):
+        results = self.fn(self.table, positions=["mid", 0.5])
+        self.assertIn("mid", results)
+        self.assertIn("0.5", results)
+
+    def test_float_position_key_format(self):
+        results = self.fn(self.table, positions=[0.3])
+        self.assertIn("0.3", results)
+        self.assertEqual(results["0.3"]["reference_fraction"], 0.3)
 
 
 if __name__ == "__main__":

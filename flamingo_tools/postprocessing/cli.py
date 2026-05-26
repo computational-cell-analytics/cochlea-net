@@ -340,3 +340,68 @@ def tonotopic_mapping():
         s3_bucket_name=args.s3_bucket_name,
         s3_service_endpoint=args.s3_service_endpoint,
     )
+
+
+def sgn_density():
+    parser = argparse.ArgumentParser(
+        description="Compute SGN density at one or more positions along the Rosenthal's Canal."
+    )
+
+    parser.add_argument("-i", "--input", type=str, required=True,
+                        help="Input path to SGN segmentation table (TSV). Must contain length_fraction column "
+                        "(produced by flamingo_tools.tonotopic_mapping).")
+    parser.add_argument("-o", "--output", type=str, required=True,
+                        help="Output path for JSON file with density results.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument(
+        "-p", "--positions", type=str, nargs="+", default=["apex", "mid", "base"],
+        help="Cochlear positions to evaluate. Use preset names ('apex', 'mid', 'base') or "
+        "floats in [0, 1]. Default: apex mid base",
+    )
+    parser.add_argument(
+        "--slice_thickness", type=float, default=40.0,
+        help="Total thickness of the horizontal slice in µm. Default: 40.0",
+    )
+    parser.add_argument(
+        "--run_length_tolerance", type=float, default=0.1,
+        help="Maximum allowed length_fraction difference to include an SGN instance. "
+        "Reduces contamination from other cochlear turns. Default: 0.1",
+    )
+    parser.add_argument(
+        "-c", "--component_label", type=int, default=1,
+        help="Component label of the main Rosenthal's Canal component. Default: 1",
+    )
+    parser.add_argument(
+        "--axis", type=str, default="z", choices=["x", "y", "z"],
+        help="Volume axis perpendicular to the slice plane. Default: z",
+    )
+    parser.add_argument(
+        "--length_fraction_column", type=str, default="length_fraction",
+        help="Column name for the run-length fraction in the table. Default: length_fraction",
+    )
+
+    args = parser.parse_args()
+
+    import pandas as pd
+    from flamingo_tools.analysis.density_utils import sgn_density_profile
+
+    # Convert numeric position strings to floats.
+    positions = []
+    for p in args.positions:
+        try:
+            positions.append(float(p))
+        except ValueError:
+            positions.append(p)
+
+    table = pd.read_csv(args.input, sep="\t")
+    results = sgn_density_profile(
+        table,
+        positions=positions,
+        slice_thickness=args.slice_thickness,
+        run_length_tolerance=args.run_length_tolerance,
+        component_label=args.component_label,
+        axis=args.axis,
+        length_fraction_column=args.length_fraction_column,
+    )
+
+    export_dictionary_as_json(results, args.output, force_overwrite=args.force)
