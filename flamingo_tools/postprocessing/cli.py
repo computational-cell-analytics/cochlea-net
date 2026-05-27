@@ -7,7 +7,7 @@ from .cochlea_mapping import tonotopic_mapping_json_wrapper, equidistant_centers
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
-from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.s3_utils import MOBIE_FOLDER, get_s3_path
 
 
 def equidistant_centers():
@@ -411,6 +411,16 @@ def sgn_density():
         "and --input is absent.",
     )
 
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
+    parser.add_argument("--s3_credentials", type=str, default=None,
+                        help="Input file containing S3 credentials. "
+                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
+    parser.add_argument("--s3_bucket_name", type=str, default=None,
+                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
+    parser.add_argument("--s3_service_endpoint", type=str, default=None,
+                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
+
     args = parser.parse_args()
 
     import json
@@ -432,7 +442,10 @@ def sgn_density():
     elif json_params is not None:
         dataset_name = json_params["dataset_name"]
         seg_channel = json_params.get("segmentation_channel", "SGN_v2")
-        table_path = os.path.join(args.mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
+        if args.s3:
+            table_path = f"{dataset_name}/tables/{seg_channel}/default.tsv"
+        else:
+            table_path = os.path.join(args.mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
     else:
         parser.error("Provide --input or --json_input.")
 
@@ -444,7 +457,17 @@ def sgn_density():
         except ValueError:
             positions.append(p)
 
-    table = pd.read_csv(table_path, sep="\t")
+    if args.s3:
+        tsv_path, fs = get_s3_path(
+            table_path,
+            credential_file=args.s3_credentials,
+            bucket_name=args.s3_bucket_name,
+            service_endpoint=args.s3_service_endpoint,
+        )
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table = pd.read_csv(table_path, sep="\t")
     results = sgn_density_profile(
         table,
         positions=positions,

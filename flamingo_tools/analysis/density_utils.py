@@ -262,15 +262,26 @@ def _auto_roi_halo(
     bb_min: List[float],
     bb_max: List[float],
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
-    min_halo: int = 16,
+    axis: str = "z",
+    slice_thickness: Optional[float] = None,
+    min_halo: int = 10,
 ) -> List[int]:
-    """Compute roi_halo in pixels that covers the bounding box half-extents.
+    """Compute roi_halo in pixels sized to match the slice exactly.
+
+    Along the slice axis the halo is derived from slice_thickness / 2 so the
+    extracted block matches the slice used for the density calculation.
+    Along the two projection axes the bounding box half-extents are used.
 
     Args:
-        bb_min: [x, y, z] lower corner of the bounding box in µm.
-        bb_max: [x, y, z] upper corner of the bounding box in µm.
+        bb_min: [x, y, z] lower corner of the SGN bounding box in µm.
+        bb_max: [x, y, z] upper corner of the SGN bounding box in µm.
         voxel_size: Voxel size in µm per axis (default 0.38 µm isotropic).
-        min_halo: Minimum halo size in pixels (default 16).
+        axis: Axis that was perpendicular to the slice plane ('x', 'y', or 'z').
+        slice_thickness: Slice thickness in µm used for the density calculation.
+                         When provided, the halo along ``axis`` is set to
+                         ceil(slice_thickness / 2 / voxel_size); otherwise the
+                         bounding box extent is used for all axes.
+        min_halo: Minimum halo size in pixels per axis (default 10).
 
     Returns:
         List of 3 ints [halo_x, halo_y, halo_z] in pixels.
@@ -278,9 +289,13 @@ def _auto_roi_halo(
     import math
     if any(np.isnan(v) for v in list(bb_min) + list(bb_max)):
         return [128, 128, 64]
+    axis_index = {"x": 0, "y": 1, "z": 2}[axis]
     halo = []
-    for lo, hi, vs in zip(bb_min, bb_max, voxel_size):
-        half_px = math.ceil((hi - lo) / 2.0 / vs)
+    for i, (lo, hi, vs) in enumerate(zip(bb_min, bb_max, voxel_size)):
+        if i == axis_index and slice_thickness is not None:
+            half_px = math.ceil(slice_thickness / 2.0 / vs)
+        else:
+            half_px = math.ceil((hi - lo) / 2.0 / vs)
         halo.append(max(min_halo, half_px))
     return halo
 
@@ -300,7 +315,10 @@ def _build_block_extraction_dict(
     roi_halo priority per entry:
         1. Explicit ``roi_halo`` argument (same value applied to all positions).
         2. ``roi_halo`` key from ``input_json_params`` (same for all positions).
-        3. Auto-computed from the position's 3D bounding box and ``voxel_size``.
+        3. Auto-computed: slice_thickness / 2 along the slice axis; bounding box
+           half-extents along the two projection axes. Both are converted to pixels
+           using ``voxel_size``. The axis and slice_thickness are read from each
+           position's density result.
 
     Args:
         density_results: Output of sgn_density_profile — dict keyed by position label.
@@ -340,7 +358,11 @@ def _build_block_extraction_dict(
         else:
             bb_min = pos_result.get("bb_min", [float("nan")] * 3)
             bb_max = pos_result.get("bb_max", [float("nan")] * 3)
-            entry["roi_halo"] = _auto_roi_halo(bb_min, bb_max, voxel_size)
+            entry["roi_halo"] = _auto_roi_halo(
+                bb_min, bb_max, voxel_size,
+                axis=pos_result.get("axis", "z"),
+                slice_thickness=pos_result.get("slice_thickness"),
+            )
 
         result_list.append(entry)
 

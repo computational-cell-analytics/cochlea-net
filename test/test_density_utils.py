@@ -236,15 +236,32 @@ class TestBuildBlockExtractionDict(unittest.TestCase):
                 self.assertIsInstance(v, int)
                 self.assertGreater(v, 0)
 
-    def test_auto_roi_halo_covers_bbox(self):
-        # Auto halo must be >= half the bounding box extent in each axis.
+    def test_auto_roi_halo_slice_axis_matches_slice_thickness(self):
+        # Along the slice axis the halo must equal ceil(slice_thickness / 2 / voxel_size).
         import math
         voxel_size = (0.38, 0.38, 0.38)
+        axis_index = {"x": 0, "y": 1, "z": 2}
         out = self.build(self.density_results, voxel_size=voxel_size)
         for entry, (label, pos_result) in zip(out, self.density_results.items()):
+            ax = pos_result["axis"]
+            st = pos_result["slice_thickness"]
+            vs = voxel_size[axis_index[ax]]
+            expected = max(10, math.ceil(st / 2.0 / vs))
+            self.assertEqual(entry["roi_halo"][axis_index[ax]], expected)
+
+    def test_auto_roi_halo_projection_axes_cover_bbox(self):
+        # Along the two projection axes the halo must cover the bounding box half-extents.
+        import math
+        voxel_size = (0.38, 0.38, 0.38)
+        axis_index = {"x": 0, "y": 1, "z": 2}
+        out = self.build(self.density_results, voxel_size=voxel_size)
+        for entry, (label, pos_result) in zip(out, self.density_results.items()):
+            ax_i = axis_index[pos_result["axis"]]
             bb_min = pos_result["bb_min"]
             bb_max = pos_result["bb_max"]
             for i, (lo, hi, vs) in enumerate(zip(bb_min, bb_max, voxel_size)):
+                if i == ax_i:
+                    continue  # slice axis tested separately
                 min_required = math.ceil((hi - lo) / 2.0 / vs)
                 self.assertGreaterEqual(entry["roi_halo"][i], min_required)
 
