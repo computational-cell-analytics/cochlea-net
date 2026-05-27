@@ -1,5 +1,5 @@
 import warnings
-from typing import List, Optional, Union
+from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
@@ -24,19 +24,19 @@ _AXIS_PROJECTION = {
 def sgn_density_at_position(
     table: pd.DataFrame,
     reference_position: Union[float, str] = "mid",
-    slice_thickness: float = 40.0,
+    slice_thickness: float = 10.0,
     run_length_tolerance: float = 0.1,
     component_label: int = 1,
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
+    mode: str = "2d",
 ) -> dict:
     """Calculate SGN density at a specific cochlear position using a planar slice.
 
     Selects all SGN instances whose bounding boxes overlap a slice of given thickness
     centered on the reference position, then removes instances whose run-length fraction
     differs too much from the reference (handles oblique cochlear orientation). Density
-    is computed as count / convex-hull area of the selected anchor points projected onto
-    the plane perpendicular to `axis`.
+    is computed as count / convex-hull area (2D mode) or convex-hull volume (3D mode).
 
     Args:
         table: SGN segmentation table with columns anchor_{x,y,z}, bb_min/max_{x,y,z},
@@ -45,13 +45,17 @@ def sgn_density_at_position(
                tonotopic mapping so that the length_fraction column is present.
         reference_position: Anatomical preset ('apex' → 0.15, 'mid' → 0.5, 'base' → 0.85)
                             or a custom float in [0, 1].
-        slice_thickness: Total slice thickness in µm (default 40 µm).
+        slice_thickness: Total slice thickness in µm (default 10 µm).
         run_length_tolerance: Max abs difference in length_fraction allowed for inclusion.
                               Instances outside this window are excluded to filter out
                               other cochlear turns passing through the same z-range.
         component_label: Component label of the main RC component (default 1).
         axis: Volume axis perpendicular to the slice plane ('x', 'y', or 'z'; default 'z').
         length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
+        mode: Density mode. '2d' (default) projects anchor points onto the plane perpendicular
+              to `axis` and computes density per area (SGN/µm²). '3d' uses the full 3D convex
+              hull of all anchor points and computes density per volume (SGN/µm³); a larger
+              slice_thickness is recommended in this mode.
 
     Returns:
         dict with keys:
@@ -60,9 +64,12 @@ def sgn_density_at_position(
             slice_center        - anchor coordinate along `axis` for the reference (µm)
             slice_min           - lower bound of the slice window (µm)
             slice_max           - upper bound of the slice window (µm)
+            slice_thickness     - slice thickness used (µm)
             n_sgns              - number of SGNs counted in the slice
-            area_µm²            - cross-sectional area from convex hull (µm²)
-            density_µm⁻²       - n_sgns / area_µm²
+            area                - convex-hull cross-sectional area (µm²); only in mode='2d'
+            volume              - convex-hull volume (µm³); only in mode='3d'
+            density             - n_sgns / area (mode='2d') or n_sgns / volume (mode='3d')
+            mode                - density mode used ('2d' or '3d')
             axis                - axis used for slicing
             bb_min              - [x, y, z] lower corner of 3D bounding box (µm)
             bb_max              - [x, y, z] upper corner of 3D bounding box (µm)
@@ -71,6 +78,8 @@ def sgn_density_at_position(
     """
     if axis not in _AXIS_PROJECTION:
         raise ValueError(f"axis must be one of {list(_AXIS_PROJECTION)}, got '{axis}'")
+    if mode not in ("2d", "3d"):
+        raise ValueError(f"mode must be '2d' or '3d', got '{mode}'")
 
     # Validate required columns.
     required_cols = (
@@ -123,12 +132,17 @@ def sgn_density_at_position(
 
     n_sgns = len(in_slice)
 
-    # Compute cross-sectional area via convex hull.
-    proj_axes = _AXIS_PROJECTION[axis]
-    coords_2d = in_slice[[f"anchor_{a}" for a in proj_axes]].values
+    # Compute extent (area in 2D, volume in 3D) via convex hull.
+    if mode == "2d":
+        proj_axes = _AXIS_PROJECTION[axis]
+        hull_coords = in_slice[[f"anchor_{a}" for a in proj_axes]].values
+        extent_key = "area"
+    else:
+        hull_coords = in_slice[["anchor_x", "anchor_y", "anchor_z"]].values
+        extent_key = "volume"
 
-    area = _compute_area(coords_2d)
-    density = n_sgns / area if area > 0 else float("nan")
+    extent = _compute_hull_extent(hull_coords)
+    density = n_sgns / extent if extent > 0 else float("nan")
 
     # 3D bounding box covering all selected SGN instance bounding boxes.
     if n_sgns > 0:
@@ -152,9 +166,11 @@ def sgn_density_at_position(
         "slice_center": slice_center,
         "slice_min": slice_min,
         "slice_max": slice_max,
+        "slice_thickness": slice_thickness,
         "n_sgns": n_sgns,
-        "area_µm²": area,
-        "density_µm⁻²": density,
+        extent_key: extent,
+        "density": density,
+        "mode": mode,
         "axis": axis,
         "bb_min": bb_min,
         "bb_max": bb_max,
@@ -162,42 +178,49 @@ def sgn_density_at_position(
     }
 
 
-def _compute_area(coords_2d: np.ndarray) -> float:
-    """Return convex hull area of 2D points; falls back to bounding rectangle for < 3 points."""
-    if len(coords_2d) == 0:
-        warnings.warn("No SGN instances in slice; area is 0.", stacklevel=3)
+def _compute_hull_extent(coords: np.ndarray) -> float:
+    """Return convex hull area (2D input) or volume (3D input); falls back to bounding box."""
+    if len(coords) == 0:
+        warnings.warn("No SGN instances in slice; extent is 0.", stacklevel=3)
         return 0.0
 
-    if len(coords_2d) < 3:
+    ndim = coords.shape[1]
+    min_pts = ndim + 1  # 3 for 2D, 4 for 3D
+    if len(coords) < min_pts:
         warnings.warn(
-            f"Only {len(coords_2d)} SGN instance(s) in slice; falling back to bounding-rectangle area.",
+            f"Only {len(coords)} SGN instance(s) in slice; falling back to bounding-box extent.",
             stacklevel=3,
         )
-        return _bbox_area(coords_2d)
+        return _bbox_extent(coords)
 
     try:
-        hull = ConvexHull(coords_2d)
-        return float(hull.volume)  # For 2D input, hull.volume is the area.
+        hull = ConvexHull(coords)
+        return float(hull.volume)  # area for 2D input, volume for 3D input
     except Exception:
-        warnings.warn("ConvexHull failed; falling back to bounding-rectangle area.", stacklevel=3)
-        return _bbox_area(coords_2d)
+        warnings.warn("ConvexHull failed; falling back to bounding-box extent.", stacklevel=3)
+        return _bbox_extent(coords)
 
 
-def _bbox_area(coords_2d: np.ndarray) -> float:
-    if len(coords_2d) == 0:
+def _bbox_extent(coords: np.ndarray) -> float:
+    """Product of axis ranges — area for 2D, volume for 3D."""
+    if len(coords) == 0:
         return 0.0
-    ranges = coords_2d.max(axis=0) - coords_2d.min(axis=0)
-    return float(ranges[0] * ranges[1])
+    ranges = coords.max(axis=0) - coords.min(axis=0)
+    result = 1.0
+    for r in ranges:
+        result *= float(r)
+    return result
 
 
 def sgn_density_profile(
     table: pd.DataFrame,
     positions: Optional[List[Union[float, str]]] = None,
-    slice_thickness: float = 40.0,
+    slice_thickness: float = 10.0,
     run_length_tolerance: float = 0.1,
     component_label: int = 1,
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
+    mode: str = "2d",
 ) -> dict:
     """Compute SGN density at multiple cochlear positions.
 
@@ -205,11 +228,12 @@ def sgn_density_profile(
         table: SGN segmentation table (see sgn_density_at_position for required columns).
         positions: List of positions to evaluate. Each entry is either a preset string
                    ('apex', 'mid', 'base') or a float in [0, 1]. Default: ['apex', 'mid', 'base'].
-        slice_thickness: Total slice thickness in µm (default 40 µm).
+        slice_thickness: Total slice thickness in µm (default 10 µm).
         run_length_tolerance: Max abs difference in length_fraction for inclusion (default 0.1).
         component_label: Component label of the main RC component (default 1).
         axis: Volume axis perpendicular to the slice plane (default 'z').
         length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
+        mode: '2d' (default) or '3d' — see sgn_density_at_position.
 
     Returns:
         dict keyed by position label (preset name or string-formatted float), each value
@@ -229,5 +253,95 @@ def sgn_density_profile(
             component_label=component_label,
             axis=axis,
             length_fraction_column=length_fraction_column,
+            mode=mode,
         )
     return results
+
+
+def _auto_roi_halo(
+    bb_min: List[float],
+    bb_max: List[float],
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    min_halo: int = 16,
+) -> List[int]:
+    """Compute roi_halo in pixels that covers the bounding box half-extents.
+
+    Args:
+        bb_min: [x, y, z] lower corner of the bounding box in µm.
+        bb_max: [x, y, z] upper corner of the bounding box in µm.
+        voxel_size: Voxel size in µm per axis (default 0.38 µm isotropic).
+        min_halo: Minimum halo size in pixels (default 16).
+
+    Returns:
+        List of 3 ints [halo_x, halo_y, halo_z] in pixels.
+    """
+    import math
+    if any(np.isnan(v) for v in list(bb_min) + list(bb_max)):
+        return [128, 128, 64]
+    halo = []
+    for lo, hi, vs in zip(bb_min, bb_max, voxel_size):
+        half_px = math.ceil((hi - lo) / 2.0 / vs)
+        halo.append(max(min_halo, half_px))
+    return halo
+
+
+def _build_block_extraction_dict(
+    density_results: dict,
+    input_json_params: Optional[dict] = None,
+    roi_halo: Optional[List[int]] = None,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+) -> List[dict]:
+    """Build a block-extraction JSON list compatible with flamingo_tools.extract_block --json_info.
+
+    Returns a list of dicts, one per evaluated position. Each dict contains a single
+    crop_center (the bb_center of that position, rounded to ints) and its own roi_halo
+    so that differently-sized ROIs can be extracted per position in one pass.
+
+    roi_halo priority per entry:
+        1. Explicit ``roi_halo`` argument (same value applied to all positions).
+        2. ``roi_halo`` key from ``input_json_params`` (same for all positions).
+        3. Auto-computed from the position's 3D bounding box and ``voxel_size``.
+
+    Args:
+        density_results: Output of sgn_density_profile — dict keyed by position label.
+        input_json_params: Optional dict from a ChReef-format input JSON, providing
+                           dataset_name, image_channel, segmentation_channel, roi_halo, etc.
+        roi_halo: Explicit ROI halo in pixels [x, y, z] applied to all positions.
+        voxel_size: Voxel size in µm per axis used for auto roi_halo computation.
+
+    Returns:
+        List of dicts, each compatible with flamingo_tools.extract_block --json_info.
+        The list can be used directly as the JSON input for extract_block_json_wrapper.
+    """
+    # Metadata shared by all positions.
+    common: dict = {}
+    if input_json_params is not None:
+        for key in ("dataset_name", "image_channel", "segmentation_channel", "cell_type", "component_list"):
+            if key in input_json_params:
+                common[key] = input_json_params[key]
+
+    # Explicit or JSON-level fallback halo (None means auto-compute per position).
+    global_halo: Optional[List[int]] = None
+    if roi_halo is not None:
+        global_halo = list(roi_halo)
+    elif input_json_params is not None and "roi_halo" in input_json_params:
+        global_halo = list(input_json_params["roi_halo"])
+
+    result_list: List[dict] = []
+    for position_label, pos_result in density_results.items():
+        entry = dict(common)
+        entry["position_label"] = position_label
+
+        center = pos_result.get("bb_center", [float("nan")] * 3)
+        entry["crop_centers"] = [[round(c) for c in center]]
+
+        if global_halo is not None:
+            entry["roi_halo"] = global_halo
+        else:
+            bb_min = pos_result.get("bb_min", [float("nan")] * 3)
+            bb_max = pos_result.get("bb_max", [float("nan")] * 3)
+            entry["roi_halo"] = _auto_roi_halo(bb_min, bb_max, voxel_size)
+
+        result_list.append(entry)
+
+    return result_list

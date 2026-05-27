@@ -347,11 +347,20 @@ def sgn_density():
         description="Compute SGN density at one or more positions along the Rosenthal's Canal."
     )
 
-    parser.add_argument("-i", "--input", type=str, required=True,
+    parser.add_argument("-i", "--input", type=str, default=None,
                         help="Input path to SGN segmentation table (TSV). Must contain length_fraction column "
-                        "(produced by flamingo_tools.tonotopic_mapping).")
+                        "(produced by flamingo_tools.tonotopic_mapping). "
+                        "Optional when --json_input is supplied.")
+    parser.add_argument("-j", "--json_input", type=str, default=None,
+                        help="Input JSON file with metadata information(dataset_name, image_channel, "
+                        "segmentation_channel, …). When --input is absent the table path "
+                        "is derived from dataset_name and segmentation_channel via --mobie_dir.")
     parser.add_argument("-o", "--output", type=str, required=True,
                         help="Output path for JSON file with density results.")
+    parser.add_argument("--json_output", type=str, default=None,
+                        help="Optional output path for block-extraction JSON compatible with "
+                        "flamingo_tools.extract_block --json_info. "
+                        "Contains crop_centers derived from the density bounding boxes.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
     parser.add_argument(
         "-p", "--positions", type=str, nargs="+", default=["apex", "mid", "base"],
@@ -359,8 +368,8 @@ def sgn_density():
         "floats in [0, 1]. Default: apex mid base",
     )
     parser.add_argument(
-        "--slice_thickness", type=float, default=40.0,
-        help="Total thickness of the horizontal slice in µm. Default: 40.0",
+        "--slice_thickness", type=float, default=10.0,
+        help="Total thickness of the horizontal slice in µm. Default: 10.0",
     )
     parser.add_argument(
         "--run_length_tolerance", type=float, default=0.1,
@@ -379,11 +388,53 @@ def sgn_density():
         "--length_fraction_column", type=str, default="length_fraction",
         help="Column name for the run-length fraction in the table. Default: length_fraction",
     )
+    parser.add_argument(
+        "--mode", type=str, default="2d", choices=["2d", "3d"],
+        help="Density mode: '2d' computes density per cross-sectional area (SGN/µm²); "
+        "'3d' computes density per convex-hull volume (SGN/µm³). Default: 2d",
+    )
+    parser.add_argument(
+        "--roi_halo", type=int, nargs=3, default=None, metavar=("X", "Y", "Z"),
+        help="ROI halo in pixels [x y z] for the block-extraction JSON output, applied to all "
+        "positions. Overrides the value from --json_input. "
+        "If omitted, the halo is computed automatically from each position's bounding box.",
+    )
+    parser.add_argument(
+        "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+        help="Voxel size in µm used to convert bounding box extents to pixels when "
+        "computing the automatic roi_halo. Provide 1 value (isotropic) or 3 values (x y z). "
+        "Default: 0.38 0.38 0.38",
+    )
+    parser.add_argument(
+        "--mobie_dir", type=str, default=MOBIE_FOLDER,
+        help="Local MoBIE project directory used to locate the table when --json_input is given "
+        "and --input is absent.",
+    )
 
     args = parser.parse_args()
 
+    import json
+    import os
+
     import pandas as pd
-    from flamingo_tools.analysis.density_utils import sgn_density_profile
+    from flamingo_tools.analysis.density_utils import sgn_density_profile, _build_block_extraction_dict
+
+    # Resolve table path and optional JSON metadata.
+    json_params = None
+    if args.json_input is not None:
+        with open(args.json_input) as f:
+            json_params = json.load(f)
+        if isinstance(json_params, list):
+            json_params = json_params[0]
+
+    if args.input is not None:
+        table_path = args.input
+    elif json_params is not None:
+        dataset_name = json_params["dataset_name"]
+        seg_channel = json_params.get("segmentation_channel", "SGN_v2")
+        table_path = os.path.join(args.mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
+    else:
+        parser.error("Provide --input or --json_input.")
 
     # Convert numeric position strings to floats.
     positions = []
@@ -393,7 +444,7 @@ def sgn_density():
         except ValueError:
             positions.append(p)
 
-    table = pd.read_csv(args.input, sep="\t")
+    table = pd.read_csv(table_path, sep="\t")
     results = sgn_density_profile(
         table,
         positions=positions,
@@ -402,6 +453,19 @@ def sgn_density():
         component_label=args.component_label,
         axis=args.axis,
         length_fraction_column=args.length_fraction_column,
+        mode=args.mode,
     )
 
     export_dictionary_as_json(results, args.output, force_overwrite=args.force)
+
+    if args.json_output is not None:
+        voxel_size = args.voxel_size
+        if len(voxel_size) == 1:
+            voxel_size = voxel_size * 3
+        block_list = _build_block_extraction_dict(
+            results,
+            input_json_params=json_params,
+            roi_halo=args.roi_halo,
+            voxel_size=tuple(voxel_size),
+        )
+        export_dictionary_as_json(block_list, args.json_output, force_overwrite=args.force)
