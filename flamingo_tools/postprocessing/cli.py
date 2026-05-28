@@ -7,7 +7,8 @@ from .cochlea_mapping import tonotopic_mapping_json_wrapper, equidistant_centers
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
-from flamingo_tools.s3_utils import MOBIE_FOLDER, get_s3_path
+from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.analysis.density_utils import calc_sgn_density
 
 
 def equidistant_centers():
@@ -377,8 +378,8 @@ def sgn_density():
         "Reduces contamination from other cochlear turns. Default: 0.1",
     )
     parser.add_argument(
-        "-c", "--component_label", type=int, default=1,
-        help="Component label of the main Rosenthal's Canal component. Default: 1",
+        "-c", "--component_label", type=int, nargs="+", default=[1],
+        help="Component label(s) of the main Rosenthal's Canal component. Default: 1",
     )
     parser.add_argument(
         "--axis", type=str, default="z", choices=["x", "y", "z"],
@@ -425,14 +426,8 @@ def sgn_density():
         "--min_overlap_fraction", type=float, default=None,
         help="Minimum fraction of an SGN's voxels (n_pixels) that must lie within the "
         "slice sub-volume to count the instance. Range (0, 1]. "
-        "Default: None (no segmentation-based filtering).",
-    )
-    parser.add_argument(
-        "--seg_offset", type=float, nargs=3, default=[0.0, 0.0, 0.0],
-        metavar=("X", "Y", "Z"),
-        help="Physical coordinates in µm of pixel (0,0,0) in the segmentation file "
-        "(x y z order). Use when --seg_path is a pre-extracted crop file. "
-        "Default: 0.0 0.0 0.0 (correct for a full OME-ZARR volume).",
+        "Default: None (no segmentation-based filtering). "
+        "Whether --seg_path is a pre-extracted crop or a full volume is detected automatically.",
     )
 
     # options for S3 bucket
@@ -447,104 +442,30 @@ def sgn_density():
 
     args = parser.parse_args()
 
-    import json
-    import os
-
-    import pandas as pd
-    from flamingo_tools.analysis.density_utils import sgn_density_profile, _build_block_extraction_dict
-    from flamingo_tools.file_utils import read_image_data
-
-    # Resolve table path and optional JSON metadata.
-    json_params = None
-    if args.json_input is not None:
-        with open(args.json_input) as f:
-            json_params = json.load(f)
-        if isinstance(json_params, list):
-            json_params = json_params[0]
-
-    if args.input is not None:
-        table_path = args.input
-    elif json_params is not None:
-        dataset_name = json_params["dataset_name"]
-        seg_channel = json_params.get("segmentation_channel", "SGN_v2")
-        if args.s3:
-            table_path = f"{dataset_name}/tables/{seg_channel}/default.tsv"
-        else:
-            table_path = os.path.join(args.mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
-    else:
+    if args.input is None and args.json_input is None:
         parser.error("Provide --input or --json_input.")
 
-    # Convert numeric position strings to floats.
-    positions = []
-    for p in args.positions:
-        try:
-            positions.append(float(p))
-        except ValueError:
-            positions.append(p)
-
-    if args.s3:
-        tsv_path, fs = get_s3_path(
-            table_path,
-            credential_file=args.s3_credentials,
-            bucket_name=args.s3_bucket_name,
-            service_endpoint=args.s3_service_endpoint,
-        )
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
-    else:
-        table = pd.read_csv(table_path, sep="\t")
-
-    # Resolve voxel size.
-    voxel_size = args.voxel_size
-    if len(voxel_size) == 1:
-        voxel_size = voxel_size * 3
-    voxel_size = tuple(voxel_size)
-
-    # Resolve and load segmentation if overlap filtering is requested.
-    segmentation = None
-    if args.min_overlap_fraction is not None:
-        seg_path = args.seg_path
-        if seg_path is None and json_params is not None:
-            dataset_name = json_params["dataset_name"]
-            seg_channel = json_params.get("segmentation_channel", "SGN_v2")
-            if args.s3:
-                seg_path = f"{dataset_name}/images/ome-zarr/{seg_channel}.ome.zarr"
-            else:
-                seg_path = os.path.join(
-                    args.mobie_dir, dataset_name, "images", "ome-zarr",
-                    f"{seg_channel}.ome.zarr",
-                )
-        if seg_path is not None:
-            segmentation = read_image_data(
-                seg_path, args.seg_key,
-                from_s3=args.s3,
-                credential_file=args.s3_credentials,
-                bucket_name=args.s3_bucket_name,
-                service_endpoint=args.s3_service_endpoint,
-            )
-
-    results = sgn_density_profile(
-        table,
-        positions=positions,
+    calc_sgn_density(
+        output=args.output,
+        seg_table_path=args.input,
+        json_input=args.json_input,
+        json_output=args.json_output,
+        force_overwrite=args.force,
+        positions=args.positions,
         slice_thickness=args.slice_thickness,
         run_length_tolerance=args.run_length_tolerance,
-        component_label=args.component_label,
+        component_list=args.component_label,
         axis=args.axis,
         length_fraction_column=args.length_fraction_column,
-        mode=args.mode,
-        segmentation=segmentation,
-        voxel_size=voxel_size,
+        density_mode=args.mode,
+        roi_halo=args.roi_halo,
+        voxel_size=args.voxel_size,
+        mobie_dir=args.mobie_dir,
+        seg_path=args.seg_path,
+        seg_key=args.seg_key,
         min_overlap_fraction=args.min_overlap_fraction,
-        seg_offset=tuple(args.seg_offset),
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
     )
-
-    export_dictionary_as_json(results, args.output, force_overwrite=args.force)
-
-    if args.json_output is not None:
-        block_list = _build_block_extraction_dict(
-            results,
-            input_json_params=json_params,
-            roi_halo=args.roi_halo,
-            voxel_size=voxel_size,
-        )
-        export_dictionary_as_json(block_list, args.json_output, force_overwrite=args.force)

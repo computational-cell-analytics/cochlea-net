@@ -78,7 +78,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
         extra = _make_table(n=20, frac_center=0.5, component_label=2)
         extra["label_id"] += 100
         combined = pd.concat([self.table, extra], ignore_index=True)
-        result = self.fn(combined, reference_position="mid", component_label=1)
+        result = self.fn(combined, reference_position="mid", component_list=[1])
         self.assertEqual(result["n_sgns"], 20)
 
     def test_invalid_axis(self):
@@ -304,13 +304,17 @@ class TestBuildBlockExtractionDict(unittest.TestCase):
             self.assertNotIn("dataset_name", entry)
 
 
-def _make_seg_array(table, shape_zyx, voxel_size=(1.0, 1.0, 1.0), offset=(0.0, 0.0, 0.0)):
-    """Paint one voxel per label_id at its anchor position into a (Z, Y, X) array."""
+def _make_seg_array(table, shape_zyx, voxel_size=(1.0, 1.0, 1.0), origin_xyz=(0.0, 0.0, 0.0)):
+    """Paint one voxel per label_id at its anchor position into a (Z, Y, X) array.
+
+    `origin_xyz` is the physical coordinate of pixel (0,0,0) of the array (µm, x/y/z order).
+    For a full volume use (0,0,0); for a crop set to the crop's lower-left corner.
+    """
     seg = np.zeros(shape_zyx, dtype=np.int32)
     for _, row in table.iterrows():
-        z = round((row["anchor_z"] - offset[2]) / voxel_size[2])
-        y = round((row["anchor_y"] - offset[1]) / voxel_size[1])
-        x = round((row["anchor_x"] - offset[0]) / voxel_size[0])
+        z = round((row["anchor_z"] - origin_xyz[2]) / voxel_size[2])
+        y = round((row["anchor_y"] - origin_xyz[1]) / voxel_size[1])
+        x = round((row["anchor_x"] - origin_xyz[0]) / voxel_size[0])
         if 0 <= z < shape_zyx[0] and 0 <= y < shape_zyx[1] and 0 <= x < shape_zyx[2]:
             seg[z, y, x] = int(row["label_id"])
     return seg
@@ -391,6 +395,22 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
         result = self.fn(self.table, reference_position="mid")
         self.assertIn("min_overlap_fraction", result)
         self.assertIsNone(result["min_overlap_fraction"])
+
+    def test_crop_auto_detection(self):
+        # Build a small crop array whose z-extent (40 µm) is less than the max anchor
+        # coordinate (~53 µm), triggering the crop-detection path.  Labels are painted
+        # relative to the crop origin at z=30 µm, so all anchors (z≈47-53) map to
+        # pixels z≈17-23 inside the 40-px array.
+        crop_origin_z = 30.0
+        crop_shape_zyx = (40, 100, 80)
+        seg = _make_seg_array(
+            self.table, crop_shape_zyx, self.voxel_size, origin_xyz=(0.0, 0.0, crop_origin_z)
+        )
+        result = self.fn(
+            self.table, reference_position="mid", slice_thickness=40.0,
+            segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
+        )
+        self.assertEqual(result["n_sgns"], 20)
 
 
 if __name__ == "__main__":

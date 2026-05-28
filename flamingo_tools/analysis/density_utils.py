@@ -1,4 +1,6 @@
+import json
 import math
+import os
 import warnings
 from typing import List, Optional, Tuple, Union
 
@@ -8,6 +10,9 @@ from scipy.spatial import ConvexHull
 from skimage.measure import regionprops
 
 from flamingo_tools.analysis.seg_table_utils import filter_table
+from flamingo_tools.file_utils import read_image_data
+from flamingo_tools.s3_utils import MOBIE_FOLDER, get_s3_path
+from flamingo_tools.json_util import export_dictionary_as_json
 
 REFERENCE_PRESETS = {
     "apex": 0.15,
@@ -31,14 +36,13 @@ def sgn_density_at_position(
     reference_position: Union[float, str] = "mid",
     slice_thickness: float = 10.0,
     run_length_tolerance: float = 0.1,
-    component_label: int = 1,
+    component_list: List[int] = [1],
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
     mode: str = "2d",
     segmentation=None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     min_overlap_fraction: Optional[float] = None,
-    seg_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> dict:
     """Calculate SGN density at a specific cochlear position using a planar slice.
 
@@ -58,7 +62,7 @@ def sgn_density_at_position(
         run_length_tolerance: Max abs difference in length_fraction allowed for inclusion.
                               Instances outside this window are excluded to filter out
                               other cochlear turns passing through the same z-range.
-        component_label: Component label of the main RC component (default 1).
+        component_list: Component label(s) of the main RC component (default 1).
         axis: Volume axis perpendicular to the slice plane ('x', 'y', or 'z'; default 'z').
         length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
         mode: Density mode. '2d' (default) projects anchor points onto the plane perpendicular
@@ -76,10 +80,6 @@ def sgn_density_at_position(
                               must lie within the slice for the instance to be counted. Only
                               active when `segmentation` is also provided. Default None
                               (no segmentation-based filtering).
-        seg_offset: Physical coordinates (µm) of pixel (0, 0, 0) of the segmentation array,
-                    in (x, y, z) order. Use (0, 0, 0) for a full OME-ZARR volume; set to
-                    the crop origin when `segmentation` is a pre-extracted sub-volume.
-
     Returns:
         dict with keys:
             reference_fraction  - resolved fraction used as the target position
@@ -130,9 +130,9 @@ def sgn_density_at_position(
             raise ValueError(f"reference_position float must be in [0, 1], got {ref_frac}")
 
     # Filter to main component.
-    comp_table = filter_table(table, column_subset=[component_label], column="component_labels")
+    comp_table = filter_table(table, column_subset=component_list, column="component_labels")
     if comp_table.empty:
-        raise ValueError(f"No rows found for component_label={component_label}")
+        raise ValueError(f"No rows found for component_list={component_list}")
 
     # Find the SGN instance closest to the reference fraction.
     frac_diff = (comp_table[length_fraction_column] - ref_frac).abs()
@@ -158,7 +158,7 @@ def sgn_density_at_position(
     if segmentation is not None and min_overlap_fraction is not None:
         in_slice = _filter_by_segmentation_overlap(
             in_slice, segmentation, slice_min, slice_max,
-            axis, voxel_size, seg_offset, min_overlap_fraction,
+            axis, voxel_size, min_overlap_fraction,
         )
 
     n_sgns = len(in_slice)
@@ -251,14 +251,19 @@ def _filter_by_segmentation_overlap(
     slice_max: float,
     axis: str,
     voxel_size: Tuple[float, float, float],
-    seg_offset: Tuple[float, float, float],
     min_overlap_fraction: float,
 ) -> pd.DataFrame:
     """Filter SGN instances by their voxel overlap with the slice sub-volume.
 
-    Loads the slice slab from `segmentation` (a zarr array or numpy array in (Z, Y, X)
-    order), counts how many voxels of each label_id fall inside, and keeps only rows
-    where `voxels_in_slice / n_pixels >= min_overlap_fraction`.
+    Loads a slab from `segmentation` (a zarr array or numpy array in (Z, Y, X) order),
+    counts how many voxels of each label_id fall inside, and keeps only rows where
+    `voxels_in_slice / n_pixels >= min_overlap_fraction`.
+
+    The function auto-detects whether `segmentation` is a full volume or a pre-extracted
+    crop by comparing its physical extent (shape × voxel_size) along the slice axis to the
+    maximum anchor coordinate in `table`. When the physical extent is smaller than the
+    maximum anchor coordinate the array is treated as a crop and used in full; otherwise
+    the appropriate slab is extracted with offset 0.
 
     Args:
         table: SGN table (already reduced to candidate instances).
@@ -267,7 +272,6 @@ def _filter_by_segmentation_overlap(
         slice_max: Upper bound of the slice in µm along `axis`.
         axis: Physical axis name ('x', 'y', or 'z') used for slicing.
         voxel_size: Voxel size in µm per axis (x, y, z order).
-        seg_offset: Physical origin of seg[0,0,0] in µm (x, y, z order).
         min_overlap_fraction: Minimum overlap fraction for inclusion.
 
     Returns:
@@ -276,16 +280,21 @@ def _filter_by_segmentation_overlap(
     # Map physical axis (x/y/z) to its index in the (x,y,z) tuple and to zarr dim (Z,Y,X).
     phys_index = {"x": 0, "y": 1, "z": 2}[axis]
     dim = _AXIS_ZYX_DIM[axis]
-
-    offset_a = seg_offset[phys_index]
     vs_a = voxel_size[phys_index]
 
-    px_start = max(0, math.floor((slice_min - offset_a) / vs_a))
-    px_end = min(segmentation.shape[dim], math.ceil((slice_max - offset_a) / vs_a) + 1)
-
-    idx = [slice(None)] * 3
-    idx[dim] = slice(px_start, px_end)
-    sub_vol = np.asarray(segmentation[tuple(idx)])
+    # Auto-detect crop vs. full volume: if the array's physical extent along the slice axis
+    # is smaller than the maximum anchor coordinate in the table, the array is a crop and
+    # all of its voxels are already within the region of interest.
+    seg_physical_extent = segmentation.shape[dim] * vs_a
+    max_anchor = float(table[f"anchor_{axis}"].max())
+    if max_anchor > seg_physical_extent:
+        sub_vol = np.asarray(segmentation)
+    else:
+        px_start = max(0, math.floor(slice_min / vs_a))
+        px_end = min(segmentation.shape[dim], math.ceil(slice_max / vs_a) + 1)
+        idx = [slice(None)] * 3
+        idx[dim] = slice(px_start, px_end)
+        sub_vol = np.asarray(segmentation[tuple(idx)])
 
     # Count voxels per label in the sub-volume using regionprops (efficient label scan).
     voxels_in_slice = {prop.label: prop.area for prop in regionprops(sub_vol)}
@@ -308,14 +317,13 @@ def sgn_density_profile(
     positions: Optional[List[Union[float, str]]] = None,
     slice_thickness: float = 10.0,
     run_length_tolerance: float = 0.1,
-    component_label: int = 1,
+    component_list: List[int] = [1],
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
     mode: str = "2d",
     segmentation=None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     min_overlap_fraction: Optional[float] = None,
-    seg_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> dict:
     """Compute SGN density at multiple cochlear positions.
 
@@ -325,14 +333,13 @@ def sgn_density_profile(
                    ('apex', 'mid', 'base') or a float in [0, 1]. Default: ['apex', 'mid', 'base'].
         slice_thickness: Total slice thickness in µm (default 10 µm).
         run_length_tolerance: Max abs difference in length_fraction for inclusion (default 0.1).
-        component_label: Component label of the main RC component (default 1).
+        component_list: Component label(s) of the main RC component (default 1).
         axis: Volume axis perpendicular to the slice plane (default 'z').
         length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
         mode: '2d' (default) or '3d' — see sgn_density_at_position.
         segmentation: Optional segmentation array (Z, Y, X) — see sgn_density_at_position.
         voxel_size: Voxel size in µm per axis (x, y, z order; default 0.38 µm isotropic).
         min_overlap_fraction: Minimum voxel overlap fraction — see sgn_density_at_position.
-        seg_offset: Physical origin of seg[0,0,0] in µm (x, y, z order; default (0,0,0)).
 
     Returns:
         dict keyed by position label (preset name or string-formatted float), each value
@@ -349,14 +356,13 @@ def sgn_density_profile(
             reference_position=pos,
             slice_thickness=slice_thickness,
             run_length_tolerance=run_length_tolerance,
-            component_label=component_label,
+            component_list=component_list,
             axis=axis,
             length_fraction_column=length_fraction_column,
             mode=mode,
             segmentation=segmentation,
             voxel_size=voxel_size,
             min_overlap_fraction=min_overlap_fraction,
-            seg_offset=seg_offset,
         )
     return results
 
@@ -470,3 +476,166 @@ def _build_block_extraction_dict(
         result_list.append(entry)
 
     return result_list
+
+
+def calc_sgn_density(
+    output: str,
+    seg_table_path: Optional[str] = None,
+    json_input: Optional[str] = None,
+    json_output: Optional[str] = None,
+    force_overwrite: bool = False,
+    positions: List[Union[str, float]] = ["apex", "mid", "base"],
+    slice_thickness: float = 10.0,
+    run_length_tolerance: float = 0.1,
+    component_list: List[int] = [1],
+    axis: str = "z",
+    length_fraction_column: str = "length_fraction",
+    density_mode: str = "2d",
+    roi_halo: Optional[List[int]] = None,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    mobie_dir: str = MOBIE_FOLDER,
+    seg_path: Optional[str] = None,
+    seg_key: str = "s0",
+    min_overlap_fraction: Optional[float] = None,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+):
+    """
+
+    Args:
+        output: Output path for JSON file with density results.
+        seg_table_path: Input path to SGN segmentation table (TSV). Must contain length_fraction column
+                        (produced by flamingo_tools.tonotopic_mapping).
+                        Optional when --json_input is supplied.
+        json_input: Input JSON file with metadata information(dataset_name, image_channel,
+                         segmentation_channel, …). When 'seg_table_path' is absent the table path
+                         is derived from dataset_name and segmentation_channel via 'mobie_dir'.
+        json_output: Optional output path for block-extraction JSON compatible with
+                     flamingo_tools.extract_block --json_info.
+                     Contains crop_centers derived from the density bounding boxes.
+        force_overwrite: Forcefully overwrite output.
+        positions: Cochlear positions to evaluate. Use preset names ('apex', 'mid', 'base') or
+                   floats in [0, 1]. Default: apex mid base
+        slice_thickness: Total thickness of the horizontal slice in µm. Default: 10.0
+        run_length_tolerance: Maximum allowed length_fraction difference to include an SGN instance.
+                              Reduces contamination from other cochlear turns. Default: 0.1
+        component_list: Component label(s) of the main Rosenthal's Canal component. Default: 1
+        axis: Volume axis perpendicular to the slice plane. Default: z
+        length_fraction_column: Column name for the run-length fraction in the table. Default: length_fraction.
+        density_mode: Density mode: '2d' computes density per cross-sectional area (SGN/µm²);
+                      '3d' computes density per convex-hull volume (SGN/µm³). Default: 2d
+        roi_halo: ROI halo in pixels [x y z] for the block-extraction JSON output, applied to all
+                  positions. Overrides the value from 'json_input'.
+                  If omitted, the halo is computed automatically from each position's bounding box.
+        voxel_size: Voxel size in µm used to convert bounding box extents to pixels when
+                    computing the automatic roi_halo. Provide 1 value (isotropic) or 3 values (x y z).
+        mobie_dir: Local MoBIE project directory used to locate the table when 'json_input' is given
+                   and 'seg_table_path' is absent.
+        seg_path: Path to the SGN segmentation volume (local TIF, N5/Zarr, or S3 OME-ZARR).
+                  When omitted and 'json_input' is given, the path is derived automatically as
+                  <dataset_name>/images/ome-zarr/<segmentation_channel>.ome.zarr.
+                  Only used when 'min_overlap_fraction' is set.
+        seg_key: Internal key for N5/Zarr/OME-ZARR segmentation (default: s0).
+        min_overlap_fraction: Minimum fraction of an SGN's voxels (n_pixels) that must lie within the
+                              slice sub-volume to count the instance. Range (0, 1].
+                              Default: None (no segmentation-based filtering). Whether the
+                              segmentation is a pre-extracted crop or a full volume is detected
+                              automatically from the array shape.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+    """
+    # Resolve table path and optional JSON metadata.
+    json_params = None
+    if json_input is not None:
+        with open(json_input) as f:
+            json_params = json.load(f)
+        if isinstance(json_params, list):
+            json_params = json_params[0]
+
+    if seg_table_path is not None:
+        table_path = seg_table_path
+    elif json_params is not None:
+        dataset_name = json_params["dataset_name"]
+        seg_channel = json_params.get("segmentation_channel", "SGN_v2")
+        if s3:
+            table_path = f"{dataset_name}/tables/{seg_channel}/default.tsv"
+        else:
+            table_path = os.path.join(mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
+    else:
+        raise ValueError("Provide 'seg_table_path' or 'json_input'.")
+
+    # Convert numeric position strings to floats.
+    positions_list = []
+    for p in positions:
+        try:
+            positions_list.append(float(p))
+        except ValueError:
+            positions_list.append(p)
+
+    if s3:
+        tsv_path, fs = get_s3_path(
+            table_path,
+            credential_file=s3_credentials,
+            bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint,
+        )
+        with fs.open(tsv_path, "r") as f:
+            table = pd.read_csv(f, sep="\t")
+    else:
+        table = pd.read_csv(table_path, sep="\t")
+
+    # Resolve voxel size.
+    if len(voxel_size) == 1:
+        voxel_size = voxel_size * 3
+    voxel_size = tuple(voxel_size)
+
+    # Resolve and load segmentation if overlap filtering is requested.
+    segmentation = None
+    if min_overlap_fraction is not None:
+        if seg_path is None and json_params is not None:
+            dataset_name = json_params["dataset_name"]
+            seg_channel = json_params.get("segmentation_channel", "SGN_v2")
+            if s3:
+                seg_path = f"{dataset_name}/images/ome-zarr/{seg_channel}.ome.zarr"
+            else:
+                seg_path = os.path.join(
+                    mobie_dir, dataset_name, "images", "ome-zarr",
+                    f"{seg_channel}.ome.zarr",
+                )
+        if seg_path is not None:
+            segmentation = read_image_data(
+                seg_path, seg_key,
+                from_s3=s3,
+                credential_file=s3_credentials,
+                bucket_name=s3_bucket_name,
+                service_endpoint=s3_service_endpoint,
+            )
+
+    results = sgn_density_profile(
+        table,
+        positions=positions_list,
+        slice_thickness=slice_thickness,
+        run_length_tolerance=run_length_tolerance,
+        component_list=component_list,
+        axis=axis,
+        length_fraction_column=length_fraction_column,
+        mode=density_mode,
+        segmentation=segmentation,
+        voxel_size=voxel_size,
+        min_overlap_fraction=min_overlap_fraction,
+    )
+
+    export_dictionary_as_json(results, output, force_overwrite=force_overwrite)
+
+    if json_output is not None:
+        block_list = _build_block_extraction_dict(
+            results,
+            input_json_params=json_params,
+            roi_halo=roi_halo,
+            voxel_size=voxel_size,
+        )
+        export_dictionary_as_json(block_list, json_output, force_overwrite=force_overwrite)
