@@ -108,7 +108,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "slice_thickness", "n_sgns",
             "area", "density", "mode", "axis",
-            "bb_min", "bb_max", "bb_center",
+            "bb_min", "bb_max", "bb_center", "min_overlap_fraction",
         }
         self.assertEqual(set(result.keys()), expected)
         self.assertNotIn("volume", result)
@@ -119,7 +119,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "slice_thickness", "n_sgns",
             "volume", "density", "mode", "axis",
-            "bb_min", "bb_max", "bb_center",
+            "bb_min", "bb_max", "bb_center", "min_overlap_fraction",
         }
         self.assertEqual(set(result.keys()), expected)
         self.assertNotIn("area", result)
@@ -302,6 +302,95 @@ class TestBuildBlockExtractionDict(unittest.TestCase):
         out = self.build(self.density_results)
         for entry in out:
             self.assertNotIn("dataset_name", entry)
+
+
+def _make_seg_array(table, shape_zyx, voxel_size=(1.0, 1.0, 1.0), offset=(0.0, 0.0, 0.0)):
+    """Paint one voxel per label_id at its anchor position into a (Z, Y, X) array."""
+    seg = np.zeros(shape_zyx, dtype=np.int32)
+    for _, row in table.iterrows():
+        z = round((row["anchor_z"] - offset[2]) / voxel_size[2])
+        y = round((row["anchor_y"] - offset[1]) / voxel_size[1])
+        x = round((row["anchor_x"] - offset[0]) / voxel_size[0])
+        if 0 <= z < shape_zyx[0] and 0 <= y < shape_zyx[1] and 0 <= x < shape_zyx[2]:
+            seg[z, y, x] = int(row["label_id"])
+    return seg
+
+
+class TestFilterBySegmentationOverlap(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.analysis.density_utils import sgn_density_at_position
+        self.fn = sgn_density_at_position
+        # Use integer voxel size so physical coords = pixel coords (easy to reason about).
+        self.voxel_size = (1.0, 1.0, 1.0)
+        self.table = _make_table(n=20, z_center=50.0, frac_center=0.5, frac_spread=0.05)
+        # Shape covers the full coordinate range of _make_table (x≤65, y≤85, z~50±8).
+        self.shape_zyx = (120, 100, 80)
+
+    def _seg_in_slice(self):
+        """Segmentation array with all anchors visible in a z-slice around 50."""
+        return _make_seg_array(self.table, self.shape_zyx, self.voxel_size)
+
+    def _seg_out_of_slice(self):
+        """Segmentation array with all anchors shifted 60 µm above the slice."""
+        shifted = self.table.copy()
+        shifted["anchor_z"] += 60.0
+        shifted["bb_min_z"] += 60.0
+        shifted["bb_max_z"] += 60.0
+        return _make_seg_array(shifted, self.shape_zyx, self.voxel_size)
+
+    def test_all_kept_when_fully_in_slice(self):
+        seg = self._seg_in_slice()
+        # Each label_id has exactly 1 voxel in the seg and n_pixels=500, so
+        # overlap = 1/500 = 0.002.  Use a very small threshold so all pass.
+        result_low = self.fn(
+            self.table, reference_position="mid", slice_thickness=40.0,
+            segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
+        )
+        self.assertEqual(result_low["n_sgns"], 20)
+
+    def test_all_excluded_when_outside_slice(self):
+        seg = self._seg_out_of_slice()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self.fn(
+                self.table, reference_position="mid", slice_thickness=40.0,
+                segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
+            )
+        self.assertEqual(result["n_sgns"], 0)
+
+    def test_partial_overlap_threshold(self):
+        # Build a seg where only label_ids 1–10 are painted (first half of table).
+        partial_table = self.table.iloc[:10]
+        seg = _make_seg_array(partial_table, self.shape_zyx, self.voxel_size)
+        result = self.fn(
+            self.table, reference_position="mid", slice_thickness=40.0,
+            segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
+        )
+        self.assertEqual(result["n_sgns"], 10)
+
+    def test_no_filtering_when_none(self):
+        # Without segmentation, result is the same as before (20 SGNs).
+        result = self.fn(
+            self.table, reference_position="mid", slice_thickness=40.0,
+            min_overlap_fraction=None,
+        )
+        self.assertEqual(result["n_sgns"], 20)
+
+    def test_result_includes_min_overlap_key(self):
+        seg = self._seg_in_slice()
+        result = self.fn(
+            self.table, reference_position="mid", slice_thickness=40.0,
+            segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=0.002,
+        )
+        self.assertIn("min_overlap_fraction", result)
+        self.assertAlmostEqual(result["min_overlap_fraction"], 0.002)
+
+    def test_min_overlap_fraction_none_in_result_when_not_used(self):
+        result = self.fn(self.table, reference_position="mid")
+        self.assertIn("min_overlap_fraction", result)
+        self.assertIsNone(result["min_overlap_fraction"])
 
 
 if __name__ == "__main__":

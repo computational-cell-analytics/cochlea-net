@@ -1,9 +1,11 @@
+import math
 import warnings
 from typing import List, Optional, Tuple, Union
 
 import numpy as np
 import pandas as pd
 from scipy.spatial import ConvexHull
+from skimage.measure import regionprops
 
 from flamingo_tools.analysis.seg_table_utils import filter_table
 
@@ -20,6 +22,9 @@ _AXIS_PROJECTION = {
     "x": ("y", "z"),
 }
 
+# Maps the physical axis name to the corresponding dimension index in a (Z, Y, X) array.
+_AXIS_ZYX_DIM = {"z": 0, "y": 1, "x": 2}
+
 
 def sgn_density_at_position(
     table: pd.DataFrame,
@@ -30,6 +35,10 @@ def sgn_density_at_position(
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
     mode: str = "2d",
+    segmentation=None,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    min_overlap_fraction: Optional[float] = None,
+    seg_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> dict:
     """Calculate SGN density at a specific cochlear position using a planar slice.
 
@@ -56,6 +65,20 @@ def sgn_density_at_position(
               to `axis` and computes density per area (SGN/µm²). '3d' uses the full 3D convex
               hull of all anchor points and computes density per volume (SGN/µm³); a larger
               slice_thickness is recommended in this mode.
+        segmentation: Optional zarr array or numpy ndarray shaped (Z, Y, X) containing the
+                      SGN instance segmentation. When provided together with
+                      `min_overlap_fraction`, each candidate SGN is kept only if the fraction
+                      of its voxels that fall within the slice window meets the threshold.
+        voxel_size: Voxel size in µm per axis (x, y, z order; default 0.38 µm isotropic).
+                    Used to convert the physical slice window to pixel indices when
+                    `segmentation` is given.
+        min_overlap_fraction: Minimum fraction in (0, 1] of an SGN's voxels (`n_pixels`) that
+                              must lie within the slice for the instance to be counted. Only
+                              active when `segmentation` is also provided. Default None
+                              (no segmentation-based filtering).
+        seg_offset: Physical coordinates (µm) of pixel (0, 0, 0) of the segmentation array,
+                    in (x, y, z) order. Use (0, 0, 0) for a full OME-ZARR volume; set to
+                    the crop origin when `segmentation` is a pre-extracted sub-volume.
 
     Returns:
         dict with keys:
@@ -75,6 +98,7 @@ def sgn_density_at_position(
             bb_max              - [x, y, z] upper corner of 3D bounding box (µm)
             bb_center           - [x, y, z] center of 3D bounding box (µm); pass as `coords`
                                   to flamingo_tools.extract_block for block visualisation
+            min_overlap_fraction - value passed in (or None when not used)
     """
     if axis not in _AXIS_PROJECTION:
         raise ValueError(f"axis must be one of {list(_AXIS_PROJECTION)}, got '{axis}'")
@@ -83,10 +107,10 @@ def sgn_density_at_position(
 
     # Validate required columns.
     required_cols = (
-        ["label_id", "component_labels", length_fraction_column]
-        + [f"anchor_{a}" for a in ("x", "y", "z")]
-        + [f"bb_min_{a}" for a in ("x", "y", "z")]
-        + [f"bb_max_{a}" for a in ("x", "y", "z")]
+        ["label_id", "component_labels", length_fraction_column] +
+        [f"anchor_{a}" for a in ("x", "y", "z")] +
+        [f"bb_min_{a}" for a in ("x", "y", "z")] +
+        [f"bb_max_{a}" for a in ("x", "y", "z")]
     )
     missing = [c for c in required_cols if c not in table.columns]
     if missing:
@@ -129,6 +153,13 @@ def sgn_density_at_position(
     in_slice = in_slice[
         (in_slice[length_fraction_column] - ref_frac).abs() <= run_length_tolerance
     ]
+
+    # Optional: filter by actual voxel overlap with the slice sub-volume.
+    if segmentation is not None and min_overlap_fraction is not None:
+        in_slice = _filter_by_segmentation_overlap(
+            in_slice, segmentation, slice_min, slice_max,
+            axis, voxel_size, seg_offset, min_overlap_fraction,
+        )
 
     n_sgns = len(in_slice)
 
@@ -175,6 +206,7 @@ def sgn_density_at_position(
         "bb_min": bb_min,
         "bb_max": bb_max,
         "bb_center": bb_center,
+        "min_overlap_fraction": min_overlap_fraction,
     }
 
 
@@ -212,6 +244,65 @@ def _bbox_extent(coords: np.ndarray) -> float:
     return result
 
 
+def _filter_by_segmentation_overlap(
+    table: pd.DataFrame,
+    segmentation,
+    slice_min: float,
+    slice_max: float,
+    axis: str,
+    voxel_size: Tuple[float, float, float],
+    seg_offset: Tuple[float, float, float],
+    min_overlap_fraction: float,
+) -> pd.DataFrame:
+    """Filter SGN instances by their voxel overlap with the slice sub-volume.
+
+    Loads the slice slab from `segmentation` (a zarr array or numpy array in (Z, Y, X)
+    order), counts how many voxels of each label_id fall inside, and keeps only rows
+    where `voxels_in_slice / n_pixels >= min_overlap_fraction`.
+
+    Args:
+        table: SGN table (already reduced to candidate instances).
+        segmentation: Segmentation array shaped (Z, Y, X).
+        slice_min: Lower bound of the slice in µm along `axis`.
+        slice_max: Upper bound of the slice in µm along `axis`.
+        axis: Physical axis name ('x', 'y', or 'z') used for slicing.
+        voxel_size: Voxel size in µm per axis (x, y, z order).
+        seg_offset: Physical origin of seg[0,0,0] in µm (x, y, z order).
+        min_overlap_fraction: Minimum overlap fraction for inclusion.
+
+    Returns:
+        Filtered DataFrame.
+    """
+    # Map physical axis (x/y/z) to its index in the (x,y,z) tuple and to zarr dim (Z,Y,X).
+    phys_index = {"x": 0, "y": 1, "z": 2}[axis]
+    dim = _AXIS_ZYX_DIM[axis]
+
+    offset_a = seg_offset[phys_index]
+    vs_a = voxel_size[phys_index]
+
+    px_start = max(0, math.floor((slice_min - offset_a) / vs_a))
+    px_end = min(segmentation.shape[dim], math.ceil((slice_max - offset_a) / vs_a) + 1)
+
+    idx = [slice(None)] * 3
+    idx[dim] = slice(px_start, px_end)
+    sub_vol = np.asarray(segmentation[tuple(idx)])
+
+    # Count voxels per label in the sub-volume using regionprops (efficient label scan).
+    voxels_in_slice = {prop.label: prop.area for prop in regionprops(sub_vol)}
+
+    label_ids = table["label_id"].astype(int).values
+    n_pixels = table["n_pixels"].astype(int).values
+    vox_in_slice = np.array([voxels_in_slice.get(lid, 0) for lid in label_ids])
+    overlap = np.where(n_pixels > 0, vox_in_slice / n_pixels, 0.0)
+    filtered = table[overlap >= min_overlap_fraction]
+    if filtered.empty:
+        warnings.warn(
+            "All SGN instances were removed by the segmentation overlap filter.",
+            stacklevel=4,
+        )
+    return filtered
+
+
 def sgn_density_profile(
     table: pd.DataFrame,
     positions: Optional[List[Union[float, str]]] = None,
@@ -221,6 +312,10 @@ def sgn_density_profile(
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
     mode: str = "2d",
+    segmentation=None,
+    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    min_overlap_fraction: Optional[float] = None,
+    seg_offset: Tuple[float, float, float] = (0.0, 0.0, 0.0),
 ) -> dict:
     """Compute SGN density at multiple cochlear positions.
 
@@ -234,6 +329,10 @@ def sgn_density_profile(
         axis: Volume axis perpendicular to the slice plane (default 'z').
         length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
         mode: '2d' (default) or '3d' — see sgn_density_at_position.
+        segmentation: Optional segmentation array (Z, Y, X) — see sgn_density_at_position.
+        voxel_size: Voxel size in µm per axis (x, y, z order; default 0.38 µm isotropic).
+        min_overlap_fraction: Minimum voxel overlap fraction — see sgn_density_at_position.
+        seg_offset: Physical origin of seg[0,0,0] in µm (x, y, z order; default (0,0,0)).
 
     Returns:
         dict keyed by position label (preset name or string-formatted float), each value
@@ -254,6 +353,10 @@ def sgn_density_profile(
             axis=axis,
             length_fraction_column=length_fraction_column,
             mode=mode,
+            segmentation=segmentation,
+            voxel_size=voxel_size,
+            min_overlap_fraction=min_overlap_fraction,
+            seg_offset=seg_offset,
         )
     return results
 

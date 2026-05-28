@@ -410,6 +410,30 @@ def sgn_density():
         help="Local MoBIE project directory used to locate the table when --json_input is given "
         "and --input is absent.",
     )
+    parser.add_argument(
+        "--seg_path", type=str, default=None,
+        help="Path to the SGN segmentation volume (local TIF, N5/Zarr, or S3 OME-ZARR). "
+        "When omitted and --json_input is given, the path is derived automatically as "
+        "<dataset_name>/images/ome-zarr/<segmentation_channel>.ome.zarr. "
+        "Only used when --min_overlap_fraction is set.",
+    )
+    parser.add_argument(
+        "--seg_key", type=str, default="s0",
+        help="Internal key for N5/Zarr/OME-ZARR segmentation (default: s0).",
+    )
+    parser.add_argument(
+        "--min_overlap_fraction", type=float, default=None,
+        help="Minimum fraction of an SGN's voxels (n_pixels) that must lie within the "
+        "slice sub-volume to count the instance. Range (0, 1]. "
+        "Default: None (no segmentation-based filtering).",
+    )
+    parser.add_argument(
+        "--seg_offset", type=float, nargs=3, default=[0.0, 0.0, 0.0],
+        metavar=("X", "Y", "Z"),
+        help="Physical coordinates in µm of pixel (0,0,0) in the segmentation file "
+        "(x y z order). Use when --seg_path is a pre-extracted crop file. "
+        "Default: 0.0 0.0 0.0 (correct for a full OME-ZARR volume).",
+    )
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -428,6 +452,7 @@ def sgn_density():
 
     import pandas as pd
     from flamingo_tools.analysis.density_utils import sgn_density_profile, _build_block_extraction_dict
+    from flamingo_tools.file_utils import read_image_data
 
     # Resolve table path and optional JSON metadata.
     json_params = None
@@ -468,6 +493,36 @@ def sgn_density():
             table = pd.read_csv(f, sep="\t")
     else:
         table = pd.read_csv(table_path, sep="\t")
+
+    # Resolve voxel size.
+    voxel_size = args.voxel_size
+    if len(voxel_size) == 1:
+        voxel_size = voxel_size * 3
+    voxel_size = tuple(voxel_size)
+
+    # Resolve and load segmentation if overlap filtering is requested.
+    segmentation = None
+    if args.min_overlap_fraction is not None:
+        seg_path = args.seg_path
+        if seg_path is None and json_params is not None:
+            dataset_name = json_params["dataset_name"]
+            seg_channel = json_params.get("segmentation_channel", "SGN_v2")
+            if args.s3:
+                seg_path = f"{dataset_name}/images/ome-zarr/{seg_channel}.ome.zarr"
+            else:
+                seg_path = os.path.join(
+                    args.mobie_dir, dataset_name, "images", "ome-zarr",
+                    f"{seg_channel}.ome.zarr",
+                )
+        if seg_path is not None:
+            segmentation = read_image_data(
+                seg_path, args.seg_key,
+                from_s3=args.s3,
+                credential_file=args.s3_credentials,
+                bucket_name=args.s3_bucket_name,
+                service_endpoint=args.s3_service_endpoint,
+            )
+
     results = sgn_density_profile(
         table,
         positions=positions,
@@ -477,18 +532,19 @@ def sgn_density():
         axis=args.axis,
         length_fraction_column=args.length_fraction_column,
         mode=args.mode,
+        segmentation=segmentation,
+        voxel_size=voxel_size,
+        min_overlap_fraction=args.min_overlap_fraction,
+        seg_offset=tuple(args.seg_offset),
     )
 
     export_dictionary_as_json(results, args.output, force_overwrite=args.force)
 
     if args.json_output is not None:
-        voxel_size = args.voxel_size
-        if len(voxel_size) == 1:
-            voxel_size = voxel_size * 3
         block_list = _build_block_extraction_dict(
             results,
             input_json_params=json_params,
             roi_halo=args.roi_halo,
-            voxel_size=tuple(voxel_size),
+            voxel_size=voxel_size,
         )
         export_dictionary_as_json(block_list, args.json_output, force_overwrite=args.force)
