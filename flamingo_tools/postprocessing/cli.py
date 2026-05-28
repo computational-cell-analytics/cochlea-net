@@ -8,6 +8,7 @@ from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
 from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.analysis.density_utils import calc_sgn_density
 
 
 def equidistant_centers():
@@ -335,6 +336,134 @@ def tonotopic_mapping():
         cell_type=args.cell_type,
         component_list=args.components,
         include_gap=args.include_gap,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
+    )
+
+
+def sgn_density():
+    parser = argparse.ArgumentParser(
+        description="Compute SGN density at one or more positions along the Rosenthal's Canal."
+    )
+
+    parser.add_argument("-i", "--input", type=str, default=None,
+                        help="Input path to SGN segmentation table (TSV). Must contain length_fraction column "
+                        "(produced by flamingo_tools.tonotopic_mapping). "
+                        "Optional when --json_input is supplied.")
+    parser.add_argument("-j", "--json_input", type=str, default=None,
+                        help="Input JSON file with metadata information(dataset_name, image_channel, "
+                        "segmentation_channel, …). When --input is absent the table path "
+                        "is derived from dataset_name and segmentation_channel via --mobie_dir.")
+    parser.add_argument("-o", "--output", type=str, required=True,
+                        help="Output path for JSON file with density results.")
+    parser.add_argument("--json_output", type=str, default=None,
+                        help="Optional output path for block-extraction JSON compatible with "
+                        "flamingo_tools.extract_block --json_info. "
+                        "Contains crop_centers derived from the density bounding boxes.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument(
+        "-p", "--positions", type=str, nargs="+", default=["apex", "mid", "base"],
+        help="Cochlear positions to evaluate. Use preset names ('apex', 'mid', 'base') or "
+        "floats in [0, 1]. Default: apex mid base",
+    )
+    parser.add_argument(
+        "--slice_thickness", type=float, default=10.0,
+        help="Total thickness of the horizontal slice in µm. Default: 10.0",
+    )
+    parser.add_argument(
+        "--run_length_tolerance", type=float, default=0.1,
+        help="Maximum allowed length_fraction difference to include an SGN instance. "
+        "Reduces contamination from other cochlear turns. Default: 0.1",
+    )
+    parser.add_argument(
+        "-c", "--component_label", type=int, nargs="+", default=[1],
+        help="Component label(s) of the main Rosenthal's Canal component. Default: 1",
+    )
+    parser.add_argument(
+        "--axis", type=str, default="z", choices=["x", "y", "z"],
+        help="Volume axis perpendicular to the slice plane. Default: z",
+    )
+    parser.add_argument(
+        "--length_fraction_column", type=str, default="length_fraction",
+        help="Column name for the run-length fraction in the table. Default: length_fraction",
+    )
+    parser.add_argument(
+        "--mode", type=str, default="2d", choices=["2d", "3d"],
+        help="Density mode: '2d' computes density per cross-sectional area (SGN/µm²); "
+        "'3d' computes density per convex-hull volume (SGN/µm³). Default: 2d",
+    )
+    parser.add_argument(
+        "--roi_halo", type=int, nargs=3, default=None, metavar=("X", "Y", "Z"),
+        help="ROI halo in pixels [x y z] for the block-extraction JSON output, applied to all "
+        "positions. Overrides the value from --json_input. "
+        "If omitted, the halo is computed automatically from each position's bounding box.",
+    )
+    parser.add_argument(
+        "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+        help="Voxel size in µm used to convert bounding box extents to pixels when "
+        "computing the automatic roi_halo. Provide 1 value (isotropic) or 3 values (x y z). "
+        "Default: 0.38 0.38 0.38",
+    )
+    parser.add_argument(
+        "--mobie_dir", type=str, default=MOBIE_FOLDER,
+        help="Local MoBIE project directory used to locate the table when --json_input is given "
+        "and --input is absent.",
+    )
+    parser.add_argument(
+        "--seg_path", type=str, default=None,
+        help="Path to the SGN segmentation volume (local TIF, N5/Zarr, or S3 OME-ZARR). "
+        "When omitted and --json_input is given, the path is derived automatically as "
+        "<dataset_name>/images/ome-zarr/<segmentation_channel>.ome.zarr. "
+        "Only used when --min_overlap_fraction is set.",
+    )
+    parser.add_argument(
+        "--seg_key", type=str, default="s0",
+        help="Internal key for N5/Zarr/OME-ZARR segmentation (default: s0).",
+    )
+    parser.add_argument(
+        "--min_overlap_fraction", type=float, default=None,
+        help="Minimum fraction of an SGN's voxels (n_pixels) that must lie within the "
+        "slice sub-volume to count the instance. Range (0, 1]. "
+        "Default: None (no segmentation-based filtering). "
+        "Whether --seg_path is a pre-extracted crop or a full volume is detected automatically.",
+    )
+
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
+    parser.add_argument("--s3_credentials", type=str, default=None,
+                        help="Input file containing S3 credentials. "
+                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
+    parser.add_argument("--s3_bucket_name", type=str, default=None,
+                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
+    parser.add_argument("--s3_service_endpoint", type=str, default=None,
+                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
+
+    args = parser.parse_args()
+
+    if args.input is None and args.json_input is None:
+        parser.error("Provide --input or --json_input.")
+
+    calc_sgn_density(
+        output=args.output,
+        seg_table_path=args.input,
+        json_input=args.json_input,
+        json_output=args.json_output,
+        force_overwrite=args.force,
+        positions=args.positions,
+        slice_thickness=args.slice_thickness,
+        run_length_tolerance=args.run_length_tolerance,
+        component_list=args.component_label,
+        axis=args.axis,
+        length_fraction_column=args.length_fraction_column,
+        density_mode=args.mode,
+        roi_halo=args.roi_halo,
+        voxel_size=args.voxel_size,
+        mobie_dir=args.mobie_dir,
+        seg_path=args.seg_path,
+        seg_key=args.seg_key,
+        min_overlap_fraction=args.min_overlap_fraction,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

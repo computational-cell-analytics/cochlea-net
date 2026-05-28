@@ -22,6 +22,7 @@ setup(
             "flamingo_tools.label_components = flamingo_tools.postprocessing.cli:label_components",
             "flamingo_tools.object_measures = flamingo_tools.postprocessing.cli:object_measures",
             "flamingo_tools.tonotopic_mapping = flamingo_tools.postprocessing.cli:tonotopic_mapping",
+            "flamingo_tools.sgn_density = flamingo_tools.postprocessing.cli:sgn_density",
             # TODO: MoBIE conversion
         ],
         "napari.manifest": [
