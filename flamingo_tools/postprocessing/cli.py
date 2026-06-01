@@ -407,9 +407,9 @@ def sgn_density():
         "Default: 0.38 0.38 0.38",
     )
     parser.add_argument(
-        "--mobie_dir", type=str, default=MOBIE_FOLDER,
+        "--mobie_dir", type=str, default=None,
         help="Local MoBIE project directory used to locate the table when --json_input is given "
-        "and --input is absent.",
+        "and --input is absent. Default: Current directory",
     )
     parser.add_argument(
         "--seg_path", type=str, default=None,
@@ -426,6 +426,13 @@ def sgn_density():
         "--min_overlap_fraction", type=float, default=None,
         help="Minimum fraction of an SGN's voxels (n_pixels) that must lie within the "
         "slice sub-volume to count the instance. Range (0, 1]. "
+        "Default: None (no segmentation-based filtering). "
+        "Whether --seg_path is a pre-extracted crop or a full volume is detected automatically.",
+    )
+    parser.add_argument(
+        "--min_overlap_volume", type=float, default=None,
+        help="Minimum volume[µm³] of an SGN's voxels (n_pixels) that must lie within the "
+        "slice sub-volume to count the instance. "
         "Default: None (no segmentation-based filtering). "
         "Whether --seg_path is a pre-extracted crop or a full volume is detected automatically.",
     )
@@ -464,6 +471,7 @@ def sgn_density():
         seg_path=args.seg_path,
         seg_key=args.seg_key,
         min_overlap_fraction=args.min_overlap_fraction,
+        min_overlap_volume=args.min_overlap_volume,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

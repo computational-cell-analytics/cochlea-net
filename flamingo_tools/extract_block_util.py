@@ -13,6 +13,7 @@ from skimage.transform import rescale
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_single
+from flamingo_tools.analysis.density_utils import hull_to_mask
 
 
 def extract_block_single(
@@ -31,6 +32,7 @@ def extract_block_single(
     s3_service_endpoint: Optional[str] = None,
     scale_factor: Optional[Tuple[float, float, float]] = None,
     force_overwrite: bool = False,
+    label_ids: Optional[List[int]] = None,
     **_,
 ) -> None:
     """Extract block around coordinate from input data according to a given halo.
@@ -114,6 +116,63 @@ def extract_block_single(
         f_out = zarr.open(output_path, mode="w")
         f_out.create_dataset(output_key, data=data_roi, compression="gzip")
 
+    # filter out segmentation not corresponding to label IDs
+    if label_ids is not None:
+        # check for segmentation
+        if data_roi.dtype in (np.dtype("int32"), np.dtype("uint32"), np.dtype("int64"), np.dtype("uint64")):
+            print("Filtering segmentation with label IDs.")
+            filter_mask = ~np.isin(data_roi, label_ids)
+            if np.count_nonzero(data_roi[filter_mask]) != 0:
+                data_roi[filter_mask] = 0
+                output_path = os.path.splitext(output_path)[0] + "_filtered" + os.path.splitext(output_path)[1]
+                imageio.imwrite(output_path, data_roi, compression="zlib")
+
+
+def save_mask_from_hull_vertices(
+    coords: List[int],
+    hull_vertices: List[List[float]],
+    output_path: Optional[str] = None,
+    dataset_name: Optional[str] = None,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
+    roi_halo: List[int] = [128, 128, 64],
+    **_,
+) -> None:
+    """Extract block around coordinate from input data according to a given halo.
+    Either from a local file or from an S3 bucket.
+
+    Args:
+        input_path: Input folder in n5 / ome-zarr format.
+        coords: Center coordinates of extracted 3D volume.
+        output_dir: Output directory for saving output as <basename>_crop.n5. Default: input directory.
+        output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
+        input_key: Input key for data in input file.
+        output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
+        voxel_size: The voxel size of the data in micrometer.
+        roi_halo: ROI halo of extracted 3D volume.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+        scale_factor: Optional factor for rescaling the extracted data.
+        force_overwrite: Flag for forcefully overwriting output files.
+    """
+    coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
+    density_mask = hull_to_mask(
+        hull_vertices[0],
+        bb_center=coords,
+        roi_halo=roi_halo,
+        voxel_size=voxel_size,
+    )
+    prefix = ""
+    if dataset_name is not None:
+        dataset_str = dataset_name.replace('_', '-')
+        prefix = f"{dataset_str}_"
+    coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
+    output_name = f"{prefix}crop_{coord_string}_hull.tif"
+    output_path = os.path.join(output_path, output_name)
+
+    imageio.imwrite(output_path, density_mask, compression="zlib")
+
 
 def extract_block_json_wrapper(
     output_path: str,
@@ -166,6 +225,11 @@ def extract_block_json_wrapper(
                         s3=s3,
                         **kwargs,
                     )
+
+            # crop out mask from hull vertices
+            if "hull_vertices" in list(params.keys()):
+                for coords in params["crop_centers"]:
+                    save_mask_from_hull_vertices(coords=coords, output_path=output_path, **kwargs)
 
     else:
         if input_path is None:

@@ -43,6 +43,7 @@ def sgn_density_at_position(
     segmentation=None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     min_overlap_fraction: Optional[float] = None,
+    min_overlap_volume: Optional[float] = None,
 ) -> dict:
     """Calculate SGN density at a specific cochlear position using a planar slice.
 
@@ -80,25 +81,35 @@ def sgn_density_at_position(
                               must lie within the slice for the instance to be counted. Only
                               active when `segmentation` is also provided. Default None
                               (no segmentation-based filtering).
+        min_overlap_volume: Alternative to `min_overlap_fraction`: minimum overlap expressed
+                            as an absolute voxel volume in µm³. Exactly one of the two
+                            overlap parameters may be set. Default None.
+
     Returns:
         dict with keys:
-            reference_fraction  - resolved fraction used as the target position
-            reference_label_id  - label_id of the SGN instance nearest to that fraction
-            slice_center        - anchor coordinate along `axis` for the reference (µm)
-            slice_min           - lower bound of the slice window (µm)
-            slice_max           - upper bound of the slice window (µm)
-            slice_thickness     - slice thickness used (µm)
-            n_sgns              - number of SGNs counted in the slice
-            area                - convex-hull cross-sectional area (µm²); only in mode='2d'
-            volume              - convex-hull volume (µm³); only in mode='3d'
-            density             - n_sgns / area (mode='2d') or n_sgns / volume (mode='3d')
-            mode                - density mode used ('2d' or '3d')
-            axis                - axis used for slicing
-            bb_min              - [x, y, z] lower corner of 3D bounding box (µm)
-            bb_max              - [x, y, z] upper corner of 3D bounding box (µm)
-            bb_center           - [x, y, z] center of 3D bounding box (µm); pass as `coords`
-                                  to flamingo_tools.extract_block for block visualisation
+            reference_fraction   - resolved fraction used as the target position
+            reference_label_id   - label_id of the SGN instance nearest to that fraction
+            slice_center         - anchor coordinate along `axis` for the reference (µm)
+            slice_min            - lower bound of the slice window (µm)
+            slice_max            - upper bound of the slice window (µm)
+            slice_thickness      - slice thickness used (µm)
+            n_sgns               - number of SGNs counted in the slice
+            area                 - convex-hull cross-sectional area (µm²); only in mode='2d'
+            volume               - convex-hull volume (µm³); only in mode='3d'
+            density              - n_sgns / area (mode='2d') or n_sgns / volume (mode='3d')
+            mode                 - density mode used ('2d' or '3d')
+            axis                 - axis used for slicing
+            bb_min               - [x, y, z] lower corner of 3D bounding box (µm)
+            bb_max               - [x, y, z] upper corner of 3D bounding box (µm)
+            bb_center            - [x, y, z] center of 3D bounding box (µm); pass as `coords`
+                                   to flamingo_tools.extract_block for block visualisation
             min_overlap_fraction - value passed in (or None when not used)
+            min_overlap_volume   - value passed in (or None when not used)
+            hull_vertices        - list of anchor coordinates (µm) forming the convex hull
+                                   boundary; shape (k, 2) for mode='2d' (projection axes),
+                                   (k, 3) for mode='3d' (x/y/z). None when the hull could
+                                   not be computed. Pass to `hull_to_mask` to generate a
+                                   binary napari-compatible mask for the density region.
     """
     if axis not in _AXIS_PROJECTION:
         raise ValueError(f"axis must be one of {list(_AXIS_PROJECTION)}, got '{axis}'")
@@ -154,14 +165,18 @@ def sgn_density_at_position(
         (in_slice[length_fraction_column] - ref_frac).abs() <= run_length_tolerance
     ]
 
+    filtered_labels = []
     # Optional: filter by actual voxel overlap with the slice sub-volume.
-    if segmentation is not None and min_overlap_fraction is not None:
-        in_slice = _filter_by_segmentation_overlap(
+    if segmentation is not None and (min_overlap_fraction is not None or min_overlap_volume is not None):
+        in_slice, filtered_out = _filter_by_segmentation_overlap(
             in_slice, segmentation, slice_min, slice_max,
-            axis, voxel_size, min_overlap_fraction,
+            axis, voxel_size, min_overlap_fraction=min_overlap_fraction,
+            min_overlap_volume=min_overlap_volume,
         )
+        filtered_labels = list(filtered_out["label_id"]),
 
     n_sgns = len(in_slice)
+    labels_in = [int(i) for i in list(in_slice["label_id"])]
 
     # Compute extent (area in 2D, volume in 3D) via convex hull.
     if mode == "2d":
@@ -172,7 +187,7 @@ def sgn_density_at_position(
         hull_coords = in_slice[["anchor_x", "anchor_y", "anchor_z"]].values
         extent_key = "volume"
 
-    extent = _compute_hull_extent(hull_coords)
+    extent, hull_vertices = _compute_hull(hull_coords)
     density = n_sgns / extent if extent > 0 else float("nan")
 
     # 3D bounding box covering all selected SGN instance bounding boxes.
@@ -206,31 +221,39 @@ def sgn_density_at_position(
         "bb_min": bb_min,
         "bb_max": bb_max,
         "bb_center": bb_center,
+        "label_ids": labels_in,
+        "label_removed": filtered_labels,
         "min_overlap_fraction": min_overlap_fraction,
+        "min_overlap_volume": min_overlap_volume,
+        "hull_vertices": hull_vertices.tolist() if hull_vertices is not None else None,
     }
 
 
-def _compute_hull_extent(coords: np.ndarray) -> float:
-    """Return convex hull area (2D input) or volume (3D input); falls back to bounding box."""
+def _compute_hull(coords: np.ndarray) -> Tuple[float, Optional[np.ndarray]]:
+    """Return (extent, hull_vertices) for the given anchor coordinates.
+
+    extent is the convex-hull area (2D input) or volume (3D input) in µm²/µm³.
+    hull_vertices is the subset of `coords` that form the hull, shape (k, ndim), in µm.
+    Returns (fallback_extent, None) when the hull cannot be computed.
+    """
     if len(coords) == 0:
         warnings.warn("No SGN instances in slice; extent is 0.", stacklevel=3)
-        return 0.0
+        return 0.0, None
 
     ndim = coords.shape[1]
-    min_pts = ndim + 1  # 3 for 2D, 4 for 3D
-    if len(coords) < min_pts:
+    if len(coords) < ndim + 1:
         warnings.warn(
             f"Only {len(coords)} SGN instance(s) in slice; falling back to bounding-box extent.",
             stacklevel=3,
         )
-        return _bbox_extent(coords)
+        return _bbox_extent(coords), None
 
     try:
         hull = ConvexHull(coords)
-        return float(hull.volume)  # area for 2D input, volume for 3D input
+        return float(hull.volume), coords[hull.vertices]  # area for 2D, volume for 3D
     except Exception:
         warnings.warn("ConvexHull failed; falling back to bounding-box extent.", stacklevel=3)
-        return _bbox_extent(coords)
+        return _bbox_extent(coords), None
 
 
 def _bbox_extent(coords: np.ndarray) -> float:
@@ -251,7 +274,8 @@ def _filter_by_segmentation_overlap(
     slice_max: float,
     axis: str,
     voxel_size: Tuple[float, float, float],
-    min_overlap_fraction: float,
+    min_overlap_fraction: Optional[float] = None,
+    min_overlap_volume: Optional[float] = None,
 ) -> pd.DataFrame:
     """Filter SGN instances by their voxel overlap with the slice sub-volume.
 
@@ -282,6 +306,9 @@ def _filter_by_segmentation_overlap(
     dim = _AXIS_ZYX_DIM[axis]
     vs_a = voxel_size[phys_index]
 
+    if min_overlap_fraction is not None and min_overlap_volume is not None:
+        raise ValueError("Choose either a minimal overlap fraction or a minimal volume [µm³], not both.")
+
     # Auto-detect crop vs. full volume: if the array's physical extent along the slice axis
     # is smaller than the maximum anchor coordinate in the table, the array is a crop and
     # all of its voxels are already within the region of interest.
@@ -302,14 +329,24 @@ def _filter_by_segmentation_overlap(
     label_ids = table["label_id"].astype(int).values
     n_pixels = table["n_pixels"].astype(int).values
     vox_in_slice = np.array([voxels_in_slice.get(lid, 0) for lid in label_ids])
-    overlap = np.where(n_pixels > 0, vox_in_slice / n_pixels, 0.0)
-    filtered = table[overlap >= min_overlap_fraction]
+    if min_overlap_fraction is not None:
+        overlap = np.where(n_pixels > 0, vox_in_slice / n_pixels, 0.0)
+        filtered = table[overlap >= min_overlap_fraction]
+        filtered_out = table[overlap < min_overlap_fraction]
+    elif min_overlap_volume is not None:
+        voxel_vol = voxel_size[0] * voxel_size[1] * voxel_size[2]
+        volume_in_slice = vox_in_slice * voxel_vol
+        filtered = table[volume_in_slice >= min_overlap_volume]
+        filtered_out = table[volume_in_slice < min_overlap_volume]
+    else:
+        raise ValueError("Choose a minimal overlap to exclude instances.")
+
     if filtered.empty:
         warnings.warn(
             "All SGN instances were removed by the segmentation overlap filter.",
             stacklevel=4,
         )
-    return filtered
+    return filtered, filtered_out
 
 
 def sgn_density_profile(
@@ -324,6 +361,7 @@ def sgn_density_profile(
     segmentation=None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     min_overlap_fraction: Optional[float] = None,
+    min_overlap_volume: Optional[float] = None,
 ) -> dict:
     """Compute SGN density at multiple cochlear positions.
 
@@ -363,6 +401,7 @@ def sgn_density_profile(
             segmentation=segmentation,
             voxel_size=voxel_size,
             min_overlap_fraction=min_overlap_fraction,
+            min_overlap_volume=min_overlap_volume,
         )
     return results
 
@@ -373,7 +412,7 @@ def _auto_roi_halo(
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     axis: str = "z",
     slice_thickness: Optional[float] = None,
-    min_halo: int = 10,
+    min_halo: int = 1,
 ) -> List[int]:
     """Compute roi_halo in pixels sized to match the slice exactly.
 
@@ -472,10 +511,87 @@ def _build_block_extraction_dict(
                 axis=pos_result.get("axis", "z"),
                 slice_thickness=pos_result.get("slice_thickness"),
             )
+            entry["label_ids"] = pos_result.get("label_ids"),
+            entry["label_removed"] = pos_result.get("label_removed"),
+            entry["hull_vertices"] = pos_result.get("hull_vertices"),
 
         result_list.append(entry)
 
     return result_list
+
+
+def hull_to_mask(
+    hull_vertices: Union[List, np.ndarray],
+    bb_center: List[float],
+    roi_halo: List[int],
+    voxel_size: Tuple[float, float, float],
+    axis: str = "z",
+    mode: str = "2d",
+    **_,
+) -> np.ndarray:
+    """Convert convex hull vertices to a binary ZYX mask aligned with an extracted crop.
+
+    The returned mask has the same spatial extent as a crop produced by
+    `flamingo_tools.extract_block` with the given `bb_center` and `roi_halo`, so it can be
+    loaded directly as a napari Labels layer alongside the image crop.
+
+    Args:
+        hull_vertices: Convex hull vertex coordinates in µm. Shape (N, 2) for mode='2d'
+                       (columns ordered as the two projection axes of `_AXIS_PROJECTION[axis]`,
+                       e.g. x/y for axis='z'). Shape (N, 3) for mode='3d' (x/y/z order).
+                       Typically the ``hull_vertices`` value from a `sgn_density_at_position`
+                       result dict.
+        bb_center: [x, y, z] physical centre of the crop in µm (``bb_center`` from the
+                   density result dict).
+        roi_halo: [halo_x, halo_y, halo_z] half-extents of the crop in pixels.
+        voxel_size: Voxel size in µm per axis (x, y, z order).
+        axis: Slice axis used for the density calculation ('x', 'y', or 'z'). Only
+              relevant in mode='2d' to determine the projection plane.
+        mode: '2d' rasterises the 2D polygon and extrudes it along the slice axis.
+              '3d' performs a half-space test for every voxel centre inside the crop.
+
+    Returns:
+        Boolean numpy array of shape (2*halo_z, 2*halo_y, 2*halo_x) — True inside the hull.
+    """
+    from skimage.draw import polygon as sk_polygon
+
+    verts = np.asarray(hull_vertices, dtype=float)
+    phys_idx = {"x": 0, "y": 1, "z": 2}
+    mask_shape_zyx = (2 * roi_halo[2], 2 * roi_halo[1], 2 * roi_halo[0])
+
+    if mode == "2d":
+        proj_ax0, proj_ax1 = _AXIS_PROJECTION[axis]
+        i0, i1 = phys_idx[proj_ax0], phys_idx[proj_ax1]
+
+        origin0 = bb_center[i0] - roi_halo[i0] * voxel_size[i0]
+        origin1 = bb_center[i1] - roi_halo[i1] * voxel_size[i1]
+
+        vert_col = (verts[:, 0] - origin0) / voxel_size[i0]
+        vert_row = (verts[:, 1] - origin1) / voxel_size[i1]
+        n_rows = 2 * roi_halo[i1]
+        n_cols = 2 * roi_halo[i0]
+        plane_mask = np.zeros((n_rows, n_cols), dtype=bool)
+        rr, cc = sk_polygon(vert_row, vert_col, shape=(n_rows, n_cols))
+        plane_mask[rr, cc] = True
+
+        # Extrude along the slice axis by inserting a broadcast dimension there.
+        slice_dim = _AXIS_ZYX_DIM[axis]
+        new_shape = list(plane_mask.shape)
+        new_shape.insert(slice_dim, 1)
+        return np.broadcast_to(plane_mask.reshape(new_shape), mask_shape_zyx).copy()
+
+    else:  # mode == "3d"
+        gx = (bb_center[0] - roi_halo[0] * voxel_size[0]) + np.arange(2 * roi_halo[0]) * voxel_size[0]
+        gy = (bb_center[1] - roi_halo[1] * voxel_size[1]) + np.arange(2 * roi_halo[1]) * voxel_size[1]
+        gz = (bb_center[2] - roi_halo[2] * voxel_size[2]) + np.arange(2 * roi_halo[2]) * voxel_size[2]
+
+        GZ, GY, GX = np.meshgrid(gz, gy, gx, indexing="ij")  # each (2hz, 2hy, 2hx)
+        pts = np.column_stack([GX.ravel(), GY.ravel(), GZ.ravel()])
+
+        hull = ConvexHull(verts)
+        # A point is inside the convex hull when all half-space constraints are satisfied.
+        inside = np.all(pts @ hull.equations[:, :3].T + hull.equations[:, 3] <= 0, axis=1)
+        return inside.reshape(mask_shape_zyx)
 
 
 def calc_sgn_density(
@@ -493,16 +609,17 @@ def calc_sgn_density(
     density_mode: str = "2d",
     roi_halo: Optional[List[int]] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
-    mobie_dir: str = MOBIE_FOLDER,
+    mobie_dir: str = None,
     seg_path: Optional[str] = None,
     seg_key: str = "s0",
     min_overlap_fraction: Optional[float] = None,
+    min_overlap_volume: Optional[float] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
 ):
-    """
+    """Calcualte SGN density for 2D and 3D sub-volumes.
 
     Args:
         output: Output path for JSON file with density results.
@@ -543,6 +660,7 @@ def calc_sgn_density(
                               Default: None (no segmentation-based filtering). Whether the
                               segmentation is a pre-extracted crop or a full volume is detected
                               automatically from the array shape.
+        min_overlap_volume: Analogous to min_overlap_fraction with explicit volume in µm³
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -556,6 +674,9 @@ def calc_sgn_density(
         if isinstance(json_params, list):
             json_params = json_params[0]
 
+    if mobie_dir is None:
+        mobie_dir = os.getcwd()
+
     if seg_table_path is not None:
         table_path = seg_table_path
     elif json_params is not None:
@@ -565,6 +686,8 @@ def calc_sgn_density(
             table_path = f"{dataset_name}/tables/{seg_channel}/default.tsv"
         else:
             table_path = os.path.join(mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
+            if not os.path.isfile(table_path):
+                raise ValueError(f"Table path {table_path} does not exist. Use explicit path or check MoBIE folder.")
     else:
         raise ValueError("Provide 'seg_table_path' or 'json_input'.")
 
@@ -595,7 +718,7 @@ def calc_sgn_density(
 
     # Resolve and load segmentation if overlap filtering is requested.
     segmentation = None
-    if min_overlap_fraction is not None:
+    if min_overlap_fraction is not None or min_overlap_volume is not None:
         if seg_path is None and json_params is not None:
             dataset_name = json_params["dataset_name"]
             seg_channel = json_params.get("segmentation_channel", "SGN_v2")
@@ -627,6 +750,7 @@ def calc_sgn_density(
         segmentation=segmentation,
         voxel_size=voxel_size,
         min_overlap_fraction=min_overlap_fraction,
+        min_overlap_volume=min_overlap_volume,
     )
 
     export_dictionary_as_json(results, output, force_overwrite=force_overwrite)
