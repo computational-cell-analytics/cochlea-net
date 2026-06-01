@@ -108,7 +108,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "slice_thickness", "n_sgns",
             "area", "density", "mode", "axis",
-            "bb_min", "bb_max", "bb_center",
+            "bb_min", "bb_max", "bb_center", "label_ids", "label_removed",
             "min_overlap_fraction", "min_overlap_volume", "hull_vertices",
         }
         self.assertEqual(set(result.keys()), expected)
@@ -120,7 +120,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "slice_thickness", "n_sgns",
             "volume", "density", "mode", "axis",
-            "bb_min", "bb_max", "bb_center",
+            "bb_min", "bb_max", "bb_center", "label_ids", "label_removed",
             "min_overlap_fraction", "min_overlap_volume", "hull_vertices",
         }
         self.assertEqual(set(result.keys()), expected)
