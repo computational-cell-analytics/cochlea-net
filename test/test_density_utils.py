@@ -108,7 +108,8 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "slice_thickness", "n_sgns",
             "area", "density", "mode", "axis",
-            "bb_min", "bb_max", "bb_center", "min_overlap_fraction",
+            "bb_min", "bb_max", "bb_center",
+            "min_overlap_fraction", "min_overlap_volume", "hull_vertices",
         }
         self.assertEqual(set(result.keys()), expected)
         self.assertNotIn("volume", result)
@@ -119,7 +120,8 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "reference_fraction", "reference_label_id", "slice_center",
             "slice_min", "slice_max", "slice_thickness", "n_sgns",
             "volume", "density", "mode", "axis",
-            "bb_min", "bb_max", "bb_center", "min_overlap_fraction",
+            "bb_min", "bb_max", "bb_center",
+            "min_overlap_fraction", "min_overlap_volume", "hull_vertices",
         }
         self.assertEqual(set(result.keys()), expected)
         self.assertNotIn("area", result)
@@ -396,6 +398,24 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
         self.assertIn("min_overlap_fraction", result)
         self.assertIsNone(result["min_overlap_fraction"])
 
+    def test_min_overlap_volume_filters(self):
+        # n_pixels=500, voxel_size=1.0 → one voxel = 1 µm³, threshold=0.5 µm³ should keep all.
+        seg = self._seg_in_slice()
+        result = self.fn(
+            self.table, reference_position="mid", slice_thickness=40.0,
+            segmentation=seg, voxel_size=self.voxel_size, min_overlap_volume=0.5,
+        )
+        self.assertEqual(result["n_sgns"], 20)
+        # Threshold above 1 µm³ (each label has exactly 1 voxel = 1 µm³) → all excluded.
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result_excl = self.fn(
+                self.table, reference_position="mid", slice_thickness=40.0,
+                segmentation=seg, voxel_size=self.voxel_size, min_overlap_volume=2.0,
+            )
+        self.assertEqual(result_excl["n_sgns"], 0)
+
     def test_crop_auto_detection(self):
         # Build a small crop array whose z-extent (40 µm) is less than the max anchor
         # coordinate (~53 µm), triggering the crop-detection path.  Labels are painted
@@ -411,6 +431,75 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
             segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
         )
         self.assertEqual(result["n_sgns"], 20)
+
+
+class TestHullToMask(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.analysis.density_utils import sgn_density_at_position, hull_to_mask
+        self.density_fn = sgn_density_at_position
+        self.mask_fn = hull_to_mask
+        self.table = _make_table(n=20, z_center=50.0, frac_center=0.5, frac_spread=0.05)
+        self.voxel_size = (1.0, 1.0, 1.0)
+        self.roi_halo = [40, 50, 30]  # [hx, hy, hz]
+
+    def _density_result(self, mode="2d"):
+        return self.density_fn(
+            self.table, reference_position="mid", slice_thickness=40.0, mode=mode,
+        )
+
+    def test_2d_mask_shape(self):
+        result = self._density_result(mode="2d")
+        mask = self.mask_fn(
+            result["hull_vertices"], result["bb_center"],
+            self.roi_halo, self.voxel_size, axis="z", mode="2d",
+        )
+        hz, hy, hx = self.roi_halo[2], self.roi_halo[1], self.roi_halo[0]
+        self.assertEqual(mask.shape, (2 * hz, 2 * hy, 2 * hx))
+
+    def test_2d_mask_nonzero(self):
+        result = self._density_result(mode="2d")
+        mask = self.mask_fn(
+            result["hull_vertices"], result["bb_center"],
+            self.roi_halo, self.voxel_size, axis="z", mode="2d",
+        )
+        self.assertTrue(mask.any())
+
+    def test_2d_mask_extruded_uniformly(self):
+        # For axis="z" every z-slice must be identical (the 2D polygon extruded along z).
+        result = self._density_result(mode="2d")
+        mask = self.mask_fn(
+            result["hull_vertices"], result["bb_center"],
+            self.roi_halo, self.voxel_size, axis="z", mode="2d",
+        )
+        for zi in range(mask.shape[0]):
+            np.testing.assert_array_equal(mask[zi], mask[0])
+
+    def test_3d_mask_shape(self):
+        result = self._density_result(mode="3d")
+        mask = self.mask_fn(
+            result["hull_vertices"], result["bb_center"],
+            self.roi_halo, self.voxel_size, axis="z", mode="3d",
+        )
+        hz, hy, hx = self.roi_halo[2], self.roi_halo[1], self.roi_halo[0]
+        self.assertEqual(mask.shape, (2 * hz, 2 * hy, 2 * hx))
+
+    def test_3d_mask_nonzero(self):
+        result = self._density_result(mode="3d")
+        mask = self.mask_fn(
+            result["hull_vertices"], result["bb_center"],
+            self.roi_halo, self.voxel_size, axis="z", mode="3d",
+        )
+        self.assertTrue(mask.any())
+
+    def test_hull_vertices_none_when_too_few_points(self):
+        # A table with only 1 SGN cannot form a convex hull → hull_vertices must be None.
+        single = self.table.iloc[:1].copy()
+        import warnings
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self.density_fn(single, reference_position="mid", slice_thickness=40.0)
+        self.assertIsNone(result["hull_vertices"])
 
 
 if __name__ == "__main__":
