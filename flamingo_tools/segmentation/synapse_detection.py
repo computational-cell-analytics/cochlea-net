@@ -64,7 +64,7 @@ def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n
     adjusted = np.empty((len(peak_coords), 3), dtype=float)
     for i, (z, y, x) in enumerate(peak_coords):
         zi, yi, xi = int(z), int(y), int(x)
-        w  = float(pred[1, zi, yi, xi])
+        w = float(pred[1, zi, yi, xi])
         vz = float(pred[2, zi, yi, xi])
         vy = float(pred[3, zi, yi, xi])
         vx = float(pred[4, zi, yi, xi])
@@ -175,7 +175,6 @@ def synapse_detection_from_prediction(
         detections.to_csv(detection_path, index=False, sep="\t")
     else:
         print(f"Skipping peak detection. {detection_path} already exists.")
-
 
 
 def run_prediction(

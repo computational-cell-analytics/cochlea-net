@@ -184,11 +184,11 @@ def main():
 
     args = parser.parse_args()
     process_everything(
-        input_root = args.input_root,
-        gt_root = args.gt_root,
-        output_root = args.output_root,
-        synapse_model_path = args.model_synapse,
-        ihc_model_path = args.model_ihc,
+        input_root=args.input_root,
+        gt_root=args.gt_root,
+        output_root=args.output_root,
+        synapse_model_path=args.model_synapse,
+        ihc_model_path=args.model_ihc,
     )
     # check_predictions()
 
