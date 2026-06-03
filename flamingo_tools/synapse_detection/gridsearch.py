@@ -198,6 +198,8 @@ def get_or_compute_threshold(
     Returns:
         Optimal detection threshold as a float.
     """
+    _DEFAULT_THRESHOLD = 0.9
+
     cache_path = os.path.splitext(model_path)[0] + "_threshold.json"
 
     if os.path.exists(cache_path):
@@ -205,6 +207,16 @@ def get_or_compute_threshold(
             threshold = json.load(f)["threshold"]
         print(f"Loaded cached threshold {threshold:.3f} from {cache_path}")
         return threshold
+
+    if not os.path.exists(json_val_path):
+        import warnings
+        warnings.warn(
+            f"Threshold cache not found and validation JSON does not exist at '{json_val_path}'. "
+            f"Using default threshold {_DEFAULT_THRESHOLD}. "
+            "Run gridsearch with a valid json_val_path to determine an optimal threshold.",
+            UserWarning,
+        )
+        return _DEFAULT_THRESHOLD
 
     threshold = gridsearch(
         json_val_path, model_path, image_dir=image_dir, label_dir=label_dir,

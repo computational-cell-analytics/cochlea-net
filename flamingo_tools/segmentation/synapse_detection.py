@@ -315,7 +315,8 @@ def marker_detection(
 
     if not os.path.exists(detection_path):
         synapse_detection_from_prediction(output_path, detection_path,
-                                          prediction_key=prediction_key, voxel_size=voxel_size)
+                                          prediction_key=prediction_key, voxel_size=voxel_size,
+                                          model_path=model_path)
 
     else:
         with open(detection_path, "r") as f:
