@@ -5,8 +5,13 @@ import zarr
 
 from skimage.filters import gaussian
 from skimage.feature import peak_local_max
-from torch_em.transform.raw import standardize
 from torch_em.util import ensure_tensor_with_channels
+
+try:
+    from spotiflow.utils import points_to_flow3d
+    _spotiflow_available = True
+except ImportError:
+    _spotiflow_available = False
 
 
 class MinPointSampler:
@@ -78,6 +83,74 @@ def process_labels(coords, shape, sigma, eps, bb=None):
     labels /= (labels.max() + 1e-7)
     labels *= 4
     return labels
+
+
+class CsvHeatmapFlowTransform:
+    """Label transform for CSV point annotations that matches the HeatmapFlowTransform interface.
+
+    The upstream czii-protein-challenge HeatmapFlowTransform reads JSON annotation files.
+    This class reads the CSV files used by the local synapse training data and produces
+    the same 5-channel output (1 Gaussian heatmap + 4 stereographic flow channels).
+
+    Args:
+        sigma: Gaussian standard deviation (in voxels) for the heatmap.
+        eps: Small constant added when normalizing the heatmap.
+    """
+
+    def __init__(self, sigma: float, eps: float = 1e-8):
+        if not _spotiflow_available:
+            raise ImportError(
+                "spotiflow is required for flow computation. "
+                "Install it with: pip install spotiflow"
+            )
+        self.sigma = sigma
+        self.eps = eps
+
+    def __call__(self, label_path, shape, bb_labels, bb_for_loading):
+        # Strip a leading channel slice if present (bb_labels may have one).
+        bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
+        local_shape = tuple(s.stop - s.start for s in bb)
+        z_min, y_min, x_min = bb[0].start, bb[1].start, bb[2].start
+        z_max, y_max, x_max = bb[0].stop, bb[1].stop, bb[2].stop
+
+        # Load all point coordinates from the CSV once.
+        points_df = pd.read_csv(label_path)
+        z_abs = points_df["axis-0"].values.astype(np.float32)
+        y_abs = points_df["axis-1"].values.astype(np.float32)
+        x_abs = points_df["axis-2"].values.astype(np.float32)
+
+        # Filter to the bounding box and convert to local coordinates.
+        mask = (
+            (z_abs >= z_min) & (z_abs < z_max) &
+            (y_abs >= y_min) & (y_abs < y_max) &
+            (x_abs >= x_min) & (x_abs < x_max)
+        )
+        local_z = z_abs[mask] - z_min
+        local_y = y_abs[mask] - y_min
+        local_x = x_abs[mask] - x_min
+        n_points = int(mask.sum())
+
+        # Gaussian heatmap (1 channel).
+        heatmap = np.zeros(local_shape, dtype=np.float32)
+        if n_points > 0:
+            coords = tuple(
+                np.clip(np.round(c).astype(int), 0, s - 1)
+                for c, s in zip([local_z, local_y, local_x], local_shape)
+            )
+            heatmap[coords] = 1
+            heatmap = gaussian(heatmap, self.sigma)
+            heatmap /= (heatmap.max() + self.eps)
+            heatmap *= 4
+
+        # Stereographic flow (4 channels).
+        if n_points == 0:
+            flow = np.zeros((4, *local_shape), dtype=np.float32)
+        else:
+            local_points = np.stack([local_z, local_y, local_x], axis=1)  # (N, 3)
+            flow = points_to_flow3d(local_points, local_shape)  # returns (Z', Y', X', 4) channels last
+            flow = np.asarray(flow, dtype=np.float32).transpose((3, 0, 1, 2))  # → (4, Z', Y', X')
+
+        return np.concatenate([heatmap[np.newaxis], flow], axis=0).astype(np.float32)
 
 
 class DetectionDataset(torch.utils.data.Dataset):
@@ -247,21 +320,3 @@ class DetectionDataset(torch.utils.data.Dataset):
         raw = ensure_tensor_with_channels(raw, ndim=self._ndim, dtype=self.dtype)
         labels = ensure_tensor_with_channels(labels, ndim=self._ndim, dtype=self.label_dtype)
         return raw, labels
-
-
-if __name__ == "__main__":
-    import napari
-
-    raw_path = "training_data/images/10.1L_mid_IHCribboncount_5_Z.zarr"
-    label_path = "training_data/labels/10.1L_mid_IHCribboncount_5_Z.csv"
-
-    f = zarr.open(raw_path, "r")
-    raw = f["raw"][:]
-
-    coords, _ = load_labels(label_path, raw.shape, bb=None)
-    labels = process_labels(coords, shape=raw.shape, sigma=1, eps=1e-7)
-
-    v = napari.Viewer()
-    v.add_image(raw)
-    v.add_image(labels)
-    napari.run()

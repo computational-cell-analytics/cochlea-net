@@ -1,0 +1,26 @@
+{
+	"train": [
+		"227l_p650_base_vglut3-ctbp2",
+		"m78l_basep2970_cr-ctbp2",
+		"m226r_base_p800_vglut3-ctbp2",
+		"mlr226r_vglut3ctbp2_apex2",
+		"MLR227-L_0403-0991-0491_Vglut3-CTBP2_mod-1",
+		"mlr227-l_0973-0489-0404_vglut3-ctbp2_mod-1",
+		"mlr227-l_0672-0821-1201_vglut3-ctbp2_mod-2",
+		"mlr226r_vglut3ctbp2_base2",
+		"227l_p720_apex_vglut3-ctbp2",
+		"m78l_midp480_cr-ctbp2",
+		"mlr227-l_1121-1013-0931_vglut3-ctbp2_mod-2",
+		"m226r_apex_p1268_pv-ctbp2",
+		"mlr226r_vglut3ctbp2_base1",
+		"m78l_apexp2718_cr-ctbp2",
+		"mlr226r_vglut3ctbp2_apex1",
+		"mlr226r_vglut3ctbp2_mid1",
+		"m226r_mid_p2824_vglut3-ctbp2"
+	],
+	"val": [
+		"227l_p2466_mid_vlugt3-ctbp2",
+		"mlr227-l_0697-1303-0436_vglut3-ctbp2_mod-1",
+		"mlr226r_vglut3ctbp2_mid2"
+	]
+}
