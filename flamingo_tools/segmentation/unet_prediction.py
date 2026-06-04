@@ -159,11 +159,11 @@ def prediction_impl(
         def postprocess(x):
             x[1] = vigra.filters.gaussianSmoothing(x[1], sigma=2.0)
             return x
+    elif output_channels > 1:
+        postprocess = None
     else:
-        if output_channels > 1:
-            postprocess = None
-        else:
-            postprocess = lambda x: x[0] if x.ndim == 4 else x.squeeze()
+        def postprocess(x):
+            return x[0] if x.ndim == 4 else x.squeeze()
 
     gpu_ids, block_shape, halo = _get_device_and_tiling(block_shape, halo, input_)
     shape = input_.shape

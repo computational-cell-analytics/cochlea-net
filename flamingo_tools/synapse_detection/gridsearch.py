@@ -18,9 +18,10 @@ from tqdm import tqdm
 
 from flamingo_tools.segmentation.unet_prediction import prediction_impl
 
-TRAIN_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v4/images"
-LABEL_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v4/labels"
-DEFAULT_JSON = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v4/train_val_split.json"
+COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
+TRAIN_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/images")
+LABEL_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/labels")
+DEFAULT_JSON = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/train_val_split.json")
 
 
 # ---------------------------------------------------------------------------
@@ -156,7 +157,7 @@ def gridsearch(
         label_coords = _load_csv_labels(label_path)
         print(f"  {len(label_coords)} ground-truth points loaded")
 
-        for thresh in tqdm(threshes, desc=f"  threshold sweep"):
+        for thresh in tqdm(threshes, desc="  threshold sweep"):
             pred_coords = peak_local_max(heatmap, min_distance=min_distance, threshold_abs=thresh)
             _, _, f1 = _metric_coords(label_coords, pred_coords, match_distance)
             records.append({"val": val_name, "threshold": float(thresh), "f1": float(f1)})

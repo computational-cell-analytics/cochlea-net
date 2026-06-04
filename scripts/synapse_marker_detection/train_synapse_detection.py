@@ -5,14 +5,19 @@ import sys
 from glob import glob
 
 from sklearn.model_selection import train_test_split
-from flamingo_tools.synapse_detection.detection_dataset import DetectionDataset, MinPointSampler, CsvHeatmapFlowTransform
+from flamingo_tools.synapse_detection.detection_dataset import (
+    CsvHeatmapFlowTransform,
+    DetectionDataset,
+    MinPointSampler,
+)
 
 sys.path.append("/home/pape/Work/my_projects/czii-protein-challenge")
 sys.path.append("/user/schilling40/u15000/czii-protein-challenge/detection")
 
 from utils.training.training import supervised_training  # noqa
 
-ROOT_SYNAPSE_DATA = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data"  # noqa
+COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
+ROOT_SYNAPSE_DATA = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data")
 
 
 def train(root_data_dir, version="v4", val_sample_size=3):
