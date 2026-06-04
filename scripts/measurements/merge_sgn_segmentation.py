@@ -27,7 +27,10 @@ def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
         block_a = seg_a[bb]
         block_b = seg_b[bb]
 
-        insert_mask = np.isin(block_b, ids_b)
+        # Only insert non-background Ntng1 cells into pixels that are background
+        # in seg_a, to avoid overwriting CR cells (can occur at full resolution
+        # even when there was no overlap at the coarser scale used for filtering).
+        insert_mask = np.isin(block_b, ids_b) & (block_a == 0)
         if insert_mask.sum() > 0:
             block_b[insert_mask] += offset
             block_a[insert_mask] = block_b[insert_mask]
@@ -65,7 +68,8 @@ def merge_sgns(cochlea, name_a, name_b, overlap_threshold=0.25, output_folder=No
     overlap = intersection_over_union(overlap)
     cumulative_overlap = overlap[1:, :].sum(axis=0)
     all_ids_b = np.unique(seg_b)
-    ids_b = all_ids_b[cumulative_overlap < overlap_threshold]
+    all_ids_b = all_ids_b[all_ids_b != 0]  # exclude background before threshold check
+    ids_b = all_ids_b[cumulative_overlap[all_ids_b] < overlap_threshold]
     offset = seg_a.max()
 
     # Get the segmentations at full resolution to merge them.
