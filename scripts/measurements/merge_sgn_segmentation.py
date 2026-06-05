@@ -1,3 +1,4 @@
+import argparse
 import json
 import os
 from concurrent import futures
@@ -8,6 +9,8 @@ from elf.evaluation.matching import label_overlap, intersection_over_union
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
 from nifty.tools import blocking
 from tqdm import tqdm
+
+COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 
 
 def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
@@ -24,7 +27,10 @@ def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
         block_a = seg_a[bb]
         block_b = seg_b[bb]
 
-        insert_mask = np.isin(block_b, ids_b)
+        # Only insert non-background Ntng1 cells into pixels that are background
+        # in seg_a, to avoid overwriting CR cells (can occur at full resolution
+        # even when there was no overlap at the coarser scale used for filtering).
+        insert_mask = np.isin(block_b, ids_b) & (block_a == 0)
         if insert_mask.sum() > 0:
             block_b[insert_mask] += offset
             block_a[insert_mask] = block_b[insert_mask]
@@ -51,7 +57,7 @@ def get_segmentation(cochlea, seg_name, seg_key):
     return zarr.open(seg_store, mode="r")[seg_key]
 
 
-def merge_sgns(cochlea, name_a, name_b, overlap_threshold=0.25):
+def merge_sgns(cochlea, name_a, name_b, overlap_threshold=0.25, output_folder=None):
     # Get the two segmentations at low resolution for computing the overlaps.
     seg_a = get_segmentation(cochlea, seg_name=name_a, seg_key="s2")[:]
     seg_b = get_segmentation(cochlea, seg_name=name_b, seg_key="s2")[:]
@@ -62,23 +68,50 @@ def merge_sgns(cochlea, name_a, name_b, overlap_threshold=0.25):
     overlap = intersection_over_union(overlap)
     cumulative_overlap = overlap[1:, :].sum(axis=0)
     all_ids_b = np.unique(seg_b)
-    ids_b = all_ids_b[cumulative_overlap < overlap_threshold]
+    all_ids_b = all_ids_b[all_ids_b != 0]  # exclude background before threshold check
+    ids_b = all_ids_b[cumulative_overlap[all_ids_b] < overlap_threshold]
     offset = seg_a.max()
 
     # Get the segmentations at full resolution to merge them.
-    seg_a = get_segmentation(cochlea, seg_name=name_a, seg_key="s2")
-    seg_b = get_segmentation(cochlea, seg_name=name_b, seg_key="s2")
+    seg_a = get_segmentation(cochlea, seg_name=name_a, seg_key="s0")
+    seg_b = get_segmentation(cochlea, seg_name=name_b, seg_key="s0")
 
     # Write out the merged segmentations.
-    output_folder = f"./data/{cochlea}"
+    if output_folder is None:
+        output_folder = f"./data/{cochlea}"
     os.makedirs(output_folder, exist_ok=True)
     output_path = os.path.join(output_folder, "SGN_merged.zarr")
     merge_segmentations(seg_a, seg_b, ids_b, offset, output_path)
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Merge SGN segmentation of two different stains.")
+
+    parser.add_argument("-c", "--cochlea", type=str, required=True, help="Input cochlea, e.g. M_AMD_N180_L.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Output path for merged segemntation.")
+    parser.add_argument("--stain_a", type=str, default="CR",
+                        help="First stain for merging.")
+    parser.add_argument("--stain_b", type=str, default="Ntng1",
+                        help="Second stain for merging.")
+    parser.add_argument("--sgn_version", type=str, default="SGN_v2",
+                        help="SGN segmentation version.")
+
+    args = parser.parse_args()
+
     # merge_sgns(cochlea="M_AMD_N180_L", name_a="CR_SGN_v2", name_b="Ntng1_SGN_v2")
-    merge_sgns(cochlea="M_AMD_N180_R", name_a="CR_SGN_v2", name_b="Ntng1_SGN_v2")
+    # merge_sgns(cochlea="M_AMD_N180_R", name_a="CR_SGN_v2", name_b="Ntng1_SGN_v2")
+    cochlea = args.cochlea
+    stain_a = args.stain_a
+    stain_b = args.stain_b
+    sgn_version = args.sgn_version
+    if args.output is None:
+        output_folder = os.path.join(COCHLEA_DIR, f"predictions/{cochlea}/{stain_a}_{stain_b}_{sgn_version}")
+    else:
+        output_folder = args.output
+    merge_sgns(cochlea=cochlea, name_a=f"{stain_a}_{sgn_version}", name_b=f"{stain_b}_{sgn_version}",
+               output_folder=output_folder)
 
 
 if __name__ == "__main__":
