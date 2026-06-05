@@ -70,7 +70,7 @@ def main():
     else:
         halo = tuple(json.loads(args.halo))
 
-    use_mask = ~args.no_masking
+    use_mask = not args.no_masking
 
     if args.time:
         start = time.perf_counter()

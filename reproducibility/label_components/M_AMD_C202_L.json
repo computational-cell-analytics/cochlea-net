@@ -1,0 +1,14 @@
+[
+	{
+		"dataset_name": "M_AMD_C202_L",
+		"cell_type": "sgn",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1,
+			6,
+			3
+		],
+		"max_edge_distance": 70,
+		"min_component_length": 20
+	}
+]
