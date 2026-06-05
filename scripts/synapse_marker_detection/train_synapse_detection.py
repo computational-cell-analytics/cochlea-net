@@ -20,7 +20,7 @@ COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 ROOT_SYNAPSE_DATA = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data")
 
 
-def train(root_data_dir, version="v4", val_sample_size=3):
+def train(root_data_dir, version="v5", val_sample_size=3):
     image_dir = os.path.join(root_data_dir, version, "images")
     label_dir = os.path.join(root_data_dir, version, "labels")
     model_name = f"synapse_detection_{version}"
@@ -88,7 +88,7 @@ def main():
     )
 
     parser.add_argument("-i", "--input_dir", type=str, default=ROOT_SYNAPSE_DATA)
-    parser.add_argument("-v", "--version", type=str, default="v4")
+    parser.add_argument("-v", "--version", type=str, default="v5")
 
     args = parser.parse_args()
     train(args.input_dir, args.version)
