@@ -7,12 +7,47 @@ from elf.io import open_file
 
 from flamingo_tools.validation import match_detections
 
+COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
+SYNAPSE_DICT = {
+    "v3": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/images"),
+    },
+    "v4": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/images"),
+    },
+}
 
-def evaluate_synapse_detections(pred, gt):
-    fname = os.path.basename(gt)
 
-    pred = pd.read_csv(pred, sep="\t")[["z", "y", "x"]].values
-    gt = pd.read_csv(gt, sep="\t")[["z", "y", "x"]].values
+def evaluate_synapse_detections(
+    pred_path: str,
+    gt_path: str,
+    voxel_size: str = 0.38,
+) -> pd.DataFrame:
+    """Evaluate synapse detections by comparing a prediction from the spot detection to reference labels.
+
+    Args:
+        pred_path: File containing the "synapse_detection.tsv" output from the spot detection.
+        gt_path: File containing the reference label from a consensus annotation.
+        voxel_size: Voxel size of the image volume with isotropic resolution.
+
+    Returns:
+        Printed output of model performance.
+    """
+    fname = os.path.basename(gt_path)
+
+    pred = pd.read_csv(pred_path, sep="\t")[["z", "y", "x"]].values
+
+    # scale gt to physical coordinates
+    gt = pd.read_csv(gt_path, sep=",")
+    gt["axis-0"] *= voxel_size
+    gt["axis-1"] *= voxel_size
+    gt["axis-2"] *= voxel_size
+    gt = gt[["axis-0", "axis-1", "axis-2"]].values
+
     tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=3)
 
     return pd.DataFrame({
@@ -39,7 +74,7 @@ def run_evaluation(pred_files, gt_files):
     print(results)
     print("Evaluation:")
     print("Precision:", precision)
-    print("Revall:", recall)
+    print("Recall:", recall)
     print("F1-Score:", f1_score)
 
 
@@ -89,22 +124,47 @@ def visualize_evaluation(pred_files, gt_files, ctbp2_files):
 
 def main():
     import argparse
-    parser = argparse.ArgumentParser()
+    parser = argparse.ArgumentParser(
+        description="Evaluate a synapse detection model.")
+
+    parser.add_argument("-v", "--version", type=str, default=None,
+                        help="Use pre-defined directories for a specific network version, e.g. v3, v4, ...")
+    parser.add_argument("-p", "--pred_root", type=str, default=None,
+                        help="Directory containing sub-directories with predicted data.")
+    parser.add_argument("-r", "--ref_root", type=str, default=None,
+                        help="Directory containing reference labels in CSV format.")
+    parser.add_argument("-c", "--image_root", type=str,
+                        help="Directory containing image data in ZARR format.")
+    parser.add_argument("--sgn_version", type=str, default="SGN_v2",
+                        help="SGN segmentation version.")
     parser.add_argument("--visualize", action="store_true")
+
     args = parser.parse_args()
 
-    pred_root = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/SynapseValidation"
-    gt_root = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/test_data/v3/labels"
-    ctbp2_root = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/test_data/v3/images"  # noqa
+    if args.version is not None:
+        valid_versions = list(SYNAPSE_DICT.keys())
+        if args.version not in valid_versions:
+            raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
 
-    ctbp2_files = sorted(glob(os.path.join(ctbp2_root, "*.zarr")))
-    gt_files = sorted(glob(os.path.join(gt_root, "*_filtered.tsv")))
-    assert len(ctbp2_files) == len(gt_files)
+        image_root = SYNAPSE_DICT[args.version]["image_root"]
+        ref_root = SYNAPSE_DICT[args.version]["ref_root"]
+        pred_root = SYNAPSE_DICT[args.version]["pred_root"]
+
+    else:
+        image_root = args.image_root
+        ref_root = args.ref_root
+        pred_root = args.pred_root
+
+    ctbp2_files = sorted(glob(os.path.join(image_root, "*.zarr")))
+    gt_files = sorted(glob(os.path.join(ref_root, "*.csv")))
 
     pred_files = []
     for ff in ctbp2_files:
         fname = Path(ff).stem
         pred_file = os.path.join(pred_root, fname, "filtered_synapse_detection.tsv")
+        if not os.path.isfile(pred_file):
+            pred_file = os.path.join(pred_root, fname, "synapse_detection.tsv")
+
         assert os.path.exists(pred_file), pred_file
         pred_files.append(pred_file)
 
