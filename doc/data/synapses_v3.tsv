@@ -1,23 +1,23 @@
-Original	Standardized	Dataset	Crop_center	n_samples	mean_vol[px]	min_vol[px]	max_vol[px]	dim	n_samples[>=1000px]	n_samples[<1000px]
-10.1L_mid_IHCribboncount_5_Z	M-AMD-000010-L_crop_mid_CTBP2	images	unknown
-4.1L_apex_IHCribboncount_Z	M-AMD-000004-L_crop_apex_CTBP2	images	unknown
-4.1L_base_IHCribbons_Z	M-AMD-000004-L_crop_base_CTBP2	images	unknown
-4.1L_mid_IHCribboncount_Z	M-AMD-000004-L_crop_mid_CTBP2	images	unknown
-4.2R_apex_IHCribboncount_Z	M-AMD-000004-R_crop_apex_CTBP2	images	unknown
-4.2R_base_IHCribboncount_Z	M-AMD-000004-R_crop_base_CTBP2	images	unknown
-4.2R_mid_IHCribboncount2_Z	M-AMD-000004-R_crop_mid_CTBP2	images	unknown
-6.2R_apex_IHCribboncount_Z	M-AMD-000006-R_crop_apex_CTBP2	images	unknown
-6.2R_base_IHCribbons_Z	M-AMD-000006-R_crop_base_CTBP2	images	unknown
-m226r_apex_p1268_pv-ctbp2	M-LR-000226-R_crop_apex_CTBP2	images	unknown
-m226r_base_p800_vglut3-ctbp2	M-LR-000226-R_crop_base_CTBP2	images	unknown
-m226r_mid_p2824_vglut3-ctbp2	M-LR-000226-R_crop_mid_CTBP2	images	unknown
-m78l_apexp2718_cr-ctbp2	M-LR-000078-L_crop_apex_CTBP2	images	unknown
-m78l_basep2970_cr-ctbp2	M-LR-000078-L_crop_base_CTBP2	images	unknown
-m78l_midp480_cr-ctbp2	M-LR-000078-L_crop_mid_CTBP2	images	unknown
-227l_p2466_mid_vlugt3-ctbp2	M-LR-000227-L_crop_mid	test	unknown
-227l_p650_base_vglut3-ctbp2	M-LR-000227-L_crop_base	test	unknown
-227l_p720_apex_vglut3-ctbp2	M-LR-000227-L_crop_apex	test	unknown
-m226l_midp330_vglut3-ctbp2	M-LR-000226-L_crop_mid	test	unknown
-mlr277r_p1135_mid_vglut3-ctbp2	M-LR-000227-R_crop_mid	test	unknown
-mlr277r_p2648_apex_vglut3_ctbp2	M-LR-000227-R_crop_apex	test	unknown
-mlr277r_p700_base_vglut3-ctbp2	M-LR-000227-R_crop_base	test	unknown
+Original	Standardized	Dataset	Crop_center	n_samples	dim
+10.1L_mid_IHCribboncount_5_Z	M-AMD-000010-L_crop_mid_CTBP2	train	unknown	371.0	(411, 271, 342)
+4.1L_apex_IHCribboncount_Z	M-AMD-000004-L_crop_apex_CTBP2	train	unknown	139.0	(70, 131, 150)
+4.1L_base_IHCribbons_Z	M-AMD-000004-L_crop_base_CTBP2	train	unknown	417.0	(73, 423, 279)
+4.1L_mid_IHCribboncount_Z	M-AMD-000004-L_crop_mid_CTBP2	train	unknown	220.0	(106, 136, 347)
+4.2R_apex_IHCribboncount_Z	M-AMD-000004-R_crop_apex_CTBP2	train	unknown	704.0	(130, 891, 381)
+4.2R_base_IHCribboncount_Z	M-AMD-000004-R_crop_base_CTBP2	train	unknown	117.0	(81, 201, 450)
+4.2R_mid_IHCribboncount2_Z	M-AMD-000004-R_crop_mid_CTBP2	train	unknown	468.0	(61, 897, 378)
+6.2R_apex_IHCribboncount_Z	M-AMD-000006-R_crop_apex_CTBP2	train	unknown	43.0	(40, 120, 146)
+6.2R_base_IHCribbons_Z	M-AMD-000006-R_crop_base_CTBP2	train	unknown	187.0	(61, 508, 490)
+m226r_apex_p1268_pv-ctbp2	M-LR-000226-R_crop_apex_CTBP2	train	unknown	102.0	(100, 400, 400)
+m226r_base_p800_vglut3-ctbp2	M-LR-000226-R_crop_base_CTBP2	train	unknown	287.0	(100, 400, 400)
+m226r_mid_p2824_vglut3-ctbp2	M-LR-000226-R_crop_mid_CTBP2	train	unknown	287.0	(543, 186, 546)
+m78l_apexp2718_cr-ctbp2	M-LR-000078-L_crop_apex_CTBP2	train	unknown	34.0	(200, 400, 400)
+m78l_basep2970_cr-ctbp2	M-LR-000078-L_crop_base_CTBP2	train	unknown	351.0	(578, 239, 573)
+m78l_midp480_cr-ctbp2	M-LR-000078-L_crop_mid_CTBP2	train	unknown	269.0	(575, 310, 545)
+227l_p2466_mid_vlugt3-ctbp2	M-LR-000227-L_crop_mid	test	unknown	267.0	(100, 400, 400)
+227l_p650_base_vglut3-ctbp2	M-LR-000227-L_crop_base	test	unknown	309.0	(100, 400, 400)
+227l_p720_apex_vglut3-ctbp2	M-LR-000227-L_crop_apex	test	unknown	161.0	(100, 400, 400)
+m226l_midp330_vglut3-ctbp2	M-LR-000226-L_crop_mid	test	unknown	253.0	(442, 437, 423)
+mlr277r_p1135_mid_vglut3-ctbp2	M-LR-000227-R_crop_mid	test	unknown	298.0	(100, 400, 400)
+mlr277r_p2648_apex_vglut3_ctbp2	M-LR-000227-R_crop_apex	test	unknown	52.0	(100, 400, 400)
+mlr277r_p700_base_vglut3-ctbp2	M-LR-000227-R_crop_base	test	unknown	304.0	(100, 400, 400)
