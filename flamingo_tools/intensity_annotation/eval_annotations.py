@@ -261,8 +261,16 @@ def get_length_fraction_from_center(
     table: pd.DataFrame,
     center_str: str,
     halo_size: int = 20,
-) -> float:
+) -> Optional[float]:
     """Get 'length_fraction' parameter for center coordinate by averaging nearby segmentation instances.
+
+    Args:
+        table: Segmentation table.
+        center_str: Center coordinate of crop as reference point.
+        halo_size: Halo in micrometer to find nearby SGN instances.
+
+    Returns:
+        Average length fraction or None if no instance is in range.
     """
     center_coord = tuple([int(c) for c in center_str.split("-")])
     (cx, cy, cz) = center_coord
@@ -275,6 +283,8 @@ def get_length_fraction_from_center(
         (table["anchor_z"] < cz + halo_size)
     ]
     length_fraction = list(subset["length_fraction"])
+    if len(length_fraction) == 0:
+        return None
     length_fraction = float(sum(length_fraction) / len(length_fraction))
     return length_fraction
 
@@ -296,6 +306,13 @@ def apply_nearest_threshold(
     lf_intensity = {}
     for key in intensity_dic.keys():
         length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
+        while length_fraction is None:
+            halo_size = 2 * halo_size
+            print(f"Found no instance in ROI halo around center coordinate. Trying halo {halo_size}.")
+            if halo_size > 150:
+                raise ValueError("No SGN instance nearby.")
+            length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
+
         intensity_dic[key]["length_fraction"] = length_fraction
         if threshold_dic is None:
             lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
@@ -350,11 +367,12 @@ def find_thresholds(
     pattern: Optional[str] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> Tuple[dict, dict]:
-    # Find the median intensities by averaging the individual annotations for specific crops
+    """ Find the median intensities by averaging the individual annotations for specific crops.
+    """
     annotation_dics = {}
     annotated_centers = []
     for annotation_dir in cochlea_annotations:
-        print(f"Localizing threshold with median intensities for {os.path.basename(annotation_dir)}.")
+        print(f"Localizing threshold with median intensities for {os.path.abspath(annotation_dir)}.")
         annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg,
                                                      table_meas, column=column, pattern=pattern,
                                                      voxel_size=voxel_size)
@@ -363,6 +381,7 @@ def find_thresholds(
 
     annotated_centers = list(set(annotated_centers))
     intensity_dic = {}
+    print("Annotator keys", list(annotation_dics.keys()))
     # loop over all annotated blocks
     for annotated_center in annotated_centers:
         intensities = []
@@ -371,17 +390,18 @@ def find_thresholds(
         annotator_missing = []
         # loop over annotated block from single user
         for annotator_key in annotation_dics.keys():
+            subdirname = os.path.basename(os.path.abspath(annotation_dir))
             if annotated_center not in annotation_dics[annotator_key]["center_strings"]:
-                annotator_missing.append(os.path.basename(annotator_key))
+                annotator_missing.append(subdirname)
                 continue
             else:
                 median_intensity = annotation_dics[annotator_key][annotated_center]["median_intensity"]
                 if median_intensity is None:
-                    print(f"No threshold for {os.path.basename(annotator_key)} and crop {annotated_center}.")
-                    annotator_failure.append(os.path.basename(annotator_key))
+                    print(f"No threshold for {subdirname} and crop {annotated_center}.")
+                    annotator_failure.append(subdirname)
                 else:
                     intensities.append(median_intensity)
-                    annotator_success.append(os.path.basename(annotator_key))
+                    annotator_success.append(subdirname)
 
         if len(intensities) == 0:
             print(f"No viable annotation for cochlea {cochlea} and crop {annotated_center}.")
