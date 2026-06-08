@@ -13,7 +13,7 @@ dependencies:
   - scikit-image
   - seaborn
   - s3fs
-  - torch_em
+  - torch_em <0.9.0
   - trimesh
   - z5py
   # Don't install zarr v3, which is not yet compatible with all dependencies.
