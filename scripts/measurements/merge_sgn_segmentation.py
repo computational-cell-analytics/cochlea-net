@@ -90,7 +90,7 @@ def main():
 
     parser.add_argument("-c", "--cochlea", type=str, required=True, help="Input cochlea, e.g. M_AMD_N180_L.")
     parser.add_argument("-o", "--output", type=str, default=None,
-                        help="Output path for merged segemntation.")
+                        help="Output path for merged segmentation.")
     parser.add_argument("--stain_a", type=str, default="CR",
                         help="First stain for merging.")
     parser.add_argument("--stain_b", type=str, default="Ntng1",

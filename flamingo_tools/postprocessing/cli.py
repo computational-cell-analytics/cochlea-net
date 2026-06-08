@@ -141,7 +141,7 @@ def json_block_extraction():
     parser = argparse.ArgumentParser(
         description="Script to create JSON dictionary used for extracting blocks for intensity annotation.")
 
-    parser.add_argument("-o", "--output", type=str, default=None,
+    parser.add_argument("-o", "--output", type=str, required=True,
                         help="Output path for JSON dictionary.")
     parser.add_argument("-d", "--dataset_name", type=str, required=True, help="Dataset name.")
     parser.add_argument("-i", "--image_channel", type=str, required=True, nargs="+",

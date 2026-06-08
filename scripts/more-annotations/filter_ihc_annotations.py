@@ -44,7 +44,7 @@ def main():
     parser.add_argument("-i", "--input", type=str, default=INPUT_DIR,
                         help="Input directory containing annotations.")
     parser.add_argument("-o", "--output", type=str, default=OUTPUT_DIR,
-                        help="Output directory for JSON dictionaries which feature parameters for crop extraction.")
+                        help="Output directory for refined annotations.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     args = parser.parse_args()
