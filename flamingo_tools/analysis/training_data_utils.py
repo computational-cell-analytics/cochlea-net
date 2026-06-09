@@ -5,6 +5,7 @@ from typing import List, Optional, Tuple
 import imageio.v3 as imageio
 import numpy as np
 import pandas as pd
+import zarr
 from scipy.ndimage import label as label_structures
 from tqdm import tqdm
 
@@ -69,10 +70,17 @@ def add_metadata_to_crop_table(
         n_samples.append(int(samples))
         n_samples_undercut.append(int(samples_undercut))
         mean_vol.append(round(np.mean(counts_filtered), 1))
-        min_vol.append(int(min(counts_filtered)))
-        max_vol.append(int(max(counts_filtered)))
+        if len(counts_filtered) == 0:
+            min_vol.append(0)
+            max_vol.append(0)
+        else:
+            min_vol.append(int(min(counts_filtered)))
+            max_vol.append(int(max(counts_filtered)))
         dimensions.append(str(arr.shape))
 
+    n_samples_total = [int(n + n_under) for (n, n_under) in zip(n_samples, n_samples_undercut)]
+
+    df.loc[:, "n_samples"] = n_samples_total
     df.loc[:, "dim"] = dimensions
     df.loc[:, "n_samples[>=1000px]"] = n_samples
     df.loc[:, "n_samples[<1000px]"] = n_samples_undercut
@@ -80,7 +88,79 @@ def add_metadata_to_crop_table(
     df.loc[:, "min_vol[px]"] = min_vol
     df.loc[:, "max_vol[px]"] = max_vol
 
-    df.to_csv(table_out, sep="\t", index=False)
+    df_reordered = df.loc[:, [
+        "Original",
+        "Standardized",
+        "Dataset",
+        "Crop_center",
+        "n_samples",
+        "mean_vol[px]",
+        "min_vol[px]",
+        "max_vol[px]",
+        "dim",
+        "n_samples[>=1000px]",
+        "n_samples[<1000px]",
+    ]]
+
+    df_reordered.to_csv(table_out, sep="\t", index=False)
+
+
+def add_metadata_to_crop_table_synapses(
+    table_in: str,
+    train_dir: str,
+    test_dir: Optional[str] = None,
+    input_key: str = "raw",
+    table_out: Optional[str] = None,
+):
+    """Add meta information like the number of instances and crop dimensions to an existing table,
+    which compiles the crops used for training, validation and testing of the network for synapse detection.
+
+    Args:
+        table_in: File path to TSV table.
+        train_dir: Directory used for training. Features sub-directories 'images' and 'labels'.
+        test_dir: Directory used for testing. Features sub-directories 'images' and 'labels'.
+        input_key: Input key for ZARR image file. Used to determine crop dimensions.
+        table_out: Output path for extended table.
+    """
+    if table_out is None:
+        table_out = table_in
+
+    df = pd.read_csv(table_in, sep="\t")
+    dimensions = []
+    samples = []
+
+    for _, row in df.iterrows():
+        file_name = row["Original"]
+        dataset = row["Dataset"]
+        if dataset in ["train", "val"]:
+            data_dir = train_dir
+        else:
+            if test_dir is None:
+                raise ValueError(f"Supply a test directory for {file_name}.")
+            data_dir = test_dir
+
+        print(file_name)
+        image_path = os.path.join(data_dir, "images", f"{file_name}.zarr")
+        image = zarr.open(image_path)[input_key]
+        dimensions.append(image.shape)
+
+        label_path = os.path.join(data_dir, "labels", f"{file_name}.csv")
+        label_df = pd.read_csv(label_path, sep="\t")
+        samples.append(len(label_df))
+
+    df.loc[:, "n_samples"] = samples
+    df.loc[:, "dim"] = dimensions
+
+    df_reordered = df.loc[:, [
+        "Original",
+        "Standardized",
+        "Dataset",
+        "Crop_center",
+        "n_samples",
+        "dim",
+    ]]
+
+    df_reordered.to_csv(table_out, sep="\t", index=False)
 
 
 def check_overlapping_crops(
