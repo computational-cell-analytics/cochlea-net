@@ -19,6 +19,11 @@ SYNAPSE_DICT = {
         "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/labels"),
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/images"),
     },
+    "v5": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v4/images"),
+    },
 }
 
 
