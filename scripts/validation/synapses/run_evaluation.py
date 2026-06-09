@@ -1,3 +1,4 @@
+import json
 import os
 from glob import glob
 from pathlib import Path
@@ -60,7 +61,7 @@ def evaluate_synapse_detections(
     })
 
 
-def run_evaluation(pred_files, gt_files):
+def run_evaluation(pred_files, gt_files, output_file=None, version_key=None):
     results = []
     for pred, gt in zip(pred_files, gt_files):
         res = evaluate_synapse_detections(pred, gt)
@@ -81,6 +82,29 @@ def run_evaluation(pred_files, gt_files):
     print("Precision:", precision)
     print("Recall:", recall)
     print("F1-Score:", f1_score)
+
+    if output_file is not None and version_key is not None:
+        data = {}
+        if os.path.isfile(output_file):
+            with open(output_file, "r") as f:
+                data = json.load(f)
+
+        data[version_key] = {
+            "crops": results["name"].tolist(),
+            "tp": [int(v) for v in results["tp"].tolist()],
+            "fp": [int(v) for v in results["fp"].tolist()],
+            "fn": [int(v) for v in results["fn"].tolist()],
+            "precision": round(float(precision), 3),
+            "recall": round(float(recall), 3),
+            "f1_score": round(float(f1_score), 3),
+        }
+
+        out_dir = os.path.dirname(output_file)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+        with open(output_file, "w") as f:
+            json.dump(data, f, indent="\t", separators=(",", ": "))
+        print(f"Saved results to {output_file}")
 
 
 def visualize_synapse_detections(pred, gt, heatmap_path=None, ctbp2_path=None):
@@ -142,6 +166,8 @@ def main():
                         help="Directory containing image data in ZARR format.")
     parser.add_argument("--sgn_version", type=str, default="SGN_v2",
                         help="SGN segmentation version.")
+    parser.add_argument("-o", "--output_dir", type=str, default=None,
+                        help="Optional directory to save accuracy JSON file (synapses.json).")
     parser.add_argument("--visualize", action="store_true")
 
     args = parser.parse_args()
@@ -176,7 +202,12 @@ def main():
     if args.visualize:
         visualize_evaluation(pred_files, gt_files, ctbp2_files)
     else:
-        run_evaluation(pred_files, gt_files)
+        output_file = None
+        version_key = None
+        if args.output_dir is not None:
+            output_file = os.path.join(args.output_dir, "synapses.json")
+            version_key = args.version if args.version is not None else Path(pred_root).name
+        run_evaluation(pred_files, gt_files, output_file=output_file, version_key=version_key)
 
 
 if __name__ == "__main__":
