@@ -1,6 +1,5 @@
 import argparse
 import os
-import sys
 from glob import glob
 from pathlib import Path
 
@@ -11,11 +10,35 @@ from elf.io import open_file
 from flamingo_tools.segmentation.unet_prediction import prediction_impl, run_unet_prediction
 from flamingo_tools.segmentation.synapse_detection import synapse_detection_from_prediction
 
-INPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/test_data/v3/images"  # noqa
-GT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/test_data/v3/labels"
-OUTPUT_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/SynapseValidation"
-SYNAPSE_MODEL = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v3.pt"  # noqa
-IHC_MODEL = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/IHC/v4_cochlea_distance_unet_IHC_supervised_2025-07-14"  # noqa
+COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
+_IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v4_cochlea_distance_unet_IHC_supervised_2025-07-14")
+_SYNAPSE_MODELS_DIR = os.path.join(COCHLEA_DIR, "trained_models/Synapses")
+_TEST_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
+_TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels")
+
+PREDICTION_DICT = {
+    "v3": {
+        "image_root": _TEST_IMAGE_ROOT,
+        "ref_root": _TEST_REF_ROOT,
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3"),
+        "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v3.pt"),
+        "ihc_model": _IHC_MODEL,
+    },
+    "v4": {
+        "image_root": _TEST_IMAGE_ROOT,
+        "ref_root": _TEST_REF_ROOT,
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
+        "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v4.pt"),
+        "ihc_model": _IHC_MODEL,
+    },
+    "v5": {
+        "image_root": _TEST_IMAGE_ROOT,
+        "ref_root": _TEST_REF_ROOT,
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5"),
+        "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v5.pt"),
+        "ihc_model": _IHC_MODEL,
+    },
+}
 
 
 def pred_synapse_impl(
@@ -78,7 +101,7 @@ def pred_ihc_impl(
     run_unet_prediction(
         input_path, input_key="raw_ihc", output_folder=output_folder, model_path=model_path, min_size=1000,
         seg_class="ihc", center_distance_threshold=0.5, boundary_distance_threshold=0.6,
-        distance_smoothing=0.6,
+        distance_smoothing=0.6, use_mask=False,
     )
 
 
@@ -213,35 +236,56 @@ def main():
         description="Process test data for synapse detection."
     )
     parser.add_argument(
-        "-i", "--input_root", type=str, default=INPUT_ROOT,
+        "-v", "--version", type=str, default=None,
+        help="Use pre-defined directories for a specific network version, e.g. v3, v4, ..."
+    )
+    parser.add_argument(
+        "-i", "--input_root", type=str, default=None,
         help="Folder that contains the data of the CTBP2 [raw] and the IHC stain [raw_ihc] channel."
     )
     parser.add_argument(
-        "-g", "--gt_root", type=str, default=GT_ROOT,
+        "-g", "--gt_root", type=str, default=None,
         help="Folder that contains the ground truth data of the synapses."
     )
     parser.add_argument(
-        "-o", "--output_root", type=str, default=OUTPUT_ROOT,
+        "-o", "--output_root", type=str, default=None,
         help="Output path where the predicted synapses, IHC segmentation and filtered synapses are saved."
     )
     parser.add_argument(
-        "--model_synapse", type=str, default=SYNAPSE_MODEL,
+        "--model_synapse", type=str, default=None,
         help="File path to synapse detection model."
     )
     parser.add_argument(
-        "--model_ihc", type=str, default=IHC_MODEL,
+        "--model_ihc", type=str, default=None,
         help="File path to model for IHC segmentation."
     )
 
     args = parser.parse_args()
+
+    if args.version is not None:
+        valid_versions = list(PREDICTION_DICT.keys())
+        if args.version not in valid_versions:
+            raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
+        entry = PREDICTION_DICT[args.version]
+        input_root = entry["image_root"]
+        gt_root = entry["ref_root"]
+        output_root = entry["pred_root"]
+        synapse_model = entry["synapse_model"]
+        ihc_model = entry["ihc_model"]
+    else:
+        input_root = args.input_root
+        gt_root = args.gt_root
+        output_root = args.output_root
+        synapse_model = args.model_synapse
+        ihc_model = args.model_ihc
+
     process_everything(
-        input_root=args.input_root,
-        gt_root=args.gt_root,
-        output_root=args.output_root,
-        synapse_model_path=args.model_synapse,
-        ihc_model_path=args.model_ihc,
+        input_root=input_root,
+        gt_root=gt_root,
+        output_root=output_root,
+        synapse_model_path=synapse_model,
+        ihc_model_path=ihc_model,
     )
-    # check_predictions_multi()
 
 
 if __name__ == "__main__":

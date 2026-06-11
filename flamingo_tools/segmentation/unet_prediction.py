@@ -13,6 +13,7 @@ from functools import partial
 from typing import Optional, Tuple
 
 import elf.parallel as parallel
+import numcodecs
 import numpy as np
 import nifty.tools as nt
 import vigra
@@ -286,8 +287,16 @@ def find_mask(
             ds_mask[bb] = 1
 
     n_threads = min(16, mp.cpu_count())
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
+    # Blosc uses its own internal thread pool for decompression. When multiple
+    # Python threads each call blosc simultaneously, the competing thread pools
+    # cause heap corruption. Limit blosc to 1 thread while we parallelize at
+    # the block level instead.
+    old_blosc_nthreads = numcodecs.blosc.set_nthreads(1)
+    try:
+        with futures.ThreadPoolExecutor(n_threads) as tp:
+            list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
+    finally:
+        numcodecs.blosc.set_nthreads(old_blosc_nthreads)
 
     if output_folder is None:
         return ds_mask
