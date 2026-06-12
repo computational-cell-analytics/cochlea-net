@@ -1,0 +1,50 @@
+{
+	"dataset_name": "M_AMD_N75_L",
+	"image_channel": [
+		"PV",
+		"SGN_v2"
+	],
+	"segmentation_channel": "SGN_v2",
+	"cell_type": "sgn",
+	"component_list": [
+		1
+	],
+	"n_blocks": 6,
+	"roi_halo": [
+		128,
+		128,
+		48
+	],
+	"crop_centers": [
+		[
+			1009,
+			1070,
+			720
+		],
+		[
+			862,
+			850,
+			557
+		],
+		[
+			551,
+			927,
+			604
+		],
+		[
+			562,
+			887,
+			924
+		],
+		[
+			679,
+			564,
+			935
+		],
+		[
+			602,
+			298,
+			748
+		]
+	]
+}

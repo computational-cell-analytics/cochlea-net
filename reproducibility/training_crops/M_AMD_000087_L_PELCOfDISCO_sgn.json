@@ -1,0 +1,51 @@
+{
+	"dataset_name": "M_AMD_000087_L",
+	"image_channel": [
+		"PV",
+		"SGN_v2"
+	],
+	"segmentation_channel": "SGN_v2",
+	"cell_type": "sgn",
+	"component_list": [
+		1,
+		2
+	],
+	"n_blocks": 6,
+	"roi_halo": [
+		128,
+		128,
+		48
+	],
+	"crop_centers": [
+		[
+			990,
+			1068,
+			508
+		],
+		[
+			897,
+			762,
+			500
+		],
+		[
+			500,
+			949,
+			639
+		],
+		[
+			635,
+			922,
+			937
+		],
+		[
+			720,
+			617,
+			1037
+		],
+		[
+			607,
+			312,
+			1100
+		]
+	]
+}
