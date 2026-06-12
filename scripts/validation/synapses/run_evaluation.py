@@ -3,6 +3,8 @@ import os
 from glob import glob
 from pathlib import Path
 
+import imageio.v3 as imageio
+import numpy as np
 import pandas as pd
 from elf.io import open_file
 
@@ -28,10 +30,52 @@ SYNAPSE_DICT = {
 }
 
 
+def _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, save_path):
+    """Save a labelled uint8 array marking TP (1), FP (2), and FN (3) synapse positions.
+
+    Array shape is determined by the maximum voxel coordinate across all marked points.
+    Each marked point occupies a single pixel.
+    """
+
+    def to_voxel(coords):
+        return np.round(np.asarray(coords) / voxel_size).astype(int)
+
+    pred_vox = to_voxel(pred)
+    gt_vox = to_voxel(gt)
+
+    coord_groups = []
+    if len(tps_pred):
+        coord_groups.append(pred_vox[tps_pred])
+    if len(fps):
+        coord_groups.append(pred_vox[fps])
+    if len(fns):
+        coord_groups.append(gt_vox[fns])
+
+    if not coord_groups:
+        return
+
+    all_coords = np.vstack(coord_groups)
+    shape = tuple(all_coords.max(axis=0) + 1)
+    arr = np.zeros(shape, dtype=np.uint32)
+
+    for idx in pred_vox[tps_pred]:
+        arr[idx[0], idx[1], idx[2]] = 1
+    for idx in pred_vox[fps]:
+        arr[idx[0], idx[1], idx[2]] = 2
+    for idx in gt_vox[fns]:
+        arr[idx[0], idx[1], idx[2]] = 3
+
+    out_dir = os.path.dirname(save_path)
+    if out_dir:
+        os.makedirs(out_dir, exist_ok=True)
+    imageio.imwrite(save_path, arr, compression="zlib")
+
+
 def evaluate_synapse_detections(
     pred_path: str,
     gt_path: str,
-    voxel_size: str = 0.38,
+    voxel_size: float = 0.38,
+    match_array_path: str = None,
 ) -> pd.DataFrame:
     """Evaluate synapse detections by comparing a prediction from the spot detection to reference labels.
 
@@ -39,6 +83,8 @@ def evaluate_synapse_detections(
         pred_path: File containing the "synapse_detection.tsv" output from the spot detection.
         gt_path: File containing the reference label from a consensus annotation.
         voxel_size: Voxel size of the image volume with isotropic resolution.
+        match_array_path: Optional path to save a uint8 TIF array marking TP (1), FP (2),
+            and FN (3) positions. Array size is determined by the maximum coordinate value.
 
     Returns:
         Printed output of model performance.
@@ -56,15 +102,22 @@ def evaluate_synapse_detections(
 
     tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=3)
 
+    if match_array_path is not None:
+        _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, match_array_path)
+
     return pd.DataFrame({
         "name": [fname], "tp": [len(tps_pred)], "fp": [len(fps)], "fn": [len(fns)],
     })
 
 
-def run_evaluation(pred_files, gt_files, output_file=None, version_key=None):
+def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, match_array_dir=None):
     results = []
     for pred, gt in zip(pred_files, gt_files):
-        res = evaluate_synapse_detections(pred, gt)
+        match_array_path = None
+        if match_array_dir is not None:
+            crop_stem = Path(gt).stem
+            match_array_path = os.path.join(match_array_dir, f"{crop_stem}_match_array.tif")
+        res = evaluate_synapse_detections(pred, gt, match_array_path=match_array_path)
         results.append(res)
     results = pd.concat(results)
 
@@ -96,7 +149,7 @@ def run_evaluation(pred_files, gt_files, output_file=None, version_key=None):
             "fn": [int(v) for v in results["fn"].tolist()],
             "precision": round(float(precision), 3),
             "recall": round(float(recall), 3),
-            "f1_score": round(float(f1_score), 3),
+            "f1-score": round(float(f1_score), 3),
         }
 
         out_dir = os.path.dirname(output_file)
@@ -168,6 +221,9 @@ def main():
                         help="SGN segmentation version.")
     parser.add_argument("-o", "--output_dir", type=str, default=None,
                         help="Optional directory to save accuracy JSON file (synapses.json).")
+    parser.add_argument("--match_array_dir", type=str, default=None,
+                        help="Optional directory to save per-crop uint8 TIF arrays marking "
+                             "TP (1), FP (2), and FN (3) synapse positions.")
     parser.add_argument("--visualize", action="store_true")
 
     args = parser.parse_args()
@@ -207,7 +263,11 @@ def main():
         if args.output_dir is not None:
             output_file = os.path.join(args.output_dir, "synapses.json")
             version_key = args.version if args.version is not None else Path(pred_root).name
-        run_evaluation(pred_files, gt_files, output_file=output_file, version_key=version_key)
+        run_evaluation(
+            pred_files, gt_files,
+            output_file=output_file, version_key=version_key,
+            match_array_dir=args.match_array_dir,
+        )
 
 
 if __name__ == "__main__":
