@@ -169,9 +169,14 @@ def main():
 
     # extract image and annotation data from imaris files
     for annotation_folder in annotation_folders:
+        number_imaris_files = len([entry for entry in os.scandir(annotation_folder) if ".ims" in entry.name])
         basename = os.path.basename(annotation_folder)
-        if not os.path.isdir(os.path.join(annotation_folder, "images")):
+        image_dir = os.path.join(annotation_folder, "images")
+        if not os.path.isdir(image_dir):
             print(f"Extracting image and label data for {basename}.")
+            create_images_and_labels(annotation_folder)
+        elif len(os.listdir(image_dir)) != number_imaris_files:
+            print(f"Not all annotations have been extracted yet. Extracting image and label data for {basename}.")
             create_images_and_labels(annotation_folder)
         else:
             print(f"Image and label data are already extracted for {basename}.")
