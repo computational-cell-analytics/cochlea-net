@@ -225,7 +225,7 @@ def find_mask(
     input_key: Optional[str],
     output_folder: Optional[str],
     seg_class: Optional[str] = "sgn",
-    relative_threshold: float = 0.6,
+    relative_threshold: float = 0.7,
 ) -> None:
     """Determine the mask for running prediction.
 
@@ -250,14 +250,17 @@ def find_mask(
     if seg_class == "sgn":
         upper_percentile = 95
         absolute_max = 200
+        absolute_min = 100
         print(f"Calculating mask for segmentation class {seg_class}.")
     elif seg_class == "ihc":
         upper_percentile = 99
         absolute_max = 150
+        absolute_min = 100
         print(f"Calculating mask for segmentation class {seg_class}.")
     else:
         upper_percentile = 95
         absolute_max = 200
+        absolute_min = 100
         print("Calculating mask with default values.")
 
     raw = read_image_data(input_path, input_key)
@@ -293,7 +296,7 @@ def find_mask(
     # Cap at absolute_max: for spike-inflated or normally bright images the
     # relative term exceeds the cap and we fall back to the fixed class default;
     # for dim stainings the relative term is below the cap and adapts downward.
-    min_intensity = min(relative_threshold * global_high, absolute_max)
+    min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
     print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
 
     def find_mask_block(block_id):
