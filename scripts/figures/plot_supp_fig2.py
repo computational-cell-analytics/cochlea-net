@@ -35,6 +35,12 @@ PLOT_METADATA = {
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "distance_unet": {"label": "CochleaNet", "marker": "s"},
     },
+    "synapses": {
+        "v3": {"label": "v3", "marker": "D"},
+        "v5": {"label": "v5", "marker": "^"},
+        "v3_threshold05_consensus_annotations": {"label": "v3_01", "marker": "s"},
+        "v3_threshold05_Aleyna_annotations": {"label": "v3_02", "marker": "o"},
+    },
 }
 
 
@@ -62,6 +68,7 @@ def supp_fig_02(
     mode: str = "precision",
     data_dir: str = None,
     use_folds: bool = False,
+    show_legend: bool = False,
 ):
     """Plot panels for Supplementary Figure 2.
 
@@ -76,6 +83,7 @@ def supp_fig_02(
         use_folds: If True, replace the direct distance_unet value with the mean and standard
             deviation computed across all cross-validation fold variants (keys matching
             '<base>_f<digit>') found in the JSON. Applies to any key that has fold variants.
+        show_legend: Plot legend.
     """
     json_path = os.path.join(data_dir, f"{segm}.json")
     with open(json_path, "r") as f:
@@ -186,6 +194,13 @@ def supp_fig_02(
 
     else:
         raise ValueError("Unsupported mode for plotting.")
+
+    if show_legend and mode == "precision":
+        color = [COLOR_P, COLOR_R, COLOR_F]
+        label = ["Precision", "Recall", "F1-score"]
+
+        handles = [get_flatline_handle(c) for c in color]
+        plt.legend(handles, label, loc=(0, 1), ncol=len(label), framealpha=1, frameon=False)
 
     plt.tight_layout()
     prism_cleanup_axes(ax)
@@ -318,6 +333,9 @@ def main():
             data_dir=data_dir,
             plot=args.plot,
         )
+
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_synapse_accuracy.{FILE_EXTENSION}"),
+                    segm="synapses", data_dir=data_dir, show_legend=True)
     else:
         raise ValueError("Please provide a data directory containing dictionaries produced by eval_baseline.py")
 

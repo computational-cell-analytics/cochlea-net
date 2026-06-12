@@ -224,37 +224,43 @@ def find_mask(
     input_path: str,
     input_key: Optional[str],
     output_folder: Optional[str],
-    seg_class: Optional[str] = "sgn"
+    seg_class: Optional[str] = "sgn",
+    relative_threshold: float = 0.7,
 ) -> None:
     """Determine the mask for running prediction.
 
-    The mask corresponds to data that contains actual signal and not just noise.
-    This is determined by checking if the 95th percentile of the intensity
-    of a local block has a value larger than 200. It may be necesary to choose a
-    different criterion if the data acquisition changes.
+    The mask marks blocks that contain actual signal (not just noise/background).
+    A block is included when its upper-percentile intensity exceeds `min_intensity`.
+
+    `min_intensity` is computed adaptively: it equals `relative_threshold` times a
+    robust estimate of the global signal level (median of per-block p99.9 values drawn
+    from a random sample of blocks), then capped at the per-class absolute maximum so
+    that spike-inflated estimates (fluorescence residues) never push the threshold above
+    the proven fixed default and dim stainings get a proportionally lower threshold.
 
     Args:
         input_path: The file path to the image data.
         input_key: The key / internal path of the image data.
         output_folder: The output folder for storing the mask data.
         seg_class: Specifier for exclusion criterias for mask generation.
+        relative_threshold: Fraction of the global signal level used as the lower
+            inclusion threshold. Capped per class so the threshold never exceeds the
+            class default (200 for sgn, 150 for ihc).
     """
-    # set parameters for the exclusion of chunks within mask generation
     if seg_class == "sgn":
         upper_percentile = 95
-        min_intensity = 200
+        absolute_max = 200
+        absolute_min = 100
         print(f"Calculating mask for segmentation class {seg_class}.")
     elif seg_class == "ihc":
         upper_percentile = 99
-        min_intensity = 150
-        print(f"Calculating mask for segmentation class {seg_class}.")
-    elif seg_class == "ihc_low":
-        upper_percentile = 99.5
-        min_intensity = 100
+        absolute_max = 150
+        absolute_min = 100
         print(f"Calculating mask for segmentation class {seg_class}.")
     else:
         upper_percentile = 95
-        min_intensity = 200
+        absolute_max = 200
+        absolute_min = 100
         print("Calculating mask with default values.")
 
     raw = read_image_data(input_path, input_key)
@@ -276,13 +282,27 @@ def find_mask(
 
         ds_mask = f.create_dataset(mask_key, shape=raw.shape, compression="gzip", dtype="uint8", chunks=block_shape)
 
-    # TODO more sophisticated criterion?!
+    # Estimate the global signal level from a random sample of blocks using the
+    # median of per-block p99.9 values. The median is robust to outlier spikes
+    # from fluorescence residues that would inflate a simple maximum.
+    rng = np.random.default_rng(42)
+    sample_ids = rng.choice(n_blocks, size=min(n_blocks, 16), replace=False).tolist()
+    sample_highs = []
+    for bid in sample_ids:
+        block = blocking.getBlock(bid)
+        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+        sample_highs.append(float(np.percentile(raw[bb], 99.9)))
+    global_high = float(np.median(sample_highs))
+    # Cap at absolute_max: for spike-inflated or normally bright images the
+    # relative term exceeds the cap and we fall back to the fixed class default;
+    # for dim stainings the relative term is below the cap and adapts downward.
+    min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
+    print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
+
     def find_mask_block(block_id):
         block = blocking.getBlock(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        data = raw[bb]
-        max_ = np.percentile(data, upper_percentile)
-        if max_ > min_intensity:
+        if np.percentile(raw[bb], upper_percentile) > min_intensity:
             ds_mask[bb] = 1
 
     n_threads = min(16, mp.cpu_count())
@@ -467,6 +487,7 @@ def run_unet_prediction(
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
     seg_class: Optional[str] = None,
+    relative_threshold: float = 0.6,
 ) -> None:
     """Run prediction and segmentation with a distance U-Net.
 
@@ -488,12 +509,17 @@ def run_unet_prediction(
         distance_smoothing: The sigma value for smoothing the distance predictions with a gaussian kernel.
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
         seg_class: Specifier for exclusion criterias for mask generation.
+        relative_threshold: Passed to find_mask. Fraction of the estimated global signal level
+            used as the block inclusion threshold (capped at the per-class absolute maximum).
     """
     if output_folder is not None:
         os.makedirs(output_folder, exist_ok=True)
 
     if use_mask:
-        mask = find_mask(input_path, input_key, output_folder=output_folder, seg_class=seg_class)
+        mask = find_mask(
+            input_path, input_key, output_folder=output_folder,
+            seg_class=seg_class, relative_threshold=relative_threshold,
+        )
     else:
         mask = None
 
