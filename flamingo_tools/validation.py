@@ -76,12 +76,12 @@ def fetch_data_for_evaluation(
         The annotations loaded from pandas and matching the segmentation.
     """
     # Load the annotations and normalize them for the given z-extent.
-    annotations = pd.read_csv(annotation_path)
+    annotations = pd.read_csv(annotation_path, sep=",")
     if "index" in annotations.columns:
         annotations = annotations.drop(columns="index")
     if z_extent == 0:  # If we don't have a z-extent then we just drop the first axis and rename the other two.
         annotations = annotations.drop(columns="axis-0")
-        annotations = annotations.rename(columns={"axis-1": "axis-0", "axis-2": "axis-1"})
+        # annotations = annotations.rename(columns={"axis-1": "axis-0", "axis-2": "axis-1"})
 
     # Load the segmentation from cache path if it is given and if it is already cached.
     if cache_path is not None and os.path.exists(cache_path):

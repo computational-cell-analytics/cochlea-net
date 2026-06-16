@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from typing import List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,6 +36,12 @@ PLOT_METADATA = {
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "distance_unet": {"label": "CochleaNet", "marker": "s"},
     },
+    "IHC_3D": {
+        "v4b": {"label": "v4b", "marker": "D"},
+        "v4c": {"label": "v4c", "marker": "v"},
+        "v9": {"label": "v9", "marker": "^"},
+        "v10": {"label": "v10", "marker": "s"},
+    },
     "synapses": {
         "v3": {"label": "v3", "marker": "D"},
         "v5": {"label": "v5", "marker": "^"},
@@ -66,9 +73,10 @@ def supp_fig_02(
     plot: bool = False,
     segm: str = "SGN",
     mode: str = "precision",
-    data_dir: str = None,
+    data_dir: Optional[str] = None,
     use_folds: bool = False,
     show_legend: bool = False,
+    ylim: Optional[List[float]] = None,
 ):
     """Plot panels for Supplementary Figure 2.
 
@@ -159,7 +167,10 @@ def supp_fig_02(
         plt.xticks(x_pos, labels, fontsize=main_tick_size, rotation=tick_rotation)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
-        plt.ylim(-0.1, 1)
+        if ylim is None:
+            plt.ylim(-0.1, 1)
+        else:
+            plt.ylim(ylim[0], ylim[1])
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     elif mode == "runtime":
@@ -334,8 +345,11 @@ def main():
             plot=args.plot,
         )
 
-        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_synapse_accuracy.{FILE_EXTENSION}"),
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_synapse_accuracy.{FILE_EXTENSION}"),
                     segm="synapses", data_dir=data_dir, show_legend=True)
+
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_ihc_3d_seg.{FILE_EXTENSION}"),
+                    segm="IHC_3D", data_dir=data_dir, show_legend=True, ylim=[0.8, 0.95])
     else:
         raise ValueError("Please provide a data directory containing dictionaries produced by eval_baseline.py")
 
