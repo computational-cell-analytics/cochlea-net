@@ -664,6 +664,7 @@ def run_unet_segmentation_slurm(
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
     original_shape: Optional[Tuple[int, int, int]] = None,
+    watershed_params: Optional[str] = None,
 ) -> None:
     """Create segmentation from prediction.
 
@@ -678,6 +679,14 @@ def run_unet_segmentation_slurm(
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
         original_shape: The original shape of the output, in case the prediction was resized.
     """
+    if watershed_params is not None and os.path.exists(watershed_params):
+        with open(watershed_params) as fh:
+            data = json.load(fh)
+        print(f"Loaded cached best params from {watershed_params}")
+        center_distance_threshold = data["params"]["center_distance_threshold"]
+        boundary_distance_threshold = data["params"]["boundary_distance_threshold"]
+        distance_smoothing = data["params"]["distance_smoothing"]
+
     min_size = int(min_size)
     center_distance_threshold = None if center_distance_threshold is None else float(center_distance_threshold)
     boundary_distance_threshold = float(boundary_distance_threshold)
