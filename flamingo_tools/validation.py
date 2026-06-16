@@ -65,7 +65,7 @@ def fetch_data_for_evaluation(
         seg_name: The name of the segmentation in the bucket.
         z_extent: Additional z-slices to load from the segmentation.
         components_for_postprocessing: The component ids for restricting the segmentation to.
-            Choose [1] for the default componentn containing the helix.
+            Choose [1] for the default component containing the helix.
         cochlea: Optional name of the cochlea.
         extra_data: Extra data to fetch.
         exclude_zero_synapse_count: Exclude cells that have zero synapses mapped.
@@ -83,7 +83,7 @@ def fetch_data_for_evaluation(
         annotations = annotations.drop(columns="axis-0")
         annotations = annotations.rename(columns={"axis-1": "axis-0", "axis-2": "axis-1"})
 
-    # Load the segmentaiton from cache path if it is given and if it is already cached.
+    # Load the segmentation from cache path if it is given and if it is already cached.
     if cache_path is not None and os.path.exists(cache_path):
         segmentation = imageio.imread(cache_path)
         return segmentation, annotations

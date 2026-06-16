@@ -34,7 +34,7 @@ def filter_ihc_annotations(
         arr = imageio.imread(annotation_path)
         filtered_array = filter_segmentation_3d(arr)
 
-        imageio.imwrite(out_path, filtered_array)
+        imageio.imwrite(out_path, filtered_array, compression="zlib")
 
 
 def main():

@@ -22,11 +22,11 @@ IMAGE_DIR = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/IHC_training_crops_20
 IHC_TRAINING = os.path.join(COCHLEA_DIR, "training_data/IHC")
 TRAINING_DICT = {
     "IHC_v8": {
-        "training_data": os.path.join(IHC_TRAINING, "2026-05-IHC_v8_supervised"),
+        "training_data": os.path.join(IHC_TRAINING, "IHC_v8_2026-05"),
         "image_channel": "Vglut3",
     },
-    "IHC_v9": {
-        "training_data": os.path.join(IHC_TRAINING, "2026-05-IHC_v9_PV_supervised"),
+    "IHC_PV-v1": {
+        "training_data": os.path.join(IHC_TRAINING, "IHC_PV-v1_2026-05"),
         "image_channel": "PV",
     },
 }
