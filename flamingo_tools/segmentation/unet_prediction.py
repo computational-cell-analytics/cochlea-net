@@ -10,7 +10,7 @@ import os
 import warnings
 from concurrent import futures
 from functools import partial
-from typing import Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import elf.parallel as parallel
 import numpy as np
@@ -220,6 +220,60 @@ def prediction_impl(
         return original_shape, None
 
 
+def sweep_mask_thresholds(
+    input_path: str,
+    output_path: str,
+    input_key: Optional[str] = None,
+    min_intensities: List[float] = [100, 150, 200, 300, 400, 600, 1000],
+    seg_class: Optional[str] = "sgn",
+) -> Dict[float, float]:
+    """Compute the fraction of blocks that would be included in the mask for each
+    candidate min_intensity value, using a single parallel read pass over the data.
+
+    Args:
+        input_path: The file path to the image data.
+        input_key: The key / internal path of the image data.
+        min_intensities: Intensity thresholds to evaluate.
+        seg_class: Determines the upper percentile used per block (same as find_mask).
+
+    Returns:
+        Dict mapping each min_intensity to the fraction of blocks that would be masked.
+    """
+    if seg_class == "ihc":
+        upper_percentile = 99
+    else:
+        upper_percentile = 95
+
+    raw = read_image_data(input_path, input_key)
+    chunks = getattr(raw, "chunks", (64, 64, 64))
+    block_shape = tuple(2 * ch for ch in chunks)
+    blocking = nt.blocking([0, 0, 0], raw.shape, block_shape)
+    n_blocks = blocking.numberOfBlocks
+
+    def percentile_for_block(block_id):
+        block = blocking.getBlock(block_id)
+        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+        return float(np.percentile(raw[bb], upper_percentile))
+
+    n_threads = min(16, mp.cpu_count())
+    with futures.ThreadPoolExecutor(n_threads) as tp:
+        block_percentiles = list(tqdm(tp.map(percentile_for_block, range(n_blocks)), total=n_blocks,
+                                      desc="Computing block percentiles"))
+
+    block_percentiles = np.array(block_percentiles)
+    print(f"\n{'min_intensity':>15}  {'masked blocks':>15}  {'fraction (%)':>12}")
+    print("-" * 46)
+    result = {}
+    for threshold in sorted(min_intensities):
+        n_masked = int(np.sum(block_percentiles > threshold))
+        fraction = n_masked / n_blocks
+        print(f"{threshold:>15.1f}  {n_masked:>9}/{n_blocks:<5}  {fraction * 100:>11.2f}")
+        result[threshold] = fraction
+
+    with open(output_path, "w") as f:
+        json.dump(result, f, indent='\t', separators=(',', ': '))
+
+
 def find_mask(
     input_path: str,
     input_key: Optional[str],
@@ -254,8 +308,8 @@ def find_mask(
         print(f"Calculating mask for segmentation class {seg_class}.")
     elif seg_class == "ihc":
         upper_percentile = 99
-        absolute_max = 150
-        absolute_min = 100
+        absolute_max = 300
+        absolute_min = 300
         print(f"Calculating mask for segmentation class {seg_class}.")
     else:
         upper_percentile = 95
@@ -298,16 +352,21 @@ def find_mask(
     # for dim stainings the relative term is below the cap and adapts downward.
     min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
     print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
-
     def find_mask_block(block_id):
         block = blocking.getBlock(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
         if np.percentile(raw[bb], upper_percentile) > min_intensity:
             ds_mask[bb] = 1
+            return True
+        return False
 
     n_threads = min(16, mp.cpu_count())
     with futures.ThreadPoolExecutor(n_threads) as tp:
-        list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
+        results = list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
+
+    seg_mask_blocks = sum(results)
+    relative_blocks = round(seg_mask_blocks / n_blocks * 100, 2)
+    print(f"{seg_mask_blocks}/{n_blocks} ({relative_blocks} %) used for segmentation.")
 
     if output_folder is None:
         return ds_mask
@@ -664,6 +723,7 @@ def run_unet_segmentation_slurm(
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
     original_shape: Optional[Tuple[int, int, int]] = None,
+    watershed_params: Optional[str] = None,
 ) -> None:
     """Create segmentation from prediction.
 
@@ -678,6 +738,14 @@ def run_unet_segmentation_slurm(
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
         original_shape: The original shape of the output, in case the prediction was resized.
     """
+    if watershed_params is not None and os.path.exists(watershed_params):
+        with open(watershed_params) as fh:
+            data = json.load(fh)
+        print(f"Loaded cached best params from {watershed_params}")
+        center_distance_threshold = data["params"]["center_distance_threshold"]
+        boundary_distance_threshold = data["params"]["boundary_distance_threshold"]
+        distance_smoothing = data["params"]["distance_smoothing"]
+
     min_size = int(min_size)
     center_distance_threshold = None if center_distance_threshold is None else float(center_distance_threshold)
     boundary_distance_threshold = float(boundary_distance_threshold)

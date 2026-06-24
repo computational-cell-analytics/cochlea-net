@@ -1,8 +1,10 @@
+import json
 import os
 import sys
 
 import importlib.util
 from pathlib import Path
+
 
 # load run_prediction distance unet
 current_dir = Path(__file__).resolve().parent
@@ -14,16 +16,31 @@ spec.loader.exec_module(run_prediction_distance_unet)
 
 checkpoint_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/IHC"
 model_name = "v3_cochlea_distance_unet_IHC_supervised_2025-06-28"
+# model_name = "v4_cochlea_distance_unet_IHC_supervised_2025-07-14"
+# model_name = "v8_cochlea_distance_unet_IHC_supervised_2026-05-12"
+model_name = "v9_cochlea_distance_unet_IHC_supervised_2026-06-12"
+model_name = "v10_cochlea_distance_unet_IHC_supervised_2026-06-12"
 model_dir = os.path.join(checkpoint_dir, model_name)
 checkpoint = os.path.join(checkpoint_dir, model_name, "best.pt")
+param_file = os.path.join(checkpoint_dir, model_name, "best_best_params.json")
 
 cochlea_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 
 image_dir = os.path.join(cochlea_dir, "AnnotatedImageCrops/F1ValidationIHCs")
 
-out_dir = os.path.join(cochlea_dir, "predictions", "val_ihc", "distance_unet_v3")
+out_dir = os.path.join(cochlea_dir, "predictions", "val_ihc", "distance_unet_v10")
 
-boundary_distance_threshold = 0.5
+os.makedirs(out_dir, exist_ok=True)
+
+
+if os.path.exists(param_file):
+    with open(param_file) as fh:
+        data = json.load(fh)
+    print(f"Loaded cached best params from {param_file}")
+    center_distance_threshold = data["params"]["center_distance_threshold"]
+    boundary_distance_threshold = data["params"]["boundary_distance_threshold"]
+    distance_smoothing = data["params"]["distance_smoothing"]
+
 seg_class = "ihc"
 
 block_shape = (128, 128, 128)
@@ -45,7 +62,9 @@ for image in images:
         "--memory",
         "--time",
         f"--seg_class={seg_class}",
-        f"--boundary_distance_threshold={boundary_distance_threshold}"
+        f"--center_distance_threshold={center_distance_threshold}",
+        f"--boundary_distance_threshold={boundary_distance_threshold}",
+        f"--distance_smoothing={distance_smoothing}",
     ]
 
     run_prediction_distance_unet.main()

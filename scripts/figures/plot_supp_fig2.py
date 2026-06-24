@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from typing import List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -35,11 +36,29 @@ PLOT_METADATA = {
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "distance_unet": {"label": "CochleaNet", "marker": "s"},
     },
+    "IHC_3D": {
+        "v4b": {"label": "v4b", "marker": "D"},
+        "v4c": {"label": "v4c", "marker": "v"},
+        "v9": {"label": "v9", "marker": "^"},
+        "v10": {"label": "v10", "marker": "s"},
+    },
     "synapses": {
         "v3": {"label": "v3", "marker": "D"},
         "v5": {"label": "v5", "marker": "^"},
-        "v3_threshold05_consensus_annotations": {"label": "v3_01", "marker": "s"},
-        "v3_threshold05_Aleyna_annotations": {"label": "v3_02", "marker": "o"},
+        "v3_05t": {"label": "v3_old", "marker": "s"},
+        "v5_f1val_threshold": {"label": "v5_optimal", "marker": "o"},
+        "v3_for_consensus_annotations_synapses_AMD": {"label": "v3_AMD", "marker": "v"},
+        "v3_for_consensus_annotations_synapses_EK": {"label": "v3_EK", "marker": "<"},
+        "v3_for_consensus_annotations_synapses_LR": {"label": "v3_LR", "marker": ">"},
+        "v3_05t_for_consensus_annotations_synapses_AMD": {"label": "v3_old_AMD", "marker": "<"},
+        "v3_05t_for_consensus_annotations_synapses_EK": {"label": "v3_old_EK", "marker": "<"},
+        "v3_05t_for_consensus_annotations_synapses_LR": {"label": "v3_old_LR", "marker": ">"},
+        "v5_for_consensus_annotations_synapses_AMD": {"label": "v5_AMD", "marker": "v"},
+        "v5_for_consensus_annotations_synapses_EK": {"label": "v5_EK", "marker": "<"},
+        "v5_for_consensus_annotations_synapses_LR": {"label": "v5_LR", "marker": ">"},
+        "v5_f1val_threshold_for_consensus_annotations_synapses_AMD": {"label": "v5_opti_AMD", "marker": "v"},
+        "v5_f1val_threshold_for_consensus_annotations_synapses_EK": {"label": "v5_opti_EK", "marker": "<"},
+        "v5_f1val_threshold_for_consensus_annotations_synapses_LR": {"label": "v5_opti_LR", "marker": ">"},
     },
 }
 
@@ -65,10 +84,12 @@ def supp_fig_02(
     save_path: str,
     plot: bool = False,
     segm: str = "SGN",
+    key_list: Optional[List[str]] = None,
     mode: str = "precision",
-    data_dir: str = None,
+    data_dir: Optional[str] = None,
     use_folds: bool = False,
     show_legend: bool = False,
+    ylim: Optional[List[float]] = None,
 ):
     """Plot panels for Supplementary Figure 2.
 
@@ -105,7 +126,14 @@ def supp_fig_02(
             fold_stats[key] = fs
 
     segm_dict = {}
+    if key_list is None:
+        key_list = list(PLOT_METADATA[segm].keys())
+
     for key, meta in PLOT_METADATA[segm].items():
+        # check subset of keys
+        if key not in key_list:
+            continue
+        # check saved model accuracy
         if key not in metrics:
             continue
         segm_dict[key] = {"label": meta["label"], "marker": meta["marker"], **metrics[key]}
@@ -159,7 +187,10 @@ def supp_fig_02(
         plt.xticks(x_pos, labels, fontsize=main_tick_size, rotation=tick_rotation)
         plt.yticks(fontsize=main_tick_size)
         plt.ylabel("Value", fontsize=main_label_size)
-        plt.ylim(-0.1, 1)
+        if ylim is None:
+            plt.ylim(-0.1, 1)
+        else:
+            plt.ylim(ylim[0], ylim[1])
         plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     elif mode == "runtime":
@@ -334,11 +365,68 @@ def main():
             plot=args.plot,
         )
 
-        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_synapse_accuracy.{FILE_EXTENSION}"),
-                    segm="synapses", data_dir=data_dir, show_legend=True)
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_accuracy_threshold.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=["v3", "v5", "v3_05t", "v5_f1val_threshold"],
+        )
+
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_annot_AMD.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v3_for_consensus_annotations_synapses_AMD",
+                "v3_05t_for_consensus_annotations_synapses_AMD",
+                "v5_for_consensus_annotations_synapses_AMD",
+                "v5_f1val_threshold_for_consensus_annotations_synapses_AMD",
+            ],
+        )
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_annot_EK.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v3_for_consensus_annotations_synapses_EK",
+                "v3_05t_for_consensus_annotations_synapses_EK",
+                "v5_for_consensus_annotations_synapses_EK",
+                "v5_f1val_threshold_for_consensus_annotations_synapses_EK",
+            ],
+        )
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_annot_LR.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v3_for_consensus_annotations_synapses_LR",
+                "v3_05t_for_consensus_annotations_synapses_LR",
+                "v5_for_consensus_annotations_synapses_LR",
+                "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
+            ],
+        )
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_v3_old_annotators.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v3_05t",
+                "v3_05t_for_consensus_annotations_synapses_AMD",
+                "v3_05t_for_consensus_annotations_synapses_EK",
+                "v3_05t_for_consensus_annotations_synapses_LR",
+            ],
+        )
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_v5_optimal_annotators.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v5_f1val_threshold",
+                "v5_f1val_threshold_for_consensus_annotations_synapses_AMD",
+                "v5_f1val_threshold_for_consensus_annotations_synapses_EK",
+                "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
+            ],
+        )
+
+
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_ihc_3d_seg.{FILE_EXTENSION}"),
+                    segm="IHC_3D", data_dir=data_dir, show_legend=True, ylim=[0.8, 0.95])
     else:
         raise ValueError("Please provide a data directory containing dictionaries produced by eval_baseline.py")
-
 
 if __name__ == "__main__":
     main()
