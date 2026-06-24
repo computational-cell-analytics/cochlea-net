@@ -120,17 +120,39 @@ def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficie
     return value_by_band
 
 
-def get_tonotopic_data():
-    s3 = create_s3_target()
-    source_name = "IHC_v4c"
+def get_tonotopic_data(
+    cochleae_dict: dict = COCHLEAE_DICT,
+    source_name: str = "IHC_v4c",
+    synapse_dir: str = SYNAPSE_DIR,
+    cache_path: str = None,
+):
+    """Load per-cochlea tonotopic data from S3 and local synapse tables.
+
+    Args:
+        cochleae_dict: Dict mapping cochlea name to metadata including a "component" key
+            with the list of component labels to keep. Defaults to the module-level
+            COCHLEAE_DICT (iDISCO cochleae).
+        source_name: IHC segmentation source name used as the S3 key (e.g. "IHC_v4c", "IHC_v9").
+        synapse_dir: Root directory containing the ihc_counts_<version> subdirectories.
+            Defaults to the module-level SYNAPSE_DIR.
+        cache_path: Path for the pickle cache. Defaults to
+            "./tonotopic_data_<source_name>.pkl".
+
+    Returns:
+        Dict mapping cochlea name to a DataFrame with columns
+        label_id, length[µm], length_fraction, frequency[kHz], syn_per_IHC.
+    """
+    if cache_path is None:
+        cache_path = f"./tonotopic_data_{source_name}.pkl"
+
     ihc_version = source_name.split("_")[1]
-    cache_path = "./tonotopic_data.pkl"
-    cochleae = [key for key in COCHLEAE_DICT.keys()]
+    cochleae = list(cochleae_dict.keys())
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
             return pickle.load(f)
 
+    s3 = create_s3_target()
     chreef_data = {}
     for cochlea in cochleae:
         print("Processsing cochlea:", cochlea)
@@ -145,12 +167,11 @@ def get_tonotopic_data():
         table = pd.read_csv(table_content, sep="\t")
 
         # May need to be adjusted for some cochleae.
-        component_labels = COCHLEAE_DICT[cochlea]["component"]
+        component_labels = cochleae_dict[cochlea]["component"]
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         ihc_dir = f"ihc_counts_{ihc_version}"
-        synapse_dir = f"{SYNAPSE_DIR}/{ihc_dir}"
-        tab_path = os.path.join(synapse_dir, f"ihc_count_{cochlea}.tsv")
+        tab_path = os.path.join(synapse_dir, ihc_dir, f"ihc_count_{cochlea}.tsv")
         syn_tab = pd.read_csv(tab_path, sep="\t")
         syn_ids = syn_tab["label_id"].values
 
@@ -377,6 +398,7 @@ def supp_fig_03a_meyer(
     trendline: bool = False,
     trendline_std: bool = False,
     errorbar: bool = False,
+    cohort_dict: dict = None,
 ):
     """Plot Supplementary Figure 3a.
 
@@ -388,9 +410,17 @@ def supp_fig_03a_meyer(
         n_bins: Number of bins to divide the run length into.
         top_axis: Plot top x-axis as frequency range.
         trendline: Visualize trendline as average of each bin.
-        trendline_std_ Visualize standard deviation of trendline.
+        trendline_std: Visualize standard deviation of trendline.
         errorbar: Use errorbar for visualizing mean and stdev.
+        cohort_dict: Optional per-cochlea metadata dict with keys "alias", "color", "marker".
+            Shape: {cochlea_name: {"alias": str, "color": str, "marker": str}}.
+            When None, falls back to the module-level COCHLEAE_DICT with marker "o".
     """
+    if cohort_dict:
+        alpha = 0.5
+    else:
+        alpha = 1
+
     ihc_version = "ihc_counts_v4c"
     if trendline_std:
         line_alphas = {
@@ -416,14 +446,15 @@ def supp_fig_03a_meyer(
     color_dict = {}
     marker_dict = {}
     cochleae_length = []
+    _meta = cohort_dict if cohort_dict is not None else COCHLEAE_DICT
     for name, values in tonotopic_data.items():
         if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
+            alias = _meta[name]["alias"]
         else:
             alias = name.replace("_", "").replace("0", "")
 
-        color_dict[alias] = COCHLEAE_DICT[name]["color"]
-        marker_dict[alias] = "o"
+        color_dict[alias] = _meta[name]["color"]
+        marker_dict[alias] = _meta[name].get("marker", "o")
         syn_count = values["syn_per_IHC"].values
         length_fraction = values["length_fraction"].values
         run_length = values["length[µm]"].values
@@ -477,7 +508,7 @@ def supp_fig_03a_meyer(
                     color=color_dict[name], marker='s', linestyle='solid', linewidth=2)
         else:
             ax.scatter(run_length, syn_count, label=name,
-                       color=color_dict[name], marker=marker_dict[name])
+                       color=color_dict[name], marker=marker_dict[name], alpha=alpha)
 
     # calculate mean and standard deviation
     trend_dict = {}
