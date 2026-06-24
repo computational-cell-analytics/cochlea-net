@@ -12,7 +12,7 @@ from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
 OUTPUT_FOLDER = "./ihc_counts"
 
 
-def check_project(cochleae, output_folder, plot=False, save_ihc_table=False, max_dist=None):
+def check_project(cochleae, output_folder, plot=False, save_ihc_table=False, max_dist=None, all_ihcs=False):
     s3 = create_s3_target()
     results = {}
     for cochlea in cochleae:
@@ -52,7 +52,11 @@ def check_project(cochleae, output_folder, plot=False, save_ihc_table=False, max
         ihc_table = pd.read_csv(table_content, sep="\t")
 
         # Keep only the synapses that were matched to a valid IHC.
-        valid_ihcs = ihc_table.label_id[ihc_table.component_labels.isin(component_id)].values.astype("int")
+
+        if all_ihcs:
+            valid_ihcs = ihc_table.label_id.values.astype("int")
+        else:
+            valid_ihcs = ihc_table.label_id[ihc_table.component_labels.isin(component_id)].values.astype("int")
 
         valid_syn_table = syn_table[syn_table.matched_ihc.isin(valid_ihcs)]
         n_synapses = len(valid_syn_table)
@@ -117,9 +121,10 @@ def main():
     parser.add_argument("-c", "--cochlea", type=str, nargs="+", default=list(SYNAPSE_DICT.keys()),
                         help="Cochlea(e) to process.")
     parser.add_argument("-o", "--output", type=str, default=OUTPUT_FOLDER, help="Output directory.")
+    parser.add_argument("--all_ihcs", action="store_true", help="Use all IHCs for matching.")
 
     args = parser.parse_args()
-    check_project(args.cochlea, args.output, plot=False, save_ihc_table=True, max_dist=3)
+    check_project(args.cochlea, args.output, plot=False, save_ihc_table=True, max_dist=3, all_ihcs=args.all_ihcs)
 
 
 if __name__ == "__main__":

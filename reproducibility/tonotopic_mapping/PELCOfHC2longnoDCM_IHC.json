@@ -4,7 +4,9 @@
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v9",
 		"component_list": [
-			1
+			1,
+			2,
+			6
 		],
 		"min_component_length": 10,
 		"min_size": 20000

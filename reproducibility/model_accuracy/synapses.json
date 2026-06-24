@@ -812,5 +812,301 @@
 		"precision": 0.954,
 		"recall": 0.657,
 		"f1-score": 0.778
+	},
+	"v5_train_threshold_for_consensus_annotations_synapses_AMD": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			160,
+			61,
+			190,
+			157,
+			170,
+			185
+		],
+		"fp": [
+			13,
+			5,
+			10,
+			7,
+			14,
+			13
+		],
+		"fn": [
+			30,
+			18,
+			41,
+			38,
+			30,
+			58
+		],
+		"precision": 0.937,
+		"recall": 0.811,
+		"f1-score": 0.87
+	},
+	"v5_train_threshold_for_consensus_annotations_synapses_EK": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			163,
+			63,
+			179,
+			158,
+			178,
+			191
+		],
+		"fp": [
+			10,
+			3,
+			21,
+			6,
+			6,
+			7
+		],
+		"fn": [
+			44,
+			20,
+			23,
+			24,
+			18,
+			37
+		],
+		"precision": 0.946,
+		"recall": 0.849,
+		"f1-score": 0.895
+	},
+	"v5_train_threshold_for_consensus_annotations_synapses_LR": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140_LR_130526.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134_LR_130526.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256_LR_130526.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130_LR_08062026.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185_LR_08062026.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195_LR_10062026.csv"
+		],
+		"tp": [
+			166,
+			63,
+			188,
+			160,
+			183,
+			194
+		],
+		"fp": [
+			7,
+			3,
+			12,
+			4,
+			1,
+			4
+		],
+		"fn": [
+			56,
+			57,
+			46,
+			49,
+			45,
+			67
+		],
+		"precision": 0.969,
+		"recall": 0.749,
+		"f1-score": 0.845
+	},
+	"v5_train_threshold": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			167,
+			63,
+			192,
+			160,
+			183,
+			196
+		],
+		"fp": [
+			6,
+			3,
+			8,
+			4,
+			1,
+			2
+		],
+		"fn": [
+			93,
+			76,
+			82,
+			63,
+			59,
+			91
+		],
+		"precision": 0.976,
+		"recall": 0.674,
+		"f1-score": 0.798
+	},
+	"v5_05t_for_consensus_annotations_synapses_AMD": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			162,
+			62,
+			191,
+			158,
+			170,
+			187
+		],
+		"fp": [
+			16,
+			6,
+			11,
+			9,
+			14,
+			13
+		],
+		"fn": [
+			28,
+			17,
+			40,
+			37,
+			30,
+			56
+		],
+		"precision": 0.931,
+		"recall": 0.817,
+		"f1-score": 0.87
+	},
+	"v5_05t_for_consensus_annotations_synapses_EK": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			165,
+			64,
+			180,
+			159,
+			178,
+			193
+		],
+		"fp": [
+			13,
+			4,
+			22,
+			8,
+			6,
+			7
+		],
+		"fn": [
+			42,
+			19,
+			22,
+			23,
+			18,
+			35
+		],
+		"precision": 0.94,
+		"recall": 0.855,
+		"f1-score": 0.896
+	},
+	"v5_05t_for_consensus_annotations_synapses_LR": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140_LR_130526.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134_LR_130526.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256_LR_130526.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130_LR_08062026.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185_LR_08062026.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195_LR_10062026.csv"
+		],
+		"tp": [
+			168,
+			65,
+			190,
+			161,
+			183,
+			195
+		],
+		"fp": [
+			10,
+			3,
+			12,
+			6,
+			1,
+			5
+		],
+		"fn": [
+			54,
+			55,
+			44,
+			48,
+			45,
+			66
+		],
+		"precision": 0.963,
+		"recall": 0.755,
+		"f1-score": 0.846
+	},
+	"v5_05t": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			169,
+			65,
+			194,
+			161,
+			183,
+			198
+		],
+		"fp": [
+			9,
+			3,
+			8,
+			6,
+			1,
+			2
+		],
+		"fn": [
+			91,
+			74,
+			80,
+			62,
+			59,
+			89
+		],
+		"precision": 0.971,
+		"recall": 0.681,
+		"f1-score": 0.8
 	}
 }

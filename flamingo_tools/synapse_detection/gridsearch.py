@@ -95,8 +95,8 @@ def _get_out_channels(model_path):
 # ---------------------------------------------------------------------------
 
 def gridsearch(
-    json_val_path,
     model_path,
+    json_val_path=None,
     image_dir=TRAIN_ROOT,
     label_dir=LABEL_ROOT,
     raw_key="raw",
@@ -112,11 +112,11 @@ def gridsearch(
     list of image file names (e.g. ``"sample_001.zarr"``).  Images are looked
     up in *image_dir*; labels are looked up in *label_dir* after replacing the
     ``.zarr`` extension with ``.csv``.  Absolute paths in the val list are used
-    directly.
+    directly. If no JSON file is supplied, all images in ZARR format in the directory are evaluated.
 
     Args:
-        json_val_path: Path to the JSON train/val split file.
         model_path: Path to the model checkpoint or exported model file.
+        json_val_path: Path to the JSON train/val split file.
         image_dir: Directory containing the validation zarr files.
         label_dir: Directory containing the matching CSV label files.
         raw_key: Zarr key for the raw image data.
@@ -132,18 +132,21 @@ def gridsearch(
     if out_channels is None:
         out_channels = _get_out_channels(model_path)
 
-    with open(json_val_path) as f:
-        val_list = json.load(f)["val"]
+    if json_val_path is not None:
+        with open(json_val_path) as f:
+            val_list = json.load(f)["val"]
+    else:
+        # use every image in directory
+        val_list = [entry.name.split(".zarr")[0] for entry in os.scandir(image_dir) if ".zarr" in entry.name]
 
     threshes = np.round(np.arange(0.3, 2.0, 0.1), 2)
     records = []
 
     for val_name in val_list:
         # Resolve image path.
-        image_path = f"{val_name}.zarr" if os.path.isabs(val_name) else os.path.join(image_dir, f"{val_name}.zarr")
+        image_path = os.path.join(image_dir, f"{val_name}.zarr")
         # Derive label path: same basename, .csv extension, in label_dir.
-        label_name = os.path.splitext(os.path.basename(val_name))[0] + ".csv"
-        label_path = os.path.join(label_dir, label_name)
+        label_path = os.path.join(label_dir, f"{val_name}.csv")
 
         print(f"Running prediction on {image_path}")
         _, pred = prediction_impl(
@@ -209,18 +212,8 @@ def get_or_compute_threshold(
         print(f"Loaded cached threshold {threshold:.3f} from {cache_path}")
         return threshold
 
-    if not os.path.exists(json_val_path):
-        import warnings
-        warnings.warn(
-            f"Threshold cache not found and validation JSON does not exist at '{json_val_path}'. "
-            f"Using default threshold {_DEFAULT_THRESHOLD}. "
-            "Run gridsearch with a valid json_val_path to determine an optimal threshold.",
-            UserWarning,
-        )
-        return _DEFAULT_THRESHOLD
-
     threshold = gridsearch(
-        json_val_path, model_path, image_dir=image_dir, label_dir=label_dir,
+        model_path, json_val_path, image_dir=image_dir, label_dir=label_dir,
         **gridsearch_kwargs,
     )
     with open(cache_path, "w") as f:

@@ -17,6 +17,11 @@ SYNAPSE_DICT = {
         "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
+    "v3_05t": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3_05t"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
     "v4": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
         "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
@@ -27,6 +32,28 @@ SYNAPSE_DICT = {
         "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
+    "v5_f1val_threshold": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_f1val_threshold"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
+    "v5_train_threshold": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_train_threshold"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
+    "v5_05t": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_05t"),
+        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
+}
+
+ANNOTATION_DIR = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/Synapses_2026-04")
+INDIVIDUAL_ANNOTATORS = {
+    "AMD": os.path.join(ANNOTATION_DIR, "for_consensus_annotations_synapses_AMD/labels"),
+    "EK": os.path.join(ANNOTATION_DIR, "for_consensus_annotations_synapses_EK/labels"),
+    "LR": os.path.join(ANNOTATION_DIR, "for_consensus_annotations_synapses_LR/labels"),
 }
 
 
@@ -213,7 +240,7 @@ def main():
                         help="Use pre-defined directories for a specific network version, e.g. v3, v4, ...")
     parser.add_argument("-p", "--pred_root", type=str, default=None,
                         help="Directory containing sub-directories with predicted data.")
-    parser.add_argument("-r", "--ref_root", type=str, default=None,
+    parser.add_argument("-r", "--ref_root", type=str, default=None, nargs="+",
                         help="Directory containing reference labels in CSV format.")
     parser.add_argument("-c", "--image_root", type=str,
                         help="Directory containing image data in ZARR format.")
@@ -234,40 +261,49 @@ def main():
             raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
 
         image_root = SYNAPSE_DICT[args.version]["image_root"]
-        ref_root = SYNAPSE_DICT[args.version]["ref_root"]
+        if args.ref_root is None:
+            ref_roots = [SYNAPSE_DICT[args.version]["ref_root"]]
+        else:
+            ref_roots = args.ref_root
         pred_root = SYNAPSE_DICT[args.version]["pred_root"]
 
     else:
         image_root = args.image_root
-        ref_root = args.ref_root
+        ref_roots = args.ref_root
         pred_root = args.pred_root
 
-    ctbp2_files = sorted(glob(os.path.join(image_root, "*.zarr")))
-    gt_files = sorted(glob(os.path.join(ref_root, "*.csv")))
-
-    pred_files = []
-    for ff in ctbp2_files:
-        fname = Path(ff).stem
-        pred_file = os.path.join(pred_root, fname, "filtered_synapse_detection.tsv")
-        if not os.path.isfile(pred_file):
-            pred_file = os.path.join(pred_root, fname, "synapse_detection.tsv")
-
-        assert os.path.exists(pred_file), pred_file
-        pred_files.append(pred_file)
-
-    if args.visualize:
-        visualize_evaluation(pred_files, gt_files, ctbp2_files)
-    else:
-        output_file = None
-        version_key = None
-        if args.output_dir is not None:
-            output_file = os.path.join(args.output_dir, "synapses.json")
+    for ref_root in ref_roots:
+        print(f"Analysing prediction with respect to labels in {ref_root}.")
+        if len(ref_roots) == 1:
             version_key = args.version if args.version is not None else Path(pred_root).name
-        run_evaluation(
-            pred_files, gt_files,
-            output_file=output_file, version_key=version_key,
-            match_array_dir=args.match_array_dir,
-        )
+        else:
+            version_key = f"{Path(pred_root).name}_{ref_root.split(os.path.sep)[-2]}"
+
+        ctbp2_files = sorted(glob(os.path.join(image_root, "*.zarr")))
+        gt_files = sorted(glob(os.path.join(ref_root, "*.csv")))
+
+        pred_files = []
+        for ff in ctbp2_files:
+            fname = Path(ff).stem
+            pred_file = os.path.join(pred_root, fname, "filtered_synapse_detection.tsv")
+            if not os.path.isfile(pred_file):
+                pred_file = os.path.join(pred_root, fname, "synapse_detection.tsv")
+
+            assert os.path.exists(pred_file), pred_file
+            pred_files.append(pred_file)
+
+        if args.visualize:
+            visualize_evaluation(pred_files, gt_files, ctbp2_files)
+        else:
+            output_file = None
+            if args.output_dir is not None:
+                output_file = os.path.join(args.output_dir, "synapses.json")
+
+            run_evaluation(
+                pred_files, gt_files,
+                output_file=output_file, version_key=version_key,
+                match_array_dir=args.match_array_dir,
+            )
 
 
 if __name__ == "__main__":

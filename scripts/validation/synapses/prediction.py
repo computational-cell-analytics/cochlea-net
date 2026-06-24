@@ -38,6 +38,27 @@ PREDICTION_DICT = {
         "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v5.pt"),
         "ihc_model": _IHC_MODEL,
     },
+    "v5_f1val_threshold": {
+        "image_root": _TEST_IMAGE_ROOT,
+        "ref_root": _TEST_REF_ROOT,
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_f1val_threshold"),
+        "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v5.pt"),
+        "ihc_model": _IHC_MODEL,
+    },
+    "v5_train_threshold": {
+        "image_root": _TEST_IMAGE_ROOT,
+        "ref_root": _TEST_REF_ROOT,
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_train_threshold"),
+        "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v5.pt"),
+        "ihc_model": _IHC_MODEL,
+    },
+    "v5_05t": {
+        "image_root": _TEST_IMAGE_ROOT,
+        "ref_root": _TEST_REF_ROOT,
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_05t"),
+        "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, "synapse_detection_model_v5.pt"),
+        "ihc_model": _IHC_MODEL,
+    },
 }
 
 

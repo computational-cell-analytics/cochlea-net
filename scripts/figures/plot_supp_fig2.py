@@ -47,6 +47,8 @@ PLOT_METADATA = {
         "v5": {"label": "v5", "marker": "^"},
         "v3_05t": {"label": "v3_old", "marker": "s"},
         "v5_f1val_threshold": {"label": "v5_optimal", "marker": "o"},
+        "v5_train_threshold": {"label": "v5_train", "marker": "*"},
+        "v5_05t": {"label": "v5_0.5t", "marker": "P"},
         "v3_for_consensus_annotations_synapses_AMD": {"label": "v3_AMD", "marker": "v"},
         "v3_for_consensus_annotations_synapses_EK": {"label": "v3_EK", "marker": "<"},
         "v3_for_consensus_annotations_synapses_LR": {"label": "v3_LR", "marker": ">"},
@@ -59,6 +61,12 @@ PLOT_METADATA = {
         "v5_f1val_threshold_for_consensus_annotations_synapses_AMD": {"label": "v5_opti_AMD", "marker": "v"},
         "v5_f1val_threshold_for_consensus_annotations_synapses_EK": {"label": "v5_opti_EK", "marker": "<"},
         "v5_f1val_threshold_for_consensus_annotations_synapses_LR": {"label": "v5_opti_LR", "marker": ">"},
+        "v5_train_threshold_for_consensus_annotations_synapses_AMD": {"label": "v5_train_AMD", "marker": "v"},
+        "v5_train_threshold_for_consensus_annotations_synapses_EK": {"label": "v5_train_EK", "marker": "<"},
+        "v5_train_threshold_for_consensus_annotations_synapses_LR": {"label": "v5_train_LR", "marker": ">"},
+        "v5_05t_for_consensus_annotations_synapses_AMD": {"label": "v5_0.5t_AMD", "marker": "v"},
+        "v5_05t_for_consensus_annotations_synapses_EK": {"label": "v5_0.5t_EK", "marker": "<"},
+        "v5_05t_for_consensus_annotations_synapses_LR": {"label": "v5_0.5t_LR", "marker": ">"},
     },
 }
 
@@ -368,7 +376,7 @@ def main():
         supp_fig_02(save_path=os.path.join(
             args.figure_dir, f"supp_fig_02_synapse_accuracy_threshold.{FILE_EXTENSION}"),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
-            key_list=["v3", "v5", "v3_05t", "v5_f1val_threshold"],
+            key_list=["v3", "v5", "v3_05t", "v5_f1val_threshold", "v5_train_threshold", "v5_05t"],
         )
 
         supp_fig_02(save_path=os.path.join(
@@ -379,6 +387,8 @@ def main():
                 "v3_05t_for_consensus_annotations_synapses_AMD",
                 "v5_for_consensus_annotations_synapses_AMD",
                 "v5_f1val_threshold_for_consensus_annotations_synapses_AMD",
+                "v5_train_threshold_for_consensus_annotations_synapses_AMD",
+                "v5_05t_for_consensus_annotations_synapses_AMD",
             ],
         )
         supp_fig_02(save_path=os.path.join(
@@ -389,6 +399,8 @@ def main():
                 "v3_05t_for_consensus_annotations_synapses_EK",
                 "v5_for_consensus_annotations_synapses_EK",
                 "v5_f1val_threshold_for_consensus_annotations_synapses_EK",
+                "v5_train_threshold_for_consensus_annotations_synapses_EK",
+                "v5_05t_for_consensus_annotations_synapses_EK",
             ],
         )
         supp_fig_02(save_path=os.path.join(
@@ -399,6 +411,8 @@ def main():
                 "v3_05t_for_consensus_annotations_synapses_LR",
                 "v5_for_consensus_annotations_synapses_LR",
                 "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
+                "v5_train_threshold_for_consensus_annotations_synapses_LR",
+                "v5_05t_for_consensus_annotations_synapses_LR",
             ],
         )
         supp_fig_02(save_path=os.path.join(
@@ -421,7 +435,27 @@ def main():
                 "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
             ],
         )
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_v5_threshold-on-whole-training-dataset_annotators.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v5_train_threshold",
+                "v5_train_threshold_for_consensus_annotations_synapses_AMD",
+                "v5_train_threshold_for_consensus_annotations_synapses_EK",
+                "v5_train_threshold_for_consensus_annotations_synapses_LR",
+            ],
+        )
 
+        supp_fig_02(save_path=os.path.join(
+            args.figure_dir, f"supp_fig_02_synapse_v5_05t_annotators.{FILE_EXTENSION}"),
+            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            key_list=[
+                "v5_05t",
+                "v5_05t_for_consensus_annotations_synapses_AMD",
+                "v5_05t_for_consensus_annotations_synapses_EK",
+                "v5_05t_for_consensus_annotations_synapses_LR",
+            ],
+        )
 
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_ihc_3d_seg.{FILE_EXTENSION}"),
                     segm="IHC_3D", data_dir=data_dir, show_legend=True, ylim=[0.8, 0.95])
