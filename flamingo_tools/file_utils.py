@@ -3,7 +3,7 @@
 
 import os
 import warnings
-from typing import Optional, Union
+from typing import Dict, List, Optional, Union
 
 import imageio.v3 as imageio
 import numpy as np
@@ -11,6 +11,7 @@ import pooch
 import tifffile
 import zarr
 from elf.io import open_file
+from pybdv.util import relative_to_absolute_scale_factors
 
 from .s3_utils import get_s3_path
 
@@ -18,6 +19,14 @@ try:
     from zarr.abc.store import Store
 except ImportError:
     from zarr._storage.store import BaseStore as Store
+
+AXES_TYPE_DICT = {
+    "x": "space",
+    "y": "space",
+    "z": "space",
+    "t": "time",
+    "c": "channel"
+}
 
 
 def get_cache_dir() -> str:
@@ -120,3 +129,71 @@ def read_image_data(
         f = zarr.open(input_path, mode="r")
         input_ = f[input_key]
     return input_
+
+
+def _create_ngff_metadata(g, name, axes_names, scales=None, units=None):
+    # axes metadata
+    axes = [
+        {"name": name, "type": AXES_TYPE_DICT[name]} for name in axes_names
+    ]
+    if units is not None:
+        assert len(units) == len(axes_names)
+        for ax, unit in zip(axes, units):
+            if unit is not None:
+                ax["unit"] = unit
+
+    # dataset metadata including transformations
+    n_scales = len(g)
+    if scales is None:
+        scales = [[1.0] * len(axes_names)] * n_scales
+    assert len(scales) == n_scales
+    assert all(len(scale) == len(axes_names) for scale in scales)
+
+    # NOTE we might need a half pixel offset for proper scale alignment here (via a translation)
+    transforms = [[{"type": "scale", "scale": scale}] for scale in scales]
+    datasets = [
+        {"path": f"s{level}", "coordinateTransformations": trafo} for level, trafo in enumerate(transforms)
+    ]
+    assert all(ds["path"] in g for ds in datasets)
+
+    ms_entry = {
+        "axes": axes,
+        "datasets": datasets,
+        "name": name,
+        "version": "0.4"
+    }
+
+    metadata = g.attrs.get("multiscales", [])
+    metadata.append(ms_entry)
+    g.attrs["multiscales"] = metadata
+
+
+def write_ome_zarr_metadata(
+    path: str,
+    metadata_dict: Dict,
+    scale_factors: List[List[int]],
+    prefix: str = "",
+) -> None:
+    """Write the multicales metadata for ome.zarr v0.4.
+
+    Args:
+        path: The file path to the zarr container.
+        metadata_dict: Dictionary with additional metadata.
+        scale_factors: The scale factors used for downsampling the multi-resolution image pyramid.
+        prefix: The prefix for the location of the multiscales group containing the image data.
+            By default we assume that the image is in the root group.
+    """
+    setup_name = metadata_dict.get("setup_name", None)
+    setup_name = "data" if setup_name is None else setup_name
+    unit = metadata_dict.get("unit", "pixel")
+    scale_factors = [[1, 1, 1]] + list(scale_factors)
+    scale_factors = relative_to_absolute_scale_factors(scale_factors)
+
+    with open_file(path, mode="a") as f:
+        g = f if prefix == "" else f[prefix]
+        ndim = g["s0"].ndim
+        axes_names = ["y", "x"] if ndim == 2 else ["z", "y", "x"]
+        resolution = metadata_dict.get("resolution", [1.] * ndim)
+        scales = [[sc * res for sc, res in zip(scale, resolution)] for scale in scale_factors]
+        units = ndim * [unit]
+        _create_ngff_metadata(g, setup_name, axes_names, units=units, scales=scales)
