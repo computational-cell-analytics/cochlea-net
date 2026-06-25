@@ -90,7 +90,6 @@ def pred_synapse_impl(
         output_path, detection_path,
         prediction_key=prediction_key,
         block_shape=block_shape,
-        model_path=model_path,
     )
 
 
