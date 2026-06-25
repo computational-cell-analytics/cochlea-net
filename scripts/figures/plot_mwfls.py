@@ -16,10 +16,10 @@ from plot_fig3 import supp_fig_03a_meyer, COCHLEAE_DICT, get_tonotopic_data, SYN
 png_dpi = 300
 FILE_EXTENSION = "png"
 
-COLOR_LITERATURE = "#27339C"
+COLOR_LITERATURE = "#9C2E53"
 COHORT_COLORS = {
-    "iDISCO": "#3F69FF",
-    "MWfLS": "#10CC17",
+    "iDISCO": "#10CC17",
+    "MWfLS": "#3F69FF",
 }
 COHORT_MARKERS = {
     "iDISCO": "o",
@@ -120,7 +120,7 @@ def fig_cohort_boxplot(
         if ylabel:
             ax.set_ylabel(ylabel, fontsize=main_label_size)
 
-        ax.set_title(structure, fontsize=main_label_size, pad=10)
+        ax.set_title(title, fontsize=main_label_size, pad=10)
 
     _draw_subplot(
         axes[0], sgn_by_cohort, "SGN",
@@ -205,10 +205,12 @@ def supp_fig_mwfls_synapses(
         entry = dict(COCHLEAE_DICT[name])
         entry["color"] = MEYER_COLORS[num % len(MEYER_COLORS)]
         entry["marker"] = COHORT_MARKERS["iDISCO"]
+        entry["cohort"] = "iDISCO"
         merged_cohort_dict[name] = entry
     for name in COHORT_DICT["MWfLS"]:
         entry = dict(MWFLS_COCHLEAE_DICT[name])
         entry["marker"] = COHORT_MARKERS["MWfLS"]
+        entry["cohort"] = "MWfLS"
         merged_cohort_dict[name] = entry
 
     tonotopic_data = {**idisco_data, **mwfls_data}
@@ -217,6 +219,7 @@ def supp_fig_mwfls_synapses(
         tonotopic_data=tonotopic_data,
         save_path=save_path,
         cohort_dict=merged_cohort_dict,
+        trendline_colors=COHORT_COLORS,
         use_alias=True,
         plot=plot,
         n_bins=n_bins,
@@ -249,7 +252,11 @@ def main():
         )
         supp_fig_mwfls_synapses(
             save_path=os.path.join(args.figure_dir, f"supp_fig_mwfls_synapses.{FILE_EXTENSION}"),
-            plot=args.plot,
+            plot=args.plot, top_axis=True,
+        )
+        supp_fig_mwfls_synapses(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_mwfls_synapses_trendline.{FILE_EXTENSION}"),
+            plot=args.plot, trendline=True, top_axis=True,
         )
     else:
         print("Skipping synapse figures (--skip_synapses).")

@@ -399,6 +399,7 @@ def supp_fig_03a_meyer(
     trendline_std: bool = False,
     errorbar: bool = False,
     cohort_dict: dict = None,
+    trendline_colors: dict = None,
 ):
     """Plot Supplementary Figure 3a.
 
@@ -415,6 +416,10 @@ def supp_fig_03a_meyer(
         cohort_dict: Optional per-cochlea metadata dict with keys "alias", "color", "marker".
             Shape: {cochlea_name: {"alias": str, "color": str, "marker": str}}.
             When None, falls back to the module-level COCHLEAE_DICT with marker "o".
+        trendline_colors: Optional dict mapping cohort name → color string. When provided,
+            entries in cohort_dict must also carry a "cohort" key, and one trendline is drawn
+            per cohort in its color. When None, a single gray trendline is drawn across all
+            non-Meyer cochleae (existing behavior).
     """
     if cohort_dict:
         alpha = 0.5
@@ -445,6 +450,7 @@ def supp_fig_03a_meyer(
     result = {"cochlea": [], "runlength": [], "value": []}
     color_dict = {}
     marker_dict = {}
+    alias_to_cohort = {}
     cochleae_length = []
     _meta = cohort_dict if cohort_dict is not None else COCHLEAE_DICT
     for name, values in tonotopic_data.items():
@@ -455,6 +461,8 @@ def supp_fig_03a_meyer(
 
         color_dict[alias] = _meta[name]["color"]
         marker_dict[alias] = _meta[name].get("marker", "o")
+        if "cohort" in _meta[name]:
+            alias_to_cohort[alias] = _meta[name]["cohort"]
         syn_count = values["syn_per_IHC"].values
         length_fraction = values["length_fraction"].values
         run_length = values["length[µm]"].values
@@ -489,8 +497,8 @@ def supp_fig_03a_meyer(
         marker_dict["Meyer"] = MEYER_MARKER
 
     avg_length = sum(cochleae_length) / len(cochleae_length)
-    print(f"Average total length: {round(avg_length, 2)} µm")
-    print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
+    # print(f"Average total length: {round(avg_length, 2)} µm")
+    # print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
 
     result = pd.DataFrame(result)
     fig, ax = plt.subplots(figsize=(6.7, 5))
@@ -510,56 +518,44 @@ def supp_fig_03a_meyer(
             ax.scatter(run_length, syn_count, label=name,
                        color=color_dict[name], marker=marker_dict[name], alpha=alpha)
 
-    # calculate mean and standard deviation
-    trend_dict = {}
-    for num, (name, grp) in enumerate(result.groupby("cochlea")):
-        if name == "Meyer":
-            continue
-        run_length = list(grp["runlength"])
-        syn_count = list(grp["value"])
-        for r, s in zip(run_length, syn_count):
-            if r in trend_dict:
-                trend_dict[r].append(s)
-            else:
-                trend_dict[r] = [s]
+    # Build trend dict(s): one per cohort when trendline_colors is set, otherwise one combined.
+    def _build_trend_dict(aliases):
+        td = {}
+        for name, grp in result.groupby("cochlea"):
+            if name not in aliases:
+                continue
+            for r, s in zip(grp["runlength"], grp["value"]):
+                td.setdefault(r, []).append(s)
+        return td
 
-    x_pos = [k for k in list(trend_dict.keys())]
-    center_line = [sum(val) / len(val) for _, val in trend_dict.items()]
-    val_std = [np.std(val) for _, val in trend_dict.items()]
-    lower_std = [mean - std for (mean, std) in zip(center_line, val_std)]
-    upper_std = [mean + std for (mean, std) in zip(center_line, val_std)]
+    def _draw_trendline(ax, trend_dict, color):
+        x_pos = list(trend_dict.keys())
+        center_line = [sum(v) / len(v) for v in trend_dict.values()]
+        val_std = [np.std(v) for v in trend_dict.values()]
+        lower_std = [m - s for m, s in zip(center_line, val_std)]
+        upper_std = [m + s for m, s in zip(center_line, val_std)]
 
-    if errorbar:
-        ax.errorbar(x_pos, center_line, val_std, linestyle='dashed', marker='D', color="#D63637", linewidth=1)
+        if errorbar:
+            ax.errorbar(x_pos, center_line, val_std,
+                        linestyle="dashed", marker="D", color=color, linewidth=1)
+        if trendline:
+            ax.plot(x_pos, center_line, linestyle="dashed", color=color,
+                    alpha=line_alphas["center"], linewidth=3, zorder=2)
+            ax.plot(x_pos, upper_std, linestyle="solid", color=color,
+                    alpha=line_alphas["upper"], zorder=0)
+            ax.plot(x_pos, lower_std, linestyle="solid", color=color,
+                    alpha=line_alphas["lower"], zorder=0)
+            plt.fill_between(x_pos, lower_std, upper_std,
+                             color=color, alpha=line_alphas["fill"], interpolate=True)
 
-    if trendline:
-        trend_center, = ax.plot(
-            x_pos,
-            center_line,
-            linestyle="dashed",
-            color="gray",
-            alpha=line_alphas["center"],
-            linewidth=3,
-            zorder=2
-        )
-        trend_upper, = ax.plot(
-            x_pos,
-            upper_std,
-            linestyle="solid",
-            color="gray",
-            alpha=line_alphas["upper"],
-            zorder=0
-        )
-        trend_lower, = ax.plot(
-            x_pos,
-            lower_std,
-            linestyle="solid",
-            color="gray",
-            alpha=line_alphas["lower"],
-            zorder=0
-        )
-        plt.fill_between(x_pos, lower_std, upper_std,
-                         color="gray", alpha=line_alphas["fill"], interpolate=True)
+    non_meyer = {a for a in color_dict if a != "Meyer"}
+    if trendline_colors and alias_to_cohort:
+        for cohort, color in trendline_colors.items():
+            cohort_aliases = {a for a in non_meyer if alias_to_cohort.get(a) == cohort}
+            if cohort_aliases:
+                _draw_trendline(ax, _build_trend_dict(cohort_aliases), color)
+    elif trendline or errorbar:
+        _draw_trendline(ax, _build_trend_dict(non_meyer), "gray")
 
     if top_axis:
         # Create second x-axis
