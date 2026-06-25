@@ -202,8 +202,6 @@ def get_or_compute_threshold(
     Returns:
         Optimal detection threshold as a float.
     """
-    _DEFAULT_THRESHOLD = 0.5
-
     cache_path = os.path.splitext(model_path)[0] + "_threshold.json"
 
     if os.path.exists(cache_path):

@@ -352,6 +352,7 @@ def find_mask(
     # for dim stainings the relative term is below the cap and adapts downward.
     min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
     print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
+
     def find_mask_block(block_id):
         block = blocking.getBlock(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))

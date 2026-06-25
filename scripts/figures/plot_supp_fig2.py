@@ -373,14 +373,19 @@ def main():
             plot=args.plot,
         )
 
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_accuracy_threshold.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_accuracy_threshold.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=["v3", "v5", "v3_05t", "v5_f1val_threshold", "v5_train_threshold", "v5_05t"],
         )
 
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_annot_AMD.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir, f"supp_fig_02_synapse_annot_AMD.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v3_for_consensus_annotations_synapses_AMD",
@@ -391,8 +396,11 @@ def main():
                 "v5_05t_for_consensus_annotations_synapses_AMD",
             ],
         )
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_annot_EK.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_annot_EK.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v3_for_consensus_annotations_synapses_EK",
@@ -403,8 +411,11 @@ def main():
                 "v5_05t_for_consensus_annotations_synapses_EK",
             ],
         )
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_annot_LR.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_annot_LR.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v3_for_consensus_annotations_synapses_LR",
@@ -415,8 +426,11 @@ def main():
                 "v5_05t_for_consensus_annotations_synapses_LR",
             ],
         )
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_v3_old_annotators.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_v3_old_annotators.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v3_05t",
@@ -425,8 +439,11 @@ def main():
                 "v3_05t_for_consensus_annotations_synapses_LR",
             ],
         )
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_v5_optimal_annotators.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_v5_optimal_annotators.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v5_f1val_threshold",
@@ -435,8 +452,11 @@ def main():
                 "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
             ],
         )
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_v5_threshold-on-whole-training-dataset_annotators.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_v5_threshold-on-whole-training-dataset_annotators.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v5_train_threshold",
@@ -446,8 +466,11 @@ def main():
             ],
         )
 
-        supp_fig_02(save_path=os.path.join(
-            args.figure_dir, f"supp_fig_02_synapse_v5_05t_annotators.{FILE_EXTENSION}"),
+        supp_fig_02(
+            save_path=os.path.join(
+                args.figure_dir,
+                f"supp_fig_02_synapse_v5_05t_annotators.{FILE_EXTENSION}"
+            ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
                 "v5_05t",
@@ -461,6 +484,7 @@ def main():
                     segm="IHC_3D", data_dir=data_dir, show_legend=True, ylim=[0.8, 0.95])
     else:
         raise ValueError("Please provide a data directory containing dictionaries produced by eval_baseline.py")
+
 
 if __name__ == "__main__":
     main()
