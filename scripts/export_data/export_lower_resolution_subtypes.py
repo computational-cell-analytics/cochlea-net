@@ -6,6 +6,7 @@ import pandas as pd
 import tifffile
 import zarr
 
+from flamingo_tools.export_data_utils import compute_crop_bb
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.postprocessing.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 # from skimage.segmentation import relabel_sequential
@@ -135,6 +136,7 @@ def export_lower_resolution(args):
     cochlea = args.cochlea
     subtype_stains = args.stains
     force_overwrite = args.force
+    crop = args.crop_center is not None
     # iterate through exporting lower resolutions
     for scale in args.scale:
         output_folder = os.path.join(args.output_folder, cochlea, f"scale{scale}")
@@ -169,7 +171,13 @@ def export_lower_resolution(args):
             internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             with zarr.open(s3_store, mode="r") as f:
-                data = f[input_key][:]
+                if crop:
+                    start, stop = compute_crop_bb(
+                        args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
+                    )
+                    data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
+                else:
+                    data = f[input_key][:]
 
             print("Data shape", data.shape)
 
@@ -185,6 +193,10 @@ def main():
     parser.add_argument("-o", "--output_folder", required=True)
     parser.add_argument("--stains", nargs="+", type=str, default=None)
     parser.add_argument("-f", "--force", action="store_true")
+    parser.add_argument("--crop_center", nargs=3, type=float, default=None,
+                        help="Crop center as x y z in µm. Requires --roi_halo.")
+    parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
     args = parser.parse_args()
 
     export_lower_resolution(args)

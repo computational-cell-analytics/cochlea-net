@@ -8,6 +8,7 @@ import pandas as pd
 import tifffile
 import zarr
 
+from flamingo_tools.export_data_utils import compute_crop_bb
 from flamingo_tools.s3_utils import BUCKET_NAME, SERVICE_ENDPOINT, create_s3_target, get_s3_path
 from skimage.morphology import ball
 from tqdm import tqdm
@@ -23,12 +24,12 @@ def export_synapse_detections(
     radius: float,
     id_offset: int,
     filter_ihc_components: List[int],
-    position: str,
-    halo: List[int],
+    crop_center: List[float],
+    roi_halo: List[int],
     as_float: bool = False,
     use_syn_ids: bool = False,
 ):
-    """Export synapse detections from S3..
+    """Export synapse detections from S3.
 
     Args:
         cochlea: Cochlea name on S3 bucket.
@@ -40,8 +41,8 @@ def export_synapse_detections(
         radius: The radius for writing the synapse points to the output volume.
         id_offset: Offset of label id of synapse output to have different colours for visualization.
         filter_ihc_components: Component label(s) for filtering IHC segmentation.
-        position: Optional position for extracting a crop from the data. Requires to also pass halo.
-        halo: Halo for extracting a crop from the data.
+        crop_center: Optional crop center as [x, y, z] in µm. Requires roi_halo.
+        roi_halo: Halo around the crop center as [halo_x, halo_y, halo_z] in pixels at the target scale.
         as_float: Whether to save the exported data as floating point values.
         use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
     """
@@ -89,13 +90,9 @@ def export_synapse_detections(
         ihc_ids = syn_table["matched_ihc"].values
         syn_ids = syn_table["spot_id"].values
 
-        if position is not None:
-            assert halo is not None
-            center = json.loads(position)
-            assert len(halo) == len(center)
-            center = [int(ce / (voxel_size * (2 ** scale))) for ce in center[::-1]]
-            start = np.array([max(0, ce - ha) for ce, ha in zip(center, halo)])[None]
-            stop = np.array([min(sh, ce + ha) for ce, ha, sh in zip(center, halo, shape)])[None]
+        if crop_center is not None:
+            assert roi_halo is not None
+            start, stop = compute_crop_bb(crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=shape)
 
             mask = ((coordinates >= start) & (coordinates < stop)).all(axis=1)
             coordinates = coordinates[mask]
@@ -104,7 +101,7 @@ def export_synapse_detections(
             ihc_ids = ihc_ids[mask]
             syn_ids = syn_ids[mask]
 
-            shape = tuple(int(sto - sta) for sta, sto in zip(start.squeeze(), stop.squeeze()))
+            shape = tuple(int(sto - sta) for sta, sto in zip(start, stop))
 
         # Create the output.
         output = np.zeros(shape, dtype="uint16")
@@ -148,8 +145,10 @@ def main():
     parser.add_argument("--radius", type=int, default=3)
     parser.add_argument("--id_offset", type=int, default=0)
     parser.add_argument("--filter_ihc_components", nargs="+", type=int, default=[1])
-    parser.add_argument("--position", default=None)
-    parser.add_argument("--halo", default=None, nargs="+", type=int)
+    parser.add_argument("--crop_center", nargs=3, type=float, default=None,
+                        help="Crop center as x y z in µm. Requires --roi_halo.")
+    parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
     parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--use_syn_ids", action="store_true")
     args = parser.parse_args()
@@ -159,7 +158,7 @@ def main():
         args.synapse_name, args.reference_ihcs,
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
-        position=args.position, halo=args.halo,
+        crop_center=args.crop_center, roi_halo=args.roi_halo,
         as_float=args.as_float, use_syn_ids=args.use_syn_ids,
     )
 
