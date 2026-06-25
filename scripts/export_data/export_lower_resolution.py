@@ -9,6 +9,7 @@ import tifffile
 import zarr
 from elf.parallel import isin
 
+from flamingo_tools.export_data_utils import compute_crop_bb, crop_filter_volume
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.postprocessing.label_components import filter_cochlea_volume, filter_cochlea_volume_single
 # from skimage.segmentation import relabel_sequential
@@ -127,6 +128,8 @@ def upscale_volume(
 
 
 def export_lower_resolution(args):
+    crop = args.crop_center is not None
+
     # calculate single filter mask for all lower resolutions
     if args.filter_cochlea_channels is not None:
         ds_factor = 48
@@ -155,15 +158,24 @@ def export_lower_resolution(args):
             internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             with zarr.open(s3_store, mode="r") as f:
-                data = f[input_key][:].astype("float32")
+                if crop:
+                    start, stop = compute_crop_bb(
+                        args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
+                    )
+                    data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]].astype("float32")
+                else:
+                    data = f[input_key][:].astype("float32")
             print("Data shape", data.shape)
             if args.filter_by_components is not None:
                 print(f"Filtering channel {channel} by components {args.filter_by_components}.")
                 data = filter_component(fs, data, args.cochlea, channel, args.filter_by_components)
             if args.filter_cochlea_channels is not None:
                 us_factor = ds_factor // (2 ** scale)
-                upscaled_filter = upscale_volume(data, filter_volume, upscale_factor=us_factor)
-                data[upscaled_filter == 0] = 0
+                if crop:
+                    applied_filter = crop_filter_volume(filter_volume, start, stop, us_factor)
+                else:
+                    applied_filter = upscale_volume(data, filter_volume, upscale_factor=us_factor)
+                data[applied_filter == 0] = 0
                 if "PV" in channel:
                     max_intensity = 1400
                     data[data > max_intensity] = 0
@@ -196,6 +208,10 @@ def main():
     parser.add_argument("--filter_cochlea_channels", nargs="+", type=str, default=None)
     parser.add_argument("--filter_dilation_iterations", type=int, default=8)
     parser.add_argument("--ome_zarr", action="store_true")
+    parser.add_argument("--crop_center", nargs=3, type=float, default=None,
+                        help="Crop center as x y z in µm. Requires --roi_halo.")
+    parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
     args = parser.parse_args()
 
     export_lower_resolution(args)
