@@ -141,8 +141,7 @@ def synapse_detection_from_prediction(
     prediction_key: str = "prediction",
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     force_overwrite: bool = False,
-    threshold: Optional[float] = None,
-    model_path: Optional[str] = None,
+    threshold: float = 0.5,
 ):
     """Run synapse detection for prediction.
 
@@ -156,18 +155,8 @@ def synapse_detection_from_prediction(
         threshold: Absolute heatmap threshold for peak detection. If None, the
             threshold is loaded from cache or determined via gridsearch on the
             validation set used during training (requires *model_path*).
-        model_path: Path to the model file. Required when *threshold* is None
-            and no cached threshold exists yet.
     """
-    if threshold is None:
-        if model_path is None:
-            raise ValueError(
-                "Either 'threshold' or 'model_path' must be supplied. "
-                "'model_path' is needed to run (or look up) the gridsearch threshold."
-            )
-        from flamingo_tools.synapse_detection.gridsearch import get_or_compute_threshold
-        threshold = get_or_compute_threshold(model_path)
-        print(f"Using detection threshold: {threshold:.3f}")
+    print(f"Using detection threshold: {threshold:.3f}")
 
     if not os.path.exists(detection_path) or force_overwrite:
         pred = zarr.open(prediction_path, "r")[prediction_key]
@@ -237,7 +226,6 @@ def run_prediction(
         block_shape=block_shape,
         voxel_size=voxel_size,
         threshold=threshold_flow,
-        model_path=model_path,
     )
 
 
@@ -315,8 +303,7 @@ def marker_detection(
 
     if not os.path.exists(detection_path):
         synapse_detection_from_prediction(output_path, detection_path,
-                                          prediction_key=prediction_key, voxel_size=voxel_size,
-                                          model_path=model_path)
+                                          prediction_key=prediction_key, voxel_size=voxel_size)
 
     else:
         with open(detection_path, "r") as f:

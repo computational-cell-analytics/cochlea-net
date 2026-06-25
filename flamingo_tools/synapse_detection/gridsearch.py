@@ -21,7 +21,7 @@ from flamingo_tools.segmentation.unet_prediction import prediction_impl
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 TRAIN_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/images")
 LABEL_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/labels")
-DEFAULT_JSON = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/train_val_split.json")
+DEFAULT_JSON = None
 
 
 # ---------------------------------------------------------------------------
@@ -209,6 +209,9 @@ def get_or_compute_threshold(
             threshold = json.load(f)["threshold"]
         print(f"Loaded cached threshold {threshold:.3f} from {cache_path}")
         return threshold
+
+    if not os.path.isdir(image_dir):
+        return _DEFAULT_THRESHOLD
 
     threshold = gridsearch(
         model_path, json_val_path, image_dir=image_dir, label_dir=label_dir,
