@@ -91,6 +91,8 @@ def export_synapse_detections(
         syn_ids = syn_table["spot_id"].values
 
         if crop_center is not None:
+            coord_string = "-".join([str(int(round(c))).zfill(4) for c in crop_center])
+            suffix = f"_crop_{coord_string}"
             assert roi_halo is not None
             start, stop = compute_crop_bb(crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=shape)
 
@@ -102,6 +104,8 @@ def export_synapse_detections(
             syn_ids = syn_ids[mask]
 
             shape = tuple(int(sto - sta) for sta, sto in zip(start, stop))
+        else:
+            suffix = ""
 
         # Create the output.
         output = np.zeros(shape, dtype="uint16")
@@ -123,9 +127,9 @@ def export_synapse_detections(
         out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
         os.makedirs(out_folder, exist_ok=True)
         if id_offset != 0:
-            out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}.tif")
+            out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}{suffix}.tif")
         else:
-            out_path = os.path.join(out_folder, f"{synapse_name}.tif")
+            out_path = os.path.join(out_folder, f"{synapse_name}{suffix}.tif")
 
         if as_float:
             output = output.astype("float32")

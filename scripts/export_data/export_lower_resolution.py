@@ -150,8 +150,13 @@ def export_lower_resolution(args):
 
         input_key = f"s{scale}"
         for channel in args.channels:
-            out_path = os.path.join(output_folder, f"{channel}.tif")
+            if crop:
+                coord_string = "-".join([str(int(round(c))).zfill(4) for c in args.crop_center])
+                out_path = os.path.join(output_folder, f"{channel}_crop_{coord_string}.tif")
+            else:
+                out_path = os.path.join(output_folder, f"{channel}.tif")
             if os.path.exists(out_path):
+                print(f"Skipping {out_path}. File already exists.")
                 continue
 
             print("Exporting channel", channel)
