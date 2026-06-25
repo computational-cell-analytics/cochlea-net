@@ -754,6 +754,7 @@ def object_measures_json_wrapper(
             # create distinct output names in output folder
             elif len(bg_cache_paths) == 1 and ".zarr" not in bg_cache_paths[0]:
                 os.makedirs(bg_cache_paths[0], exist_ok=True)
+                bg_cache_paths_tmp = []
                 for img_channel in image_channels:
                     i_str = img_channel.replace('_', '-')
                     bg_cache_name = f"{c_str}_{i_str}_{s_str}_bg-mask.zarr"
