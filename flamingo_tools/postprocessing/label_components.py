@@ -448,8 +448,8 @@ def label_components_ihc(
     entries_filtered = table[table.n_pixels < min_size]
     table = table[table.n_pixels >= min_size]
 
-    keyword = "distance_nn100"
     if min_nn_100_distance is not None:
+        keyword = "distance_nn100"
         distance_avg = nearest_neighbor_distance(table, n_neighbors=100)
         table.loc[:, keyword] = list(distance_avg)
         entries_filtered_01 = table[table[keyword] < min_nn_100_distance]
@@ -650,6 +650,94 @@ def filter_cochlea_volume(
     return combined_dilated
 
 
+def _compute_path_from_table(
+    table: pd.DataFrame,
+    component_list: List[int],
+) -> Tuple[float, dict]:
+    """Compute the IHC central path from a labeled segmentation table.
+
+    Args:
+        table: Segmentation table with a 'component_labels' column.
+        component_list: Component labels to include in the path computation.
+
+    Returns:
+        Total path length in µm and the raw path_dict from measure_run_length_ihcs.
+    """
+    from flamingo_tools.postprocessing.cochlea_mapping import measure_run_length_ihcs
+
+    new_subset = table[table["component_labels"].isin(component_list)]
+    centroids = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
+
+    centroids_components = []
+    for label in component_list:
+        subset = table[table["component_labels"] == label]
+        centroids_components.append(list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"])))
+
+    total_distance, _, path_dict = measure_run_length_ihcs(
+        centroids, centroids_components, component_label=component_list
+    )
+    return total_distance, path_dict
+
+
+def filter_ihc_by_path_deviation(
+    table: pd.DataFrame,
+    max_path_deviation: float,
+    component_list: List[int] = [1],
+    path_file: Optional[str] = None,
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    """Filter IHC instances by their deviation from the central path.
+
+    Instances whose centroid is farther than max_path_deviation µm from the nearest
+    point on the central path are assigned component_labels = 0 (background).
+
+    The central path is either loaded from path_file (if provided and exists) or
+    computed on-the-fly via measure_run_length_ihcs.
+
+    Args:
+        table: Segmentation table with a 'component_labels' column.
+        max_path_deviation: Maximum allowed distance in µm from the central path.
+        component_list: Component labels whose instances should be filtered.
+        path_file: Optional path to a central path TSV file. If provided and the file
+            exists, the path is loaded from there. If the file does not exist, the path
+            is computed on-the-fly and the caller is responsible for saving the returned
+            DataFrame.
+
+    Returns:
+        The table with outlier instances set to component_labels=0, and either None
+        (when path was loaded from file) or a path DataFrame (when computed on-the-fly).
+    """
+    from flamingo_tools.postprocessing.cochlea_mapping import (
+        central_path_table_to_path_dict,
+        path_dict_to_central_path_table,
+    )
+
+    computed_path_df = None
+
+    if path_file is not None and os.path.isfile(path_file):
+        path_df = pd.read_csv(path_file, sep="\t")
+        path_dict = central_path_table_to_path_dict(path_df)
+        path_coords = np.array([v["pos"] for v in path_dict.values()])
+    else:
+        total_distance, path_dict_raw = _compute_path_from_table(table, component_list)
+        path_coords = np.array([v["pos"] for v in path_dict_raw.values()])
+        for key in path_dict_raw:
+            path_dict_raw[key]["length[µm]"] = path_dict_raw[key]["length_fraction"] * total_distance
+            path_dict_raw[key]["frequency[kHz]"] = 0.0
+        computed_path_df = path_dict_to_central_path_table(path_dict_raw)
+
+    path_tree = cKDTree(path_coords)
+    mask = table["component_labels"].isin(component_list)
+    subset = table[mask]
+    instance_coords = np.array(list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"])))
+    distances, _ = path_tree.query(instance_coords)
+
+    far_ids = subset["label_id"].values[distances > max_path_deviation]
+    table.loc[table["label_id"].isin(far_ids), "component_labels"] = 0
+    print(f"Filtered {len(far_ids)} IHCs with path deviation > {max_path_deviation} µm.")
+
+    return table, computed_path_df
+
+
 def label_custom_components(tsv_table, custom_dict):
     """Label IHC components using multiple post-processing configurations and combine the
     results into final components.
@@ -725,6 +813,8 @@ def label_components_single(
     custom_dic: Optional[dict] = None,
     use_napari: bool = False,
     scale_factor: int = 20,
+    path_file: Optional[str] = None,
+    max_path_deviation: Optional[float] = None,
     **_
 ):
     """Process a single cochlea using one set of parameters or a custom dictionary.
@@ -751,6 +841,14 @@ def label_components_single(
             results into final components.
         use_napari: Visualize component labels with napari viewer.
         scale_factor: Scale factor for down-scaling data for visualization in Napari.
+        path_file: Path to a central path TSV file. Behaviour depends on max_path_deviation:
+            if max_path_deviation is set and the file exists, the path is loaded from it;
+            if max_path_deviation is set and the file does not exist, the path is computed and
+            saved here; if max_path_deviation is None, the path is always computed from the
+            current components and saved here (no filtering). Only used when cell_type='ihc'.
+        max_path_deviation: Maximum allowed deviation in µm from the central IHC path. Instances
+            farther than this are set to component_labels=0. Requires cell_type='ihc'.
+            If None and path_file is set, the path is computed and saved without filtering.
     """
     # overwrite input segmentation table with labeled version
     if out_path is None:
@@ -792,6 +890,24 @@ def label_components_single(
                                                  max_edge_distance=max_edge_distance)
             else:
                 raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
+
+        if cell_type == "ihc" and max_path_deviation is not None:
+            tsv_table, computed_path_df = filter_ihc_by_path_deviation(
+                tsv_table, max_path_deviation, component_list, path_file
+            )
+            if path_file is not None and computed_path_df is not None:
+                computed_path_df.to_csv(path_file, sep="\t", index=False)
+                print(f"Saved computed path to {path_file}.")
+        elif cell_type == "ihc" and path_file is not None and max_path_deviation is None:
+            from flamingo_tools.postprocessing.cochlea_mapping import path_dict_to_central_path_table
+            total_distance, path_dict_raw = _compute_path_from_table(tsv_table, component_list)
+            for key in path_dict_raw:
+                path_dict_raw[key]["length[µm]"] = path_dict_raw[key]["length_fraction"] * total_distance
+                path_dict_raw[key]["frequency[kHz]"] = 0.0
+            path_dict_to_central_path_table(path_dict_raw).to_csv(path_file, sep="\t", index=False)
+            print(f"Saved computed path to {path_file}.")
+        elif max_path_deviation is not None and cell_type != "ihc":
+            print("Warning: --max_path_deviation is only supported for cell_type='ihc'. Skipping path filtering.")
 
         custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
         print(f"Total {cell_type.upper()}s: {len(tsv_table)}")

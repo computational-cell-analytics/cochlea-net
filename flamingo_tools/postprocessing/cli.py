@@ -195,6 +195,18 @@ def label_components():
     parser.add_argument("--scale_factor", type=int, default=20,
                         help="Scale factor for down-scaling data for visualization in Napari. Default: 20")
 
+    # options for path deviation filtering (IHC only)
+    parser.add_argument(
+        "--path_file", type=str, default=None,
+        help="Path to central path TSV for IHC deviation filtering. "
+             "If the file does not exist, the path is computed on-the-fly and saved here. Default: None",
+    )
+    parser.add_argument(
+        "--max_path_deviation", type=float, default=None,
+        help="Max deviation in µm from the central IHC path. "
+             "Instances farther than this are removed (component_labels=0). Requires --cell_type ihc. Default: None",
+    )
+
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
     parser.add_argument("--s3_credentials", type=str, default=None,
@@ -222,6 +234,8 @@ def label_components():
         s3_service_endpoint=args.s3_service_endpoint,
         use_napari=args.napari,
         scale_factor=args.scale_factor,
+        path_file=args.path_file,
+        max_path_deviation=args.max_path_deviation,
     )
 
 
