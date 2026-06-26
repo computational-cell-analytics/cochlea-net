@@ -92,7 +92,10 @@ def fig_cohort_boxplot(
 
     x_positions = [1, 2]
 
-    def _draw_subplot(ax, data_by_cohort, structure, ylim0, ylim1, y_ticks, outlier=None, ylabel=None, title=None):
+    def _draw_subplot(
+        ax, data_by_cohort, structure, ylim0, ylim1, y_ticks,
+        outlier=None, ylabel=None, title=None, show_literature=False,
+    ):
         if title is None:
             title = structure
         for pos, cohort in zip(x_positions, cohorts):
@@ -115,6 +118,10 @@ def fig_cohort_boxplot(
         ax.hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
         ax.fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)
 
+        if show_literature:
+            ax.text(1., lower_y + (ylim1 - ylim0) * 0.01, "literature",
+                    color=COLOR_LITERATURE, fontsize=main_label_size, ha="center")
+
         ax.set_xticks(x_positions)
         ax.set_xticklabels(cohorts, fontsize=sub_label_size)
         ax.tick_params(axis="x", which="major", pad=8)
@@ -133,6 +140,7 @@ def fig_cohort_boxplot(
         y_ticks=list(range(2000, 12001, 2000)),
         ylabel="Count per cochlea",
         outlier=sgn_outlier,
+        show_literature=True,
     )
     _draw_subplot(
         axes[1], ihc_by_cohort, "IHC",
@@ -159,7 +167,7 @@ def fig_cohort_boxplot(
         plt.close()
 
 
-def supp_fig_mwfls_synapses(
+def fig_mwfls_synapses(
     save_path: str,
     idisco_syn_version: str = "v4c",
     mwfls_syn_version: str = "v9",
@@ -169,6 +177,7 @@ def supp_fig_mwfls_synapses(
     trendline_std: bool = False,
     errorbar: bool = False,
     plot: bool = False,
+    show_legend: bool = False,
 ):
     """Synapse-per-IHC vs. length-fraction for both iDISCO and MWfLS cohorts.
 
@@ -232,6 +241,7 @@ def supp_fig_mwfls_synapses(
         trendline=trendline,
         trendline_std=trendline_std,
         errorbar=errorbar,
+        show_legend=show_legend,
     )
 
 
@@ -248,7 +258,6 @@ def plot_intensity(save_path, plot=False):
     mwfls = [c for c in MWFLS_COCHLEAE_DICT.keys()]
 
     def get_median_intensity(cochlea, mode="IHC"):
-        print(cochlea, mode)
         if mode == "IHC":
             component_list = [1]
             if "component_list" in SYNAPSE_DICT[cochlea].keys():
@@ -384,13 +393,17 @@ def main():
             save_path=os.path.join(args.figure_dir, f"fig_cohort_boxplot_outlier.{FILE_EXTENSION}"),
             plot=args.plot, remove_outliers=True,
         )
-        supp_fig_mwfls_synapses(
-            save_path=os.path.join(args.figure_dir, f"supp_fig_mwfls_synapses.{FILE_EXTENSION}"),
+        fig_mwfls_synapses(
+            save_path=os.path.join(args.figure_dir, f"fig_mwfls_synapses.{FILE_EXTENSION}"),
             plot=args.plot, top_axis=True,
         )
-        supp_fig_mwfls_synapses(
-            save_path=os.path.join(args.figure_dir, f"supp_fig_mwfls_synapses_trendline.{FILE_EXTENSION}"),
+        fig_mwfls_synapses(
+            save_path=os.path.join(args.figure_dir, f"fig_mwfls_synapses_trendline.{FILE_EXTENSION}"),
             plot=args.plot, trendline=True, top_axis=True,
+        )
+        fig_mwfls_synapses(
+            save_path=os.path.join(args.figure_dir, f"fig_mwfls_synapses_trendline_legend.{FILE_EXTENSION}"),
+            plot=args.plot, trendline=True, top_axis=True, show_legend=True,
         )
         plot_intensity(
             save_path=os.path.join(args.figure_dir, f"fig_stain_intensity.{FILE_EXTENSION}"),

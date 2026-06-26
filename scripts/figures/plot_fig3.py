@@ -400,6 +400,7 @@ def supp_fig_03a_meyer(
     errorbar: bool = False,
     cohort_dict: dict = None,
     trendline_colors: dict = None,
+    show_legend: bool = False,
 ):
     """Plot Supplementary Figure 3a.
 
@@ -501,7 +502,7 @@ def supp_fig_03a_meyer(
     # print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
 
     result = pd.DataFrame(result)
-    fig, ax = plt.subplots(figsize=(6.7, 5))
+    fig, ax = plt.subplots(figsize=(6.7, 6.5 if show_legend else 5))
 
     for num, (name, grp) in enumerate(result.groupby("cochlea")):
         run_length = list(grp["runlength"])
@@ -585,8 +586,28 @@ def supp_fig_03a_meyer(
     ax.tick_params(axis='y', labelsize=tick_size)
     ax.set_xlabel("Length fraction", fontsize=main_label_size)
     ax.set_ylabel("Synapse per IHC", fontsize=main_label_size)
-    # ax.legend(title="cochlea")
+
     plt.tight_layout()
+
+    if show_legend:
+        color = [color_dict[key] for key in color_dict.keys()]
+        marker = [marker_dict[key] for key in marker_dict.keys()]
+        label = [k for k in marker_dict.keys()]
+        for num, lbl in enumerate(label):
+            if lbl == "Meyer":
+                label[num] = "Meyer et al."
+
+        handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
+
+        if trendline and trendline_colors:
+            for cohort_name, trendline_color in trendline_colors.items():
+                handles.insert(-1, get_flatline_handle(trendline_color))
+                label.insert(-1, cohort_name)
+
+        ncol = (len(label) + 1) // 2
+        ax.legend(handles, label, loc=(-0.15, -0.3),
+                  ncol=ncol, framealpha=1, frameon=False)
+        fig.subplots_adjust(bottom=0.3)
     # prism_cleanup_axes(ax)
 
     if ".png" in save_path:
@@ -655,7 +676,7 @@ def plot_legend_supp_fig03a(
 
     color = [color_dict[key] for key in color_dict.keys()]
     if ncol is None:
-        ncol = len(label // 2)
+        ncol = len(label) // 2
 
     handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=ncol, framealpha=1, frameon=False)
