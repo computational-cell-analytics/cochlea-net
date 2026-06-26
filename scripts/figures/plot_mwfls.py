@@ -2,6 +2,11 @@ import argparse
 import os
 
 import matplotlib.pyplot as plt
+import pandas as pd
+
+from flamingo_tools.analysis.seg_table_utils import add_object_measures_to_table
+from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
 
 from util import (
     literature_reference_values,
@@ -230,6 +235,135 @@ def supp_fig_mwfls_synapses(
     )
 
 
+def plot_intensity(save_path, plot=False):
+    """Plot intensities of stains at segmentation.
+    Two cohorts, IDISCO and mwfls, are compared with each other in respect to the staining intensity.
+    The intensities of PC and Vglut3 are compared at the position of SGN and IHC segmentation, respectively.
+    """
+
+    main_label_size = 20
+    main_tick_size = 16
+    sub_label_size = 16
+    idisco = [c for c in COCHLEAE_DICT.keys()]
+    mwfls = [c for c in MWFLS_COCHLEAE_DICT.keys()]
+
+    def get_median_intensity(cochlea, mode="IHC"):
+        print(cochlea, mode)
+        if mode == "IHC":
+            component_list = [1]
+            if "component_list" in SYNAPSE_DICT[cochlea].keys():
+                component_list = SYNAPSE_DICT[cochlea]["component_list"]
+            stain = "Vglut3"
+            seg_version = SYNAPSE_DICT[cochlea]["ihc_table_name"]
+        else:
+            component_list = [1]
+            stain = "PV"
+            seg_version = "SGN_v2"
+
+        keyword = f"{stain}_bg-mask_median"
+        seg_version_str = "-".join(seg_version.split("_"))
+        table_seg_path = f"{cochlea}/tables/{seg_version}/default.tsv"
+        if cochlea in ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"] and mode=="SGN":
+            table_meas_path = f"{cochlea}/tables/{seg_version}/{stain}_{seg_version_str}_object-measures.tsv"
+            keyword = f"{stain}_median"
+        else:
+            table_meas_path = f"{cochlea}/tables/{seg_version}/{stain}_{seg_version_str}_object-measures-bg-mask.tsv"
+
+        tsv_path, fs = get_s3_path(table_seg_path)
+        with fs.open(tsv_path, "r") as f:
+            table_seg = pd.read_csv(f, sep="\t")
+
+        if keyword not in list(table_seg.columns):
+            local_out = os.path.join(os.getcwd(), f"{cochlea}_seg_table_{mode}.tsv")
+            if not os.path.exists(local_out):
+                print("Creating local table")
+                add_object_measures_to_table(table_seg_path, table_meas_path, local_out, s3_seg=True, s3_meas=True)
+            table_seg = pd.read_csv(local_out, sep="\t")
+
+
+        subset = table_seg[table_seg["component_labels"].isin(component_list)]
+        intensities = subset[keyword].values
+        return sum(intensities) / len(intensities)
+
+    # get intensities for SGN segmentation
+    sgn_idisco = [get_median_intensity(c, mode="SGN") for c in idisco]
+    sgn_mwfls = [get_median_intensity(c, mode="SGN") for c in mwfls if "126_R" not in c]
+
+    # get intensities for IHC segmentation
+    ihc_idisco = [get_median_intensity(c, mode="IHC") for c in idisco]
+    ihc_mwfls = [get_median_intensity(c, mode="IHC") for c in mwfls if "126_R" not in c]
+
+    cohorts = ["iDISCO", "MWfLS"]
+    sgn_by_cohort = {"iDISCO": sgn_idisco, "MWfLS": sgn_mwfls}
+    ihc_by_cohort = {"iDISCO": ihc_idisco, "MWfLS": ihc_mwfls}
+
+    fig, axes = plt.subplots(1, 2, figsize=(8, 4.5))
+
+    x_positions = [1, 2]
+
+    def _draw_subplot(
+        ax, data_by_cohort, structure, ylim0, ylim1, y_ticks,
+        outlier=None, ylabel=None, title=None,
+    ):
+        if title is None:
+            title = structure
+        for pos, cohort in zip(x_positions, cohorts):
+            ax_prism_boxplot(ax, data_by_cohort[cohort], positions=[pos], color=COHORT_COLORS[cohort])
+        if outlier is not None:
+            for pos, cohort in zip(x_positions, cohorts):
+                ax.scatter(
+                    [pos] * len(outlier[cohort]),
+                    outlier[cohort],
+                    color="red",
+                    zorder=2,
+                    marker="x",
+                    s=30,
+                    alpha=0.7,
+                )
+
+        xmin, xmax = 0.5, 2.5
+        ax.set_xlim(xmin, xmax)
+
+        ax.set_xticks(x_positions)
+        ax.set_xticklabels(cohorts, fontsize=sub_label_size)
+        ax.tick_params(axis="x", which="major", pad=8)
+        ax.set_yticks(y_ticks)
+        ax.set_yticklabels(y_ticks, rotation=0, fontsize=main_tick_size)
+        ax.set_ylim(ylim0, ylim1)
+
+        if ylabel:
+            ax.set_ylabel(ylabel, fontsize=main_label_size)
+
+        ax.set_title(title, fontsize=main_label_size, pad=10)
+
+    _draw_subplot(
+        axes[0], sgn_by_cohort, "SGN",
+        ylim0=0, ylim1=500,
+        y_ticks=list(range(000, 501, 100)),
+        ylabel="Intensity [a.u.]",
+        title="PV@SGNs"
+    )
+    _draw_subplot(
+        axes[1], ihc_by_cohort, "IHC",
+        ylim0=400, ylim1=900,
+        y_ticks=list(range(400, 901, 100)),
+        title="VGlut3@IHCs"
+    )
+
+    prism_cleanup_axes(axes)
+    plt.tight_layout()
+
+    if ".png" in save_path:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
+    else:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0)
+
+    if plot:
+        plt.show()
+    else:
+        plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate MWfLS vs iDISCO comparison plots.")
     parser.add_argument("--figure_dir", "-f", type=str, default="./panels/mwfls",
@@ -257,6 +391,10 @@ def main():
         supp_fig_mwfls_synapses(
             save_path=os.path.join(args.figure_dir, f"supp_fig_mwfls_synapses_trendline.{FILE_EXTENSION}"),
             plot=args.plot, trendline=True, top_axis=True,
+        )
+        plot_intensity(
+            save_path=os.path.join(args.figure_dir, f"fig_stain_intensity.{FILE_EXTENSION}"),
+            plot=args.plot,
         )
     else:
         print("Skipping synapse figures (--skip_synapses).")

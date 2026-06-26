@@ -46,7 +46,7 @@ VALUE_DICT = {
     # PELCOfHC2longnoDCM
     "M_AMD_000126_L": {
         "IHC": [
-            {"count": 567, "version": "IHC_v9"},
+            {"count": 665, "version": "IHC_v9"},
         ],
         "SGN": [
             {"count": 11360, "version": "SGN_v2"},
@@ -62,7 +62,7 @@ VALUE_DICT = {
     },
     "M_AMD_000127_L": {
         "IHC": [
-            {"count": 542, "version": "IHC_v9"},
+            {"count": 617, "version": "IHC_v9"},
         ],
         "SGN": [
             {"count": 1665, "version": "SGN_v2"},
@@ -70,7 +70,7 @@ VALUE_DICT = {
     },
     "M_AMD_000127_R": {
         "IHC": [
-            {"count": 498, "version": "IHC_v9"},
+            {"count": 647, "version": "IHC_v9"},
         ],
         "SGN": [
             {"count": 7860, "version": "SGN_v2"},
