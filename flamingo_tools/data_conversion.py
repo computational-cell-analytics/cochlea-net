@@ -13,15 +13,10 @@ from typing import Optional, List, Dict, Tuple
 import numpy as np
 import pybdv
 
-try:
-    from cluster_tools.utils.volume_utils import write_format_metadata
-except ImportError:
-    write_format_metadata = None
-
 from elf.io import open_file
 from skimage.transform import rescale
 
-from .file_utils import read_tif, read_raw
+from .file_utils import read_tif, read_raw, write_ome_zarr_metadata
 
 
 def _read_voxel_size_and_unit_flamingo(mdata_path):
@@ -170,9 +165,7 @@ def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes,
 
     # Write the ome zarr metadata.
     metadata_dict = {"unit": unit, "voxel_size": voxel_size}
-    write_format_metadata(
-        "ome.zarr", out_path, metadata_dict, scale_factors=scale_factors, prefix=base_key
-    )
+    write_ome_zarr_metadata(out_path, metadata_dict, scale_factors=scale_factors, prefix=base_key)
 
 
 def flamingo_filename_parser(file_path: str, name_mapping: Optional[Dict]) -> Tuple[int, Dict[str, str], str]:
