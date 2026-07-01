@@ -133,10 +133,18 @@ def fig_02c(
 
 
 # Load the synapse counts for all IHCs from the relevant tables.
-def _load_ribbon_synapse_counts():
-    ihc_version = "ihc_counts_v4c"
-    synapse_dir = os.path.join(SYNAPSE_DIR_ROOT, ihc_version)
-    tables = [entry.path for entry in os.scandir(synapse_dir) if "ihc_count_M_LR" in entry.name]
+def _load_ribbon_synapse_counts(
+    ihc_version: str = "v4c",
+    cochleae: list[str] = [
+        "M_LR_000226_L",
+        "M_LR_000226_R",
+        "M_LR_000227_L",
+        "M_LR_000227_R",
+    ],
+) -> list:
+    measure_synapse_dir = f"ihc_counts_{ihc_version}"
+    synapse_dir = os.path.join(SYNAPSE_DIR_ROOT, measure_synapse_dir)
+    tables = [entry.path for entry in os.scandir(synapse_dir) if any(c in entry.name for c in cochleae)]
     syn_counts = []
     for tab in tables:
         x = pd.read_csv(tab, sep="\t")

@@ -9,6 +9,75 @@ SYNAPSE_DIR_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightshee
 # SYNAPSE_DIR_ROOT = "./synapses"
 png_dpi = 300
 
+VALUE_DICT = {
+    # iDISCO
+    "M_LR_000226_L": {
+        "IHC": [
+            {"count": 712, "version": "IHC_v4c"},
+        ],
+        "SGN": [
+            {"count": 11153, "version": "SGN_v2"},
+        ],
+    },
+    "M_LR_000226_R": {
+        "IHC": [
+            {"count": 710, "version": "IHC_v4c"},
+        ],
+        "SGN": [
+            {"count": 11398, "version": "SGN_v2"},
+        ],
+    },
+    "M_LR_000227_L": {
+        "IHC": [
+            {"count": 721, "version": "IHC_v4c"},
+        ],
+        "SGN": [
+            {"count": 10333, "version": "SGN_v2"},
+        ],
+    },
+    "M_LR_000227_R": {
+        "IHC": [
+            {"count": 675, "version": "IHC_v4c"},
+        ],
+        "SGN": [
+            {"count": 11820, "version": "SGN_v2"},
+        ],
+    },
+    # PELCOfHC2longnoDCM
+    "M_AMD_000126_L": {
+        "IHC": [
+            {"count": 665, "version": "IHC_v9"},
+        ],
+        "SGN": [
+            {"count": 11360, "version": "SGN_v2"},
+        ],
+    },
+    "M_AMD_000126_R": {
+        "IHC": [
+            {"count": 669, "version": "IHC_v9"},
+        ],
+        "SGN": [
+            {"count": 10751, "version": "SGN_v2"},
+        ],
+    },
+    "M_AMD_000127_L": {
+        "IHC": [
+            {"count": 617, "version": "IHC_v9"},
+        ],
+        "SGN": [
+            {"count": 1665, "version": "SGN_v2"},
+        ],
+    },
+    "M_AMD_000127_R": {
+        "IHC": [
+            {"count": 647, "version": "IHC_v9"},
+        ],
+        "SGN": [
+            {"count": 7860, "version": "SGN_v2"},
+        ],
+    },
+}
+
 
 def ax_prism_boxplot(ax, data, positions=None, color="tab:blue"):
     """
@@ -83,8 +152,8 @@ def get_marker_handle(color, marker, edgecolors=None):
         return plt.plot([], [], marker=marker, markerfacecolor='none', markeredgecolor=edgecolors, ls="none")[0]
 
 
-def get_flatline_handle(color):
-    return Line2D([], [], lw=3, color=color)
+def get_flatline_handle(color, linestyle="solid"):
+    return Line2D([], [], lw=3, color=color, linestyle=linestyle)
 
 
 def get_trendline_handle(linestyle, linewidth):
@@ -260,6 +329,20 @@ def literature_reference_values_gerbil(structure):
     return lower_bound, upper_bound
 
 
+COHORT_DICT = {
+    "iDISCO": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
+    "MWfLS": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
+}
+
+MWFLS_COCHLEAE_DICT = {
+    "M_AMD_000126_L": {"alias": "M_03L", "color": "#5B1CE8", "component": [1]},
+    "M_AMD_000126_R": {"alias": "M_03R", "color": "#1C1FE8", "component": [1]},
+    "M_AMD_000127_L": {"alias": "M_04L", "color": "#1C60E9", "component": [1]},
+    "M_AMD_000127_R": {"alias": "M_04R", "color": "#1CA0E8", "component": [1]},
+}
+
+OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}
+
 def to_alias(cochlea_name):
     name_short = cochlea_name.replace("_", "").replace("0", "")
     name_to_alias = {
@@ -267,5 +350,9 @@ def to_alias(cochlea_name):
         "MLR226R": "M_01R",
         "MLR227L": "M_02L",
         "MLR227R": "M_02R",
+        "MAMD126L": "M_03L",
+        "MAMD126R": "M_03R",
+        "MAMD127L": "M_04L",
+        "MAMD127R": "M_04R",
     }
     return name_to_alias[name_short]

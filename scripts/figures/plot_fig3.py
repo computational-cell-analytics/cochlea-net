@@ -120,17 +120,39 @@ def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficie
     return value_by_band
 
 
-def get_tonotopic_data():
-    s3 = create_s3_target()
-    source_name = "IHC_v4c"
+def get_tonotopic_data(
+    cochleae_dict: dict = COCHLEAE_DICT,
+    source_name: str = "IHC_v4c",
+    synapse_dir: str = SYNAPSE_DIR,
+    cache_path: str = None,
+):
+    """Load per-cochlea tonotopic data from S3 and local synapse tables.
+
+    Args:
+        cochleae_dict: Dict mapping cochlea name to metadata including a "component" key
+            with the list of component labels to keep. Defaults to the module-level
+            COCHLEAE_DICT (iDISCO cochleae).
+        source_name: IHC segmentation source name used as the S3 key (e.g. "IHC_v4c", "IHC_v9").
+        synapse_dir: Root directory containing the ihc_counts_<version> subdirectories.
+            Defaults to the module-level SYNAPSE_DIR.
+        cache_path: Path for the pickle cache. Defaults to
+            "./tonotopic_data_<source_name>.pkl".
+
+    Returns:
+        Dict mapping cochlea name to a DataFrame with columns
+        label_id, length[µm], length_fraction, frequency[kHz], syn_per_IHC.
+    """
+    if cache_path is None:
+        cache_path = f"./tonotopic_data_{source_name}.pkl"
+
     ihc_version = source_name.split("_")[1]
-    cache_path = "./tonotopic_data.pkl"
-    cochleae = [key for key in COCHLEAE_DICT.keys()]
+    cochleae = list(cochleae_dict.keys())
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
             return pickle.load(f)
 
+    s3 = create_s3_target()
     chreef_data = {}
     for cochlea in cochleae:
         print("Processsing cochlea:", cochlea)
@@ -145,12 +167,14 @@ def get_tonotopic_data():
         table = pd.read_csv(table_content, sep="\t")
 
         # May need to be adjusted for some cochleae.
-        component_labels = COCHLEAE_DICT[cochlea]["component"]
+        if "126_R" in cochlea:
+            component_labels = [1]
+        else:
+            component_labels = cochleae_dict[cochlea]["component"]
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         ihc_dir = f"ihc_counts_{ihc_version}"
-        synapse_dir = f"{SYNAPSE_DIR}/{ihc_dir}"
-        tab_path = os.path.join(synapse_dir, f"ihc_count_{cochlea}.tsv")
+        tab_path = os.path.join(synapse_dir, ihc_dir, f"ihc_count_{cochlea}.tsv")
         syn_tab = pd.read_csv(tab_path, sep="\t")
         syn_ids = syn_tab["label_id"].values
 
@@ -377,6 +401,9 @@ def supp_fig_03a_meyer(
     trendline: bool = False,
     trendline_std: bool = False,
     errorbar: bool = False,
+    cohort_dict: dict = None,
+    trendline_colors: dict = None,
+    show_legend: bool = False,
 ):
     """Plot Supplementary Figure 3a.
 
@@ -388,9 +415,21 @@ def supp_fig_03a_meyer(
         n_bins: Number of bins to divide the run length into.
         top_axis: Plot top x-axis as frequency range.
         trendline: Visualize trendline as average of each bin.
-        trendline_std_ Visualize standard deviation of trendline.
+        trendline_std: Visualize standard deviation of trendline.
         errorbar: Use errorbar for visualizing mean and stdev.
+        cohort_dict: Optional per-cochlea metadata dict with keys "alias", "color", "marker".
+            Shape: {cochlea_name: {"alias": str, "color": str, "marker": str}}.
+            When None, falls back to the module-level COCHLEAE_DICT with marker "o".
+        trendline_colors: Optional dict mapping cohort name → color string. When provided,
+            entries in cohort_dict must also carry a "cohort" key, and one trendline is drawn
+            per cohort in its color. When None, a single gray trendline is drawn across all
+            non-Meyer cochleae (existing behavior).
     """
+    if cohort_dict:
+        alpha = 0.5
+    else:
+        alpha = 1
+
     ihc_version = "ihc_counts_v4c"
     if trendline_std:
         line_alphas = {
@@ -415,15 +454,19 @@ def supp_fig_03a_meyer(
     result = {"cochlea": [], "runlength": [], "value": []}
     color_dict = {}
     marker_dict = {}
+    alias_to_cohort = {}
     cochleae_length = []
+    _meta = cohort_dict if cohort_dict is not None else COCHLEAE_DICT
     for name, values in tonotopic_data.items():
         if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
+            alias = _meta[name]["alias"]
         else:
             alias = name.replace("_", "").replace("0", "")
 
-        color_dict[alias] = COCHLEAE_DICT[name]["color"]
-        marker_dict[alias] = "o"
+        color_dict[alias] = _meta[name]["color"]
+        marker_dict[alias] = _meta[name].get("marker", "o")
+        if "cohort" in _meta[name]:
+            alias_to_cohort[alias] = _meta[name]["cohort"]
         syn_count = values["syn_per_IHC"].values
         length_fraction = values["length_fraction"].values
         run_length = values["length[µm]"].values
@@ -458,11 +501,11 @@ def supp_fig_03a_meyer(
         marker_dict["Meyer"] = MEYER_MARKER
 
     avg_length = sum(cochleae_length) / len(cochleae_length)
-    print(f"Average total length: {round(avg_length, 2)} µm")
-    print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
+    # print(f"Average total length: {round(avg_length, 2)} µm")
+    # print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
 
     result = pd.DataFrame(result)
-    fig, ax = plt.subplots(figsize=(6.7, 5))
+    fig, ax = plt.subplots(figsize=(6.7, 6.5 if show_legend else 5))
 
     for num, (name, grp) in enumerate(result.groupby("cochlea")):
         run_length = list(grp["runlength"])
@@ -477,58 +520,46 @@ def supp_fig_03a_meyer(
                     color=color_dict[name], marker='s', linestyle='solid', linewidth=2)
         else:
             ax.scatter(run_length, syn_count, label=name,
-                       color=color_dict[name], marker=marker_dict[name])
+                       color=color_dict[name], marker=marker_dict[name], alpha=alpha)
 
-    # calculate mean and standard deviation
-    trend_dict = {}
-    for num, (name, grp) in enumerate(result.groupby("cochlea")):
-        if name == "Meyer":
-            continue
-        run_length = list(grp["runlength"])
-        syn_count = list(grp["value"])
-        for r, s in zip(run_length, syn_count):
-            if r in trend_dict:
-                trend_dict[r].append(s)
-            else:
-                trend_dict[r] = [s]
+    # Build trend dict(s): one per cohort when trendline_colors is set, otherwise one combined.
+    def _build_trend_dict(aliases):
+        td = {}
+        for name, grp in result.groupby("cochlea"):
+            if name not in aliases:
+                continue
+            for r, s in zip(grp["runlength"], grp["value"]):
+                td.setdefault(r, []).append(s)
+        return td
 
-    x_pos = [k for k in list(trend_dict.keys())]
-    center_line = [sum(val) / len(val) for _, val in trend_dict.items()]
-    val_std = [np.std(val) for _, val in trend_dict.items()]
-    lower_std = [mean - std for (mean, std) in zip(center_line, val_std)]
-    upper_std = [mean + std for (mean, std) in zip(center_line, val_std)]
+    def _draw_trendline(ax, trend_dict, color):
+        x_pos = list(trend_dict.keys())
+        center_line = [sum(v) / len(v) for v in trend_dict.values()]
+        val_std = [np.std(v) for v in trend_dict.values()]
+        lower_std = [m - s for m, s in zip(center_line, val_std)]
+        upper_std = [m + s for m, s in zip(center_line, val_std)]
 
-    if errorbar:
-        ax.errorbar(x_pos, center_line, val_std, linestyle='dashed', marker='D', color="#D63637", linewidth=1)
+        if errorbar:
+            ax.errorbar(x_pos, center_line, val_std,
+                        linestyle="dashed", marker="D", color=color, linewidth=1)
+        if trendline:
+            ax.plot(x_pos, center_line, linestyle="dashed", color=color,
+                    alpha=line_alphas["center"], linewidth=3, zorder=2)
+            ax.plot(x_pos, upper_std, linestyle="solid", color=color,
+                    alpha=line_alphas["upper"], zorder=0)
+            ax.plot(x_pos, lower_std, linestyle="solid", color=color,
+                    alpha=line_alphas["lower"], zorder=0)
+            plt.fill_between(x_pos, lower_std, upper_std,
+                             color=color, alpha=line_alphas["fill"], interpolate=True)
 
-    if trendline:
-        trend_center, = ax.plot(
-            x_pos,
-            center_line,
-            linestyle="dashed",
-            color="gray",
-            alpha=line_alphas["center"],
-            linewidth=3,
-            zorder=2
-        )
-        trend_upper, = ax.plot(
-            x_pos,
-            upper_std,
-            linestyle="solid",
-            color="gray",
-            alpha=line_alphas["upper"],
-            zorder=0
-        )
-        trend_lower, = ax.plot(
-            x_pos,
-            lower_std,
-            linestyle="solid",
-            color="gray",
-            alpha=line_alphas["lower"],
-            zorder=0
-        )
-        plt.fill_between(x_pos, lower_std, upper_std,
-                         color="gray", alpha=line_alphas["fill"], interpolate=True)
+    non_meyer = {a for a in color_dict if a != "Meyer"}
+    if trendline_colors and alias_to_cohort:
+        for cohort, color in trendline_colors.items():
+            cohort_aliases = {a for a in non_meyer if alias_to_cohort.get(a) == cohort}
+            if cohort_aliases:
+                _draw_trendline(ax, _build_trend_dict(cohort_aliases), color)
+    elif trendline or errorbar:
+        _draw_trendline(ax, _build_trend_dict(non_meyer), "gray")
 
     if top_axis:
         # Create second x-axis
@@ -558,8 +589,28 @@ def supp_fig_03a_meyer(
     ax.tick_params(axis='y', labelsize=tick_size)
     ax.set_xlabel("Length fraction", fontsize=main_label_size)
     ax.set_ylabel("Synapse per IHC", fontsize=main_label_size)
-    # ax.legend(title="cochlea")
+
     plt.tight_layout()
+
+    if show_legend:
+        color = [color_dict[key] for key in color_dict.keys()]
+        marker = [marker_dict[key] for key in marker_dict.keys()]
+        label = [k for k in marker_dict.keys()]
+        for num, lbl in enumerate(label):
+            if lbl == "Meyer":
+                label[num] = "Meyer et al."
+
+        handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
+
+        if trendline and trendline_colors:
+            for cohort_name, trendline_color in trendline_colors.items():
+                handles.insert(-1, get_flatline_handle(trendline_color))
+                label.insert(-1, cohort_name)
+
+        ncol = (len(label) + 1) // 2
+        ax.legend(handles, label, loc=(-0.15, -0.3),
+                  ncol=ncol, framealpha=1, frameon=False)
+        fig.subplots_adjust(bottom=0.3)
     # prism_cleanup_axes(ax)
 
     if ".png" in save_path:
@@ -628,7 +679,7 @@ def plot_legend_supp_fig03a(
 
     color = [color_dict[key] for key in color_dict.keys()]
     if ncol is None:
-        ncol = len(label // 2)
+        ncol = len(label) // 2
 
     handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
     legend = plt.legend(handles, label, loc=3, ncol=ncol, framealpha=1, frameon=False)
