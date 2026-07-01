@@ -343,6 +343,7 @@ MWFLS_COCHLEAE_DICT = {
 
 OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}
 
+
 def to_alias(cochlea_name):
     name_short = cochlea_name.replace("_", "").replace("0", "")
     name_to_alias = {

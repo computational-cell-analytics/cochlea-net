@@ -285,7 +285,6 @@ def plot_intensity(save_path, plot=False):
                 add_object_measures_to_table(table_seg_path, table_meas_path, local_out, s3_seg=True, s3_meas=True)
             table_seg = pd.read_csv(local_out, sep="\t")
 
-
         subset = table_seg[table_seg["component_labels"].isin(component_list)]
         intensities = subset[keyword].values
         return sum(intensities) / len(intensities)

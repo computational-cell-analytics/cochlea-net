@@ -13,9 +13,7 @@
 		"segmentation_channel": "IHC_v9",
 		"component_list": [
 			1
-		],
-		"min_component_length": 10,
-		"min_size": 25000
+		]
 	},
 	{
 		"dataset_name": "M_AMD_000127_L",

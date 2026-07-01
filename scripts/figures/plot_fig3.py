@@ -404,6 +404,7 @@ def supp_fig_03a_meyer(
     cohort_dict: dict = None,
     trendline_colors: dict = None,
     show_legend: bool = False,
+    length_info: bool = False,
 ):
     """Plot Supplementary Figure 3a.
 
@@ -424,6 +425,8 @@ def supp_fig_03a_meyer(
             entries in cohort_dict must also carry a "cohort" key, and one trendline is drawn
             per cohort in its color. When None, a single gray trendline is drawn across all
             non-Meyer cochleae (existing behavior).
+        show_legend: Show legend within plot.
+        length_info: Print info for length of entire cochlea and bins used for plotting.
     """
     if cohort_dict:
         alpha = 0.5
@@ -500,9 +503,10 @@ def supp_fig_03a_meyer(
         color_dict["Meyer"] = MEYER_COLOR
         marker_dict["Meyer"] = MEYER_MARKER
 
-    avg_length = sum(cochleae_length) / len(cochleae_length)
-    # print(f"Average total length: {round(avg_length, 2)} µm")
-    # print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
+    if length_info:
+        avg_length = sum(cochleae_length) / len(cochleae_length)
+        print(f"Average total length: {round(avg_length, 2)} µm")
+        print(f"Average length per bin: {round(avg_length / n_bins, 2)} µm")
 
     result = pd.DataFrame(result)
     fig, ax = plt.subplots(figsize=(6.7, 6.5 if show_legend else 5))

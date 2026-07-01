@@ -43,23 +43,20 @@
 		"segmentation_channel": "IHC_v9",
 		"component_list": [
 			1,
-			9
-		],
-		"min_component_length": 10,
-		"min_size": 25000
-	},
-	{
-		"dataset_name": "M_AMD_000126_R",
-		"cell_type": "ihc",
-		"segmentation_channel": "IHC_v4",
-		"component_list": [
-			1,
-			6,
+			13,
 			2,
-			3
+			5,
+			10,
+			4,
+			33,
+			35,
+			36,
+			39,
+			52
 		],
-		"min_component_length": 10,
-		"min_size": 20000
+		"min_component_length": 5,
+		"min_size": 25000,
+		"max_edge_distance": 20
 	},
 	{
 		"dataset_name": "M_AMD_000127_L",

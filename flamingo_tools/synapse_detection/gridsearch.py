@@ -22,11 +22,12 @@ COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 TRAIN_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/images")
 LABEL_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v4/labels")
 DEFAULT_JSON = None
-
+_DEFAULT_THRESHOLD = 0.5
 
 # ---------------------------------------------------------------------------
 # Coordinate matching metric (inlined from czii evaluation_metrics.py)
 # ---------------------------------------------------------------------------
+
 
 def _metric_coords(gts, preds, match_distance=4):
     """Compute precision, recall, and F1 for two sets of 3-D coordinates.
