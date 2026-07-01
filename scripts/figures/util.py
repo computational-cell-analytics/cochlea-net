@@ -54,10 +54,10 @@ VALUE_DICT = {
     },
     "M_AMD_000126_R": {
         "IHC": [
-            {"count": 692, "version": "IHC_v9"},
+            {"count": 669, "version": "IHC_v9"},
         ],
         "SGN": [
-            {"count": 10796, "version": "SGN_v2"},
+            {"count": 10751, "version": "SGN_v2"},
         ],
     },
     "M_AMD_000127_L": {
@@ -152,8 +152,8 @@ def get_marker_handle(color, marker, edgecolors=None):
         return plt.plot([], [], marker=marker, markerfacecolor='none', markeredgecolor=edgecolors, ls="none")[0]
 
 
-def get_flatline_handle(color):
-    return Line2D([], [], lw=3, color=color)
+def get_flatline_handle(color, linestyle="solid"):
+    return Line2D([], [], lw=3, color=color, linestyle=linestyle)
 
 
 def get_trendline_handle(linestyle, linewidth):
@@ -335,10 +335,10 @@ COHORT_DICT = {
 }
 
 MWFLS_COCHLEAE_DICT = {
-    "M_AMD_000126_L": {"alias": "M_03L", "color": "#5B1CE8", "component": [1, 2, 6]},
+    "M_AMD_000126_L": {"alias": "M_03L", "color": "#5B1CE8", "component": [1]},
     "M_AMD_000126_R": {"alias": "M_03R", "color": "#1C1FE8", "component": [1]},
     "M_AMD_000127_L": {"alias": "M_04L", "color": "#1C60E9", "component": [1]},
-    "M_AMD_000127_R": {"alias": "M_04R", "color": "#1CA0E8", "component": [4, 2, 7, 5, 16, 8]},
+    "M_AMD_000127_R": {"alias": "M_04R", "color": "#1CA0E8", "component": [1]},
 }
 
 OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}

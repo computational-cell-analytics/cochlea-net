@@ -167,7 +167,10 @@ def get_tonotopic_data(
         table = pd.read_csv(table_content, sep="\t")
 
         # May need to be adjusted for some cochleae.
-        component_labels = cochleae_dict[cochlea]["component"]
+        if "126_R" in cochlea:
+            component_labels = [1]
+        else:
+            component_labels = cochleae_dict[cochlea]["component"]
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         ihc_dir = f"ihc_counts_{ihc_version}"

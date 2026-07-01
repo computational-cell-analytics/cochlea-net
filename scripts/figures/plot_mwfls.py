@@ -272,11 +272,7 @@ def plot_intensity(save_path, plot=False):
         keyword = f"{stain}_bg-mask_median"
         seg_version_str = "-".join(seg_version.split("_"))
         table_seg_path = f"{cochlea}/tables/{seg_version}/default.tsv"
-        if cochlea in ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"] and mode=="SGN":
-            table_meas_path = f"{cochlea}/tables/{seg_version}/{stain}_{seg_version_str}_object-measures.tsv"
-            keyword = f"{stain}_median"
-        else:
-            table_meas_path = f"{cochlea}/tables/{seg_version}/{stain}_{seg_version_str}_object-measures-bg-mask.tsv"
+        table_meas_path = f"{cochlea}/tables/{seg_version}/{stain}_{seg_version_str}_object-measures-bg-mask.tsv"
 
         tsv_path, fs = get_s3_path(table_seg_path)
         with fs.open(tsv_path, "r") as f:
@@ -296,11 +292,11 @@ def plot_intensity(save_path, plot=False):
 
     # get intensities for SGN segmentation
     sgn_idisco = [get_median_intensity(c, mode="SGN") for c in idisco]
-    sgn_mwfls = [get_median_intensity(c, mode="SGN") for c in mwfls if "126_R" not in c]
+    sgn_mwfls = [get_median_intensity(c, mode="SGN") for c in mwfls]
 
     # get intensities for IHC segmentation
     ihc_idisco = [get_median_intensity(c, mode="IHC") for c in idisco]
-    ihc_mwfls = [get_median_intensity(c, mode="IHC") for c in mwfls if "126_R" not in c]
+    ihc_mwfls = [get_median_intensity(c, mode="IHC") for c in mwfls]
 
     cohorts = ["iDISCO", "MWfLS"]
     sgn_by_cohort = {"iDISCO": sgn_idisco, "MWfLS": sgn_mwfls}
@@ -347,8 +343,8 @@ def plot_intensity(save_path, plot=False):
 
     _draw_subplot(
         axes[0], sgn_by_cohort, "SGN",
-        ylim0=0, ylim1=500,
-        y_ticks=list(range(000, 501, 100)),
+        ylim0=0, ylim1=200,
+        y_ticks=list(range(000, 201, 50)),
         ylabel="Intensity [a.u.]",
         title="PV@SGNs"
     )
