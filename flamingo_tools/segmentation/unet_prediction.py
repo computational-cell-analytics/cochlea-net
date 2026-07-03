@@ -310,7 +310,7 @@ def find_mask(
     elif seg_class == "ihc":
         upper_percentile = 99
         absolute_max = 300
-        absolute_min = 300
+        absolute_min = 150
         print(f"Calculating mask for segmentation class {seg_class}.")
     else:
         upper_percentile = 95

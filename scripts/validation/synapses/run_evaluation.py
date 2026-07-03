@@ -32,16 +32,6 @@ SYNAPSE_DICT = {
         "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
-    "v5_f1val_threshold": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_f1val_threshold"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5_train_threshold": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_train_threshold"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
     "v5_05t": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_05t"),
         "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),

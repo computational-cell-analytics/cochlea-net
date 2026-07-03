@@ -91,12 +91,12 @@
 			167
 		],
 		"fp": [
-			3,
+			2,
 			1,
 			3,
 			1,
-			1,
-			2
+			0,
+			1
 		],
 		"fn": [
 			100,
@@ -106,9 +106,9 @@
 			72,
 			120
 		],
-		"precision": 0.987,
+		"precision": 0.991,
 		"recall": 0.589,
-		"f1-score": 0.738
+		"f1-score": 0.739
 	},
 	"v3_threshold05_consensus_annotations": {
 		"crops": [

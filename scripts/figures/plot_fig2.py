@@ -71,15 +71,16 @@ def fig_02c(
     sgn_annotator = [0.95, 0.849, 0.9]
 
     ihc_v4c = [0.905, 0.831, 0.866]
-
     ihc_annotator = [0.958, 0.956, 0.957]
-    syn_unet = [0.931, 0.905, 0.918]
+
+    syn_unet = [0.971, 0.681, 0.8]
+    syn_annotator = [0.915, 0.945, 0.930]
 
     setting = ["SGN", "IHC", "Synapse"]
 
     # This is the version with IHC v4c segmentation:
     # 4th version of the network with optimized segmentation params and split of falsely merged IHCs
-    manual = [sgn_annotator, ihc_annotator]
+    manual = [sgn_annotator, ihc_annotator, syn_annotator]
     automatic = [sgn_unet, ihc_v4c, syn_unet]
 
     precision_manual = [i[0] for i in manual]
@@ -91,8 +92,8 @@ def fig_02c(
     f1score_automatic = [i[2] for i in automatic]
 
     # Convert setting labels to numerical x positions
-    x_manual = np.array([0.8, 1.8])
-    x_automatic = np.array([1.2, 2.2, 3])
+    x_manual = np.array([0.8, 1.8, 2.8])
+    x_automatic = np.array([1.2, 2.2, 3.2])
     offset = 0.08  # horizontal shift for scatter separation
 
     # Plot
@@ -114,7 +115,7 @@ def fig_02c(
     plt.yticks(fontsize=main_tick_size)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_2))
     plt.ylabel("Value", fontsize=main_label_size)
-    plt.ylim(0.76, 1)
+    plt.ylim(0.6, 1)
     # plt.legend(loc="lower right", fontsize=legendsize)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
