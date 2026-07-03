@@ -210,7 +210,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         # so that HeatmapFlowTransform has context to compute flow near patch edges.
         self.halo = 10
 
-        with zarr.open(self.raw_path, "r") as f:
+        with zarr.open(self.raw_path, mode="r") as f:
             full_shape = f[self.raw_key].shape
 
         # Determine 3D spatial shape, stripping an optional channel dim.
@@ -240,7 +240,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         return tuple(slice(start, start + psh) for start, psh in zip(bb_start, self.patch_shape))
 
     def _get_desired_raw_and_labels(self):
-        raw = zarr.open(self.raw_path, "r")[self.raw_key]
+        raw = zarr.open(self.raw_path, mode="r")[self.raw_key]
         have_raw_channels = raw.ndim == 4
 
         bb = self._sample_bounding_box()

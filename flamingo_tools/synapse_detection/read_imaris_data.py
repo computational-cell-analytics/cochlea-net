@@ -114,7 +114,7 @@ def extract_training_data(imaris_file, output_folder, tif_file=None, crop=True, 
         coords = pd.DataFrame(points, columns=["axis-0", "axis-1", "axis-2"])
         coords.to_csv(label_file, index=False)
 
-        f = zarr.open(image_file, "a")
+        f = zarr.open(image_file, mode="a")
         # Avoid zarr.errors.ContainsArrayError
         if not os.path.isdir(os.path.join(image_file, "raw")):
             f.create_dataset("raw", data=data)
