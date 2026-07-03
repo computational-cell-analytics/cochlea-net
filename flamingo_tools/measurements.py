@@ -17,7 +17,7 @@ from elf.io import open_file
 from elf.wrapper.resized_volume import ResizedVolume
 from elf.wrapper.base import WrapperBase
 from elf.util import normalize_index, squeeze_singletons
-from nifty.tools import blocking
+from bioimage_cpp.utils import Blocking
 from skimage.measure import marching_cubes, regionprops_table
 from skimage.transform import downscale_local_mean
 from scipy.ndimage import binary_dilation
@@ -514,14 +514,14 @@ def compute_sgn_background_mask(
     # which roughly corresponds to the size of the blocks we use for the GFP annotation.
     chunk_shape = (8, 32, 32)
 
-    blocks = blocking((0, 0, 0), downsampled_shape, chunk_shape)
-    n_blocks = blocks.numberOfBlocks
+    blocks = Blocking((0, 0, 0), downsampled_shape, chunk_shape)
+    n_blocks = blocks.number_of_blocks
 
     img_resized = ResizedVolumeLocalMean(image, scale_factor)
     seg_resized = ResizedVolume(segmentation, downsampled_shape, order=0)
 
     def _compute_block(block_id):
-        block = blocks.getBlock(block_id)
+        block = blocks.get_block(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
 
         img = img_resized[bb]

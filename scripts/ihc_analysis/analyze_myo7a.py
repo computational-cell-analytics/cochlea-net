@@ -33,14 +33,14 @@ def apply_random_forest():
 
     import imageio.v3 as imageio
     import napari
-    import nifty.tools as nt
+    from bioimage_cpp.utils import take_dict
 
     image = imageio.imread(image_path)
     seg = imageio.imread(seg_path)
 
     relabel_dict = {label_id: pred + 1 for label_id, pred in zip(results.label_id, results.prediction)}
     relabel_dict[0] = 0
-    pred = nt.takeDict(relabel_dict, seg)
+    pred = take_dict(relabel_dict, seg)
 
     v = napari.Viewer()
     v.add_image(image)

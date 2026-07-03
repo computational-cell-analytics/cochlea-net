@@ -7,7 +7,7 @@ import numpy as np
 import zarr
 from elf.evaluation.matching import label_overlap, intersection_over_union
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
-from nifty.tools import blocking
+from bioimage_cpp.utils import Blocking
 from tqdm import tqdm
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
@@ -18,10 +18,10 @@ def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
 
     output_file = zarr.open(output_path, mode="a")
     output = output_file.create_dataset("segmentation", shape=seg_a.shape, dtype=seg_a.dtype, chunks=seg_a.chunks)
-    blocks = blocking([0, 0, 0], seg_a.shape, seg_a.chunks)
+    blocks = Blocking([0, 0, 0], seg_a.shape, seg_a.chunks)
 
     def merge_block(block_id):
-        block = blocks.getBlock(block_id)
+        block = blocks.get_block(block_id)
         bb = tuple(slice(begin, end) for begin, end in zip(block.begin, block.end))
 
         block_a = seg_a[bb]
@@ -37,7 +37,7 @@ def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
 
         output[bb] = block_a
 
-    n_blocks = blocks.numberOfBlocks
+    n_blocks = blocks.number_of_blocks
     with futures.ThreadPoolExecutor(12) as tp:
         list(tqdm(tp.map(merge_block, range(n_blocks)), total=n_blocks, desc="Merge segmentation"))
 

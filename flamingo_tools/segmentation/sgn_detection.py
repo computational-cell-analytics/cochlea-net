@@ -136,7 +136,7 @@ def sgn_detection(
     skip_prediction = False
     output_path = os.path.join(output_folder, "predictions.zarr")
     prediction_key = "prediction"
-    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, "r"):
+    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, mode="r"):
         skip_prediction = True
 
     if not skip_prediction:
@@ -147,7 +147,7 @@ def sgn_detection(
         )
 
     detection_path = os.path.join(output_folder, "SGN_detection.tsv")
-    input_ = zarr.open(output_path, "r")[prediction_key]
+    input_ = zarr.open(output_path, mode="r")[prediction_key]
     if not os.path.exists(detection_path):
         block_shape = (12, 128, 128)  # bigger block to avoid edge effects
         detections_maxima = find_local_maxima(

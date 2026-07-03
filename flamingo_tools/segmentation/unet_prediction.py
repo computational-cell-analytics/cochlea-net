@@ -14,10 +14,11 @@ from typing import Dict, List, Optional, Tuple
 
 import elf.parallel as parallel
 import numpy as np
-import nifty.tools as nt
-import vigra
 import torch
 import z5py
+
+from bioimage_cpp.filters import gaussian_smoothing
+from bioimage_cpp.utils import Blocking
 
 from elf.wrapper import ThresholdWrapper, SimpleTransformationWrapper, SimpleTransformationWrapperWithHalo
 from elf.wrapper.base import MultiTransformationWrapper
@@ -157,7 +158,7 @@ def prediction_impl(
     if apply_postprocessing:
         # Smooth the distance prediction channel.
         def postprocess(x):
-            x[1] = vigra.filters.gaussianSmoothing(x[1], sigma=2.0)
+            x[1] = gaussian_smoothing(x[1], sigma=2.0)
             return x
     elif output_channels > 1:
         postprocess = None
@@ -175,8 +176,8 @@ def prediction_impl(
         output_shape = input_.shape
         output_chunks = block_shape
 
-    blocking = nt.blocking([0] * ndim, shape, block_shape)
-    n_blocks = blocking.numberOfBlocks
+    blocking = Blocking([0] * ndim, shape, block_shape)
+    n_blocks = blocking.number_of_blocks
     if prediction_instances != 1:
         # shuffle indexes with fixed seed to balance out segmentation blocks for slurm workers
         rng = np.random.default_rng(seed=1234)
@@ -247,11 +248,11 @@ def sweep_mask_thresholds(
     raw = read_image_data(input_path, input_key)
     chunks = getattr(raw, "chunks", (64, 64, 64))
     block_shape = tuple(2 * ch for ch in chunks)
-    blocking = nt.blocking([0, 0, 0], raw.shape, block_shape)
-    n_blocks = blocking.numberOfBlocks
+    blocking = Blocking([0, 0, 0], raw.shape, block_shape)
+    n_blocks = blocking.number_of_blocks
 
     def percentile_for_block(block_id):
-        block = blocking.getBlock(block_id)
+        block = blocking.get_block(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
         return float(np.percentile(raw[bb], upper_percentile))
 
@@ -321,8 +322,8 @@ def find_mask(
     chunks = getattr(raw, "chunks", (64, 64, 64))
 
     block_shape = tuple(2 * ch for ch in chunks)
-    blocking = nt.blocking([0, 0, 0], raw.shape, block_shape)
-    n_blocks = blocking.numberOfBlocks
+    blocking = Blocking([0, 0, 0], raw.shape, block_shape)
+    n_blocks = blocking.number_of_blocks
 
     if output_folder is None:
         ds_mask = np.zeros(raw.shape, dtype=np.uint64)
@@ -343,7 +344,7 @@ def find_mask(
     sample_ids = rng.choice(n_blocks, size=min(n_blocks, 16), replace=False).tolist()
     sample_highs = []
     for bid in sample_ids:
-        block = blocking.getBlock(bid)
+        block = blocking.get_block(bid)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
         sample_highs.append(float(np.percentile(raw[bb], 99.9)))
     global_high = float(np.median(sample_highs))
@@ -354,7 +355,7 @@ def find_mask(
     print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
 
     def find_mask_block(block_id):
-        block = blocking.getBlock(block_id)
+        block = blocking.get_block(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
         if np.percentile(raw[bb], upper_percentile) > min_intensity:
             ds_mask[bb] = 1
@@ -489,15 +490,15 @@ def distance_watershed_implementation(
             out_seg_volume = f.create_dataset(
                 "segmentation", shape=original_shape, compression="gzip", dtype="uint64", chunks=block_shape,
             )
-            blocking = parallel.common.get_blocking(output_seg, block_shape, roi=None, n_threads=n_threads)
+            blocking = Blocking([0] * len(original_shape), output_seg.shape, block_shape)
 
             def write_block(block_id):
-                block = blocking.getBlock(block_id)
+                block = blocking.get_block(block_id)
                 bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
                 out_seg_volume[bb] = output_seg[bb]
 
             with futures.ThreadPoolExecutor(n_threads) as tp:
-                tp.map(write_block, range(blocking.numberOfBlocks))
+                tp.map(write_block, range(blocking.number_of_blocks))
 
     if output_folder is None:
         return seg

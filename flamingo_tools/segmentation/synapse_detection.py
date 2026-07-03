@@ -159,7 +159,7 @@ def synapse_detection_from_prediction(
     print(f"Using detection threshold: {threshold:.3f}")
 
     if not os.path.exists(detection_path) or force_overwrite:
-        pred = zarr.open(prediction_path, "r")[prediction_key]
+        pred = zarr.open(prediction_path, mode="r")[prediction_key]
         # Use spatial chunk shape (drop leading channel dim for multi-channel predictions).
         det_block_shape = block_shape or tuple(pred.chunks[-3:])
         detections = _flow_corrected_detections(
@@ -208,7 +208,7 @@ def run_prediction(
     skip_prediction = False
     output_path = os.path.join(output_folder, "predictions.zarr")
     prediction_key = "prediction"
-    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, "r"):
+    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, mode="r"):
         skip_prediction = True
 
     if not skip_prediction:
@@ -267,7 +267,7 @@ def marker_detection(
     mask_preprocess_key = "mask"
     output_file = os.path.join(output_folder, "mask.zarr")
 
-    if mask_path is None or (os.path.exists(output_file) and mask_preprocess_key in zarr.open(output_file, "r")):
+    if mask_path is None or (os.path.exists(output_file) and mask_preprocess_key in zarr.open(output_file, mode="r")):
         skip_masking = True
 
     if not skip_masking:
@@ -285,7 +285,7 @@ def marker_detection(
     skip_prediction = False
     output_path = os.path.join(output_folder, "predictions.zarr")
     prediction_key = "prediction"
-    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, "r"):
+    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, mode="r"):
         skip_prediction = True
 
     # skip prediction if post-processed output exists

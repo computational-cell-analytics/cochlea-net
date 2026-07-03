@@ -62,13 +62,13 @@ def _require_prediction(im, image_path, with_mask):
     block_shape = (128, 128, 128)
     halo = (16, 32, 32)
     if with_mask:
-        import nifty.tools as nt
+        from bioimage_cpp.utils import Blocking
 
         mask = np.zeros(im.shape, dtype=bool)
-        blocking = nt.blocking([0, 0, 0], im.shape, block_shape)
+        blocking = Blocking([0, 0, 0], im.shape, block_shape)
 
-        for block_id in range(blocking.numberOfBlocks):
-            block = blocking.getBlock(block_id)
+        for block_id in range(blocking.number_of_blocks):
+            block = blocking.get_block(block_id)
             bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
             data = im[bb]
             max_ = np.percentile(data, 95)
