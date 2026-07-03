@@ -29,7 +29,13 @@ SGN_BASELINES = [
 IHC_BASELINES = [
     "cellpose3",
     "cellpose-sam",
+    "distance_unet_v3",
+    "distance_unet_v3_c07_b07_d08",
     "distance_unet_v4b",
+    "distance_unet_v4b_c04_b07_d08",
+    "distance_unet_v8",
+    "distance_unet_v9",
+    "distance_unet_v10",
     "micro-sam",
 ]
 
@@ -424,7 +430,15 @@ def runtimes_sgn(
 def runtimes_ihc(
     cochlea_dir: str = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet",
 ) -> None:
-    for_comparison = ["distance_unet_v3", "micro-sam", "cellpose3", "cellpose-sam"]
+    for_comparison = [
+        "distance_unet_v3_c07_b07_d08",
+        "distance_unet_v4b",
+        "distance_unet_v4b_c04_b07_d08",
+        "distance_unet_v8",
+        "micro-sam",
+        "cellpose3",
+        "cellpose-sam",
+    ]
 
     val_sgn_dir = f"{cochlea_dir}/predictions/val_ihc"
     image_dir = f"{cochlea_dir}/AnnotatedImageCrops/F1ValidationIHCs"

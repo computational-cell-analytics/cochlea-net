@@ -9,11 +9,13 @@ import tifffile
 import zarr
 from matplotlib import cm, colors
 
+from flamingo_tools.export_data_utils import compute_crop_bb
 from flamingo_tools.s3_utils import BUCKET_NAME, SERVICE_ENDPOINT, create_s3_target, get_s3_path
 # from tqdm import tqdm
 
 
-def export_frequency_mapping(cochlea, scale, output_folder, source_name, colormap=None):
+def export_frequency_mapping(cochlea, scale, output_folder, source_name, colormap=None,
+                             crop_center=None, roi_halo=None):
     s3 = create_s3_target()
 
     content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
@@ -37,7 +39,11 @@ def export_frequency_mapping(cochlea, scale, output_folder, source_name, colorma
     s3_store, _ = get_s3_path(seg_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
     input_key = f"s{scale}"
     f = zarr.open(s3_store, mode="r")
-    seg = f[input_key][:]
+    if crop_center is not None:
+        start, stop = compute_crop_bb(crop_center, roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape)
+        seg = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
+    else:
+        seg = f[input_key][:]
 
     mapping = {int(seg_id): freq for seg_id, freq in zip(table.label_id, frequencies)}
     lut = np.zeros(max_id + 1, dtype="float32")
@@ -86,9 +92,16 @@ def main():
     parser.add_argument("--output_folder", "-o", required=True)
     parser.add_argument("--source_name", "-n", required=True)
     parser.add_argument("--colormap")
+    parser.add_argument("--crop_center", nargs=3, type=float, default=None,
+                        help="Crop center as x y z in µm. Requires --roi_halo.")
+    parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
     args = parser.parse_args()
 
-    export_frequency_mapping(args.cochlea, args.scale, args.output_folder, args.source_name, args.colormap)
+    export_frequency_mapping(
+        args.cochlea, args.scale, args.output_folder, args.source_name, args.colormap,
+        crop_center=args.crop_center, roi_halo=args.roi_halo,
+    )
 
 
 if __name__ == "__main__":

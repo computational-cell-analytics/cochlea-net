@@ -986,7 +986,8 @@ def tonotopic_mapping_json_wrapper(
                 cochlea_str = cochlea.replace('_', '-')
                 table_str = seg_channel.replace('_', '-')
                 save_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
-                # central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
+                if central_spots_path is not None:
+                    central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
             else:
                 save_path = out_path
 

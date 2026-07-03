@@ -113,6 +113,7 @@ def run_evaluation(root, annotation_folders, output_file, cache_folder, segmenta
             json.dump(data, f, indent="\t", separators=(",", ": "))
         print(f"Saved results to {output_file}")
 
+
 def main():
     import argparse
     parser = argparse.ArgumentParser()
