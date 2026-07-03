@@ -6,9 +6,10 @@ from typing import Callable, List, Optional, Tuple, Union
 
 import elf.parallel as parallel
 import numpy as np
-import nifty.tools as nt
 import networkx as nx
 import pandas as pd
+
+from bioimage_cpp.utils import Blocking
 
 from elf.io import open_file
 from flamingo_tools.s3_utils import get_s3_path
@@ -212,7 +213,7 @@ def filter_segmentation(
     block_shape = (128, 128, 128)
     chunks = (128, 128, 128)
 
-    blocking = nt.blocking([0] * len(shape), shape, block_shape)
+    blocking = Blocking([0] * len(shape), shape, block_shape)
 
     output = open_file(output_path, mode="a")
     output_dataset = output.create_dataset(
@@ -223,7 +224,7 @@ def filter_segmentation(
     def filter_chunk(block_id):
         """Set all points within a chunk to zero if they match filter IDs.
         """
-        block = blocking.getBlock(block_id)
+        block = blocking.get_block(block_id)
         volume_index = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
         data = segmentation[volume_index]
         data[np.isin(data, keep_ids)] = 0
@@ -232,7 +233,7 @@ def filter_segmentation(
     # Limit the number of cores for parallelization.
     n_threads = min(16, mp.cpu_count())
     with futures.ThreadPoolExecutor(n_threads) as filter_pool:
-        list(tqdm(filter_pool.map(filter_chunk, range(blocking.numberOfBlocks)), total=blocking.numberOfBlocks))
+        list(tqdm(filter_pool.map(filter_chunk, range(blocking.number_of_blocks)), total=blocking.number_of_blocks))
 
     seg_filtered, n_ids_filtered, _ = parallel.relabel_consecutive(
         output_dataset, start_label=1, keep_zeros=True, block_shape=block_shape

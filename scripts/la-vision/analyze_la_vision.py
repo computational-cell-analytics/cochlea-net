@@ -34,7 +34,7 @@ def analyze_sgn(visualize=False):
         if visualize:
             import napari
             import zarr
-            from nifty.tools import takeDict
+            from bioimage_cpp.utils import take_dict
 
             key = "s2"
             img_s3 = f"{cochlea}/images/ome-zarr/PV.ome.zarr"
@@ -51,7 +51,7 @@ def analyze_sgn(visualize=False):
                               for label_id, component_id in zip(table.label_id, table.component_labels)}
             missing_ids = np.setdiff1d(seg_ids, table.label_id.values)
             component_dict.update({miss: 0 for miss in missing_ids})
-            components = takeDict(component_dict, seg)
+            components = take_dict(component_dict, seg)
 
             f = zarr.open(img_path, mode="r")
             data = f[key][:]

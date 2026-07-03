@@ -11,7 +11,7 @@ import zarr
 from elf.parallel import isin
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from magicgui import magicgui
-from nifty.tools import blocking
+from bioimage_cpp.utils import Blocking
 from scipy.ndimage import binary_dilation
 from tqdm import tqdm
 
@@ -48,10 +48,10 @@ IHC_SETTINGS = {
 
 
 def _mask_in_parallel(seg, mask):
-    blocks = blocking([0, 0, 0], mask.shape, [32, 128, 128])
+    blocks = Blocking([0, 0, 0], mask.shape, [32, 128, 128])
 
     def apply_mask(block_id):
-        block = blocks.getBlock(block_id)
+        block = blocks.get_block(block_id)
         bb = tuple(slice(begin, end) for begin, end in zip(block.begin, block.end))
         mask_bb = mask[bb]
         if mask_bb.sum() == 0:
@@ -62,7 +62,7 @@ def _mask_in_parallel(seg, mask):
         seg_bb[mask_bb] = 0
         seg[bb] = seg_bb
 
-    n_blocks = blocks.numberOfBlocks
+    n_blocks = blocks.number_of_blocks
     with futures.ThreadPoolExecutor(8) as tp:
         list(tqdm(tp.map(apply_mask, range(n_blocks)), total=n_blocks))
 
@@ -174,7 +174,7 @@ def _filter_ihcs(ihcs, table, components, min_size):
 
 
 def check_ihcs_ds(ds, channel="MYO", seg_name="IHC_LOWRES-v3"):
-    from nifty.tools import takeDict
+    from bioimage_cpp.utils import take_dict
 
     myo = imageio.imread(f"data/{ds}/{channel}.tif")
     ihcs = imageio.imread(f"data/{ds}/{seg_name}.tif")
@@ -182,7 +182,7 @@ def check_ihcs_ds(ds, channel="MYO", seg_name="IHC_LOWRES-v3"):
     table = pd.read_csv(f"data/{ds}/{seg_name}.tsv", sep="\t")
     relabel_dict = {0: 0}
     relabel_dict.update({int(k): int(v) for k, v in zip(table.label_id.values, table.component_labels.values)})
-    ihc_components = takeDict(relabel_dict, ihcs)
+    ihc_components = take_dict(relabel_dict, ihcs)
 
     @magicgui()
     def filter_component(v: napari.Viewer, component_list: List[int] = [1], min_size=500):

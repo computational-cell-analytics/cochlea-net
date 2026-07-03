@@ -4,6 +4,7 @@ channels:
   - conda-forge
 
 dependencies:
+  - bioimage-cpp
   - mobie_utils
   - pip
   - pooch

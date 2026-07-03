@@ -4,7 +4,7 @@ import os
 import multiprocessing as mp
 from concurrent import futures
 
-import nifty.tools as nt
+from bioimage_cpp.utils import Blocking
 from tqdm import tqdm
 
 from elf.wrapper.resized_volume import ResizedVolume
@@ -62,18 +62,18 @@ def main(
         input_key, shape=new_shape, dtype=input_.dtype,
         chunks=input_chunks, compression="gzip"
     )
-    blocking = nt.blocking([0] * ndim, new_shape, input_chunks)
+    blocking = Blocking([0] * ndim, new_shape, input_chunks)
 
     def copy_chunk(block_index):
-        block = blocking.getBlock(block_index)
+        block = blocking.get_block(block_index)
         volume_index = tuple(slice(begin, end) for (begin, end) in zip(block.begin, block.end))
         data = resized_volume[volume_index]
         output_dataset[volume_index] = data
 
     with futures.ThreadPoolExecutor(n_threads) as resize_pool:
         list(tqdm(
-            resize_pool.map(copy_chunk, range(blocking.numberOfBlocks)),
-            total=blocking.numberOfBlocks,
+            resize_pool.map(copy_chunk, range(blocking.number_of_blocks)),
+            total=blocking.number_of_blocks,
             desc=f"Resizing volume from shape {shape} to {new_shape}"
         ))
 
