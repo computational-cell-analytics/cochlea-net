@@ -16,7 +16,7 @@ import pybdv
 from elf.io import open_file
 from skimage.transform import rescale
 
-from .file_utils import read_tif, read_raw, write_ome_zarr_metadata
+from .file_utils import read_tif, read_raw
 
 
 def _read_voxel_size_and_unit_flamingo(mdata_path):
@@ -138,6 +138,9 @@ def _derive_scale_factors(shape):
 
 
 def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes, unit, voxel_size):
+    # Imported here so that the bdv/n5 conversion path does not require mobie.
+    from mobie.import_data._format_metadata import write_format_metadata
+
     n_threads = mp.cpu_count()
     chunks = (128, 128, 128)
 
@@ -164,8 +167,8 @@ def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes,
         g.attrs.update(attributes)
 
     # Write the ome zarr metadata.
-    metadata_dict = {"unit": unit, "voxel_size": voxel_size}
-    write_ome_zarr_metadata(out_path, metadata_dict, scale_factors=scale_factors, prefix=base_key)
+    metadata_dict = {"unit": unit, "resolution": voxel_size}
+    write_format_metadata("ome.zarr", os.path.join(out_path, base_key), metadata_dict, scale_factors)
 
 
 def flamingo_filename_parser(file_path: str, name_mapping: Optional[Dict]) -> Tuple[int, Dict[str, str], str]:
