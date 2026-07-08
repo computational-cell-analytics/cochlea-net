@@ -6,6 +6,7 @@ import imageio.v3 as imageio
 import numpy as np
 import pandas as pd
 import zarr
+from scipy.ndimage import find_objects
 from scipy.ndimage import label as label_structures
 from tqdm import tqdm
 
@@ -468,55 +469,115 @@ def filter_segmentation_3d(
     segmentation_array: np.ndarray,
     min_pixels_per_instance: int = 100,
     min_pixels_per_component: int = 100,
+    filter_split_components: bool = True,
 ) -> np.ndarray:
     """
-    Filter a 3D segmentation array by removing small instances and small components within instances.
+    Filter a 3D segmentation array by removing small instances and, optionally, small
+    disconnected sub-components within an instance (e.g. annotation artifacts that ended up
+    sharing a label with a larger, unrelated instance).
+
+    Per-label work (pixel counting, connected-component analysis) is restricted to each
+    label's bounding box via `scipy.ndimage.find_objects`, instead of scanning the full array
+    once per label. Cost scales with the total instance volume rather than
+    n_labels * array size, which matters once there are many instances.
+
+    Note: `find_objects` allocates memory proportional to the *maximum label value*, not
+    the number of labels present. Crops can carry large global instance IDs (from the
+    whole-cochlea segmentation table) even though only a few instances appear locally, so
+    labels are remapped to a small contiguous range before the bounding-box lookup to avoid
+    a MemoryError.
 
     Params:
         segmentation_array: 3D numpy array (H, W, D) with integer label IDs.
         min_pixels_per_instance: Minimum number of pixels an entire instance must have to be kept.
-        min_pixels_per_component: Minimum number of pixels a component within an instance must have to be kept.
+        min_pixels_per_component: Minimum number of pixels a component within an instance must have
+            to be kept. Only used if filter_split_components is True.
+        filter_split_components: Whether to also remove small disconnected sub-components within
+            an instance's label. Set to False to only filter by instance size.
 
     Returns:
         filtered_array: 3D numpy array with filtered components and original label IDs.
     """
-    # Step 1: Get unique label IDs (excluding background, assuming 0 is background)
-    unique_labels = np.unique(segmentation_array)
-    # Remove background (0) if present
-    labels_to_process = unique_labels[unique_labels != 0]
+    labels = np.unique(segmentation_array)
+    labels = labels[labels != 0]
 
-    # Create output array initialized with zeros (background)
-    filtered_array = np.zeros_like(segmentation_array, dtype=segmentation_array.dtype)
+    filtered_array = np.zeros_like(segmentation_array)
+    if len(labels) == 0:
+        return filtered_array
 
-    # Process each label ID
-    filtered_ids = 0
-    filtered_components = 0
-    for label_id in labels_to_process:
-        # Create binary mask for current label
-        mask = (segmentation_array == label_id).astype(np.uint8)
+    # Remap to a compact 1..len(labels) range so find_objects' internal allocation
+    # scales with the number of instances, not the magnitude of their original IDs.
+    compact_array = (np.searchsorted(labels, segmentation_array) + 1).astype(np.int32)
+    compact_array[segmentation_array == 0] = 0
 
-        # Count total pixels for this instance
-        total_pixels = np.sum(mask)
+    objects = find_objects(compact_array)
+    n_filtered_instances = 0
+    n_filtered_components = 0
 
-        # Skip if below threshold
+    for compact_id, label_id in enumerate(labels, start=1):
+        bbox = objects[compact_id - 1]
+        mask = segmentation_array[bbox] == label_id
+        total_pixels = int(mask.sum())
+
         if total_pixels < min_pixels_per_instance:
-            filtered_ids += 1
+            n_filtered_instances += 1
             continue
 
-        # Step 2: Find connected components within this label
+        if not filter_split_components:
+            filtered_array[bbox][mask] = label_id
+            continue
+
         labeled_components, num_components = label_structures(mask)
-
-        # Step 3: Check each component
+        component_counts = np.bincount(labeled_components.ravel())
         for comp_id in range(1, num_components + 1):
-            comp_mask = (labeled_components == comp_id).astype(np.uint8)
-            comp_pixels = np.sum(comp_mask)
-
-            # Keep component if it meets the threshold
-            if comp_pixels >= min_pixels_per_component:
-                # Add this component back with original label ID
-                filtered_array += comp_mask * label_id
+            if component_counts[comp_id] >= min_pixels_per_component:
+                filtered_array[bbox][labeled_components == comp_id] = label_id
             else:
-                filtered_components += 1
-    print(f"Filtered {filtered_ids} IDs and {filtered_components} components.")
+                n_filtered_components += 1
 
+    print(f"Filtered {n_filtered_instances} instance(s) and {n_filtered_components} split-off component(s).")
     return filtered_array
+
+
+def filter_annotations(
+    input_dir: str,
+    output_dir: str,
+    force_overwrite: bool = False,
+    min_pixels_per_instance: int = 100,
+    min_pixels_per_component: int = 100,
+    filter_split_components: bool = True,
+):
+    """Filter manual annotations by removing small instances and, optionally, small
+    disconnected sub-components within an instance.
+
+    Args:
+        input_dir: Directory containing annotations in TIF format.
+        output_dir: Output directory for filtered annotations.
+        force_overwrite: Forcefully overwrite existing output files.
+        min_pixels_per_instance: Minimum number of pixels an instance must have to be kept.
+        min_pixels_per_component: Minimum number of pixels a sub-component within an instance
+            must have to be kept. Only used if filter_split_components is True.
+        filter_split_components: Whether to also remove small disconnected sub-components
+            within an instance's label (relevant for IHCs). Set to False to only filter by
+            instance size (sufficient for SGNs).
+    """
+    os.makedirs(output_dir, exist_ok=True)
+    annotation_paths = [entry.path for entry in os.scandir(input_dir) if "annotation" in entry.name]
+    annotation_names = [os.path.basename(p) for p in annotation_paths]
+    annotation_paths.sort()
+    annotation_names.sort()
+    for annotation_path, annotation_name in zip(annotation_paths, annotation_names):
+        out_path = os.path.join(output_dir, annotation_name)
+        if os.path.isfile(out_path) and not force_overwrite:
+            print(f"Skipping {annotation_name}, output already exists.")
+            continue
+        print(annotation_name)
+        arr = imageio.imread(annotation_path)
+        filtered_array = filter_segmentation_3d(
+            arr,
+            min_pixels_per_instance=min_pixels_per_instance,
+            min_pixels_per_component=min_pixels_per_component,
+            filter_split_components=filter_split_components,
+        )
+
+        imageio.imwrite(out_path, filtered_array, compression="zlib")
