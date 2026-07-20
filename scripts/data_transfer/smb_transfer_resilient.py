@@ -181,6 +181,109 @@ def _sort_key(name):
     return int(name) if name.isdigit() else name
 
 
+def find_truncated_chunks(local_n5: str, min_bytes: int = 4) -> list[str]:
+    """Find N5 chunk files too small to contain a valid header.
+
+    Mirrors the check zarr's N5 decoder performs (struct.unpack(">H", chunk[2:4])), which
+    requires every chunk file to be at least 4 bytes. A file below that is almost always
+    left over from an interrupted mget mid-transfer (frequently 0 bytes).
+
+    Args:
+        local_n5: Local root directory of the transferred N5 dataset.
+        min_bytes: Minimum valid chunk file size.
+
+    Returns:
+        Paths of undersized chunk files, relative to local_n5.
+    """
+    bad = []
+    for root, _dirs, files in os.walk(local_n5):
+        for fname in files:
+            if fname == "attributes.json":
+                continue
+            path = os.path.join(root, fname)
+            if os.path.getsize(path) < min_bytes:
+                bad.append(os.path.relpath(path, local_n5))
+    return bad
+
+
+def verify_and_repair_n5(
+    username: str,
+    password: str,
+    remote_dir: str,
+    n5_name: str,
+    output_dir: str,
+    log_file: Optional[str] = None,
+    smb_server: str = SMB_SERVER,
+    max_passes: int = 3,
+) -> None:
+    """Scan a transferred N5 dataset for truncated chunk files and re-fetch them individually.
+
+    A chunk file corrupted by a mid-transfer disconnect (typically left at 0 bytes) can
+    survive a later `mget` retry of its parent directory, since that retry may itself be
+    interrupted, or the specific file skipped without affecting the overall exit code. This
+    runs as an independent pass after the transfer finishes: every chunk file's size is
+    checked against the minimum N5 header size, and any undersized file is re-downloaded on
+    its own. Runs for up to `max_passes` rounds, since a freshly repaired file can be
+    corrupted again by a new disconnect.
+
+    Reuses the password already held in memory from the initial transfer — no additional
+    password prompt is needed.
+
+    Args:
+        username: GWDG username.
+        password: GWDG password.
+        remote_dir: Remote parent directory (already forward-slash normalised).
+        n5_name: Name of the N5 dataset (top-level directory name).
+        output_dir: Local output directory containing the transferred N5 dataset.
+        log_file: File to log chunks that remain corrupt after all repair passes.
+        smb_server: SMB server to connect to.
+        max_passes: Maximum number of verify-and-repair rounds.
+    """
+    remote_dir = remote_dir.replace("\\", "/")
+    full_remote = f"{remote_dir}/{n5_name}"
+    local_n5 = os.path.join(output_dir, n5_name)
+
+    if not os.path.isdir(local_n5):
+        print(f"  [warn] local N5 directory not found for verification: {local_n5}")
+        return
+
+    for attempt in range(1, max_passes + 1):
+        bad_files = find_truncated_chunks(local_n5)
+        if not bad_files:
+            label = "all chunk files look complete" if attempt == 1 else "all chunk files repaired"
+            print(f"\n=== Verification pass {attempt}: {label} ===")
+            return
+
+        print(f"\n=== Verification pass {attempt}: found {len(bad_files)} truncated chunk file(s) ===")
+        for rel_path in bad_files:
+            rel_dir = os.path.dirname(rel_path)
+            fname = os.path.basename(rel_path)
+            remote_cd = f"{full_remote}/{rel_dir}" if rel_dir else full_remote
+            local_cwd = os.path.join(local_n5, rel_dir) if rel_dir else local_n5
+            print(f"  -> re-fetching {rel_path}")
+            transfer_path(
+                username, password,
+                remote_cd=remote_cd,
+                mget_target=fname,
+                local_cwd=local_cwd,
+                log_file=log_file,
+                smb_server=smb_server,
+            )
+
+    remaining = find_truncated_chunks(local_n5)
+    if remaining:
+        print(f"\n[error] {len(remaining)} chunk file(s) still truncated after {max_passes} repair passes:")
+        for rel_path in remaining:
+            print(f"  {rel_path}")
+        if log_file is not None:
+            try:
+                with open(log_file, 'a') as file:
+                    for rel_path in remaining:
+                        file.write(f"[error] chunk file still truncated after repair: {rel_path}\n")
+            except Exception as e:
+                print(f"Error: {e}")
+
+
 def iterative_n5_transfer(
     username: str,
     password: str,
@@ -322,6 +425,8 @@ def main():
 
     if not had_disconnect and rc == 0:
         print("File transfer completed successfully.")
+        verify_and_repair_n5(args.username, password, remote_dir, n5_name, output_dir,
+                             log_file=log_file, smb_server=args.smb_server)
         sys.exit(0)
 
     if not had_disconnect:
@@ -332,6 +437,8 @@ def main():
     print("\nDisconnect detected — switching to iterative transfer mode.")
     iterative_n5_transfer(args.username, password, remote_dir, n5_name, output_dir,
                           log_file=log_file, smb_server=args.smb_server)
+    verify_and_repair_n5(args.username, password, remote_dir, n5_name, output_dir,
+                         log_file=log_file, smb_server=args.smb_server)
 
 
 if __name__ == "__main__":
