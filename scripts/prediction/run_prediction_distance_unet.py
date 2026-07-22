@@ -75,6 +75,20 @@ def main():
     if args.time:
         start = time.perf_counter()
 
+    # load parameters from file which has been created with gridsearch of validation data
+    param_file = os.path.join(args.model, "best_best_params.json")
+    if os.path.exists(param_file):
+        with open(param_file) as fh:
+            data = json.load(fh)
+        print(f"Loaded cached best params from {param_file}")
+        center_distance_threshold = data["params"]["center_distance_threshold"]
+        boundary_distance_threshold = data["params"]["boundary_distance_threshold"]
+        distance_smoothing = data["params"]["distance_smoothing"]
+    else:
+        center_distance_threshold = args.center_distance_threshold
+        boundary_distance_threshold = args.boundary_distance_threshold
+        distance_smoothing = args.distance_smoothing
+
     if args.memory:
         segmentation = run_unet_prediction(
             args.input, args.input_key, output_folder=None, model_path=args.model,
@@ -82,9 +96,9 @@ def main():
             block_shape=block_shape, halo=halo,
             use_mask=use_mask,
             seg_class=args.seg_class,
-            center_distance_threshold=args.center_distance_threshold,
-            boundary_distance_threshold=args.boundary_distance_threshold,
-            fg_threshold=args.fg_threshold, distance_smoothing=args.distance_smoothing,
+            center_distance_threshold=center_distance_threshold,
+            boundary_distance_threshold=boundary_distance_threshold,
+            fg_threshold=args.fg_threshold, distance_smoothing=distance_smoothing,
         )
 
         abs_path = os.path.abspath(args.input)
@@ -100,9 +114,9 @@ def main():
             block_shape=block_shape, halo=halo,
             use_mask=use_mask,
             seg_class=args.seg_class,
-            center_distance_threshold=args.center_distance_threshold,
-            boundary_distance_threshold=args.boundary_distance_threshold,
-            fg_threshold=args.fg_threshold, distance_smoothing=args.distance_smoothing,
+            center_distance_threshold=center_distance_threshold,
+            boundary_distance_threshold=boundary_distance_threshold,
+            fg_threshold=args.fg_threshold, distance_smoothing=distance_smoothing,
         )
         timer_output = os.path.join(args.output_folder, "timer.json")
 
