@@ -8,6 +8,9 @@ without re-prompting for the password.
 
 Usage:
     python smb_transfer_resilient.py [-o output_dir] <username> <remote_parent_dir> <remote_data>
+
+Pass --setup to restrict the transfer to specific setup(s) of the N5 dataset, e.g.
+--setup 0 1 for setup0 and setup1, instead of the whole dataset.
 """
 
 import argparse
@@ -181,7 +184,26 @@ def _sort_key(name):
     return int(name) if name.isdigit() else name
 
 
-def find_truncated_chunks(local_n5: str, min_bytes: int = 4) -> list[str]:
+def _normalize_setup(value: str) -> str:
+    """Normalize a --setup CLI value to 'setupN' form (accepts '0' or 'setup0').
+
+    Args:
+        value: Raw --setup value from the command line.
+
+    Returns:
+        Normalized setup directory name, e.g. "setup0".
+    """
+    value = value.strip()
+    if re.match(r"^setup\d+$", value):
+        return value
+    if value.isdigit():
+        return f"setup{value}"
+    raise ValueError(f"invalid --setup value: {value!r} (expected a number or 'setupN')")
+
+
+def find_truncated_chunks(
+    local_n5: str, min_bytes: int = 4, subdirs: Optional[list[str]] = None,
+) -> list[str]:
     """Find N5 chunk files too small to contain a valid header.
 
     Mirrors the check zarr's N5 decoder performs (struct.unpack(">H", chunk[2:4])), which
@@ -191,18 +213,24 @@ def find_truncated_chunks(local_n5: str, min_bytes: int = 4) -> list[str]:
     Args:
         local_n5: Local root directory of the transferred N5 dataset.
         min_bytes: Minimum valid chunk file size.
+        subdirs: Restrict the scan to these subdirectories of local_n5 (e.g. requested
+            setups). Scans the whole local_n5 tree when not given.
 
     Returns:
         Paths of undersized chunk files, relative to local_n5.
     """
     bad = []
-    for root, _dirs, files in os.walk(local_n5):
-        for fname in files:
-            if fname == "attributes.json":
-                continue
-            path = os.path.join(root, fname)
-            if os.path.getsize(path) < min_bytes:
-                bad.append(os.path.relpath(path, local_n5))
+    roots = [os.path.join(local_n5, s) for s in subdirs] if subdirs else [local_n5]
+    for root_dir in roots:
+        if not os.path.isdir(root_dir):
+            continue
+        for root, _dirs, files in os.walk(root_dir):
+            for fname in files:
+                if fname == "attributes.json":
+                    continue
+                path = os.path.join(root, fname)
+                if os.path.getsize(path) < min_bytes:
+                    bad.append(os.path.relpath(path, local_n5))
     return bad
 
 
@@ -215,6 +243,7 @@ def verify_and_repair_n5(
     log_file: Optional[str] = None,
     smb_server: str = SMB_SERVER,
     max_passes: int = 3,
+    setup_filter: Optional[list[str]] = None,
 ) -> None:
     """Scan a transferred N5 dataset for truncated chunk files and re-fetch them individually.
 
@@ -238,6 +267,8 @@ def verify_and_repair_n5(
         log_file: File to log chunks that remain corrupt after all repair passes.
         smb_server: SMB server to connect to.
         max_passes: Maximum number of verify-and-repair rounds.
+        setup_filter: Restrict verification to these setup(s) (e.g. ["setup0"]).
+            Verifies the whole dataset when not given.
     """
     remote_dir = remote_dir.replace("\\", "/")
     full_remote = f"{remote_dir}/{n5_name}"
@@ -248,7 +279,7 @@ def verify_and_repair_n5(
         return
 
     for attempt in range(1, max_passes + 1):
-        bad_files = find_truncated_chunks(local_n5)
+        bad_files = find_truncated_chunks(local_n5, subdirs=setup_filter)
         if not bad_files:
             label = "all chunk files look complete" if attempt == 1 else "all chunk files repaired"
             print(f"\n=== Verification pass {attempt}: {label} ===")
@@ -270,7 +301,7 @@ def verify_and_repair_n5(
                 smb_server=smb_server,
             )
 
-    remaining = find_truncated_chunks(local_n5)
+    remaining = find_truncated_chunks(local_n5, subdirs=setup_filter)
     if remaining:
         print(f"\n[error] {len(remaining)} chunk file(s) still truncated after {max_passes} repair passes:")
         for rel_path in remaining:
@@ -292,6 +323,7 @@ def iterative_n5_transfer(
     output_dir: str,
     log_file: Optional[str] = None,
     smb_server: str = SMB_SERVER,
+    setup_filter: Optional[list[str]] = None,
 ):
     """Phase 2: transfer an N5 dataset setup-by-setup, scale-by-scale.
     For s0, s1, s2, and s3 (highest resolutions) each top-level chunk directory is transferred
@@ -305,7 +337,8 @@ def iterative_n5_transfer(
         n5_name: Name to pass to mget (supports wildcards).
         output_dir: Output directory.
         log_file: Log file to store files which were not transferred.
-
+        setup_filter: Restrict transfer to these setup(s) (e.g. ["setup0"]). Transfers
+            all discovered setups when not given.
 
     """
     # Normalise separators
@@ -326,6 +359,15 @@ def iterative_n5_transfer(
     if not setup_names:
         print("  [warn] no setup* directories found — nothing to transfer")
         return
+
+    if setup_filter:
+        missing = [s for s in setup_filter if s not in setup_names]
+        for s in missing:
+            print(f"  [warn] requested setup not found remotely: {s}")
+        setup_names = [s for s in setup_names if s in setup_filter]
+        if not setup_names:
+            print("  [warn] none of the requested setups were found remotely — nothing to transfer")
+            return
 
     print(f"\n  Found setups: {setup_names}")
 
@@ -402,6 +444,10 @@ def main():
                         help="SMB server to transfer files from. Default: //wfs-medizin.top.gwdg.de/ukon-all$/ukon100")
     parser.add_argument("-l", "--log_file", type=str, default=None,
                         help="Log transfer errors. Default: transfer_log.txt in output directory.")
+    parser.add_argument("--setup", nargs="+", default=None,
+                        help="Restrict transfer to specific setup(s) of the N5 dataset, "
+                             "e.g. '--setup 0 1' for setup0 and setup1. Accepts bare numbers "
+                             "or 'setupN'. Default: transfer the entire dataset.")
     args = parser.parse_args()
 
     output_dir = os.path.realpath(args.output_dir)
@@ -417,16 +463,36 @@ def main():
     n5_name = args.remote_data
     log_file = args.log_file if args.log_file is not None else os.path.join(output_dir, "transfer_log.txt")
 
+    setup_filter = None
+    if args.setup:
+        try:
+            setup_filter = list(dict.fromkeys(_normalize_setup(s) for s in args.setup))
+        except ValueError as e:
+            parser.error(str(e))
+
     # Phase 1: attempt bulk transfer
     print("Connecting to SMB server and starting bulk transfer...")
-    commands = [f'cd "{remote_dir}"', "recurse", "prompt", f"mget {n5_name}"]
+    if setup_filter:
+        local_n5_dir = os.path.join(output_dir, n5_name)
+        os.makedirs(local_n5_dir, exist_ok=True)
+        mget_targets = ["attributes.json"] + setup_filter
+        commands = [f'cd "{remote_dir}/{n5_name}"', "recurse", "prompt"] + [f"mget {t}" for t in mget_targets]
+        phase1_cwd = local_n5_dir
+    else:
+        commands = [f'cd "{remote_dir}"', "recurse", "prompt", f"mget {n5_name}"]
+        phase1_cwd = output_dir
+
     _, had_disconnect, rc = run_smbclient(args.username, password, commands,
-                                          cwd=output_dir, smb_server=args.smb_server)
+                                          cwd=phase1_cwd, smb_server=args.smb_server)
 
     if not had_disconnect and rc == 0:
         print("File transfer completed successfully.")
+        if setup_filter:
+            for s in setup_filter:
+                if not os.path.isdir(os.path.join(output_dir, n5_name, s)):
+                    print(f"  [warn] requested setup not found after transfer: {s}")
         verify_and_repair_n5(args.username, password, remote_dir, n5_name, output_dir,
-                             log_file=log_file, smb_server=args.smb_server)
+                             log_file=log_file, smb_server=args.smb_server, setup_filter=setup_filter)
         sys.exit(0)
 
     if not had_disconnect:
@@ -436,9 +502,9 @@ def main():
     # Phase 2: iterative mode
     print("\nDisconnect detected — switching to iterative transfer mode.")
     iterative_n5_transfer(args.username, password, remote_dir, n5_name, output_dir,
-                          log_file=log_file, smb_server=args.smb_server)
+                          log_file=log_file, smb_server=args.smb_server, setup_filter=setup_filter)
     verify_and_repair_n5(args.username, password, remote_dir, n5_name, output_dir,
-                         log_file=log_file, smb_server=args.smb_server)
+                         log_file=log_file, smb_server=args.smb_server, setup_filter=setup_filter)
 
 
 if __name__ == "__main__":
