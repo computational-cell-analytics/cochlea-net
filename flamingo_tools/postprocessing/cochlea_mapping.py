@@ -654,7 +654,7 @@ def equidistant_centers(
         total_distance, path, path_dict = measure_run_length_ihcs(
             centroids, component_label=component_label, include_gap=include_gap,
         )
-        return get_centers_from_path_dict(path_dict, total_distance, n_blocks=n_blocks, offset_blocks=offset_blocks)
+        return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
     else:
         centroids_components = []

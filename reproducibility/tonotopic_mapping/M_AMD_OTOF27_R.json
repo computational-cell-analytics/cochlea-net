@@ -1,0 +1,12 @@
+[
+	{
+		"dataset_name": "M_AMD_OTOF27_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v9",
+		"component_list": [
+			3,
+			6
+		],
+		"max_edge_distance": 30
+	}
+]

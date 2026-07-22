@@ -51,5 +51,20 @@
 				}
 			}
 		}
+	},
+	{
+		"dataset_name": "G_LR_000233_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v10",
+		"component_list": [
+			1,
+			4,
+			31,
+			5,
+			6
+		],
+		"min_component_length": 10,
+		"max_edge_distance": 22,
+		"max_path_deviation": 20
 	}
 ]

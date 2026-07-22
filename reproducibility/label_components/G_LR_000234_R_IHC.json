@@ -1,0 +1,20 @@
+[
+	{
+		"dataset_name": "G_LR_000234_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v10",
+		"component_list": [
+			2,
+			1,
+			32,
+			4,
+			35,
+			34,
+			6,
+			12
+		],
+		"max_path_deviation": 20,
+		"min_component_length": 20,
+		"max_edge_distance": 22
+	}
+]

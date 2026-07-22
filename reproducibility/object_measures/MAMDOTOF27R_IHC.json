@@ -1,0 +1,15 @@
+[
+	{
+		"dataset_name": "M_AMD_OTOF27_R",
+		"image_channel": [
+			"Vglut3",
+			"Alphatag"
+		],
+		"segmentation_channel": "IHC_v9",
+		"use_bg_mask": "yes",
+		"component_list": [
+			3,
+			6
+		]
+	}
+]
