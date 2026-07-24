@@ -11,35 +11,37 @@ from elf.io import open_file
 from flamingo_tools.validation import match_detections
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
+ANNOTATION_DIR = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/Synapses_2026-04")
+CONSENSUS_REF_ROOT = os.path.join(ANNOTATION_DIR, "consensus_annotation")
+
 SYNAPSE_DICT = {
     "v3": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
     "v3_05t": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3_05t"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
     "v4": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
     "v5": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
     "v5_05t": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_05t"),
-        "ref_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels"),
+        "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
 }
 
-ANNOTATION_DIR = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/Synapses_2026-04")
 INDIVIDUAL_ANNOTATORS = {
     "AMD": os.path.join(ANNOTATION_DIR, "for_consensus_annotations_synapses_AMD/labels"),
     "EK": os.path.join(ANNOTATION_DIR, "for_consensus_annotations_synapses_EK/labels"),
