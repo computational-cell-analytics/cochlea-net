@@ -15,6 +15,14 @@ ANNOTATION_FOLDERS = [
 ]
 
 OUTPUT_FOLDER = os.path.join(ROOT, "consensus_annotation")
+VOXEL_SIZE = 0.38  # µm per voxel; the Imaris physical-size metadata is not authoritative.
+
+
+def _distance_um_to_voxels(distance: float, voxel_size: float = VOXEL_SIZE) -> float:
+    """Convert an isotropic physical distance in µm to a distance in voxels."""
+    if voxel_size <= 0:
+        raise ValueError("voxel_size must be positive")
+    return distance / voxel_size
 
 
 def create_images_and_labels(
@@ -69,21 +77,23 @@ def consensus_annotations(
     image_path: str,
     matching_distance: float = 2.0,
     annotation_folders: list[str] = ANNOTATION_FOLDERS,
+    voxel_size: float = VOXEL_SIZE,
 ) -> None:
     """Create consensus annotation for a single image.
 
     Args:
         image_path: Image in ZARR format.
-        matching_distance: Maximal distance to match annotations.
+        matching_distance: Maximal distance in µm to match annotations.
+        voxel_size: Isotropic voxel size in µm.
     """
     annotation_paths = match_annotations(image_path)
     # assert len(annotation_paths) == len(ANNOTATION_FOLDERS)
     if len(annotation_paths) != len(annotation_folders):
         print(f"Incomplete annotations for {os.path.basename(image_path)}")
 
-    matching_distance = matching_distance
+    matching_distance_voxels = _distance_um_to_voxels(matching_distance, voxel_size)
     consensus_annotations, unmatched_annotations = create_consensus_annotations(
-        annotation_paths, matching_distance=matching_distance, min_matches_for_consensus=2,
+        annotation_paths, matching_distance=matching_distance_voxels, min_matches_for_consensus=2,
     )
     fname = os.path.basename(image_path)
     os.makedirs(OUTPUT_FOLDER, exist_ok=True)
@@ -100,6 +110,7 @@ def evaluate_consensus(
     consensus_dir: str,
     output_dir: str,
     max_dist: float = 2.0,
+    voxel_size: float = VOXEL_SIZE,
 ) -> None:
     """Evaluate consensus annotation by comparing it to the individual annotations.
     Creates an output file in which the analysis is saved.
@@ -107,8 +118,10 @@ def evaluate_consensus(
     Args:
         consensus_dir: Directory containing annotations in CSV format.
         output_dir: Output directory for consensus_evaluation.csv
-        max_dist: Maximal matching distance for spots.
+        max_dist: Maximal matching distance in µm for spots.
+        voxel_size: Isotropic voxel size in µm.
     """
+    max_dist_voxels = _distance_um_to_voxels(max_dist, voxel_size)
     consensus_files = sorted(glob(os.path.join(consensus_dir, "*.csv")))
     results = {
         "annotator": [],
@@ -124,7 +137,7 @@ def evaluate_consensus(
         annotations = match_annotations(consensus_file)
         for name, annotation_path in annotations.items():
             annotation = pd.read_csv(annotation_path)[["axis-0", "axis-1", "axis-2"]]
-            tp, _, fp, fn = match_detections(annotation, consensus, max_dist=max_dist)
+            tp, _, fp, fn = match_detections(annotation, consensus, max_dist=max_dist_voxels)
             results["annotator"].append(name)
             file_name = os.path.splitext(os.path.basename(consensus_file))[0]
             results["file_name"].append(file_name)
