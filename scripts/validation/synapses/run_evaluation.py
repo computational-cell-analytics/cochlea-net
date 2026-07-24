@@ -110,8 +110,14 @@ def evaluate_synapse_detections(
 
     pred = pd.read_csv(pred_path, sep="\t")[["z", "y", "x"]].values
 
-    # scale gt to physical coordinates
+    # Consensus files also contain unmatched annotations from individual annotators.
+    # These rows are useful for auditing the consensus, but are not part of the
+    # consensus ground truth used to evaluate predictions.
     gt = pd.read_csv(gt_path, sep=",")
+    if "annotator" in gt.columns:
+        gt = gt.loc[gt["annotator"] == "consensus"].copy()
+
+    # scale gt to physical coordinates
     gt["axis-0"] *= voxel_size
     gt["axis-1"] *= voxel_size
     gt["axis-2"] *= voxel_size
