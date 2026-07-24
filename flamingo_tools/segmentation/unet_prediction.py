@@ -13,6 +13,7 @@ from functools import partial
 from typing import Dict, List, Optional, Tuple
 
 import elf.parallel as parallel
+import imageio.v3 as imageio
 import numpy as np
 import torch
 import z5py
@@ -227,6 +228,8 @@ def sweep_mask_thresholds(
     input_key: Optional[str] = None,
     min_intensities: List[float] = [100, 150, 200, 300, 400, 600, 1000],
     seg_class: Optional[str] = "sgn",
+    threshold_map_path: Optional[str] = None,
+    percentile_map_path: Optional[str] = None,
 ) -> Dict[float, float]:
     """Compute the fraction of blocks that would be included in the mask for each
     candidate min_intensity value, using a single parallel read pass over the data.
@@ -236,6 +239,11 @@ def sweep_mask_thresholds(
         input_key: The key / internal path of the image data.
         min_intensities: Intensity thresholds to evaluate.
         seg_class: Determines the upper percentile used per block (same as find_mask).
+        threshold_map_path: Optional output path for a downscaled TIF with one voxel
+            per masking block, where each voxel holds the largest value in
+            min_intensities that the block's percentile still exceeds (0 if none).
+        percentile_map_path: Optional output path for a downscaled TIF with one voxel
+            per masking block, where each voxel holds the block's raw percentile value.
 
     Returns:
         Dict mapping each min_intensity to the fraction of blocks that would be masked.
@@ -262,6 +270,25 @@ def sweep_mask_thresholds(
                                       desc="Computing block percentiles"))
 
     block_percentiles = np.array(block_percentiles)
+
+    if threshold_map_path is not None or percentile_map_path is not None:
+        grid_shape = tuple(blocking.blocks_per_axis)
+
+        if percentile_map_path is not None:
+            out_dir = os.path.dirname(percentile_map_path)
+            os.makedirs(out_dir, exist_ok=True)
+            percentile_map = block_percentiles.reshape(grid_shape).astype("float32")
+            imageio.imwrite(percentile_map_path, percentile_map, compression="zlib")
+
+        if threshold_map_path is not None:
+            out_dir = os.path.dirname(threshold_map_path)
+            os.makedirs(out_dir, exist_ok=True)
+            sorted_thresholds = np.array(sorted(min_intensities), dtype=np.float32)
+            exceed_counts = (block_percentiles[:, None] > sorted_thresholds[None, :]).sum(axis=1)
+            threshold_values = np.concatenate([[0.0], sorted_thresholds])[exceed_counts]
+            threshold_map = threshold_values.reshape(grid_shape).astype("float32")
+            imageio.imwrite(threshold_map_path, threshold_map, compression="zlib")
+
     print(f"\n{'min_intensity':>15}  {'masked blocks':>15}  {'fraction (%)':>12}")
     print("-" * 46)
     result = {}
@@ -271,8 +298,12 @@ def sweep_mask_thresholds(
         print(f"{threshold:>15.1f}  {n_masked:>9}/{n_blocks:<5}  {fraction * 100:>11.2f}")
         result[threshold] = fraction
 
+    out_dir = os.path.dirname(output_path)
+    os.makedirs(out_dir, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(result, f, indent='\t', separators=(',', ': '))
+
+    return result
 
 
 def find_mask(
@@ -281,6 +312,7 @@ def find_mask(
     output_folder: Optional[str],
     seg_class: Optional[str] = "sgn",
     relative_threshold: float = 0.7,
+    absolute_threshold: Optional[float] = None,
 ) -> None:
     """Determine the mask for running prediction.
 
@@ -309,8 +341,8 @@ def find_mask(
         print(f"Calculating mask for segmentation class {seg_class}.")
     elif seg_class == "ihc":
         upper_percentile = 99
-        absolute_max = 300
-        absolute_min = 150
+        absolute_max = 400
+        absolute_min = 250
         print(f"Calculating mask for segmentation class {seg_class}.")
     else:
         upper_percentile = 95
@@ -337,27 +369,32 @@ def find_mask(
 
         ds_mask = f.create_dataset(mask_key, shape=raw.shape, compression="gzip", dtype="uint8", chunks=block_shape)
 
-    # Estimate the global signal level from a random sample of blocks using the
-    # median of per-block p99.9 values. The median is robust to outlier spikes
-    # from fluorescence residues that would inflate a simple maximum.
-    rng = np.random.default_rng(42)
-    sample_ids = rng.choice(n_blocks, size=min(n_blocks, 16), replace=False).tolist()
-    sample_highs = []
-    for bid in sample_ids:
-        block = blocking.get_block(bid)
-        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        sample_highs.append(float(np.percentile(raw[bb], 99.9)))
-    global_high = float(np.median(sample_highs))
-    # Cap at absolute_max: for spike-inflated or normally bright images the
-    # relative term exceeds the cap and we fall back to the fixed class default;
-    # for dim stainings the relative term is below the cap and adapts downward.
-    min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
-    print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
+    if absolute_threshold is None:
+        # Estimate the global signal level from a random sample of blocks using the
+        # median of per-block p99.9 values. The median is robust to outlier spikes
+        # from fluorescence residues that would inflate a simple maximum.
+        rng = np.random.default_rng(42)
+        sample_ids = rng.choice(n_blocks, size=min(n_blocks, 16), replace=False).tolist()
+        sample_highs = []
+        for bid in sample_ids:
+            block = blocking.get_block(bid)
+            bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
+            sample_highs.append(float(np.percentile(raw[bb], 99.9)))
+        global_high = float(np.median(sample_highs))
+        # Cap at absolute_max: for spike-inflated or normally bright images the
+        # relative term exceeds the cap and we fall back to the fixed class default;
+        # for dim stainings the relative term is below the cap and adapts downward.
+        min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
+        print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
+    else:
+        min_intensity = float(absolute_threshold)
+        print(f"Using absolute min_intensity: {min_intensity:.1f}")
 
     def find_mask_block(block_id):
         block = blocking.get_block(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        if np.percentile(raw[bb], upper_percentile) > min_intensity:
+        threshold = np.percentile(raw[bb], upper_percentile)
+        if threshold > min_intensity:
             ds_mask[bb] = 1
             return True
         return False
@@ -619,6 +656,7 @@ def run_unet_prediction_preprocess_slurm(
     s3_service_endpoint: Optional[str] = None,
     s3_credentials: Optional[str] = None,
     seg_class: Optional[str] = None,
+    absolute_threshold: Optional[float] = None,
 ) -> None:
     """Pre-processing for the parallel prediction with U-Net models.
     Masks are stored in mask.zarr in the output folder.
@@ -641,8 +679,15 @@ def run_unet_prediction_preprocess_slurm(
             service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
         )
 
+    if isinstance(absolute_threshold, str):
+        try:
+            absolute_threshold = float(absolute_threshold)
+        except ValueError:
+            absolute_threshold = None
+        print(f"Using absolute threshold {absolute_threshold}")
+
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
-        find_mask(input_path, input_key, output_folder, seg_class=seg_class)
+        find_mask(input_path, input_key, output_folder, seg_class=seg_class, absolute_threshold=absolute_threshold)
 
     if not os.path.isfile(os.path.join(output_folder, "mean_std.json")):
         calc_mean_and_std(input_path, input_key, output_folder)
