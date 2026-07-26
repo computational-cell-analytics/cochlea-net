@@ -1,4 +1,6 @@
-from typing import Optional
+import os
+import warnings
+from typing import Dict, List, Optional
 
 import imageio.v3 as imageio
 import napari
@@ -28,13 +30,7 @@ class HistogramWidget(QWidget):
         self.fig, self.ax = plt.subplots(figsize=(4, 3), tight_layout=True)
         self.canvas = FigureCanvasQTAgg(self.fig)
 
-        # We exclude the label id and the volume / surface measurements.
-        self.stat_names = statistics.columns[1:-2] if len(statistics.columns) > 2 else statistics.columns[1:]
-        self.param_choices = self.stat_names
-
         self.param_box = QComboBox()
-        self.param_box.addItems(self.param_choices)
-        self.param_box.setCurrentText(default_stat)
 
         self.refresh_btn = QPushButton("Refresh")
         self.refresh_btn.clicked.connect(self.update_hist)
@@ -46,8 +42,21 @@ class HistogramWidget(QWidget):
         layout.addWidget(self.refresh_btn)
         self.setLayout(layout)
 
+        self.set_statistics(statistics, default_stat)
+
+    def set_statistics(self, statistics, default_stat):
+        """Swap in a new statistics table, e.g. after switching the active channel."""
         self.statistics = statistics
-        self.update_hist()  # initial draw
+        # We exclude the label id and the volume / surface measurements.
+        self.stat_names = statistics.columns[1:-2] if len(statistics.columns) > 2 else statistics.columns[1:]
+        self.param_choices = self.stat_names
+
+        self.param_box.clear()
+        self.param_box.addItems(self.param_choices)
+        default_stat = default_stat if default_stat in self.param_choices else self.param_choices[0]
+        self.param_box.setCurrentText(default_stat)
+
+        self.update_hist()
 
     def update_hist(self):
         """Redraw the histogram."""
@@ -85,11 +94,60 @@ def _extend_seg_simple(seg, dilation):
     return seg_extended
 
 
+def find_channel_measurement_tables(
+    table_dir: str,
+    channels: List[str],
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+) -> Dict[str, str]:
+    """Find per-channel object-measures tables in a directory.
+
+    Tables are expected to follow the naming convention
+    "<channel>_<seg_name>_object-measures[-bg-mask].tsv", e.g. "Alphatag_IHC-v11_object-measures-bg-mask.tsv".
+    Channels without a matching table are omitted from the result.
+
+    Args:
+        table_dir: Directory containing the object-measures tables, local or on an S3 bucket.
+        channels: Channel names to look for, e.g. ["Alphatag", "Otof"].
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+
+    Returns:
+        Dictionary mapping channel name to table path.
+    """
+    if s3:
+        dir_store, fs = get_s3_path(table_dir, bucket_name=s3_bucket_name,
+                                    service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        file_names = [os.path.basename(p) for p in fs.ls(dir_store.path, detail=False)]
+    else:
+        file_names = [entry.name for entry in os.scandir(table_dir)]
+
+    tables = {}
+    for channel in channels:
+        matches = sorted(name for name in file_names if name.startswith(f"{channel}_") and name.endswith(".tsv"))
+        if not matches:
+            continue
+        if len(matches) > 1:
+            bg_mask_matches = [name for name in matches if "bg-mask" in name]
+            chosen = bg_mask_matches[0] if bg_mask_matches else matches[0]
+            warnings.warn(f"Multiple measurement tables found for channel '{channel}' in {table_dir}: "
+                          f"{matches}. Using '{chosen}'.")
+        else:
+            chosen = matches[0]
+        tables[channel] = os.path.join(table_dir, chosen)
+    return tables
+
+
 def annotation_napari(
     stain_dict: dict,
-    measurement_table_path: str,
+    measurement_tables: Dict[str, str],
     seg_name: str,
     seg_file: str,
+    default_channel: Optional[str] = None,
     statistics_keyword: str = "median",
     is_otof: bool = False,
     s3: bool = False,
@@ -101,9 +159,11 @@ def annotation_napari(
 
     Args:
         stain_dict: Dictionary containing stain names and file paths.
-        measurement_table_path: Path to table containing object measures of stain.
+        measurement_tables: Dictionary mapping channel name to a table of object measures for that channel.
         seg_name: Segmentation name, e.g. SGN_v2.
         seg_file: File path to segmentation data.
+        default_channel: Channel selected by default. Falls back to the first entry of `measurement_tables`
+            if not given or not present in `measurement_tables`.
         statistics_keyword: Keyword for column in object measures dataframe.
         is_otof: Flag for analyzing OTOF cochleae.
         s3: Flag for accessing data stored on S3 bucket.
@@ -111,16 +171,25 @@ def annotation_napari(
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
     """
-    if s3:
-        table_path_s3, fs = get_s3_path(measurement_table_path, bucket_name=s3_bucket_name,
-                                        service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(table_path_s3, "r") as f:
-            measurement_table = pd.read_csv(f, sep="\t")
-    else:
-        measurement_table = pd.read_csv(measurement_table_path, sep="\t")
+    if not measurement_tables:
+        raise ValueError("No measurement tables were given.")
+
+    def _load_table(path):
+        if s3:
+            table_path_s3, fs = get_s3_path(path, bucket_name=s3_bucket_name,
+                                            service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+            with fs.open(table_path_s3, "r") as f:
+                return pd.read_csv(f, sep="\t")
+        return pd.read_csv(path, sep="\t")
 
     seg = imageio.imread(seg_file)
-    statistics = get_object_measures_from_table(seg, table=measurement_table, keyword=statistics_keyword)
+    all_statistics = {
+        channel: get_object_measures_from_table(seg, table=_load_table(path), keyword=statistics_keyword)
+        for channel, path in measurement_tables.items()
+    }
+
+    if default_channel is None or default_channel not in all_statistics:
+        default_channel = next(iter(all_statistics))
 
     seg_extended = _extend_seg_simple(seg, dilation=4)
     if is_otof:
@@ -131,32 +200,26 @@ def annotation_napari(
 
     for num, (stain_name, file_path) in enumerate(stain_dict.items()):
         stain = imageio.imread(file_path)
-
         if num == 0:
             stain_shape = stain.shape
-            main_stain_name = stain_name
-            v.add_image(stain, name=stain_name)
-        else:
-            v.add_image(stain, visible=False, name=stain_name)
+        v.add_image(stain, visible=(stain_name == default_channel), name=stain_name)
 
     # Add the base layers.
     v.add_labels(seg, visible=False, name=f"{seg_name}s")
     v.add_labels(seg_extended, name=f"{seg_name}s-extended")
 
     # Add additional layers for intensity coloring and classification
-    # data_numerical = np.zeros(gfp.shape, dtype="float32")
     data_labels = np.zeros(stain_shape, dtype="uint8")
-    # v.add_image(data_numerical, name="gfp-intensity")
     v.add_labels(data_labels, name="positive-negative")
 
     # Add widgets:
 
-    # 1.) The widget for selcting the statistics to be used and displaying the histogram.
-    stat_widget = _create_stat_widget(statistics, statistics_keyword)
+    # 1.) The widget for selecting the statistics to be used and displaying the histogram.
+    stat_widget = _create_stat_widget(all_statistics[default_channel], statistics_keyword)
+    stat_widget.setWindowTitle(f"{default_channel} Histogram")
 
     # 2.) Precompute statistic ranges.
-    stat_names = stat_widget.stat_names
-    all_values = statistics[stat_names].values
+    all_values = all_statistics[default_channel][stat_widget.stat_names].values
     min_val = all_values.min()
     max_val = all_values.max()
 
@@ -168,6 +231,7 @@ def annotation_napari(
         call_button="Pick Value"
     )
     def pick_widget(viewer: napari.Viewer, value: float = 0.0):
+        statistics = all_statistics[channel_widget.channel.value]
         layer = viewer.layers[f"{seg_name}s-extended"]
         selected_id = layer.selected_label
 
@@ -192,6 +256,7 @@ def annotation_napari(
         call_button="Apply",
     )
     def threshold_widget(viewer: napari.Viewer, threshold: float = (max_val + min_val) / 2):
+        statistics = all_statistics[channel_widget.channel.value]
         label_ids = statistics.label_id.values
         stat_name = stat_widget.param_box.currentText()
         vals = statistics[stat_name].values
@@ -204,10 +269,32 @@ def annotation_napari(
 
     threshold_widget.viewer.value = v
 
-    # Bind the widgets.
+    # 5.) The widget for selecting which channel's statistics drive the widgets above.
+    @magicgui(
+        channel={"widget_type": "ComboBox", "choices": list(all_statistics), "label": "Channel"},
+        auto_call=True,
+        call_button=False,
+    )
+    def channel_widget(channel: str = default_channel):
+        for stain_name in stain_dict:
+            v.layers[stain_name].visible = (stain_name == channel)
+
+        stat_widget.set_statistics(all_statistics[channel], statistics_keyword)
+        stat_widget.setWindowTitle(f"{channel} Histogram")
+
+        vals = all_statistics[channel][stat_widget.stat_names].values
+        new_min, new_max = vals.min(), vals.max()
+        threshold_widget.threshold.min = new_min
+        threshold_widget.threshold.max = new_max
+        threshold_widget.threshold.value = (new_min + new_max) / 2
+        pick_widget.value.min = min(new_min, 0)
+        pick_widget.value.max = new_max
+
+    # Bind the widgets. Registration order controls the top-to-bottom stacking in the dock area.
+    if len(all_statistics) > 1:
+        v.window.add_dock_widget(channel_widget, area="right")
     v.window.add_dock_widget(stat_widget, area="right")
     v.window.add_dock_widget(pick_widget, area="right")
     v.window.add_dock_widget(threshold_widget, area="right")
-    stat_widget.setWindowTitle(f"{main_stain_name} Histogram")
 
     napari.run()

@@ -152,12 +152,17 @@ Before executing the script, the relevant parameters for the cochlea can be adde
 
 ### 3 - Manual intensity thresholding
 For the annotation of GFP, the crops of PV, GFP, and SGN are needed.
+For the annotation of Alphatag, the crops of Vglut3, Alphatag, IHC, and optionally Otof are needed.
 The crop files are expected to have the format `<cochlea>_crop_xxx-yyy-zzz_<image_channel>.tif`.
 The annotation tool in Napari is called using the common prefix `<cochlea>_crop_xxx-yyy-zzz` of all crops.
+The GFP/Alphatag scenario is auto-detected from the stain files found for this prefix.
+`--meas_table` takes the directory containing the per-channel object-measures tables, e.g. `<mobie_project>/<cochlea>/tables/<seg_name>`, and the matching table for each channel is found by its filename prefix, e.g. `Alphatag_IHC-v11_object-measures-bg-mask.tsv`, `Otof_IHC-v11_object-measures-bg-mask.tsv`.
 ```bash
-python /path/to/cochlea-net-repository/scripts/intensity_annotation/gfp_annotation.py --meas_table <path_to_object_measures> --prefix <common_prefix>
+python /path/to/cochlea-net-repository/scripts/intensity_annotation/intensity_annotation.py --meas_table <path_to_object_measures_dir> --prefix <common_prefix>
 ```
-For each crop, analysis requires two segmentation representations, which separate the instances into two groups through thresholding.
+For the Alphatag scenario, thresholding is a two-step process: first threshold Alphatag expression, then switch to Otof (if present) via the channel selection box at the top right of the Napari window, and threshold it as well. The histogram, threshold slider, and visible image layer all follow the selected channel.
+
+For each crop and channel, analysis requires two segmentation representations, which separate the instances into two groups through thresholding.
 1) The first should separate the clearly negative instances from all instances, which might be seen as positive.
 It should be named `<cochlea>_crop_<crop-coords>_<stain>_allWeakPositiveIncluded_<suffix>.tif`.
 2) The second should separate the clearly positive instances from all instances, which might be seen as negative.

@@ -49,7 +49,7 @@ def otof_annotation(
 
     annotation_utils.annotation_napari(
         stain_dict=stain_dict,
-        measurement_table_path=measurement_table_path,
+        measurement_tables={stain1_name: measurement_table_path},
         seg_name=seg_name,
         seg_file=seg_file,
         statistics_keyword=statistics_keyword,
