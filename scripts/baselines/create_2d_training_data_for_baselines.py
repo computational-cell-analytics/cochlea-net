@@ -3,10 +3,6 @@ import os
 
 from flamingo_tools.analysis.training_data_utils import create_2d_training_data
 
-INPUT_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/SGN/2025-05_supervised" # noqa
-OUTPUT_MICROSAM = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/SGN/2026-04_SGN-v2-data_micro-sam" # noqa
-OUTPUT_CELLPOSE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/SGN/2026-04_SGN-v2-data_cellpose3" # noqa
-
 
 def create_2d_training_data_for_baselines(
     input_dir: str,
@@ -31,33 +27,45 @@ def create_2d_training_data_for_baselines(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Script to filter IHC annotations by removing small artifacts and isolated components.")
+        description="Script to prepare 3D training and validation data for finetuning of Cellpose3 and micro-sam. "
+        "Both networks expect 2D training data so every 3D block ")
 
-    parser.add_argument("-i", "--input", type=str, default=INPUT_DIR,
+    parser.add_argument("-i", "--input", type=str, default=None,
                         help="Input directory containing annotations.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output directory for JSON dictionaries which feature parameters for crop extraction.")
     parser.add_argument("--skip_empty", action="store_true", help="Skip empty label data.")
     parser.add_argument("--empty_blocks", type=int, default=0, help="Create label data for first n empty 3D blocks.")
+    parser.add_argument("--cell_type", type=str, default="sgn", help="Select cell type for default data preparation.")
 
     args = parser.parse_args()
 
-    if args.output is None:
+    if args.output is None and args.input is None:
+        training_data_dir = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data"
+        if args.cell_type == "sgn":
+            input_dir = os.path.join(training_data_dir, "SGN", "2025-05_supervised")
+            output_microsam = os.path.join(training_data_dir, "SGN", "2026-04_SGN-v2-data_micro-sam")
+            output_cellpose = os.path.join(training_data_dir, "SGN", "2026-04_SGN-v2-data_cellpose3")
+        elif args.cell_type == "ihc":
+            input_dir = os.path.join(training_data_dir, "IHC", "IHC_v11_2026-07")
+            output_microsam = os.path.join(training_data_dir, "IHC", "2026-07_IHC-v11-data_micro-sam")
+            output_cellpose = os.path.join(training_data_dir, "IHC", "2026-07_IHC-v11-data_cellpose3")
+
         create_2d_training_data_for_baselines(
-            input_dir=args.input,
-            output_dir=OUTPUT_MICROSAM,
+            input_dir=input_dir,
+            output_dir=output_microsam,
             skip_empty=True,
             empty_blocks=5,
         )
 
         create_2d_training_data_for_baselines(
-            input_dir=args.input,
-            output_dir=OUTPUT_CELLPOSE,
+            input_dir=input_dir,
+            output_dir=output_cellpose,
             skip_empty=True,
             empty_blocks=0,
         )
 
-    else:
+    elif args.output is not None and args.input is not None:
         create_2d_training_data_for_baselines(
             input_dir=args.input,
             output_dir=args.output,
@@ -65,6 +73,8 @@ def main():
             empty_blocks=args.empty_blocks,
         )
 
+    else:
+        raise ValueError("Either provide --input and --output or neither for default processing using --cell_type.")
 
 if __name__ == "__main__":
     main()
