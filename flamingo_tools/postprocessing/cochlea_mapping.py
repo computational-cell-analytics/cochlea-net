@@ -867,6 +867,7 @@ def equidistant_centers_single(
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
+    dict_index: Optional[int] = None,
     **_,
 ):
     """Find equidistant centers within the central path of the Rosenthal's canal.
@@ -882,6 +883,8 @@ def equidistant_centers_single(
         s3_credentials:
         s3_bucket_name:
         s3_service_endpoint:
+        dict_index: Index of the entry to update, if output_path already holds a JSON list of parameter
+            dictionaries instead of a single dictionary.
     """
     # overwrite input segmentation table with labeled version
     if output_path is None:
@@ -900,16 +903,26 @@ def equidistant_centers_single(
         print(f"Updating parameters in {output_path}.")
         with open(output_path, "r") as f:
             dic = json.load(f)
-        dic["n_blocks"] = n_blocks
-        dic["cell_type"] = cell_type
-        dic["component_list"] = component_list
+        if isinstance(dic, list):
+            if dict_index is None:
+                raise ValueError(
+                    f"{output_path} holds a list of parameter dictionaries. "
+                    "Pass 'dict_index' to select which entry to update."
+                )
+            target = dic[dict_index]
+        else:
+            target = dic
+        target["n_blocks"] = n_blocks
+        target["cell_type"] = cell_type
+        target["component_list"] = component_list
 
     else:
         dic = {}
-        dic["seg_table"] = table_path
-        dic["n_blocks"] = n_blocks
-        dic["cell_type"] = cell_type
-        dic["component_list"] = component_list
+        target = dic
+        target["seg_table"] = table_path
+        target["n_blocks"] = n_blocks
+        target["cell_type"] = cell_type
+        target["component_list"] = component_list
 
     centers = equidistant_centers(
         table, component_label=component_list, cell_type=cell_type,
@@ -917,7 +930,7 @@ def equidistant_centers_single(
     )
     centers = [[round(c) for c in center] for center in centers]
 
-    dic["crop_centers"] = centers
+    target["crop_centers"] = centers
 
     with open(output_path, "w") as f:
         json.dump(dic, f, indent='\t', separators=(',', ': '))

@@ -120,8 +120,11 @@ def get_s3_path(
     )
 
     zarr_major_version = int(zarr.__version__.split(".")[0])
+    # Always create a synchronous filesystem: callers rely on it for plain
+    # sync reads (e.g. `fs.open(tsv_path, "r")`), which break with `RuntimeError:
+    # Loop is not running` if the filesystem was created with `asynchronous=True`.
     s3_filesystem = create_s3_target(
-        url=service_endpoint, anon=False, credential_file=credential_file, asynchronous=zarr_major_version == 3,
+        url=service_endpoint, anon=False, credential_file=credential_file,
     )
 
     zarr_path = f"{bucket_name}/{input_path}"
@@ -133,7 +136,12 @@ def get_s3_path(
     if zarr_major_version == 2:
         s3_path = zarr.storage.FSStore(zarr_path, fs=s3_filesystem)
     elif zarr_major_version == 3:
-        s3_path = zarr.storage.FsspecStore(fs=s3_filesystem, path=zarr_path)
+        # zarr v3's FsspecStore needs its own filesystem instance created with
+        # `asynchronous=True`; it must stay separate from `s3_filesystem` above.
+        async_filesystem = create_s3_target(
+            url=service_endpoint, anon=False, credential_file=credential_file, asynchronous=True,
+        )
+        s3_path = zarr.storage.FsspecStore(fs=async_filesystem, path=zarr_path)
     else:
         raise RuntimeError(f"Unsupported zarr version {zarr_major_version}")
 
