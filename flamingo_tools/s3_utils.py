@@ -118,6 +118,9 @@ def get_s3_path(
     bucket_name, service_endpoint, credential_file = check_s3_credentials(
         bucket_name, service_endpoint, credential_file
     )
+    # S3 keys always use "/", regardless of the client OS. Callers may build `input_path`
+    # with `os.path.join`, which inserts "\" on Windows and breaks the resulting key.
+    input_path = input_path.replace("\\", "/")
 
     zarr_major_version = int(zarr.__version__.split(".")[0])
     # Always create a synchronous filesystem: callers rely on it for plain
