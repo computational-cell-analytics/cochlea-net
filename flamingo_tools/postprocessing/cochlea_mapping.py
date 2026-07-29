@@ -170,11 +170,79 @@ def extend_path(
         return np.array(path_pos)
 
 
+def _outward_tangent(path: np.ndarray, end: str, lookback_distance: float = 50.0) -> np.ndarray:
+    """Unit vector at one end of a component path, pointing outward.
+
+    The vector points in the direction the path was already heading as it approaches
+    `end` - i.e. the direction a continuation (e.g. a missing/broken segment) would extend.
+
+    Args:
+        path: Ordered array of 3D positions, shape (N, 3).
+        end: Either "start" (path[0]) or "end" (path[-1]).
+        lookback_distance: Physical distance (µm) to walk inward from the endpoint before
+            measuring the direction, so the estimate is robust to varying point density.
+
+    Returns:
+        Unit vector (zero vector if the path has fewer than 2 points).
+    """
+    ordered = path if end == "end" else path[::-1]
+    accumulated = 0.0
+    ref_idx = 0
+    for i in range(1, len(ordered)):
+        accumulated += math.dist(ordered[i - 1], ordered[i])
+        ref_idx = i
+        if accumulated >= lookback_distance:
+            break
+    vec = np.asarray(ordered[0]) - np.asarray(ordered[ref_idx])
+    norm = np.linalg.norm(vec)
+    return vec / norm if norm > 0 else vec
+
+
+def _path_length(path: np.ndarray) -> float:
+    """Total arc length of an ordered path (sum of consecutive point-to-point distances)."""
+    return float(sum(math.dist(path[i], path[i + 1]) for i in range(len(path) - 1)))
+
+
+def _flow_alignment_score(
+    path_a: np.ndarray, end_a: str, path_b: np.ndarray, end_b: str, lookback_distance: float = 50.0,
+) -> float:
+    """Score how plausibly a missing/broken segment connects `path_a`'s `end_a` to `path_b`'s `end_b`.
+
+    Compares each component's local directional trend (see `_outward_tangent`) against the
+    direction straight across the gap between the two candidate endpoints. A real continuation
+    should extend roughly in a straight line, so both components' outward tangents should point
+    toward each other across the gap. Higher is better (straighter continuation).
+    """
+    p_a = path_a[0] if end_a == "start" else path_a[-1]
+    p_b = path_b[0] if end_b == "start" else path_b[-1]
+    gap = np.asarray(p_b) - np.asarray(p_a)
+    gap_norm = np.linalg.norm(gap)
+    if gap_norm == 0:
+        return 0.0
+    gap_dir = gap / gap_norm
+
+    tangent_a = _outward_tangent(path_a, end_a, lookback_distance=lookback_distance)
+    tangent_b = _outward_tangent(path_b, end_b, lookback_distance=lookback_distance)
+    return float(np.dot(tangent_a, gap_dir) - np.dot(tangent_b, gap_dir))
+
+
+def _combined_score(flow_score: float, distance: float, min_distance: float) -> float:
+    """Discount a flow-alignment score by how much farther this candidate is than the closest one.
+
+    A candidate exactly at `min_distance` keeps its full flow score; a farther candidate needs a
+    proportionally better flow score to still win, so distance still has a say even when flow-based
+    matching is used.
+    """
+    return flow_score * (min_distance / distance)
+
+
 def measure_run_length_sgns(
         centroids_components: List[np.ndarray],
         scale_factor: int = 10,
         apex_higher: bool = True,
         include_gap: bool = False,
+        ambiguous_margin: float = 200.0,
+        min_flow_length: float = 600.0,
 ) -> Tuple[float, np.ndarray, dict]:
     """Measure the run lengths of the SGN segmentation by finding a central path through Rosenthal's canal.
     This function handles cases with a single or multiple components.
@@ -188,6 +256,15 @@ def measure_run_length_sgns(
         e) The path is up-scaled and smoothed using a moving average filter.
     2) Order paths to have consistent start/end points, e.g.
         [[start_c1, ..., end_c1], [end_c2, ..., start_c2]] --> [[start_c1, ..., end_c1], [start_c2, ..., end_c2]]
+        Which endpoints to connect is normally decided by closest distance. If the two closest candidate
+        distances are within `ambiguous_margin` of each other, that criterion is unreliable (e.g. two
+        different turns of the spiral can pass closer to each other than the true anatomical continuation) -
+        a flow-based fallback is used instead, picking whichever candidate keeps each component's local
+        directional trend pointing toward the other (see `_flow_alignment_score`), discounted by how much
+        farther it is than the closest candidate (see `_combined_score`) so distance still has a say. The
+        fallback only engages when both components involved are at least `min_flow_length` long: small
+        torn-off fragments do not have a reliable directional trend (their own shape is unrelated to the
+        true canal direction), and closest distance remains the better default for them.
     3) Assign base/apex position to path.
     4) Assign distance of nodes by skipping intermediate space between separate components.
         Points of path wit their position and fractional length are stored in a dictionary.
@@ -198,6 +275,10 @@ def measure_run_length_sgns(
         scale_factor: Downscaling factor for finding the central path.
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
         include_gap: Include the distance between different components for calculating the run length.
+        ambiguous_margin: If the two smallest candidate endpoint distances for a junction are within this
+            many µm of each other, fall back to flow-based matching instead of raw closest distance.
+        min_flow_length: Minimal arc length (µm) both components of a junction must have for the flow-based
+            fallback to be used; below this, small/torn fragments fall back to raw closest distance instead.
 
     Returns:
         Total distance of the path.
@@ -245,6 +326,8 @@ def measure_run_length_sgns(
 
     # 2) Order paths to have consistent start/end points
     if len(total_path) > 1:
+        path_lengths = [_path_length(p) for p in total_path]
+
         # Find starting order of first two components
         c1a = total_path[0][0, :]
         c1b = total_path[0][-1, :]
@@ -252,8 +335,23 @@ def measure_run_length_sgns(
         c2a = total_path[1][0, :]
         c2b = total_path[1][-1, :]
 
+        end_combos = [("start", "start"), ("start", "end"), ("end", "start"), ("end", "end")]
         distances = [math.dist(c1a, c2a), math.dist(c1a, c2b), math.dist(c1b, c2a), math.dist(c1b, c2b)]
-        min_index = distances.index(min(distances))
+        order = sorted(range(len(distances)), key=lambda i: distances[i])
+        min_index = order[0]
+        margin = distances[order[1]] - distances[order[0]]
+        long_enough = path_lengths[0] >= min_flow_length and path_lengths[1] >= min_flow_length
+        if margin < ambiguous_margin and long_enough:
+            print(f"Endpoint distances for linking components 0 and 1 are ambiguous "
+                  f"({distances[order[0]]:.1f} vs {distances[order[1]]:.1f} µm, difference {margin:.1f} µm "
+                  f"< {ambiguous_margin} µm). Falling back to flow-based matching.")
+            cand_1, cand_2 = order[0], order[1]
+            score_1 = _flow_alignment_score(total_path[0], end_combos[cand_1][0], total_path[1], end_combos[cand_1][1])
+            score_2 = _flow_alignment_score(total_path[0], end_combos[cand_2][0], total_path[1], end_combos[cand_2][1])
+            min_dist = distances[cand_1]
+            combined_1 = _combined_score(score_1, distances[cand_1], min_dist)
+            combined_2 = _combined_score(score_2, distances[cand_2], min_dist)
+            min_index = cand_1 if combined_1 >= combined_2 else cand_2
         if min_index in [0, 1]:
             total_path[0] = np.flip(total_path[0], axis=0)
 
@@ -261,7 +359,22 @@ def measure_run_length_sgns(
         for num in range(0, len(total_path) - 1):
             dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
             dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
-            if dist_connecting_nodes_2 < dist_connecting_nodes_1:
+            margin = abs(dist_connecting_nodes_2 - dist_connecting_nodes_1)
+            long_enough = path_lengths[num] >= min_flow_length and path_lengths[num + 1] >= min_flow_length
+            if margin < ambiguous_margin and long_enough:
+                print(f"Endpoint distances for linking components {num} and {num + 1} are ambiguous "
+                      f"({min(dist_connecting_nodes_1, dist_connecting_nodes_2):.1f} vs "
+                      f"{max(dist_connecting_nodes_1, dist_connecting_nodes_2):.1f} µm, difference {margin:.1f} µm "
+                      f"< {ambiguous_margin} µm). Falling back to flow-based matching.")
+                score_1 = _flow_alignment_score(total_path[num], "end", total_path[num + 1], "start")
+                score_2 = _flow_alignment_score(total_path[num], "end", total_path[num + 1], "end")
+                min_dist = min(dist_connecting_nodes_1, dist_connecting_nodes_2)
+                combined_1 = _combined_score(score_1, dist_connecting_nodes_1, min_dist)
+                combined_2 = _combined_score(score_2, dist_connecting_nodes_2, min_dist)
+                flip = combined_2 > combined_1
+            else:
+                flip = dist_connecting_nodes_2 < dist_connecting_nodes_1
+            if flip:
                 total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
 
     # 3) Assign base/apex position to path
@@ -676,6 +789,8 @@ def tonotopic_mapping(
     otof: bool = False,
     central_path_df: Optional[pd.DataFrame] = None,
     include_gap: bool = False,
+    ambiguous_margin: float = 200.0,
+    min_flow_length: float = 600.0,
 ) -> pd.DataFrame:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
@@ -690,6 +805,11 @@ def tonotopic_mapping(
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         central_path_df: Dataframe featuring the spots for the central path through the segmentation.
         include_gap: Include the distance between different components for calculating the run length.
+        ambiguous_margin: For SGNs, fall back to flow-based component linking (instead of closest endpoint
+            distance) when the two closest candidate distances for a junction are within this many µm of
+            each other. See `measure_run_length_sgns`.
+        min_flow_length: For SGNs, minimal arc length (µm) both components of a junction must have for the
+            flow-based fallback to be used. See `measure_run_length_sgns`.
 
     Returns:
         Table with tonotopic label for cells.
@@ -724,7 +844,7 @@ def tonotopic_mapping(
                 centroids_components.append(subset_centroids)
             total_distance, _, path_dict = measure_run_length_sgns(
                 centroids_components, apex_higher=apex_higher,
-                include_gap=include_gap,
+                include_gap=include_gap, ambiguous_margin=ambiguous_margin, min_flow_length=min_flow_length,
             )
 
         else:
