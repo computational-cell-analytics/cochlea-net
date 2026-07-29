@@ -1,6 +1,8 @@
 """This file contains utility functions for processing data located on an S3 storage.
 The upload of data to the storage system should be performed with 'rclone'.
 """
+import asyncio
+import atexit
 import json
 import os
 import warnings
@@ -15,6 +17,43 @@ try:
     from zarr.abc.store import Store
 except ImportError:
     from zarr._storage.store import BaseStore as Store
+
+
+# `s3fs.S3FileSystem` only registers an automatic aiohttp session cleanup hook
+# (a `weakref.finalize` in `set_session`) for synchronous instances. Instances
+# created with `asynchronous=True` (used below for zarr v3 stores) get no such
+# hook, so their aiohttp session leaks and warns "Unclosed client session" at
+# interpreter exit unless closed explicitly. Track them here and close them
+# via `atexit` so every CLI entry point gets this for free.
+_ASYNC_S3_FILESYSTEMS = []
+
+
+async def _aclose_s3_client(fs) -> None:
+    await fs._s3.__aexit__(None, None, None)
+
+
+def _close_async_s3_filesystems() -> None:
+    while _ASYNC_S3_FILESYSTEMS:
+        fs = _ASYNC_S3_FILESYSTEMS.pop()
+        if fs._s3 is None:
+            continue
+        try:
+            # zarr v3 drives this filesystem's async calls on zarr's own
+            # persistent background loop (`zarr.core.sync`), so the aiohttp
+            # connector is bound to that loop. Closing it from a fresh
+            # `asyncio.run()` loop raises "is not the running loop" and
+            # leaves the connector's shutdown task dangling. Fall back to
+            # `asyncio.run` if that internal module is ever unavailable.
+            import zarr.core.sync as _zarr_sync
+            _zarr_sync.sync(_aclose_s3_client(fs))
+        except Exception:
+            try:
+                asyncio.run(_aclose_s3_client(fs))
+            except Exception:
+                pass
+
+
+atexit.register(_close_async_s3_filesystems)
 
 
 # Dedicated bucket for cochlea lightsheet project
@@ -200,6 +239,12 @@ def create_s3_target(
         )
     else:
         s3_filesystem = s3fs.S3FileSystem(anon=anon, client_kwargs=client_kwargs, asynchronous=asynchronous)
+
+    # fsspec caches filesystem instances by their constructor args, so repeated
+    # calls with the same credentials/endpoint return the same cached object.
+    if asynchronous and not any(fs is s3_filesystem for fs in _ASYNC_S3_FILESYSTEMS):
+        _ASYNC_S3_FILESYSTEMS.append(s3_filesystem)
+
     return s3_filesystem
 
 
