@@ -392,8 +392,9 @@ def sgn_density():
         "Reduces contamination from other cochlear turns. Default: 0.1",
     )
     parser.add_argument(
-        "-c", "--component_label", type=int, nargs="+", default=[1],
-        help="Component label(s) of the main Rosenthal's Canal component. Default: 1",
+        "-c", "--component_label", type=int, nargs="+", default=None,
+        help="Component label(s) of the main Rosenthal's Canal component. When omitted, falls "
+        "back to the 'component_list' entry of --json_input if present, otherwise to 1.",
     )
     parser.add_argument(
         "--axis", type=str, default="z", choices=["x", "y", "z"],
@@ -430,7 +431,7 @@ def sgn_density():
         help="Path to the SGN segmentation volume (local TIF, N5/Zarr, or S3 OME-ZARR). "
         "When omitted and --json_input is given, the path is derived automatically as "
         "<dataset_name>/images/ome-zarr/<segmentation_channel>.ome.zarr. "
-        "Only used when --min_overlap_fraction is set.",
+        "Only used when --min_overlap_fraction, --min_overlap_volume, or --crop_output is set.",
     )
     parser.add_argument(
         "--seg_key", type=str, default="s0",
@@ -449,6 +450,17 @@ def sgn_density():
         "slice sub-volume to count the instance. "
         "Default: None (no segmentation-based filtering). "
         "Whether --seg_path is a pre-extracted crop or a full volume is detected automatically.",
+    )
+    parser.add_argument(
+        "--crop_output", type=str, default=None,
+        help="Output directory for extracting image crops (segmentation and optional --img_path "
+        "volumes) at each computed density position, using the standard crop naming scheme. "
+        "Default: None (no crops extracted).",
+    )
+    parser.add_argument(
+        "--img_path", type=str, nargs="+", default=None,
+        help="Additional image volume path(s) (local or S3 OME-Zarr) to crop at each density "
+        "position, alongside the segmentation. Only used when --crop_output is given.",
     )
 
     # options for S3 bucket
@@ -486,6 +498,8 @@ def sgn_density():
         seg_key=args.seg_key,
         min_overlap_fraction=args.min_overlap_fraction,
         min_overlap_volume=args.min_overlap_volume,
+        crop_output=args.crop_output,
+        img_paths=args.img_path,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

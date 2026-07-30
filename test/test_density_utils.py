@@ -305,6 +305,25 @@ class TestBuildBlockExtractionDict(unittest.TestCase):
         for entry in out:
             self.assertNotIn("dataset_name", entry)
 
+    def test_skips_position_with_nan_bb_center(self):
+        # A position with zero SGNs (e.g. wrong component_list) has bb_center = [nan, nan, nan].
+        # round(nan) must not crash; the position is skipped with a warning instead.
+        density_results = dict(self.density_results)
+        first_key = next(iter(density_results))
+        no_sgn_result = dict(density_results[first_key])
+        no_sgn_result["bb_center"] = [float("nan")] * 3
+        density_results[first_key] = no_sgn_result
+
+        import warnings
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            out = self.build(density_results)
+            self.assertTrue(any(first_key in str(w.message) for w in caught))
+
+        labels = [entry["position_label"] for entry in out]
+        self.assertNotIn(first_key, labels)
+        self.assertEqual(len(out), len(density_results) - 1)
+
 
 def _make_seg_array(table, shape_zyx, voxel_size=(1.0, 1.0, 1.0), origin_xyz=(0.0, 0.0, 0.0)):
     """Paint one voxel per label_id at its anchor position into a (Z, Y, X) array.
@@ -500,6 +519,96 @@ class TestHullToMask(unittest.TestCase):
             warnings.simplefilter("ignore")
             result = self.density_fn(single, reference_position="mid", slice_thickness=40.0)
         self.assertIsNone(result["hull_vertices"])
+
+
+class TestComponentListAutoDefault(unittest.TestCase):
+    """calc_sgn_density's component_list should fall back to json_input's component_list,
+    then to [1], when not passed explicitly."""
+
+    def setUp(self):
+        import json
+        import os
+        import tempfile
+        from flamingo_tools.analysis.density_utils import calc_sgn_density
+        self.calc = calc_sgn_density
+
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+        # Component 1 only covers the base region; component 2 only covers the apex region.
+        base_rows = _make_table(n=20, frac_center=0.85, frac_spread=0.02, component_label=1)
+        apex_rows = _make_table(n=20, frac_center=0.15, frac_spread=0.02, component_label=2)
+        apex_rows["label_id"] += 100
+        table = pd.concat([base_rows, apex_rows], ignore_index=True)
+
+        self.table_path = os.path.join(self.tmpdir.name, "table.tsv")
+        table.to_csv(self.table_path, sep="\t", index=False)
+
+        self.json_path = os.path.join(self.tmpdir.name, "info.json")
+        with open(self.json_path, "w") as f:
+            json.dump({"dataset_name": "TEST", "component_list": [1, 2]}, f)
+
+    def _run(self, name, json_input=None, component_list=None):
+        import json
+        import os
+        output_path = os.path.join(self.tmpdir.name, f"{name}.json")
+        self.calc(
+            output=output_path,
+            seg_table_path=self.table_path,
+            json_input=json_input,
+            positions=["apex"],
+            run_length_tolerance=0.05,
+            slice_thickness=40.0,
+            component_list=component_list,
+            force_overwrite=True,
+        )
+        with open(output_path) as f:
+            return json.load(f)
+
+    def test_auto_default_uses_json_component_list(self):
+        # Apex SGNs only exist in component 2; the json's component_list=[1, 2] must be picked up.
+        result = self._run("with_json", json_input=self.json_path, component_list=None)
+        self.assertEqual(result["apex"]["n_sgns"], 20)
+
+    def test_no_json_input_falls_back_to_component_1(self):
+        # Without json_input, component_list falls back to [1], which has no apex SGNs.
+        result = self._run("no_json", json_input=None, component_list=None)
+        self.assertEqual(result["apex"]["n_sgns"], 0)
+
+    def test_explicit_component_list_overrides_json(self):
+        # An explicit component_list argument takes precedence over json_input's value.
+        result = self._run("explicit_override", json_input=self.json_path, component_list=[1])
+        self.assertEqual(result["apex"]["n_sgns"], 0)
+
+
+class TestImgPathsWithoutCropOutput(unittest.TestCase):
+
+    def setUp(self):
+        import os
+        import tempfile
+        from flamingo_tools.analysis.density_utils import calc_sgn_density
+        self.calc = calc_sgn_density
+
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+        self.table_path = os.path.join(self.tmpdir.name, "table.tsv")
+        _make_table().to_csv(self.table_path, sep="\t", index=False)
+        self.output_path = os.path.join(self.tmpdir.name, "out.json")
+
+    def test_warns_and_ignores_img_paths(self):
+        import warnings
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            self.calc(
+                output=self.output_path,
+                seg_table_path=self.table_path,
+                positions=["mid"],
+                img_paths=["/does/not/exist.ome.zarr"],
+                crop_output=None,
+                force_overwrite=True,
+            )
+            self.assertTrue(any("img_paths" in str(w.message) for w in caught))
 
 
 if __name__ == "__main__":
