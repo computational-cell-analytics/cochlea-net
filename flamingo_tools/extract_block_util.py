@@ -128,6 +128,80 @@ def extract_block_single(
                 imageio.imwrite(output_path, data_roi, compression="zlib")
 
 
+def extract_density_crops(
+    block_list: List[dict],
+    output_path: str,
+    seg_path: Optional[str] = None,
+    dataset_name: Optional[str] = None,
+    img_paths: Optional[List[str]] = None,
+    input_key: str = "s0",
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    force_overwrite: bool = False,
+) -> None:
+    """Extract image crops for each computed SGN density position.
+
+    Crops the segmentation (via `seg_path`) and any additional volumes (`img_paths`) at the crop
+    center and ROI halo of each entry in `block_list`, as produced by
+    `flamingo_tools.analysis.density_utils._build_block_extraction_dict`. Output file names follow
+    the `extract_block_single` naming scheme.
+
+    Args:
+        block_list: List of per-position block-extraction dicts with 'crop_centers', 'roi_halo',
+                    and optionally 'dataset_name' / 'segmentation_channel'.
+        output_path: Output directory for the extracted crops.
+        seg_path: Path to the segmentation volume to crop. None skips the segmentation crop.
+        dataset_name: Dataset name used as filename prefix for entries that have none.
+        img_paths: Additional volume path(s) to crop alongside the segmentation.
+        input_key: Internal key for N5/Zarr/OME-ZARR data.
+        voxel_size: Voxel size in µm.
+        s3: Flag for accessing data stored on S3 bucket.
+        s3_credentials: File path to credentials for S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+        force_overwrite: Flag for forcefully overwriting output files.
+    """
+    os.makedirs(output_path, exist_ok=True)
+    img_paths = img_paths or []
+
+    for entry in block_list:
+        center = list(entry["crop_centers"][0])
+        roi_halo = list(entry["roi_halo"])
+        entry_dataset_name = entry.get("dataset_name", dataset_name)
+
+        sources = []
+        if seg_path is not None:
+            seg_channel = entry.get("segmentation_channel")
+            channel_name = (
+                seg_channel if seg_channel is not None
+                else os.path.basename(seg_path.rstrip("/")).split(".")[0]
+            )
+            sources.append((seg_path, channel_name))
+        for img_path in img_paths:
+            channel_name = os.path.basename(img_path.rstrip("/")).split(".")[0]
+            sources.append((img_path, channel_name))
+
+        for input_path, channel_name in sources:
+            extract_block_single(
+                input_path=input_path,
+                coords=center,
+                output_path=output_path,
+                dataset_name=entry_dataset_name,
+                channel_name=channel_name,
+                input_key=input_key,
+                voxel_size=voxel_size,
+                roi_halo=roi_halo,
+                s3=s3,
+                s3_credentials=s3_credentials,
+                s3_bucket_name=s3_bucket_name,
+                s3_service_endpoint=s3_service_endpoint,
+                force_overwrite=force_overwrite,
+            )
+
+
 def save_mask_from_hull_vertices(
     coords: List[int],
     hull_vertices: List[List[float]],

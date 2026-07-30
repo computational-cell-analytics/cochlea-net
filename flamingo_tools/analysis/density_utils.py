@@ -495,10 +495,16 @@ def _build_block_extraction_dict(
 
     result_list: List[dict] = []
     for position_label, pos_result in density_results.items():
+        center = pos_result.get("bb_center", [float("nan")] * 3)
+        if any(math.isnan(c) for c in center):
+            warnings.warn(
+                f"Skipping block-extraction entry for position '{position_label}': "
+                "no SGN instances found (NaN bounding-box center)."
+            )
+            continue
+
         entry = dict(common)
         entry["position_label"] = position_label
-
-        center = pos_result.get("bb_center", [float("nan")] * 3)
         entry["crop_centers"] = [[round(c) for c in center]]
 
         if global_halo is not None:
@@ -603,7 +609,7 @@ def calc_sgn_density(
     positions: List[Union[str, float]] = ["apex", "mid", "base"],
     slice_thickness: float = 10.0,
     run_length_tolerance: float = 0.1,
-    component_list: List[int] = [1],
+    component_list: Optional[List[int]] = None,
     axis: str = "z",
     length_fraction_column: str = "length_fraction",
     density_mode: str = "2d",
@@ -614,6 +620,8 @@ def calc_sgn_density(
     seg_key: str = "s0",
     min_overlap_fraction: Optional[float] = None,
     min_overlap_volume: Optional[float] = None,
+    crop_output: Optional[str] = None,
+    img_paths: Optional[List[str]] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -638,7 +646,9 @@ def calc_sgn_density(
         slice_thickness: Total thickness of the horizontal slice in µm. Default: 10.0
         run_length_tolerance: Maximum allowed length_fraction difference to include an SGN instance.
                               Reduces contamination from other cochlear turns. Default: 0.1
-        component_list: Component label(s) of the main Rosenthal's Canal component. Default: 1
+        component_list: Component label(s) of the main Rosenthal's Canal component. When omitted,
+                        falls back to the 'component_list' entry of 'json_input' if present,
+                        otherwise to [1].
         axis: Volume axis perpendicular to the slice plane. Default: z
         length_fraction_column: Column name for the run-length fraction in the table. Default: length_fraction.
         density_mode: Density mode: '2d' computes density per cross-sectional area (SGN/µm²);
@@ -653,7 +663,7 @@ def calc_sgn_density(
         seg_path: Path to the SGN segmentation volume (local TIF, N5/Zarr, or S3 OME-ZARR).
                   When omitted and 'json_input' is given, the path is derived automatically as
                   <dataset_name>/images/ome-zarr/<segmentation_channel>.ome.zarr.
-                  Only used when 'min_overlap_fraction' is set.
+                  Only used when 'min_overlap_fraction', 'min_overlap_volume', or 'crop_output' is set.
         seg_key: Internal key for N5/Zarr/OME-ZARR segmentation (default: s0).
         min_overlap_fraction: Minimum fraction of an SGN's voxels (n_pixels) that must lie within the
                               slice sub-volume to count the instance. Range (0, 1].
@@ -661,11 +671,22 @@ def calc_sgn_density(
                               segmentation is a pre-extracted crop or a full volume is detected
                               automatically from the array shape.
         min_overlap_volume: Analogous to min_overlap_fraction with explicit volume in µm³
+        crop_output: Optional output directory for extracting image crops (segmentation and
+                     optional 'img_paths' volumes) at each computed density position. Crop file
+                     names follow the naming scheme of flamingo_tools.extract_block, e.g.
+                     <dataset>_crop_<center>_<channel>.tif. Default: None (no crops extracted).
+        img_paths: Additional image volume path(s) (local or S3 OME-Zarr) to crop at each density
+                   position, alongside the segmentation. Only used when 'crop_output' is given;
+                   otherwise ignored with a warning.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
     """
+    if img_paths and crop_output is None:
+        warnings.warn("'img_paths' was given without 'crop_output'; no crops will be extracted.")
+        img_paths = None
+
     # Resolve table path and optional JSON metadata.
     json_params = None
     if json_input is not None:
@@ -673,6 +694,9 @@ def calc_sgn_density(
             json_params = json.load(f)
         if isinstance(json_params, list):
             json_params = json_params[0]
+
+    if component_list is None:
+        component_list = json_params.get("component_list", [1]) if json_params is not None else [1]
 
     if mobie_dir is None:
         mobie_dir = os.getcwd()
@@ -716,9 +740,8 @@ def calc_sgn_density(
         voxel_size = voxel_size * 3
     voxel_size = tuple(voxel_size)
 
-    # Resolve and load segmentation if overlap filtering is requested.
-    segmentation = None
-    if min_overlap_fraction is not None or min_overlap_volume is not None:
+    # Resolve segmentation path if needed for overlap filtering or crop extraction.
+    if min_overlap_fraction is not None or min_overlap_volume is not None or crop_output is not None:
         if seg_path is None and json_params is not None:
             dataset_name = json_params["dataset_name"]
             seg_channel = json_params.get("segmentation_channel", "SGN_v2")
@@ -729,6 +752,10 @@ def calc_sgn_density(
                     mobie_dir, dataset_name, "images", "ome-zarr",
                     f"{seg_channel}.ome.zarr",
                 )
+
+    # Load segmentation if overlap filtering is requested.
+    segmentation = None
+    if min_overlap_fraction is not None or min_overlap_volume is not None:
         if seg_path is not None:
             segmentation = read_image_data(
                 seg_path, seg_key,
@@ -755,11 +782,32 @@ def calc_sgn_density(
 
     export_dictionary_as_json(results, output, force_overwrite=force_overwrite)
 
-    if json_output is not None:
+    if json_output is not None or crop_output is not None:
         block_list = _build_block_extraction_dict(
             results,
             input_json_params=json_params,
             roi_halo=roi_halo,
             voxel_size=voxel_size,
         )
-        export_dictionary_as_json(block_list, json_output, force_overwrite=force_overwrite)
+
+        if json_output is not None:
+            export_dictionary_as_json(block_list, json_output, force_overwrite=force_overwrite)
+
+        if crop_output is not None:
+            from flamingo_tools.extract_block_util import extract_density_crops
+
+            dataset_name = json_params.get("dataset_name") if json_params is not None else None
+            extract_density_crops(
+                block_list,
+                output_path=crop_output,
+                seg_path=seg_path,
+                dataset_name=dataset_name,
+                img_paths=img_paths,
+                input_key=seg_key,
+                voxel_size=voxel_size,
+                s3=s3,
+                s3_credentials=s3_credentials,
+                s3_bucket_name=s3_bucket_name,
+                s3_service_endpoint=s3_service_endpoint,
+                force_overwrite=force_overwrite,
+            )
