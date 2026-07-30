@@ -58,7 +58,10 @@ def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n
     )
 
     if not have_flow or len(peak_coords) == 0:
+        print("Use peak detection from local maxima.")
         return peak_coords.astype(float)
+    else:
+        print("Adjusting peak detection using heatmap.")
 
     s = _HEATMAP_FLOW_SIGMA
     adjusted = np.empty((len(peak_coords), 3), dtype=float)
@@ -190,7 +193,7 @@ def run_prediction(
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
-    threshold_flow: Optional[float] = None,
+    threshold: float = 0.5,
 ):
     """Run prediction for synapse detection.
 
@@ -202,6 +205,7 @@ def run_prediction(
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
         voxel_size: The voxel size of the data in micrometer.
+        threshold: Threshold for peak detection.
     """
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
@@ -225,7 +229,7 @@ def run_prediction(
         prediction_key=prediction_key,
         block_shape=block_shape,
         voxel_size=voxel_size,
-        threshold=threshold_flow,
+        threshold=threshold,
     )
 
 
