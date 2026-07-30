@@ -242,5 +242,66 @@
 		"precision": 0.906,
 		"recall": 0.816,
 		"f1-score": 0.859
+	},
+	"v11": {
+		"crops": [
+			"MLR226L_VGlut3_z1200_3turns_full",
+			"MLR226L_VGlut3_z2214_midmidiolarstyle_full",
+			"MLR226L_VGlut3_z485_1row_full",
+			"MLR226R_VGlut3_z2042_midmidiolarstyle_full",
+			"MLR226R_VGlut3_z2912_3turns_full",
+			"MLR226R_VGlut3_z859_1row_full",
+			"MLR227L_VGlut3_z1346_midmidiolarstyle_full",
+			"MLR227L_VGlut3_z2495_3turns_full",
+			"MLR227L_VGlut3_z772_2rows_full",
+			"MLR227R_VGlut3_z1178_3turns_full",
+			"MLR227R_VGlut3_z2459_midmidiolarstyle_full",
+			"MLR227R_VGlut3_z770_1row_full"
+		],
+		"tp": [
+			26,
+			4,
+			21,
+			6,
+			29,
+			30,
+			8,
+			28,
+			42,
+			33,
+			4,
+			32
+		],
+		"fp": [
+			4,
+			2,
+			8,
+			1,
+			0,
+			1,
+			0,
+			2,
+			0,
+			1,
+			0,
+			0
+		],
+		"fn": [
+			8,
+			3,
+			14,
+			3,
+			2,
+			3,
+			2,
+			10,
+			5,
+			4,
+			1,
+			2
+		],
+		"precision": 0.933,
+		"recall": 0.822,
+		"f1-score": 0.874
 	}
 }
