@@ -69,6 +69,13 @@
 		"runtime": 156.853,
 		"runtime_std": 21.1
 	},
+	"distance_unet_v3": {
+		"precision": 0.86,
+		"recall": 0.83,
+		"f1-score": 0.838,
+		"runtime": 124.152,
+		"runtime_std": 47.273
+	},
 	"micro-sam": {
 		"precision": 0.14,
 		"recall": 0.782,

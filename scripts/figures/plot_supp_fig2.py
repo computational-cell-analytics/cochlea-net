@@ -41,6 +41,7 @@ PLOT_METADATA = {
         "v4c": {"label": "v4c", "marker": "v"},
         "v9": {"label": "v9", "marker": "^"},
         "v10": {"label": "v10", "marker": "s"},
+        "v11": {"label": "v11", "marker": "o"},
     },
     "synapses": {
         "v3": {"label": "v3", "marker": "D"},
@@ -367,6 +368,10 @@ def main():
                     segm="SGN", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_time.{FILE_EXTENSION}"),
                     segm="IHC", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
+
+        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_ihc_accuracy.{FILE_EXTENSION}"),
+            segm="IHC_3D", show_legend=True, data_dir=data_dir, use_folds=args.use_folds,
+            key_list=["v9", "v10", "v11"], ylim=[0.80, 1.0],)
         plot_fold_accuracy(
             save_path=os.path.join(args.figure_dir, f"supp_fig_sgn_folds.{FILE_EXTENSION}"),
             data_dir=data_dir,
