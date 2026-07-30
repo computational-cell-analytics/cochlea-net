@@ -21,6 +21,7 @@ SGN_BASELINES = [
     "distance_unet_f2",
     "distance_unet_f3",
     "distance_unet_f4",
+    "distance_unet_v3",
     "micro-sam",
     "micro-sam_finetuned",
     "stardist",
@@ -28,6 +29,7 @@ SGN_BASELINES = [
 
 IHC_BASELINES = [
     "cellpose3",
+    "cellpose3_finetuned",
     "cellpose-sam",
     "distance_unet_v3",
     "distance_unet_v3_c07_b07_d08",
@@ -36,7 +38,9 @@ IHC_BASELINES = [
     "distance_unet_v8",
     "distance_unet_v9",
     "distance_unet_v10",
+    "distance_unet_v11",
     "micro-sam",
+    "micro-sam_finetuned",
 ]
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
