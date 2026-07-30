@@ -1,0 +1,13 @@
+[
+	{
+		"dataset_name": "G_EK_000076_L",
+		"cell_type": "sgn",
+		"segmentation_channel": "SGN_v2",
+		"component_list": [
+			1,
+			2,
+			3
+		],
+		"apex_position": "apex_lower"
+	}
+]

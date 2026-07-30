@@ -3,13 +3,15 @@
 		"dataset_name": "M_AMD_OTOF27_R",
 		"image_channel": [
 			"Vglut3",
-			"Alphatag"
+			"Alphatag",
+			"Otof"
 		],
-		"segmentation_channel": "IHC_v9",
+		"segmentation_channel": "IHC_v11",
 		"use_bg_mask": "yes",
 		"component_list": [
-			3,
-			6
+			2,
+			4,
+			10
 		]
 	}
 ]

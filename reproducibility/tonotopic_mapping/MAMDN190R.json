@@ -1,0 +1,10 @@
+[
+    {
+		"dataset_name": "M_AMD_N190_R",
+		"component_list": [
+			1
+		],
+		"segmentation_channel": "CR_Ntng1_SGN_v2",
+		"cell_type": "sgn"
+	}
+]

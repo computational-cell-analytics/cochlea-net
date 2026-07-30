@@ -1,0 +1,51 @@
+{
+	"dataset_name": "M_AMD_N190_L",
+	"image_channel": [
+		"CR",
+		"Ntng1",
+		"CR_Ntng1_SGN_v2"
+	],
+	"segmentation_channel": "CR_Ntng1_SGN_v2",
+	"cell_type": "sgn",
+	"component_list": [
+		1
+	],
+	"n_blocks": 6,
+	"roi_halo": [
+		256,
+		256,
+		50
+	],
+	"crop_centers": [
+		[
+			1009,
+			949,
+			420
+		],
+		[
+			812,
+			720,
+			327
+		],
+		[
+			560,
+			895,
+			384
+		],
+		[
+			578,
+			850,
+			721
+		],
+		[
+			605,
+			492,
+			751
+		],
+		[
+			402,
+			217,
+			640
+		]
+	]
+}

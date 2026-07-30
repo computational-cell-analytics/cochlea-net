@@ -1,0 +1,52 @@
+{
+	"dataset_name": "M_AMD_OTOF27_L",
+	"image_channel": [
+		"Alphatag",
+		"Vglut3",
+		"IHC_v11",
+		"Otof"
+	],
+	"segmentation_channel": "IHC_v11",
+	"cell_type": "ihc",
+	"component_list": [
+		1
+	],
+	"n_blocks": 6,
+	"roi_halo": [
+		256,
+		256,
+		128
+	],
+	"crop_centers": [
+		[
+			1085,
+			1389,
+			594
+		],
+		[
+			1259,
+			662,
+			447
+		],
+		[
+			709,
+			690,
+			1017
+		],
+		[
+			653,
+			1306,
+			537
+		],
+		[
+			795,
+			604,
+			99
+		],
+		[
+			568,
+			112,
+			692
+		]
+	]
+}
