@@ -210,8 +210,8 @@ class DetectionDataset(torch.utils.data.Dataset):
         # so that HeatmapFlowTransform has context to compute flow near patch edges.
         self.halo = 10
 
-        with zarr.open(self.raw_path, mode="r") as f:
-            full_shape = f[self.raw_key].shape
+        f = zarr.open(self.raw_path, mode="r")
+        full_shape = f[self.raw_key].shape
 
         # Determine 3D spatial shape, stripping an optional channel dim.
         if len(full_shape) == 4:

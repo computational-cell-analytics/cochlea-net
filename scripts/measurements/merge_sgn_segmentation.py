@@ -17,7 +17,7 @@ def merge_segmentations(seg_a, seg_b, ids_b, offset, output_path):
     assert seg_a.shape == seg_b.shape
 
     output_file = zarr.open(output_path, mode="a")
-    output = output_file.create_dataset("segmentation", shape=seg_a.shape, dtype=seg_a.dtype, chunks=seg_a.chunks)
+    output = output_file.create_array("segmentation", shape=seg_a.shape, dtype=seg_a.dtype, chunks=seg_a.chunks)
     blocks = Blocking([0, 0, 0], seg_a.shape, seg_a.chunks)
 
     def merge_block(block_id):

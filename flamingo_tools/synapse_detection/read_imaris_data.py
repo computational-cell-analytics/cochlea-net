@@ -117,8 +117,8 @@ def extract_training_data(imaris_file, output_folder, tif_file=None, crop=True, 
         f = zarr.open(image_file, mode="a")
         # Avoid zarr.errors.ContainsArrayError
         if not os.path.isdir(os.path.join(image_file, "raw")):
-            f.create_dataset("raw", data=data)
+            f.create_array("raw", data=data)
 
         if ihc_data is not None:
             if not os.path.isdir(os.path.join(image_file, "raw_ihc")):
-                f.create_dataset("raw_ihc", data=ihc_data)
+                f.create_array("raw_ihc", data=ihc_data)

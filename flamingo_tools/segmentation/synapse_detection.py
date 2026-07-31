@@ -280,8 +280,8 @@ def marker_detection(
         new_mask[mask_ != 0] = 1
         arr_bin = binary_dilation(mask_, structure=np.ones((9, 9, 9))).astype(int)
 
-        with zarr.open(output_file, mode="w") as f_out:
-            f_out.create_dataset(mask_preprocess_key, data=arr_bin, compression="gzip")
+        f_out = zarr.open(output_file, mode="w")
+        f_out.create_array(mask_preprocess_key, data=arr_bin, compressors=zarr.codecs.GzipCodec())
 
     # 2.) Run inference and detection of maxima.
 

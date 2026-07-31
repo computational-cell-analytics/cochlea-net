@@ -40,8 +40,8 @@ def main():
                                            service_endpoint=args.s3_service_endpoint,
                                            credential_file=args.s3_credentials)
 
-        with zarr.open(s3_path, mode="r") as f:
-            dataset = f[args.input_key]
+        f = zarr.open(s3_path, mode="r")
+        dataset = f[args.input_key]
 
     else:
         segmentation = open_file(seg_path, mode='r')

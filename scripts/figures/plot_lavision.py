@@ -90,8 +90,8 @@ def download_seg(ds, seg_channel, output_folder, apply_filter=True, scale=1):
     with fs.open(table_path, "r") as f:
         table = pd.read_csv(f, sep="\t")
 
-    with zarr.open(s3_store, mode="r") as f:
-        data = f[input_key][:]
+    f = zarr.open(s3_store, mode="r")
+    data = f[input_key][:]
 
     if apply_filter:
         valid_ids = table[table.component_labels == 1].label_id
@@ -132,8 +132,8 @@ def download_dataset(
 
         internal_path = os.path.join(ds, "images", "ome-zarr", f"{channel}.ome.zarr")
         s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
-        with zarr.open(s3_store, mode="r") as f:
-            data = f[input_key][:]
+        f = zarr.open(s3_store, mode="r")
+        data = f[input_key][:]
         imageio.imwrite(output_path, data, compression="zlib")
 
     for seg_channel, apply_filter in zip(seg_channels, apply_filters):

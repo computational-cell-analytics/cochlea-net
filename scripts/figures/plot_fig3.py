@@ -327,8 +327,8 @@ def fig_01a(
     internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
     input_key = "s3"
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME)
-    with zarr.open(s3_store, mode="r") as f:
-        ihc_syn = f[input_key][:].astype("uint16")
+    f = zarr.open(s3_store, mode="r")
+    ihc_syn = f[input_key][:].astype("uint16")
 
     # Copy the array and replace "label id" with "syn_per_IHC"
     syn_arr = ihc_syn.copy().astype(np.uint32)

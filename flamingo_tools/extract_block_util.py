@@ -114,7 +114,7 @@ def extract_block_single(
         imageio.imwrite(output_path, data_roi, compression="zlib")
     else:
         f_out = zarr.open(output_path, mode="w")
-        f_out.create_dataset(output_key, data=data_roi, compression="gzip")
+        f_out.create_array(output_key, data=data_roi, compressors=zarr.codecs.GzipCodec())
 
     # filter out segmentation not corresponding to label IDs
     if label_ids is not None:

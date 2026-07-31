@@ -21,8 +21,8 @@ def get_scale_factor():
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
 
     input_key = "s0"
-    with zarr.open(s3_store, mode="r") as f:
-        new_shape = f[input_key].shape
+    f = zarr.open(s3_store, mode="r")
+    new_shape = f[input_key].shape
 
     scale_factor = tuple(
         float(nsh) / float(osh) for nsh, osh in zip(new_shape, original_shape)
@@ -43,8 +43,8 @@ def get_shape():
     s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
 
     input_key = "s0"
-    with zarr.open(s3_store, mode="r") as f:
-        new_shape = f[input_key].shape
+    f = zarr.open(s3_store, mode="r")
+    new_shape = f[input_key].shape
     return new_shape
 
 

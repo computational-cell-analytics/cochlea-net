@@ -77,8 +77,8 @@ def export_synapse_detections(
         seg_path = os.path.join(cochlea, reference_seg_info["imageData"]["ome.zarr"]["relativePath"])
         s3_store, _ = get_s3_path(seg_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
         input_key = f"s{scale}"
-        with zarr.open(s3_store, mode="r") as f:
-            shape = f[input_key].shape
+        f = zarr.open(s3_store, mode="r")
+        shape = f[input_key].shape
 
         # Scale the coordinates according to the scale level.
         voxel_size = 0.38

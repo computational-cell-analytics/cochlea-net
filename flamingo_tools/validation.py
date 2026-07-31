@@ -106,8 +106,8 @@ def fetch_data_for_evaluation(
 
     # Download the segmentation for this slice and the given z-extent.
     input_key = "s0"
-    with zarr.open(s3_store, mode="r") as f:
-        segmentation = f[input_key][roi]
+    f = zarr.open(s3_store, mode="r")
+    segmentation = f[input_key][roi]
 
     table = None
     if components_for_postprocessing is not None:
@@ -141,8 +141,8 @@ def fetch_data_for_evaluation(
         internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{extra_data}.ome.zarr")
         s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
         input_key = "s0"
-        with zarr.open(s3_store, mode="r") as f:
-            extra_im_data = f[input_key][roi]
+        f = zarr.open(s3_store, mode="r")
+        extra_im_data = f[input_key][roi]
         return segmentation, annotations, extra_im_data
 
     return segmentation, annotations

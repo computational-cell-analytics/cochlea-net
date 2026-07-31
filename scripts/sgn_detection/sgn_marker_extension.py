@@ -61,8 +61,8 @@ def main():
         s3_path = os.path.join(f"{args.cochlea}", "images", "ome-zarr", f"{args.seg_channel}.ome.zarr")
         input_key = "s0"
         s3_store, fs = get_s3_path(s3_path)
-        with zarr.open(s3_store, mode="r") as f:
-            data = f[input_key][:].astype("float32")
+        f = zarr.open(s3_store, mode="r")
+        data = f[input_key][:].astype("float32")
 
         shape = data.shape
 

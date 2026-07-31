@@ -162,14 +162,14 @@ def export_lower_resolution(args):
             print("Exporting channel", channel)
             internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
-            with zarr.open(s3_store, mode="r") as f:
-                if crop:
-                    start, stop = compute_crop_bb(
-                        args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
-                    )
-                    data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]].astype("float32")
-                else:
-                    data = f[input_key][:].astype("float32")
+            f = zarr.open(s3_store, mode="r")
+            if crop:
+                start, stop = compute_crop_bb(
+                    args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
+                )
+                data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]].astype("float32")
+            else:
+                data = f[input_key][:].astype("float32")
             print("Data shape", data.shape)
             if args.filter_by_components is not None:
                 print(f"Filtering channel {channel} by components {args.filter_by_components}.")
@@ -195,7 +195,7 @@ def export_lower_resolution(args):
                 out_path = os.path.join(output_folder, f"{channel}.ome.zarr")
                 output_key = "image"
                 f_out = zarr.open(out_path, mode="w")
-                f_out.create_dataset(output_key, data=data, compression="gzip")
+                f_out.create_array(output_key, data=data, compressors=zarr.codecs.GzipCodec())
             else:
                 tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
 

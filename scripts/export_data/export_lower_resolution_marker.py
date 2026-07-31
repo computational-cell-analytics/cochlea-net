@@ -67,8 +67,8 @@ def export_lower_resolution(args):
                 print("Exporting channel", channel)
                 internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
                 s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
-                with zarr.open(s3_store, mode="r") as f:
-                    data = f[input_key][:].astype("float32")
+                f = zarr.open(s3_store, mode="r")
+                data = f[input_key][:].astype("float32")
                 print("Data shape", data.shape)
 
                 print(f"Filtering {group} marker instances.")
