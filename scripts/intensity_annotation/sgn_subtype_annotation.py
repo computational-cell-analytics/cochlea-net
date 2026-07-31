@@ -5,6 +5,24 @@ from typing import Optional
 import flamingo_tools.intensity_annotation.annotation_utils as annotation_utils
 
 
+def _find_matching_files(file_names, basename, keyword):
+    return sorted(name for name in file_names if basename in name and keyword in name)
+
+
+def _require_unique_file(file_names, basename, keyword, description):
+    matches = _find_matching_files(file_names, basename, keyword)
+    if not matches:
+        raise FileNotFoundError(
+            f"Found no {description} file matching prefix '{basename}' and keyword '{keyword}'."
+        )
+    if len(matches) > 1:
+        raise ValueError(
+            f"Found multiple {description} files matching prefix '{basename}' and keyword '{keyword}': {matches}. "
+            "Refine the search keyword so that it matches exactly one file."
+        )
+    return matches[0]
+
+
 def sgn_subtype_annotation(
     prefix: str,
     measurement_table_path: str,
@@ -36,23 +54,26 @@ def sgn_subtype_annotation(
     basename = os.path.basename(prefix)
     file_names = [entry.name for entry in os.scandir(direc)]
 
-    stain1_file = [name for name in file_names if basename in name and subtype in name][0]
-    pv_files = [name for name in file_names if basename in name and "PV.tif" in name]
+    stain1_file = _require_unique_file(file_names, basename, f"{subtype}.tif", f"{subtype} stain")
+
+    pv_files = _find_matching_files(file_names, basename, "PV.tif")
     if len(pv_files) == 0:
         ref_stain_file = None
-    else:
+    elif len(pv_files) == 1:
         ref_stain = "PV"
-        ref_stain_file = [name for name in file_names if basename in name and "PV.tif" in name][0]
+        ref_stain_file = pv_files[0]
         statistics_keyword = f"{subtype}_ratio_PV"
+    else:
+        raise ValueError(f"Found multiple PV stain files matching prefix '{basename}': {pv_files}.")
 
     seg_name = "SGN"
-    seg_file = [name for name in file_names if basename in name and seg_name in name][0]
+    seg_file = _require_unique_file(file_names, basename, seg_name, "segmentation")
 
     stain_dict = {
         subtype: os.path.join(direc, stain1_file),
     }
     if ref_stain_file is not None:
-        stain_dict[ref_stain] = os.path.join(direc, ref_stain)
+        stain_dict[ref_stain] = os.path.join(direc, ref_stain_file)
 
     seg_file = os.path.join(direc, seg_file)
 
