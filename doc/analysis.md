@@ -206,6 +206,18 @@ python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_annotations.py
 ```
 If no output directory is passed, the output will be saved as a table in `<mobie_project>/<cochlea>/tables/<seg_name>/<marker_name>_<seg_name>.tsv`.
 
+The `-t, --threshold_save_dir` argument saves the thresholds as `<cochlea>_<stain>_<seg_name>.json`.
+For each crop, this file contains the threshold averaged over all annotators as `median_intensity`, and the threshold of each single annotator as `annotator_intensities`.
+The annotator name is the name of the annotation directory, e.g. `ResultsAMD`.
+
+#### Variability between annotators
+The `--variance` argument evaluates how much the marker assignment depends on the annotator.
+The thresholds of a single annotator are applied to the whole cochlea, which gives one scenario per annotator.
+These scenarios are compared to each other and to the `median` scenario, which uses the thresholds averaged over all annotators.
+Crops without a threshold for an annotator are left out of the scenario of this annotator.
+The result is saved as `<cochlea>_<stain>_<seg_name>_variance.json` in the threshold directory, or in the output directory if no threshold directory is passed.
+It contains the percentage of positive and negative instances per scenario, the variance of these percentages over all annotators, and a breakdown per crop.
+
 ### 4a - Subtype analysis
 The same functionality applies to subtype analysis as to marker annotation.
 ```bash

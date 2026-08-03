@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import os
 from typing import List, Optional
@@ -42,6 +43,7 @@ def eval_marker_annotation(
     seg_name: str = "SGN_v2",
     marker_name: str = "GFP",
     force_overwrite: bool = False,
+    compute_variance: bool = False,
     s3: Optional[bool] = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -63,6 +65,9 @@ def eval_marker_annotation(
         marker_name: Identifier for marker stain.
         threshold_save_dir: Optional directory for saving the thresholds.
         force_overwrite: Whether to overwrite already existing results.
+        compute_variance: Whether to compare the marker percentages of the individual annotators
+            with each other and with the median thresholds. The result is saved as
+            <cochlea>_<marker>_<seg>_variance.json next to the thresholds.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -91,13 +96,14 @@ def eval_marker_annotation(
                 raise ValueError("Specify an output directory, when data is accessed from the S3 bucket.")
             else:
                 print(f"Using MoBIE directory {mobie_dir} for output paths.")
-                output_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
-                os.makedirs(output_dir, exist_ok=True)
+                out_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
+                os.makedirs(out_dir, exist_ok=True)
                 # TODO: Overwrite default table after checking that other entries are identical.
-                out_path = os.path.join(output_dir, f"{marker_name}_{seg_string}.tsv")
+                out_path = os.path.join(out_dir, f"{marker_name}_{seg_string}.tsv")
         else:
-            os.makedirs(output_dir, exist_ok=True)
-            out_path = os.path.join(output_dir, f"{cochlea_str}_{marker_name}_{seg_string}.tsv")
+            out_dir = output_dir
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{cochlea_str}_{marker_name}_{seg_string}.tsv")
 
         if os.path.exists(out_path) and not force_overwrite:
             print(f"Skipping {out_path}. Table already exists.")
@@ -115,42 +121,49 @@ def eval_marker_annotation(
         print(f"Evaluating data for cochlea {cochlea} in {annotations}.")
 
         # get the segmentation data, the segmentation table, and the object measures for the marker
+        # the paths are resolved per cochlea, so that the given paths stay valid for the next cochlea
         if data_seg_path is None:
             if s3:
-                data_seg_path = f"{cochlea}/images/ome-zarr/{seg_name}.ome.zarr"
+                seg_path = f"{cochlea}/images/ome-zarr/{seg_name}.ome.zarr"
             else:
-                data_seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+                seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+        else:
+            seg_path = data_seg_path
         if s3:
-            data_seg_path, fs = get_s3_path(data_seg_path, bucket_name=s3_bucket_name,
-                                            service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        data_seg = read_image_data(data_seg_path, input_key)
+            seg_path, fs = get_s3_path(seg_path, bucket_name=s3_bucket_name,
+                                       service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        data_seg = read_image_data(seg_path, input_key)
 
         if table_seg_path is None:
             if s3:
-                table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
+                seg_table = f"{cochlea}/tables/{seg_name}/default.tsv"
             else:
-                table_seg_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, "default.tsv")
+                seg_table = os.path.join(mobie_dir, cochlea, "tables", seg_name, "default.tsv")
+        else:
+            seg_table = table_seg_path
         if s3:
-            table_path_s3, fs = get_s3_path(table_seg_path, bucket_name=s3_bucket_name,
+            table_path_s3, fs = get_s3_path(seg_table, bucket_name=s3_bucket_name,
                                             service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
             with fs.open(table_path_s3, "r") as f:
                 table_seg = pd.read_csv(f, sep="\t")
         else:
-            table_seg = pd.read_csv(table_seg_path, sep="\t")
+            table_seg = pd.read_csv(seg_table, sep="\t")
 
         if table_meas_path is None:
             table_meas_name = f"{marker_name}_{seg_string}_object-measures.tsv"
             if s3:
-                table_meas_path = f"{cochlea}/tables/{seg_name}/{table_meas_name}"
+                meas_table = f"{cochlea}/tables/{seg_name}/{table_meas_name}"
             else:
-                table_meas_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, table_meas_name)
+                meas_table = os.path.join(mobie_dir, cochlea, "tables", seg_name, table_meas_name)
+        else:
+            meas_table = table_meas_path
         if s3:
-            table_path_s3, fs = get_s3_path(table_meas_path, bucket_name=s3_bucket_name,
+            table_path_s3, fs = get_s3_path(meas_table, bucket_name=s3_bucket_name,
                                             service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
             with fs.open(table_path_s3, "r") as f:
                 table_meas = pd.read_csv(f, sep="\t")
         else:
-            table_meas = pd.read_csv(table_meas_path, sep="\t")
+            table_meas = pd.read_csv(meas_table, sep="\t")
 
         # Find the thresholds from the annotated blocks and save it if specified.
         intensity_dic, _ = eval_utils.find_thresholds(annotations, search_str, data_seg, table_meas,
@@ -160,6 +173,21 @@ def eval_marker_annotation(
             threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")
             with open(threshold_out_path, "w") as f:
                 json.dump(intensity_dic, f, sort_keys=True, indent=4)
+
+        # Compare the thresholds of the individual annotators with the median thresholds.
+        if compute_variance:
+            variance_dir = out_dir if threshold_save_dir is None else threshold_save_dir
+            os.makedirs(variance_dir, exist_ok=True)
+            variance_dic = eval_utils.evaluate_annotator_variance(
+                copy.deepcopy(intensity_dic), table_seg.copy(), table_meas,
+                halo_size=halo_size, cochlea=cochlea, marker_name=marker_name, seg_name=seg_name,
+            )
+            variance_out_path = os.path.join(
+                variance_dir, f"{cochlea_str}_{marker_name}_{seg_string}_variance.json"
+            )
+            # The keys are not sorted, so that the per-crop breakdown stays at the end of the file.
+            with open(variance_out_path, "w") as f:
+                json.dump(variance_dic, f, indent=4)
 
         # Apply the threshold to all SGNs.
         table_seg = eval_utils.apply_nearest_threshold(intensity_dic, table_seg, table_meas, halo_size=halo_size)
@@ -180,6 +208,9 @@ def main():
     parser.add_argument("-a", "--annotation_dirs", type=str, nargs="+", default=None,
                         help="Directories containing marker annotations.")
     parser.add_argument("-t", "--threshold_save_dir")
+    parser.add_argument("--variance", action="store_true",
+                        help="Compare the marker percentages of the individual annotators "
+                        "with each other and with the median thresholds.")
 
     # options for specific data paths
     parser.add_argument("--seg_data", type=str, default=None,
@@ -219,6 +250,7 @@ def main():
         seg_name=args.seg_name,
         marker_name=args.marker_name,
         force_overwrite=args.force,
+        compute_variance=args.variance,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

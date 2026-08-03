@@ -1,7 +1,7 @@
 import os
 import multiprocessing as mp
 from concurrent import futures
-from typing import List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
@@ -289,6 +289,69 @@ def get_length_fraction_from_center(
     return length_fraction
 
 
+def map_crops_to_length_fraction(
+    intensity_dic: dict,
+    table_seg: pd.DataFrame,
+    threshold_dic: Optional[dict] = None,
+    halo_size: int = 20,
+) -> dict:
+    """Assign crop centers to the "length fraction" parameter of Rosenthal's canal.
+
+    The crop center is only a point in space, so the length fraction is averaged over the
+    segmentation instances around it. The halo is doubled until at least one instance is in range.
+
+    Args:
+        intensity_dic: Dictionary with the crop center strings as keys.
+        table_seg: Segmentation table.
+        threshold_dic: Optional custom thresholds, either a single value or a dictionary per crop.
+        halo_size: Halo in micrometer to find nearby segmentation instances.
+
+    Returns:
+        Dictionary of the length fraction to the threshold and center string of the crop, sorted by length fraction.
+    """
+    lf_intensity = {}
+    for key in intensity_dic.keys():
+        length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
+        while length_fraction is None:
+            halo_size = 2 * halo_size
+            print(f"Found no instance in ROI halo around center coordinate. Trying halo {halo_size}.")
+            if halo_size > 150:
+                raise ValueError("No SGN instance nearby.")
+            length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
+
+        intensity_dic[key]["length_fraction"] = length_fraction
+        if threshold_dic is None:
+            threshold = intensity_dic[key]["median_intensity"]
+        else:
+            if isinstance(threshold_dic, (int, float)):
+                threshold = threshold_dic
+            else:
+                threshold = threshold_dic[key]["manual"]
+            print(f"Using custom threshold {threshold} for crop {key}.")
+        lf_intensity[length_fraction] = {"threshold": threshold, "center": key}
+
+    return dict(sorted(lf_intensity.items()))
+
+
+def length_fraction_limits(lf_fractions: List[float]) -> List[float]:
+    """Get the limits of the cochlea sections that each crop threshold is applied to.
+
+    Args:
+        lf_fractions: Length fractions of the crop centers, sorted in ascending order.
+
+    Returns:
+        The section limits, from the start to the end of the cochlea.
+    """
+    # start of cochlea
+    lf_limits = [0]
+    # half distance between block centers
+    for i in range(len(lf_fractions) - 1):
+        lf_limits.append((lf_fractions[i] + lf_fractions[i + 1]) / 2)
+    # end of cochlea
+    lf_limits.append(1)
+    return lf_limits
+
+
 def apply_nearest_threshold(
     intensity_dic: dict,
     table_seg: pd.DataFrame,
@@ -302,38 +365,11 @@ def apply_nearest_threshold(
     Crop centers are transformed into the "length fraction" parameter of the segmentation table.
     This avoids issues with the spiral shape of the cochlea and maps the assignment onto the Rosenthal"s canal.
     """
-    # assign crop centers to length fraction of Rosenthal"s canal
-    lf_intensity = {}
-    for key in intensity_dic.keys():
-        length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
-        while length_fraction is None:
-            halo_size = 2 * halo_size
-            print(f"Found no instance in ROI halo around center coordinate. Trying halo {halo_size}.")
-            if halo_size > 150:
-                raise ValueError("No SGN instance nearby.")
-            length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
-
-        intensity_dic[key]["length_fraction"] = length_fraction
-        if threshold_dic is None:
-            lf_intensity[length_fraction] = {"threshold": intensity_dic[key]["median_intensity"]}
-        else:
-            if isinstance(threshold_dic, (int, float)):
-                custom_threshold = threshold_dic
-            else:
-                custom_threshold = threshold_dic[key]["manual"]
-            print(f"Using custom threshold {custom_threshold} for crop {key}.")
-            lf_intensity[length_fraction] = {"threshold": custom_threshold}
-
-    # get limits for checking marker thresholds
-    lf_intensity = dict(sorted(lf_intensity.items()))
+    lf_intensity = map_crops_to_length_fraction(
+        intensity_dic, table_seg, threshold_dic=threshold_dic, halo_size=halo_size,
+    )
     lf_fractions = list(lf_intensity.keys())
-    # start of cochlea
-    lf_limits = [0]
-    # half distance between block centers
-    for i in range(len(lf_fractions) - 1):
-        lf_limits.append((lf_fractions[i] + lf_fractions[i + 1]) / 2)
-    # end of cochlea
-    lf_limits.append(1)
+    lf_limits = length_fraction_limits(lf_fractions)
 
     marker_labels = [0 for _ in range(len(table_seg))]
     table_seg.loc[:, f"marker_{suffix}"] = marker_labels
@@ -356,6 +392,193 @@ def apply_nearest_threshold(
         table_seg.loc[table_seg["label_id"].isin(label_ids_neg), f"marker_{suffix}"] = 2
 
     return table_seg
+
+
+def _threshold_value(value) -> Optional[float]:
+    # find_thresholds stores the averaged threshold as a one-element sequence.
+    if isinstance(value, (list, tuple)):
+        value = value[0] if len(value) > 0 else None
+    return None if value is None else float(value)
+
+
+def _percentage(count: int, total: int) -> float:
+    return float(round(100 * count / total, 4)) if total > 0 else 0.0
+
+
+def _count_marker_labels(
+    thresholds: Dict[str, float],
+    table_seg: pd.DataFrame,
+    table_meas: pd.DataFrame,
+    column: str = "median",
+    halo_size: int = 20,
+) -> Tuple[dict, dict]:
+    """Count positive and negative instances for one set of crop thresholds.
+
+    The instances are assigned to crops the same way as in `apply_nearest_threshold`.
+
+    Args:
+        thresholds: Threshold per crop center string.
+        table_seg: Segmentation table.
+        table_meas: Table containing object measures.
+        column: Name of column in the measurement table.
+        halo_size: Halo in micrometer to find nearby segmentation instances.
+
+    Returns:
+        The counts for the whole cochlea and the counts per crop.
+    """
+    intensity_dic = {center: {"median_intensity": threshold} for center, threshold in thresholds.items()}
+    lf_intensity = map_crops_to_length_fraction(intensity_dic, table_seg, halo_size=halo_size)
+    lf_fractions = list(lf_intensity.keys())
+    lf_limits = length_fraction_limits(lf_fractions)
+
+    crop_counts = {}
+    n_positive = 0
+    n_negative = 0
+    for num, fraction in enumerate(lf_fractions):
+        subset_seg = table_seg[
+            (table_seg["length_fraction"] > lf_limits[num]) &
+            (table_seg["length_fraction"] < lf_limits[num + 1])
+        ]
+        threshold = lf_intensity[fraction]["threshold"]
+        subset_measurement = table_meas[table_meas["label_id"].isin(subset_seg["label_id"])]
+        crop_positive = int((subset_measurement[column] >= threshold).sum())
+        crop_negative = int((subset_measurement[column] < threshold).sum())
+        n_positive += crop_positive
+        n_negative += crop_negative
+
+        crop_counts[lf_intensity[fraction]["center"]] = {
+            "threshold": threshold,
+            "length_fraction": fraction,
+            "n_positive": crop_positive,
+            "n_negative": crop_negative,
+            "percent_positive": _percentage(crop_positive, crop_positive + crop_negative),
+            "percent_negative": _percentage(crop_negative, crop_positive + crop_negative),
+        }
+
+    counts = {
+        "n_crops": len(lf_fractions),
+        "n_positive": n_positive,
+        "n_negative": n_negative,
+        "n_unassigned": int(len(table_seg) - n_positive - n_negative),
+        "percent_positive": _percentage(n_positive, n_positive + n_negative),
+        "percent_negative": _percentage(n_negative, n_positive + n_negative),
+    }
+    return counts, crop_counts
+
+
+def evaluate_annotator_variance(
+    intensity_dic: dict,
+    table_seg: pd.DataFrame,
+    table_meas: pd.DataFrame,
+    column: str = "median",
+    halo_size: int = 20,
+    cochlea: Optional[str] = None,
+    marker_name: Optional[str] = None,
+    seg_name: Optional[str] = None,
+) -> dict:
+    """Quantify how much the manual threshold annotation depends on the annotator.
+
+    The thresholds of a single annotator are applied to the whole cochlea, which gives one
+    scenario per annotator. These scenarios are compared to each other and to the "median"
+    scenario, which uses the thresholds averaged over all annotators.
+
+    An annotator does not have to annotate every crop. Crops without a threshold for this annotator
+    are left out of the scenario, so that the neighboring crops cover a larger part of the cochlea.
+
+    Args:
+        intensity_dic: Threshold dictionary created by `find_thresholds`.
+        table_seg: Segmentation table.
+        table_meas: Table containing object measures.
+        column: Name of column in the measurement table.
+        halo_size: Halo in micrometer to find nearby segmentation instances.
+        cochlea: Identifier for the cochlea, saved as metadata.
+        marker_name: Identifier for the marker stain, saved as metadata.
+        seg_name: Identifier for the segmentation, saved as metadata.
+
+    Returns:
+        Dictionary with the marker percentages per scenario, their variance, and a per-crop breakdown.
+    """
+    consensus_key = "median"
+
+    consensus_thresholds = {}
+    for center, crop_dic in intensity_dic.items():
+        threshold = _threshold_value(crop_dic.get("median_intensity"))
+        if threshold is None:
+            print(f"Skipping crop {center} for the variance evaluation. No threshold available.")
+            continue
+        consensus_thresholds[center] = threshold
+
+    annotators = sorted({
+        annotator for crop_dic in intensity_dic.values() for annotator in crop_dic.get("annotator_intensities", {})
+    })
+
+    n_crops = len(consensus_thresholds)
+    scenarios = {consensus_key: consensus_thresholds}
+    for annotator in annotators:
+        thresholds = {
+            center: float(crop_dic["annotator_intensities"][annotator])
+            for center, crop_dic in intensity_dic.items()
+            if annotator in crop_dic.get("annotator_intensities", {})
+        }
+        if len(thresholds) < n_crops:
+            print(f"Annotator {annotator} has thresholds for {len(thresholds)}/{n_crops} crops. "
+                  "Not all crops of this annotator are available.")
+        scenarios[annotator] = thresholds
+
+    counts = {}
+    crops = {}
+    for name, thresholds in scenarios.items():
+        if len(thresholds) == 0:
+            print(f"Skipping scenario {name} for the variance evaluation. No threshold available.")
+            continue
+        scenario_counts, crop_counts = _count_marker_labels(
+            thresholds, table_seg, table_meas, column=column, halo_size=halo_size,
+        )
+        counts[name] = scenario_counts
+        for center, crop_dic in crop_counts.items():
+            crops.setdefault(center, {})[name] = crop_dic
+
+    evaluated = [annotator for annotator in annotators if annotator in counts]
+    percentages = [counts[annotator]["percent_positive"] for annotator in evaluated]
+
+    deviation = {}
+    if consensus_key in counts:
+        consensus_percentage = counts[consensus_key]["percent_positive"]
+        deviation = {
+            annotator: float(round(counts[annotator]["percent_positive"] - consensus_percentage, 4))
+            for annotator in evaluated
+        }
+
+    pairwise_difference = {}
+    for num, first in enumerate(evaluated):
+        for second in evaluated[num + 1:]:
+            difference = counts[first]["percent_positive"] - counts[second]["percent_positive"]
+            pairwise_difference[f"{first}-{second}"] = float(round(difference, 4))
+
+    # The percentages of positives and negatives add up to 100, so they have the same variance.
+    if len(percentages) > 0:
+        variance = float(round(np.var(percentages), 4))
+        deviation_std = float(round(np.std(percentages), 4))
+    else:
+        variance, deviation_std = None, None
+
+    return {
+        "cochlea": cochlea,
+        "marker": marker_name,
+        "segmentation": seg_name,
+        "annotators": annotators,
+        "n_crops": n_crops,
+        "scenarios": counts,
+        "deviation_from_median": deviation,
+        "pairwise_difference": pairwise_difference,
+        "variance": {
+            "percent_positive": variance,
+            "percent_negative": variance,
+            "std_percent_positive": deviation_std,
+            "std_percent_negative": deviation_std,
+        },
+        "crops": {center: crops[center] for center in sorted(crops)},
+    }
 
 
 def find_thresholds(
@@ -388,9 +611,10 @@ def find_thresholds(
         annotator_success = []
         annotator_failure = []
         annotator_missing = []
+        annotator_intensities = {}
         # loop over annotated block from single user
         for annotator_key in annotation_dics.keys():
-            subdirname = os.path.basename(os.path.abspath(annotation_dir))
+            subdirname = os.path.basename(os.path.abspath(annotator_key))
             if annotated_center not in annotation_dics[annotator_key]["center_strings"]:
                 annotator_missing.append(subdirname)
                 continue
@@ -402,6 +626,7 @@ def find_thresholds(
                 else:
                     intensities.append(median_intensity)
                     annotator_success.append(subdirname)
+                    annotator_intensities[subdirname] = float(median_intensity)
 
         if len(intensities) == 0:
             print(f"No viable annotation for cochlea {cochlea} and crop {annotated_center}.")
@@ -411,6 +636,7 @@ def find_thresholds(
 
         intensity_dic[annotated_center] = {
             "median_intensity": median_int_avg,
+            "annotator_intensities": annotator_intensities,
             "annotation_success": annotator_success,
             "annotation_failure": annotator_failure,
             "annotation_missing": annotator_missing,
