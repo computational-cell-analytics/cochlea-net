@@ -15,6 +15,7 @@ _IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v4_cochlea_distance_u
 _SYNAPSE_MODELS_DIR = os.path.join(COCHLEA_DIR, "trained_models/Synapses")
 _TEST_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
 _TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels")
+VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
 PREDICTION_DICT = {
     "v3": {
@@ -154,7 +155,9 @@ def _filter_synapse_impl(detections, ihc_file, output_path):
             segmentation = open_file(ihc_file)["segmentation"][:]
 
     max_distance = 5  # 5 micrometer
-    filtered_detections = map_and_filter_detections(segmentation, detections, max_distance=max_distance)
+    filtered_detections = map_and_filter_detections(
+        segmentation, detections, max_distance=max_distance, voxel_size=VOXEL_SIZE,
+    )
     filtered_detections.to_csv(output_path, index=False, sep="\t")
 
 
@@ -191,6 +194,12 @@ def filter_gt(
         gt = pd.read_csv(gt)
         gt = gt.rename(columns={"axis-0": "z", "axis-1": "y", "axis-2": "x"})
         gt.insert(0, "spot_id", np.arange(1, len(gt) + 1))
+
+        # Consensus annotations are stored in voxel coordinates, while
+        # map_and_filter_detections expects physical coordinates in µm.
+        gt["x"] *= VOXEL_SIZE[0]
+        gt["y"] *= VOXEL_SIZE[1]
+        gt["z"] *= VOXEL_SIZE[2]
 
         _filter_synapse_impl(gt, ihc, output_path)
 
