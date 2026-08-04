@@ -401,7 +401,7 @@ def _threshold_value(value) -> Optional[float]:
     return None if value is None else float(value)
 
 
-def _percentage(count: int, total: int) -> float:
+def percentage(count: int, total: int) -> float:
     return float(round(100 * count / total, 4)) if total > 0 else 0.0
 
 
@@ -451,8 +451,8 @@ def _count_marker_labels(
             "length_fraction": fraction,
             "n_positive": crop_positive,
             "n_negative": crop_negative,
-            "percent_positive": _percentage(crop_positive, crop_positive + crop_negative),
-            "percent_negative": _percentage(crop_negative, crop_positive + crop_negative),
+            "percent_positive": percentage(crop_positive, crop_positive + crop_negative),
+            "percent_negative": percentage(crop_negative, crop_positive + crop_negative),
         }
 
     counts = {
@@ -460,8 +460,8 @@ def _count_marker_labels(
         "n_positive": n_positive,
         "n_negative": n_negative,
         "n_unassigned": int(len(table_seg) - n_positive - n_negative),
-        "percent_positive": _percentage(n_positive, n_positive + n_negative),
-        "percent_negative": _percentage(n_negative, n_positive + n_negative),
+        "percent_positive": percentage(n_positive, n_positive + n_negative),
+        "percent_negative": percentage(n_negative, n_positive + n_negative),
     }
     return counts, crop_counts
 
@@ -475,6 +475,7 @@ def evaluate_annotator_variance(
     cochlea: Optional[str] = None,
     marker_name: Optional[str] = None,
     seg_name: Optional[str] = None,
+    custom_thresholds: bool = False,
 ) -> dict:
     """Quantify how much the manual threshold annotation depends on the annotator.
 
@@ -494,6 +495,10 @@ def evaluate_annotator_variance(
         cochlea: Identifier for the cochlea, saved as metadata.
         marker_name: Identifier for the marker stain, saved as metadata.
         seg_name: Identifier for the segmentation, saved as metadata.
+        custom_thresholds: Whether a custom threshold overrides the annotations for this stain.
+            The "median" scenario always uses the annotation-derived threshold, so that the
+            comparison stays between annotators. The flag records that the segmentation table
+            was created with different values.
 
     Returns:
         Dictionary with the marker percentages per scenario, their variance, and a per-crop breakdown.
@@ -566,6 +571,7 @@ def evaluate_annotator_variance(
         "cochlea": cochlea,
         "marker": marker_name,
         "segmentation": seg_name,
+        "custom_thresholds": custom_thresholds,
         "annotators": annotators,
         "n_crops": n_crops,
         "scenarios": counts,

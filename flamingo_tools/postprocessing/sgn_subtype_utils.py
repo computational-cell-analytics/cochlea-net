@@ -1,3 +1,8 @@
+import os
+from typing import Tuple
+
+from flamingo_tools.s3_utils import MOBIE_FOLDER
+
 # dictionary containing cochlea datasets for SGN subtype analysis
 COCHLEAE = {
     "M_LR_000098_L": {"seg_data": "SGN_v2", "stains": ["PV", "CR", "Ntng1"],
@@ -136,6 +141,46 @@ STAIN_TO_TYPE = {
     "Calb1-/Ntng1-": "inconclusive",
 
 }
+
+
+def subtype_measurement_table(
+    cochlea: str,
+    stain: str,
+    seg_name: str,
+    s3: bool = False,
+    mobie_dir: str = MOBIE_FOLDER,
+) -> Tuple[str, str]:
+    """Get the measurement table and the intensity column of a subtype stain.
+
+    The "intensity" entry of the cochlea in COCHLEAE selects between the ratio of the stain to the
+    reference stain and the absolute intensity of the stain.
+
+    Args:
+        cochlea: The name of the cochlea.
+        stain: The subtype stain.
+        seg_name: Identifier for the segmentation that the table belongs to.
+        s3: Flag for accessing data stored on S3 bucket.
+        mobie_dir: Local MoBIE directory used for creating data paths.
+
+    Returns:
+        The path to the measurement table and the name of the intensity column.
+    """
+    intensity_mode = COCHLEAE[cochlea]["intensity"]
+    seg_string = seg_name.replace("_", "-")
+    if intensity_mode == "ratio":
+        table_name = "subtype_ratio.tsv"
+        column = f"{stain}_ratio_PV"
+    elif intensity_mode == "absolute":
+        table_name = f"{stain}_{seg_string}_object-measures.tsv"
+        column = "median"
+    else:
+        raise ValueError(f"Choose either 'ratio' or 'absolute' as intensity mode, not '{intensity_mode}'.")
+
+    if s3:
+        table_path = f"{cochlea}/tables/{seg_name}/{table_name}"
+    else:
+        table_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, table_name)
+    return table_path, column
 
 
 def stain_to_type(stain):

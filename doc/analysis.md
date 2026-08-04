@@ -226,6 +226,24 @@ python /path/to/cochlea-net-repo/scripts/measurements/eval_subtype_annotations.p
     -a /path/to/annotation/results/Results{LR,AMD,EK} \
     --s3
 ```
+The cochlea is processed for every subtype stain in the `COCHLEAE` dictionary of `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
+The `--variance` argument creates one threshold variance file per stain, `<cochlea>_<stain>_<seg_name>_variance.json`.
+The file has the same format as the file for the marker annotation.
+If a custom threshold in `CUSTOM_THRESHOLDS` overrides the annotations of a stain, the `median` scenario still uses the annotated thresholds, so that the comparison stays between annotators.
+The item `custom_thresholds` records this case.
+
+#### Variability of the subtypes
+A subtype follows from a pair of stains, see `STAIN_TO_TYPE` in `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
+To evaluate the variability of the subtypes, pass the directory with the threshold variance files to `scripts/assign_subtypes.py`.
+```bash
+python /path/to/cochlea-net-repo/scripts/assign_subtypes.py -c M_LR_N152_L \
+    -o /path/to/output_dir --variance /path/to/variance_dir
+```
+The directory is searched for the default file name of every subtype stain of the cochlea.
+If the files are found, the thresholds of each annotator are applied again to the whole cochlea, and the subtypes are assigned for this annotator alone.
+The result is saved as `<cochlea>_subtypes_variance.json`.
+It contains the number and the percentage of instances per subtype for each annotator, the variance of the percentages over all annotators, and the difference to the `median` scenario.
+An annotator must have annotated every stain of a pairing. Other annotators are skipped with a warning.
 
 
 ### Example for standard output table
