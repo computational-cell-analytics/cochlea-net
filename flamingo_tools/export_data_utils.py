@@ -1,7 +1,7 @@
 """@private
 """
 
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 import numpy as np
 
@@ -12,6 +12,7 @@ def compute_crop_bb(
     voxel_size: float,
     scale: int,
     shape: Tuple[int, ...],
+    axis: Optional[int] = None,
 ) -> Tuple[np.ndarray, np.ndarray]:
     """Compute bounding box start/stop for a crop in ZYX pixel coordinates.
 
@@ -21,6 +22,9 @@ def compute_crop_bb(
         voxel_size: Isotropic voxel size in µm at full resolution (scale 0).
         scale: Scale level (0 = full resolution, each step doubles the effective voxel size).
         shape: Array shape in ZYX order at the target scale.
+        axis: Optional axis index into (x, y, z), i.e. 0, 1, or 2. When given, that axis is
+            collapsed to a single-pixel slice starting at the crop center, producing a 2D
+            crop. The other two axes keep the usual halo-based extent. Default: None (3D crop).
 
     Returns:
         start: ZYX start pixel coordinates, clamped to zero.
@@ -30,7 +34,35 @@ def compute_crop_bb(
     halo_zyx = np.array(roi_halo[::-1])
     start = np.maximum(0, center_zyx - halo_zyx)
     stop = np.minimum(np.array(shape), center_zyx + halo_zyx)
+
+    if axis is not None:
+        if axis not in (0, 1, 2):
+            raise ValueError(f"axis must be 0, 1, or 2, got {axis}")
+        # crop_center/roi_halo are given in (x, y, z) order; the pixel arrays above are ZYX.
+        axis_zyx = 2 - axis
+        start[axis_zyx] = center_zyx[axis_zyx]
+        stop[axis_zyx] = center_zyx[axis_zyx] + 1
+
     return start, stop
+
+
+def crop_suffix(crop_center: List[float], axis: Optional[int] = None) -> str:
+    """Build the output filename suffix for a crop.
+
+    Args:
+        crop_center: Crop center position as [x, y, z] in µm.
+        axis: Optional axis index into (x, y, z) used to collapse the crop to a 2D slice
+            (see `compute_crop_bb`). Appended to the suffix when given.
+
+    Returns:
+        Suffix of the form "_crop_<x>-<y>-<z>", or "_crop_<x>-<y>-<z>_<axis>" when `axis`
+        is given.
+    """
+    coord_string = "-".join(str(int(round(c))).zfill(4) for c in crop_center)
+    suffix = f"_crop_{coord_string}"
+    if axis is not None:
+        suffix += f"_{axis}"
+    return suffix
 
 
 def crop_filter_volume(
