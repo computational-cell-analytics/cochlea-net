@@ -1,14 +1,14 @@
 import argparse
 import json
 import os
-from typing import List
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 import tifffile
 import zarr
 
-from flamingo_tools.export_data_utils import compute_crop_bb
+from flamingo_tools.export_data_utils import compute_crop_bb, crop_suffix
 from flamingo_tools.s3_utils import BUCKET_NAME, SERVICE_ENDPOINT, create_s3_target, get_s3_path
 from skimage.morphology import ball
 from tqdm import tqdm
@@ -26,6 +26,7 @@ def export_synapse_detections(
     filter_ihc_components: List[int],
     crop_center: List[float],
     roi_halo: List[int],
+    axis: Optional[int] = None,
     as_float: bool = False,
     use_syn_ids: bool = False,
 ):
@@ -43,6 +44,8 @@ def export_synapse_detections(
         filter_ihc_components: Component label(s) for filtering IHC segmentation.
         crop_center: Optional crop center as [x, y, z] in µm. Requires roi_halo.
         roi_halo: Halo around the crop center as [halo_x, halo_y, halo_z] in pixels at the target scale.
+        axis: Optional axis index into (x, y, z) to crop as a single-pixel 2D slice at the
+            crop center. Requires crop_center.
         as_float: Whether to save the exported data as floating point values.
         use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
     """
@@ -91,10 +94,11 @@ def export_synapse_detections(
         syn_ids = syn_table["spot_id"].values
 
         if crop_center is not None:
-            coord_string = "-".join([str(int(round(c))).zfill(4) for c in crop_center])
-            suffix = f"_crop_{coord_string}"
+            suffix = crop_suffix(crop_center, axis)
             assert roi_halo is not None
-            start, stop = compute_crop_bb(crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=shape)
+            start, stop = compute_crop_bb(
+                crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=shape, axis=axis
+            )
 
             mask = ((coordinates >= start) & (coordinates < stop)).all(axis=1)
             coordinates = coordinates[mask]
@@ -153,16 +157,21 @@ def main():
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
                         help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+    parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
+                        help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
+                        "Requires --crop_center.")
     parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--use_syn_ids", action="store_true")
     args = parser.parse_args()
+    if args.axis is not None and args.crop_center is None:
+        parser.error("--axis requires --crop_center.")
 
     export_synapse_detections(
         args.cochlea, args.scale, args.output_folder,
         args.synapse_name, args.reference_ihcs,
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
-        crop_center=args.crop_center, roi_halo=args.roi_halo,
+        crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis,
         as_float=args.as_float, use_syn_ids=args.use_syn_ids,
     )
 

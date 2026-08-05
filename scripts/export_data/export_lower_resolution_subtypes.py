@@ -6,7 +6,7 @@ import pandas as pd
 import tifffile
 import zarr
 
-from flamingo_tools.export_data_utils import compute_crop_bb
+from flamingo_tools.export_data_utils import compute_crop_bb, crop_suffix
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.postprocessing.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 # from skimage.segmentation import relabel_sequential
@@ -163,7 +163,12 @@ def export_lower_resolution(args):
             else:
                 subtype_str = "".join([s.replace(" ", "") for s in subtype])
 
-            out_path = os.path.join(output_folder, f"{seg_name}_{subtype_str}.tif")
+            if crop:
+                out_path = os.path.join(
+                    output_folder, f"{seg_name}_{subtype_str}{crop_suffix(args.crop_center, args.axis)}.tif"
+                )
+            else:
+                out_path = os.path.join(output_folder, f"{seg_name}_{subtype_str}.tif")
             if os.path.exists(out_path) and not force_overwrite:
                 continue
 
@@ -173,7 +178,8 @@ def export_lower_resolution(args):
             f = zarr.open(s3_store, mode="r")
             if crop:
                 start, stop = compute_crop_bb(
-                    args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
+                    args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape,
+                    axis=args.axis,
                 )
                 data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
             else:
@@ -197,7 +203,12 @@ def main():
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
                         help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+    parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
+                        help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
+                        "Requires --crop_center.")
     args = parser.parse_args()
+    if args.axis is not None and args.crop_center is None:
+        parser.error("--axis requires --crop_center.")
 
     export_lower_resolution(args)
 
