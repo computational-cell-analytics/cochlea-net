@@ -1,3 +1,4 @@
+import json
 import os
 import tempfile
 import unittest
@@ -77,6 +78,32 @@ class TestPrintTableInfo(unittest.TestCase):
             self.table_path, column="length_fraction", values=[0.9], component_list=[1]
         )
         self.assertEqual(results[0][0], 3)
+
+    def test_output_json(self):
+        from flamingo_tools.analysis.seg_table_utils import print_table_info
+        output_path = os.path.join(self.tmp_dir.name, "table_info.json")
+        print_table_info(
+            self.table_path, column="length_fraction", values=[0.0, 1.0], output_path=output_path
+        )
+        with open(output_path) as f:
+            written = json.load(f)
+        self.assertEqual(written, {
+            "column": "length_fraction",
+            "results": [
+                {"value": 0.0, "label_id": 1, "coordinate": [10.0, 1.0, 100.0]},
+                {"value": 1.0, "label_id": 5, "coordinate": [50.0, 5.0, 500.0]},
+            ],
+        })
+
+    def test_output_json_skips_existing_without_force(self):
+        from flamingo_tools.analysis.seg_table_utils import print_table_info
+        output_path = os.path.join(self.tmp_dir.name, "table_info.json")
+        with open(output_path, "w") as f:
+            json.dump({"untouched": True}, f)
+        print_table_info(self.table_path, column="length_fraction", values=[0.5], output_path=output_path)
+        with open(output_path) as f:
+            written = json.load(f)
+        self.assertEqual(written, {"untouched": True})
 
 
 if __name__ == "__main__":

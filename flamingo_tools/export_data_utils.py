@@ -8,7 +8,7 @@ import numpy as np
 
 def compute_crop_bb(
     crop_center: List[float],
-    roi_halo: List[int],
+    roi_halo: Optional[List[int]],
     voxel_size: float,
     scale: int,
     shape: Tuple[int, ...],
@@ -18,22 +18,33 @@ def compute_crop_bb(
 
     Args:
         crop_center: Crop center position as [x, y, z] in µm.
-        roi_halo: Halo around the center as [halo_x, halo_y, halo_z] in pixels at the target scale.
+        roi_halo: Halo around the center as [halo_x, halo_y, halo_z] in pixels at the target
+            scale. Optional when `axis` is given: the two axes not collapsed by `axis` then
+            span the full array extent (`shape`), i.e. the whole cross-sectional plane is
+            cropped. Required otherwise.
         voxel_size: Isotropic voxel size in µm at full resolution (scale 0).
         scale: Scale level (0 = full resolution, each step doubles the effective voxel size).
         shape: Array shape in ZYX order at the target scale.
         axis: Optional axis index into (x, y, z), i.e. 0, 1, or 2. When given, that axis is
             collapsed to a single-pixel slice starting at the crop center, producing a 2D
-            crop. The other two axes keep the usual halo-based extent. Default: None (3D crop).
+            crop. Default: None (3D crop; requires roi_halo).
 
     Returns:
         start: ZYX start pixel coordinates, clamped to zero.
         stop: ZYX stop pixel coordinates, clamped to shape.
     """
+    if roi_halo is None and axis is None:
+        raise ValueError("roi_halo is required unless axis is also given.")
+
     center_zyx = np.round(np.array(crop_center[::-1]) / (voxel_size * 2 ** scale)).astype(int)
-    halo_zyx = np.array(roi_halo[::-1])
-    start = np.maximum(0, center_zyx - halo_zyx)
-    stop = np.minimum(np.array(shape), center_zyx + halo_zyx)
+
+    if roi_halo is None:
+        start = np.zeros(3, dtype=int)
+        stop = np.array(shape, dtype=int)
+    else:
+        halo_zyx = np.array(roi_halo[::-1])
+        start = np.maximum(0, center_zyx - halo_zyx)
+        stop = np.minimum(np.array(shape), center_zyx + halo_zyx)
 
     if axis is not None:
         if axis not in (0, 1, 2):
@@ -46,23 +57,26 @@ def compute_crop_bb(
     return start, stop
 
 
-def crop_suffix(crop_center: List[float], axis: Optional[int] = None) -> str:
+def crop_suffix(crop_center: List[float], axis: Optional[int] = None, suffix: Optional[str] = None) -> str:
     """Build the output filename suffix for a crop.
 
     Args:
         crop_center: Crop center position as [x, y, z] in µm.
         axis: Optional axis index into (x, y, z) used to collapse the crop to a 2D slice
-            (see `compute_crop_bb`). Appended to the suffix when given.
+            (see `compute_crop_bb`). Appended as "_axis-<axis>" when given.
+        suffix: Optional extra label appended last, e.g. a tonotopic position name
+            ("apex", "mid", "base").
 
     Returns:
-        Suffix of the form "_crop_<x>-<y>-<z>", or "_crop_<x>-<y>-<z>_<axis>" when `axis`
-        is given.
+        Suffix of the form "_crop_<x>-<y>-<z>[_axis-<axis>][_<suffix>]".
     """
     coord_string = "-".join(str(int(round(c))).zfill(4) for c in crop_center)
-    suffix = f"_crop_{coord_string}"
+    parts = [f"_crop_{coord_string}"]
     if axis is not None:
-        suffix += f"_{axis}"
-    return suffix
+        parts.append(f"_axis-{axis}")
+    if suffix is not None:
+        parts.append(f"_{suffix}")
+    return "".join(parts)
 
 
 def crop_filter_volume(

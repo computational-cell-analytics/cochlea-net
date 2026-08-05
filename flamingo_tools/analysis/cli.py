@@ -11,6 +11,9 @@ def table_info():
         "and print its label ID and central coordinate in micrometer.")
 
     parser.add_argument("-i", "--input", type=str, required=True, help="Input path to segmentation table.")
+    parser.add_argument("-o", "--output", type=str, default=None,
+                        help="Optional output path for a JSON file with the results.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for table lookup
     parser.add_argument("--column", type=str, default="length_fraction",
@@ -42,4 +45,6 @@ def table_info():
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
         s3_service_endpoint=args.s3_service_endpoint,
+        output_path=args.output,
+        force_overwrite=args.force,
     )

@@ -4,6 +4,7 @@ from typing import List, Optional, Tuple
 
 import pandas as pd
 
+from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.s3_utils import get_s3_path
 
 
@@ -37,6 +38,8 @@ def print_table_info(
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
+    output_path: Optional[str] = None,
+    force_overwrite: bool = False,
 ) -> List[Tuple[int, Tuple[float, float, float]]]:
     """Find and print the table row(s) closest to given column value(s).
 
@@ -52,6 +55,8 @@ def print_table_info(
         s3_credentials: Input file containing S3 credentials.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
+        output_path: Optional output path for a JSON file with the results.
+        force_overwrite: Forcefully overwrite an existing output_path.
 
     Returns:
         List of (label_id, (x, y, z)) tuples, one per entry in `values`.
@@ -81,6 +86,16 @@ def print_table_info(
             f"coordinate (x, y, z) [µm] = ({coord[0]:.3f}, {coord[1]:.3f}, {coord[2]:.3f})"
         )
         results.append((label_id, coord))
+
+    if output_path is not None:
+        param_dict = {
+            "column": column,
+            "results": [
+                {"value": value, "label_id": label_id, "coordinate": list(coord)}
+                for value, (label_id, coord) in zip(values, results)
+            ],
+        }
+        export_dictionary_as_json(param_dict, output_path, force_overwrite=force_overwrite)
 
     return results
 

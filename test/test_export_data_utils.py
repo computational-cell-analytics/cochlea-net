@@ -46,6 +46,18 @@ class TestComputeCropBb(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.fn(self.crop_center, self.roi_halo, voxel_size=1.0, scale=0, shape=self.shape, axis=3)
 
+    def test_roi_halo_none_with_axis_crops_full_plane(self):
+        # roi_halo omitted but axis=0 (x) given: full extent on Z, Y; single-pixel slice on X.
+        start, stop = self.fn(
+            self.crop_center, None, voxel_size=1.0, scale=0, shape=self.shape, axis=0
+        )
+        np.testing.assert_array_equal(start, [0, 0, 100])
+        np.testing.assert_array_equal(stop, [1000, 1000, 101])
+
+    def test_roi_halo_and_axis_none_raises(self):
+        with self.assertRaises(ValueError):
+            self.fn(self.crop_center, None, voxel_size=1.0, scale=0, shape=self.shape)
+
 
 class TestCropSuffix(unittest.TestCase):
 
@@ -57,7 +69,15 @@ class TestCropSuffix(unittest.TestCase):
         self.assertEqual(self.fn([100.4, 200.6, 300.0]), "_crop_0100-0201-0300")
 
     def test_with_axis(self):
-        self.assertEqual(self.fn([100.4, 200.6, 300.0], axis=1), "_crop_0100-0201-0300_1")
+        self.assertEqual(self.fn([100.4, 200.6, 300.0], axis=1), "_crop_0100-0201-0300_axis-1")
+
+    def test_with_suffix(self):
+        self.assertEqual(self.fn([100.4, 200.6, 300.0], suffix="apex"), "_crop_0100-0201-0300_apex")
+
+    def test_with_axis_and_suffix(self):
+        self.assertEqual(
+            self.fn([100.4, 200.6, 300.0], axis=2, suffix="apex"), "_crop_0100-0201-0300_axis-2_apex"
+        )
 
 
 if __name__ == "__main__":

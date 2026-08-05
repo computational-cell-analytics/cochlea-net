@@ -127,55 +127,69 @@ def upscale_volume(
     return resized
 
 
-def export_lower_resolution(args):
-    crop = args.crop_center is not None
+def export_lower_resolution(
+    cochlea: str,
+    scale: List[int],
+    output_folder: str,
+    channels: List[str] = ["PV", "VGlut3", "CTBP2"],
+    filter_by_components: Optional[List[int]] = None,
+    filter_sgn_components: List[int] = [1],
+    filter_ihc_components: List[int] = [1],
+    binarize: bool = False,
+    filter_cochlea_channels: Optional[List[str]] = None,
+    filter_dilation_iterations: int = 8,
+    ome_zarr: bool = False,
+    crop_center: Optional[List[float]] = None,
+    roi_halo: Optional[List[int]] = None,
+    axis: Optional[int] = None,
+    suffix: Optional[str] = None,
+):
+    crop = crop_center is not None
 
     # calculate single filter mask for all lower resolutions
-    if args.filter_cochlea_channels is not None:
+    if filter_cochlea_channels is not None:
         ds_factor = 48
-        filter_volume = filter_cochlea(args.cochlea, args.filter_cochlea_channels,
-                                       sgn_components=args.filter_sgn_components,
-                                       ihc_components=args.filter_ihc_components,
-                                       dilation_iterations=args.filter_dilation_iterations, ds_factor=ds_factor)
+        filter_volume = filter_cochlea(cochlea, filter_cochlea_channels,
+                                       sgn_components=filter_sgn_components,
+                                       ihc_components=filter_ihc_components,
+                                       dilation_iterations=filter_dilation_iterations, ds_factor=ds_factor)
         filter_volume = np.transpose(filter_volume, (2, 1, 0))
 
     # iterate through exporting lower resolutions
-    for scale in args.scale:
-        if args.filter_cochlea_channels is not None:
-            output_folder = os.path.join(args.output_folder, args.cochlea,
-                                         f"scale{scale}_dilation{args.filter_dilation_iterations}")
+    for s in scale:
+        if filter_cochlea_channels is not None:
+            out_folder = os.path.join(output_folder, cochlea, f"scale{s}_dilation{filter_dilation_iterations}")
         else:
-            output_folder = os.path.join(args.output_folder, args.cochlea, f"scale{scale}")
-        os.makedirs(output_folder, exist_ok=True)
+            out_folder = os.path.join(output_folder, cochlea, f"scale{s}")
+        os.makedirs(out_folder, exist_ok=True)
 
-        input_key = f"s{scale}"
-        for channel in args.channels:
+        input_key = f"s{s}"
+        for channel in channels:
             if crop:
-                out_path = os.path.join(output_folder, f"{channel}{crop_suffix(args.crop_center, args.axis)}.tif")
+                out_path = os.path.join(out_folder, f"{channel}{crop_suffix(crop_center, axis, suffix)}.tif")
             else:
-                out_path = os.path.join(output_folder, f"{channel}.tif")
+                out_path = os.path.join(out_folder, f"{channel}.tif")
             if os.path.exists(out_path):
                 print(f"Skipping {out_path}. File already exists.")
                 continue
 
             print("Exporting channel", channel)
-            internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
+            internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             f = zarr.open(s3_store, mode="r")
             if crop:
                 start, stop = compute_crop_bb(
-                    args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape,
-                    axis=args.axis,
+                    crop_center, roi_halo, voxel_size=0.38, scale=s, shape=f[input_key].shape, axis=axis,
                 )
                 data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]].astype("float32")
             else:
                 data = f[input_key][:].astype("float32")
             print("Data shape", data.shape)
-            if args.filter_by_components is not None:
-                print(f"Filtering channel {channel} by components {args.filter_by_components}.")
-                data = filter_component(fs, data, args.cochlea, channel, args.filter_by_components)
-            if args.filter_cochlea_channels is not None:
-                us_factor = ds_factor // (2 ** scale)
+            if filter_by_components is not None:
+                print(f"Filtering channel {channel} by components {filter_by_components}.")
+                data = filter_component(fs, data, cochlea, channel, filter_by_components)
+            if filter_cochlea_channels is not None:
+                us_factor = ds_factor // (2 ** s)
                 if crop:
                     applied_filter = crop_filter_volume(filter_volume, start, stop, us_factor)
                 else:
@@ -188,11 +202,11 @@ def export_lower_resolution(args):
                     max_intensity = 1400
                     data[data > max_intensity] = 300
 
-            if args.binarize:
+            if binarize:
                 data = (data > 0).astype("uint16")
 
-            if args.ome_zarr:
-                out_path = os.path.join(output_folder, f"{channel}.ome.zarr")
+            if ome_zarr:
+                out_path = os.path.join(out_folder, f"{channel}.ome.zarr")
                 output_key = "image"
                 f_out = zarr.open(out_path, mode="w")
                 f_out.create_array(output_key, data=data, compressors=zarr.codecs.GzipCodec())
@@ -216,15 +230,23 @@ def main():
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
-                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale. "
+                        "Optional when --axis is given: the whole plane is cropped in that case.")
     parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
                         help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
                         "Requires --crop_center.")
+    parser.add_argument("--suffix", type=str, default=None,
+                        help="Extra label appended to the output filename after the crop/axis suffix, "
+                        "e.g. a position name such as 'apex'.")
     args = parser.parse_args()
-    if args.axis is not None and args.crop_center is None:
+    if args.crop_center is not None:
+        if args.roi_halo is None and args.axis is None:
+            parser.error("--crop_center requires --roi_halo, unless --axis is also given "
+                         "(the whole plane is cropped in that case).")
+    elif args.axis is not None:
         parser.error("--axis requires --crop_center.")
 
-    export_lower_resolution(args)
+    export_lower_resolution(**vars(args))
 
 
 if __name__ == "__main__":

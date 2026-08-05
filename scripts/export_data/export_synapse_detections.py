@@ -18,15 +18,16 @@ def export_synapse_detections(
     cochlea: str,
     scales: List[int],
     output_folder: str,
-    synapse_name: str,
-    reference_ihcs: str,
-    max_dist: float,
-    radius: float,
-    id_offset: int,
-    filter_ihc_components: List[int],
-    crop_center: List[float],
-    roi_halo: List[int],
+    synapse_name: str = "synapse_v3_ihc_v4b",
+    reference_ihcs: str = "IHC_v4b",
+    max_dist: float = 3.0,
+    radius: float = 3,
+    id_offset: int = 0,
+    filter_ihc_components: List[int] = [1],
+    crop_center: Optional[List[float]] = None,
+    roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
+    suffix: Optional[str] = None,
     as_float: bool = False,
     use_syn_ids: bool = False,
 ):
@@ -42,10 +43,13 @@ def export_synapse_detections(
         radius: The radius for writing the synapse points to the output volume.
         id_offset: Offset of label id of synapse output to have different colours for visualization.
         filter_ihc_components: Component label(s) for filtering IHC segmentation.
-        crop_center: Optional crop center as [x, y, z] in µm. Requires roi_halo.
+        crop_center: Optional crop center as [x, y, z] in µm. Requires roi_halo, unless axis is given.
         roi_halo: Halo around the crop center as [halo_x, halo_y, halo_z] in pixels at the target scale.
+            Optional when axis is given: the whole plane is cropped in that case.
         axis: Optional axis index into (x, y, z) to crop as a single-pixel 2D slice at the
             crop center. Requires crop_center.
+        suffix: Optional extra label appended to the output filename after the crop/axis suffix,
+            e.g. a position name such as "apex".
         as_float: Whether to save the exported data as floating point values.
         use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
     """
@@ -94,8 +98,7 @@ def export_synapse_detections(
         syn_ids = syn_table["spot_id"].values
 
         if crop_center is not None:
-            suffix = crop_suffix(crop_center, axis)
-            assert roi_halo is not None
+            out_suffix = crop_suffix(crop_center, axis, suffix)
             start, stop = compute_crop_bb(
                 crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=shape, axis=axis
             )
@@ -109,7 +112,7 @@ def export_synapse_detections(
 
             shape = tuple(int(sto - sta) for sta, sto in zip(start, stop))
         else:
-            suffix = ""
+            out_suffix = ""
 
         # Create the output.
         output = np.zeros(shape, dtype="uint16")
@@ -131,9 +134,9 @@ def export_synapse_detections(
         out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
         os.makedirs(out_folder, exist_ok=True)
         if id_offset != 0:
-            out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}{suffix}.tif")
+            out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}{out_suffix}.tif")
         else:
-            out_path = os.path.join(out_folder, f"{synapse_name}{suffix}.tif")
+            out_path = os.path.join(out_folder, f"{synapse_name}{out_suffix}.tif")
 
         if as_float:
             output = output.astype("float32")
@@ -156,14 +159,22 @@ def main():
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
-                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale. "
+                        "Optional when --axis is given: the whole plane is cropped in that case.")
     parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
                         help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
                         "Requires --crop_center.")
+    parser.add_argument("--suffix", type=str, default=None,
+                        help="Extra label appended to the output filename after the crop/axis suffix, "
+                        "e.g. a position name such as 'apex'.")
     parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--use_syn_ids", action="store_true")
     args = parser.parse_args()
-    if args.axis is not None and args.crop_center is None:
+    if args.crop_center is not None:
+        if args.roi_halo is None and args.axis is None:
+            parser.error("--crop_center requires --roi_halo, unless --axis is also given "
+                         "(the whole plane is cropped in that case).")
+    elif args.axis is not None:
         parser.error("--axis requires --crop_center.")
 
     export_synapse_detections(
@@ -171,7 +182,7 @@ def main():
         args.synapse_name, args.reference_ihcs,
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
-        crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis,
+        crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis, suffix=args.suffix,
         as_float=args.as_float, use_syn_ids=args.use_syn_ids,
     )
 
