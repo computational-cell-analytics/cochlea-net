@@ -126,7 +126,7 @@ def main():
     parser.add_argument("-i", "--input", default=ROOT)
     parser.add_argument("--folders", default=ANNOTATION_FOLDERS)
     parser.add_argument("-o", "--output_dir", type=str, default=None,
-                        help="Optional directory to save accuracy JSON file (synapses.json).")
+                        help="Optional directory to save accuracy JSON file (IHC_3D.json).")
     parser.add_argument("--segmentation_name", default="IHC_v4c")
     parser.add_argument("--cache_folder", default=None)
     parser.add_argument("--exclude", action="store_true")

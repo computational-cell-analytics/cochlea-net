@@ -4,7 +4,8 @@ from glob import glob
 from typing import Optional
 
 import pandas as pd
-from flamingo_tools.validation import create_consensus_annotations, match_detections
+from flamingo_tools.json_util import update_json
+from flamingo_tools.validation import compute_consensus_scores, create_consensus_annotations, match_detections
 from flamingo_tools.synapse_detection.read_imaris_data import extract_training_data
 
 ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/Synapses_2026-04"
@@ -108,7 +109,8 @@ def consensus_annotations(
 
 def evaluate_consensus(
     consensus_dir: str,
-    output_dir: str,
+    table_dir: str,
+    output_dir: Optional[str] = None,
     max_dist: float = 2.0,
     voxel_size: float = VOXEL_SIZE,
 ) -> None:
@@ -117,7 +119,8 @@ def evaluate_consensus(
 
     Args:
         consensus_dir: Directory containing annotations in CSV format.
-        output_dir: Output directory for consensus_evaluation.csv
+        table_dir: Output directory for consensus_evaluation.csv
+        output_dir: Optional output directory for consensus_synapses.json.
         max_dist: Maximal matching distance in µm for spots.
         voxel_size: Isotropic voxel size in µm.
     """
@@ -146,23 +149,18 @@ def evaluate_consensus(
             results["fns"].append(len(fn))
 
     results = pd.DataFrame(results)
-    output_path = os.path.join(output_dir, "consensus_evaluation.csv")
+    output_path = os.path.join(table_dir, "consensus_evaluation.csv")
     results.to_csv(output_path, index=False)
 
-    tp = results.tps.sum()
-    fp = results.fps.sum()
-    fn = results.fns.sum()
-
-    precision = tp / (tp + fp)
-    recall = tp / (tp + fn)
-    f1_score = 2 * precision * recall / (precision + recall)
+    scores = compute_consensus_scores(results)
 
     print("All results:")
     print(results)
     print("Evaluation:")
-    print("Precision:", precision)
-    print("Recall:", recall)
-    print("F1-Score:", f1_score)
+    print(pd.DataFrame(scores).T[["precision", "recall", "f1-score"]])
+
+    if output_dir is not None:
+        update_json(scores, os.path.join(output_dir, "consensus_synapses.json"))
 
 
 def main():
@@ -173,6 +171,8 @@ def main():
 
     parser.add_argument("-d", "--matching_distance", type=float, default=2.,
                         help="Matching distance in µm for annotations.")
+    parser.add_argument("-o", "--output_dir", type=str, default=None,
+                        help="Optional directory to save the accuracy JSON file (consensus_synapses.json).")
     args = parser.parse_args()
 
     if args.annotation_dirs is None:
@@ -204,7 +204,10 @@ def main():
         consensus_annotations(image_path, args.matching_distance)
 
     # evaluate consensus annotation
-    evaluate_consensus(consensus_dir=OUTPUT_FOLDER, output_dir=ROOT, max_dist=args.matching_distance)
+    evaluate_consensus(
+        consensus_dir=OUTPUT_FOLDER, table_dir=ROOT, output_dir=args.output_dir,
+        max_dist=args.matching_distance,
+    )
 
 
 if __name__ == "__main__":

@@ -287,6 +287,54 @@ def compute_scores_for_annotated_slice(
     return {"tp": tp, "fp": fp, "fn": fn}
 
 
+def _scores_from_counts(tp: int, fp: int, fn: int) -> Dict[str, Optional[float]]:
+    """Compute precision, recall, and F1-score. A score without a defined value is None."""
+    precision = tp / (tp + fp) if (tp + fp) > 0 else None
+    recall = tp / (tp + fn) if (tp + fn) > 0 else None
+    if precision is None or recall is None or (precision + recall) == 0:
+        f1_score = None
+    else:
+        f1_score = 2 * precision * recall / (precision + recall)
+
+    return {
+        "precision": None if precision is None else round(float(precision), 3),
+        "recall": None if recall is None else round(float(recall), 3),
+        "f1-score": None if f1_score is None else round(float(f1_score), 3),
+    }
+
+
+def compute_consensus_scores(results: pd.DataFrame) -> Dict[str, dict]:
+    """Compute the scores of individual annotators with respect to a consensus annotation.
+
+    Args:
+        results: Table with the columns "annotator", "file_name", "tps", "fps", and "fns".
+            Each row holds the counts of one annotator for one annotated crop.
+
+    Returns:
+        Dictionary with one entry per annotator, which holds the per-crop counts and the scores
+        of this annotator, and an "all" entry with the scores pooled over all annotators.
+    """
+    required_columns = ["annotator", "file_name", "tps", "fps", "fns"]
+    missing = [column for column in required_columns if column not in results.columns]
+    if missing:
+        raise ValueError(f"The results table is missing the columns {missing}.")
+
+    scores = {}
+    for annotator, table in results.groupby("annotator", sort=True):
+        scores[annotator] = {
+            "crops": table.file_name.tolist(),
+            "tp": [int(v) for v in table.tps],
+            "fp": [int(v) for v in table.fps],
+            "fn": [int(v) for v in table.fns],
+            **_scores_from_counts(int(table.tps.sum()), int(table.fps.sum()), int(table.fns.sum())),
+        }
+
+    scores["all"] = _scores_from_counts(
+        int(results.tps.sum()), int(results.fps.sum()), int(results.fns.sum())
+    )
+    return scores
+
+
 def create_consensus_annotations(
     annotation_paths: Dict[str, str],
     matching_distance: float = 5.0,

@@ -63,5 +63,53 @@ class TestValidation(unittest.TestCase):
         self.assertEqual(result["tp"], segmentation.max() - 1)
 
 
+class TestConsensusScores(unittest.TestCase):
+    def _table(self, rows):
+        return pd.DataFrame(rows, columns=["annotator", "file_name", "tps", "fps", "fns"])
+
+    def test_compute_consensus_scores(self):
+        from flamingo_tools.validation import compute_consensus_scores
+
+        table = self._table([
+            ["AMD", "crop1", 8, 2, 2],
+            ["AMD", "crop2", 12, 3, 3],
+            ["EK", "crop1", 9, 1, 1],
+            ["EK", "crop2", 11, 4, 4],
+        ])
+        scores = compute_consensus_scores(table)
+
+        self.assertEqual(sorted(scores.keys()), ["AMD", "EK", "all"])
+        self.assertEqual(scores["AMD"]["crops"], ["crop1", "crop2"])
+        self.assertEqual(scores["AMD"]["tp"], [8, 12])
+        self.assertEqual(scores["AMD"]["fp"], [2, 3])
+        self.assertEqual(scores["AMD"]["fn"], [2, 3])
+
+        # AMD: tp=20, fp=5, fn=5.
+        self.assertAlmostEqual(scores["AMD"]["precision"], 0.8)
+        self.assertAlmostEqual(scores["AMD"]["recall"], 0.8)
+        self.assertAlmostEqual(scores["AMD"]["f1-score"], 0.8)
+
+        # Pooled over both annotators: tp=40, fp=10, fn=10.
+        self.assertNotIn("crops", scores["all"])
+        self.assertAlmostEqual(scores["all"]["precision"], 0.8)
+        self.assertAlmostEqual(scores["all"]["recall"], 0.8)
+        self.assertAlmostEqual(scores["all"]["f1-score"], 0.8)
+
+    def test_compute_consensus_scores_undefined(self):
+        from flamingo_tools.validation import compute_consensus_scores
+
+        scores = compute_consensus_scores(self._table([["AMD", "crop1", 0, 0, 0]]))
+        for key in ("precision", "recall", "f1-score"):
+            self.assertIsNone(scores["AMD"][key])
+            self.assertIsNone(scores["all"][key])
+
+    def test_compute_consensus_scores_missing_column(self):
+        from flamingo_tools.validation import compute_consensus_scores
+
+        table = self._table([["AMD", "crop1", 8, 2, 2]]).drop(columns="file_name")
+        with self.assertRaises(ValueError):
+            compute_consensus_scores(table)
+
+
 if __name__ == "__main__":
     unittest.main()
