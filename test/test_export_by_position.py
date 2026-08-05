@@ -109,6 +109,59 @@ class TestRunExports(unittest.TestCase):
         self.assertIsNone(recorded[0]["axis"])
         self.assertEqual(recorded[0]["suffix"], "mid")
 
+    def test_json_info_list_runs_each_entry_as_independent_pass(self):
+        calls = []
+
+        def fake_grid(**kwargs):
+            calls.append(kwargs)
+
+        with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
+            "lower_resolution": (self.mod._run_grid_export, fake_grid),
+        }):
+            resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
+                        "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
+            json_info = [
+                {"lower_resolution": {"channels": ["PV", "VGlut3", "CTBP2"], "roi_halo": [256, 256, 0]}},
+                {"lower_resolution": {"channels": ["IHC_v11"], "filter_by_components": [1]}},
+                {"lower_resolution": {"channels": ["SGN_v2"], "filter_by_components": [1]}},
+            ]
+            # export_functions is deliberately wrong ("synapse" isn't in any entry) to prove
+            # it has no effect in list mode -- each entry's own key(s) determine what runs.
+            self.mod.run_exports(
+                "cochlea_x", resolved, ["synapse"], scale=[0], output_folder="/tmp/out",
+                roi_halo=None, axis=2, json_info=json_info,
+            )
+
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(calls[0]["channels"], ["PV", "VGlut3", "CTBP2"])
+        self.assertEqual(calls[0]["roi_halo"], [256, 256, 0])  # entry override wins over the shared None
+        self.assertEqual(calls[1]["channels"], ["IHC_v11"])
+        self.assertEqual(calls[1]["filter_by_components"], [1])
+        self.assertIsNone(calls[1]["roi_halo"])  # falls back to the shared roi_halo (None)
+        self.assertEqual(calls[2]["channels"], ["SGN_v2"])
+        # shared arguments still apply to every pass unless a pass overrides them.
+        self.assertTrue(all(c["cochlea"] == "cochlea_x" for c in calls))
+        self.assertTrue(all(c["axis"] == 2 for c in calls))
+        self.assertTrue(all(c["suffix"] == "apex" for c in calls))
+
+    def test_json_info_list_unknown_key_raises(self):
+        resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
+                    "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
+        with self.assertRaises(ValueError):
+            self.mod.run_exports(
+                "cochlea_x", resolved, ["lower_resolution"], scale=[0], output_folder="/tmp/out",
+                roi_halo=[8, 8, 8], json_info=[{"not_a_real_key": {}}],
+            )
+
+    def test_dict_mode_unknown_key_raises(self):
+        resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
+                    "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
+        with self.assertRaises(ValueError):
+            self.mod.run_exports(
+                "cochlea_x", resolved, ["not_a_real_key"], scale=[0], output_folder="/tmp/out",
+                roi_halo=[8, 8, 8],
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

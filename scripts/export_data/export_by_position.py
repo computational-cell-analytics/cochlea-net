@@ -9,7 +9,7 @@ co-registered channels of a cochlea.
 import argparse
 import json
 import os
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Union
 
 import pandas as pd
 
@@ -96,7 +96,7 @@ def run_exports(
     output_folder: str,
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
-    json_info: Optional[Dict[str, dict]] = None,
+    json_info: Optional[Union[Dict[str, dict], List[Dict[str, dict]]]] = None,
 ):
     """Run the requested export functions for every resolved position.
 
@@ -104,26 +104,43 @@ def run_exports(
         cochlea: Cochlea name on S3 bucket.
         resolved_positions: Output of `resolve_positions`.
         export_functions: Keys into EXPORT_DISPATCH to run at every position, e.g.
-            ["lower_resolution", "synapse"].
+            ["lower_resolution", "synapse"]. Ignored when `json_info` is a list (see below).
         scale: Scale level(s) to export, applied to every selected export function.
         output_folder: Output folder, forwarded to every export function.
-        roi_halo: Optional halo in pixels [x, y, z]. Required unless `axis` is given.
+        roi_halo: Optional halo in pixels [x, y, z]. Required unless `axis` is given, or an
+            export function's own entry below overrides it.
         axis: Optional axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at each
-            position's center.
-        json_info: Optional dict of extra keyword arguments per export function, keyed by
-            export-function name, e.g. {"synapse": {"synapse_name": "synapse_v3_ihc_v4b"}}.
-            Overrides the shared arguments above for that export function only.
+            position's center. Same override note as `roi_halo`.
+        json_info: Extra keyword arguments per export function, either:
+            - a dict {export_function_key: {kwargs}}, applied to `export_functions` (looked
+              up via `.get(key, {})`) -- e.g. {"synapse": {"synapse_name": "..."}}; or
+            - a list of such dicts, one independent export "pass" per entry. In this mode
+              `export_functions` is ignored: each entry's own key(s) determine which export
+              function(s) run for that pass, so several distinct per-function configs (e.g.
+              a combined SGN+IHC lower_resolution export plus separate IHC-only/SGN-only
+              ones) can run from a single --json_info file instead of one invocation each.
+            In both modes, a per-function kwargs dict may itself include "roi_halo"/"axis"
+            keys to override the shared arguments above for that export function only.
     """
-    json_info = json_info or {}
-    for entry in resolved_positions:
-        print(
-            f"Position '{entry['label']}' ({entry['column']}={entry['value']}): "
-            f"label_id={entry['label_id']}, crop_center (x, y, z) [µm] = {entry['crop_center']}"
-        )
-        for key in export_functions:
-            adapter, fn = EXPORT_DISPATCH[key]
-            extra = json_info.get(key, {})
-            adapter(fn, cochlea, scale, output_folder, entry["crop_center"], roi_halo, axis, entry["label"], extra)
+    if isinstance(json_info, list):
+        passes = [(list(entry.keys()), entry) for entry in json_info]
+    else:
+        passes = [(export_functions, json_info or {})]
+
+    for pass_functions, pass_json_info in passes:
+        for entry in resolved_positions:
+            print(
+                f"Position '{entry['label']}' ({entry['column']}={entry['value']}): "
+                f"label_id={entry['label_id']}, crop_center (x, y, z) [µm] = {entry['crop_center']}"
+            )
+            for key in pass_functions:
+                if key not in EXPORT_DISPATCH:
+                    raise ValueError(f"Unknown export function '{key}'. Valid options: {list(EXPORT_DISPATCH)}")
+                adapter, fn = EXPORT_DISPATCH[key]
+                extra = pass_json_info.get(key, {})
+                adapter(
+                    fn, cochlea, scale, output_folder, entry["crop_center"], roi_halo, axis, entry["label"], extra
+                )
 
 
 def export_by_position(
@@ -136,7 +153,7 @@ def export_by_position(
     component_list: Optional[List[int]] = None,
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
-    json_info: Optional[Dict[str, dict]] = None,
+    json_info: Optional[Union[Dict[str, dict], List[Dict[str, dict]]]] = None,
 ):
     """Export crops at tonotopic positions for a single cochlea.
 
@@ -147,16 +164,17 @@ def export_by_position(
         scale: Scale level(s) to export, applied to every selected export function.
         output_folder: Output folder, forwarded to every export function.
         export_functions: Keys into EXPORT_DISPATCH to run at every position. Default:
-            ["lower_resolution"].
+            ["lower_resolution"]. Ignored when `json_info` is a list -- see `run_exports`.
         positions: Dict of {column: {label: [values, ...]}}. Default: DEFAULT_POSITIONS
             ({"length_fraction": {"apex": [0.15], "mid": [0.5], "base": [0.85]}}).
         component_list: Optional component_labels filter applied to the reference table
             before matching positions.
-        roi_halo: Optional halo in pixels [x, y, z]. Required unless `axis` is given.
+        roi_halo: Optional halo in pixels [x, y, z]. Required unless `axis` is given, or an
+            export function's own entry overrides it.
         axis: Optional axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at each
-            position's center.
-        json_info: Optional dict of extra keyword arguments per export function, keyed by
-            export-function name.
+            position's center. Same override note as `roi_halo`.
+        json_info: Extra keyword arguments per export function -- a dict or a list of dicts,
+            one independent export pass per entry. See `run_exports` for the full semantics.
     """
     if positions is None:
         positions = DEFAULT_POSITIONS
@@ -195,18 +213,19 @@ def main():
                         help="Component filter applied to the reference table before matching positions.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
                         help="Halo around each position's crop center as halo_x halo_y halo_z in pixels "
-                        "at the target scale. Optional when --axis is given: the whole plane is cropped "
-                        "in that case.")
+                        "at the target scale. Optional when --axis is given (the whole plane is cropped "
+                        "in that case), or when every relevant --json_info entry supplies its own "
+                        "roi_halo/axis.")
     parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
                         help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at each "
                         "position's center.")
     parser.add_argument("-j", "--json_info", type=str, default=None,
                         help="JSON file with extra keyword arguments per export function, keyed by "
-                        "export-function name, e.g. {\"synapse\": {\"synapse_name\": \"...\"}}.")
+                        "export-function name, e.g. {\"synapse\": {\"synapse_name\": \"...\"}}. Can "
+                        "also be a JSON list of such dicts, one independent export pass per entry -- "
+                        "each entry's own key(s) then determine which export function(s) run for that "
+                        "pass, and --export_functions is ignored.")
     args = parser.parse_args()
-
-    if args.roi_halo is None and args.axis is None:
-        parser.error("Provide --roi_halo or --axis.")
 
     positions = DEFAULT_POSITIONS
     if args.positions_json is not None:
