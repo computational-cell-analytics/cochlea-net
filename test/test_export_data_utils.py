@@ -59,6 +59,39 @@ class TestComputeCropBb(unittest.TestCase):
             self.fn(self.crop_center, None, voxel_size=1.0, scale=0, shape=self.shape)
 
 
+class TestCropFilterVolume(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.export_data_utils import crop_filter_volume
+        self.fn = crop_filter_volume
+
+    def test_shape_matches_crop_when_fully_covered(self):
+        # filter_volume large enough to cover the requested crop after upscaling.
+        filter_volume = np.ones((10, 10, 10), dtype=bool)
+        start = np.array([5, 5, 5])
+        stop = np.array([15, 15, 15])
+        result = self.fn(filter_volume, start, stop, us_factor=2)
+        self.assertEqual(result.shape, (10, 10, 10))
+        self.assertTrue(result.all())
+
+    def test_zero_pads_when_crop_exceeds_filter_volume_extent(self):
+        # filter_volume only covers a small region (e.g. built from a segmentation table's
+        # extent); a whole-plane crop (axis given, no roi_halo) can request a much larger
+        # region -- the result must still have shape == stop - start, zero-padded outside
+        # the covered extent, per Part B's roi_halo=None/whole-plane behavior.
+        filter_volume = np.ones((5, 5, 5), dtype=bool)
+        start = np.array([0, 0, 0])
+        stop = np.array([100, 100, 100])
+        result = self.fn(filter_volume, start, stop, us_factor=2)
+        self.assertEqual(result.shape, (100, 100, 100))
+        # Covered region (filter_volume upscaled by us_factor=2 -> 10x10x10) stays True...
+        self.assertTrue(result[:10, :10, :10].all())
+        # ...everything beyond it is zero-padded (False), not silently truncated.
+        self.assertFalse(result[10:, :, :].any())
+        self.assertFalse(result[:, 10:, :].any())
+        self.assertFalse(result[:, :, 10:].any())
+
+
 class TestCropSuffix(unittest.TestCase):
 
     def setUp(self):

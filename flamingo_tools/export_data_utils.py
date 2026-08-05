@@ -99,7 +99,11 @@ def crop_filter_volume(
             (i.e. ds_factor // 2**scale).
 
     Returns:
-        Boolean mask aligned to the crop region, shape == stop - start.
+        Boolean mask aligned to the crop region, shape == stop - start. Regions of the crop
+        that fall outside `filter_volume`'s covered extent (it only spans the segmentation
+        table's anchor points plus a fixed padding, see `filter_cochlea_volume_single`/
+        `filter_cochlea_volume`, and can be smaller than the full image -- e.g. for a
+        whole-plane 2D crop) are zero-padded, i.e. treated as "not part of the cochlea".
     """
     # Sub-region of filter_volume covering the crop (1-cell margin for safety).
     start_fv = np.maximum(0, start // us_factor - 1)
@@ -112,6 +116,13 @@ def crop_filter_volume(
     # Align to exact crop coordinates.
     offset = start - start_fv * us_factor
     crop_size = stop - start
-    return big[offset[0]:offset[0] + crop_size[0],
-               offset[1]:offset[1] + crop_size[1],
-               offset[2]:offset[2] + crop_size[2]]
+    cropped = big[offset[0]:offset[0] + crop_size[0],
+                  offset[1]:offset[1] + crop_size[1],
+                  offset[2]:offset[2] + crop_size[2]]
+
+    if cropped.shape != tuple(crop_size):
+        padded = np.zeros(tuple(crop_size), dtype=cropped.dtype)
+        padded[:cropped.shape[0], :cropped.shape[1], :cropped.shape[2]] = cropped
+        cropped = padded
+
+    return cropped
