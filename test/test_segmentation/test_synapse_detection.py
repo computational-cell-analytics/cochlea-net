@@ -3,6 +3,7 @@ import tempfile
 import unittest
 
 import numpy as np
+import pandas as pd
 import zarr
 
 
@@ -85,11 +86,12 @@ class TestFlowCorrection(unittest.TestCase):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             pred, _, _ = self._create_prediction(tmp_dir)
-            result = _flow_corrected_detections(
+            result, raw_result = _flow_corrected_detections(
                 pred, min_distance=2, threshold_abs=100.0,
                 block_shape=self.chunks[-3:], n_threads=2,
             )
             self.assertEqual(result.shape, (0, 3))
+            self.assertEqual(raw_result.shape, (0, 3))
 
     def test_detection_from_prediction(self):
         from flamingo_tools.segmentation.synapse_detection import synapse_detection_from_prediction
@@ -98,15 +100,39 @@ class TestFlowCorrection(unittest.TestCase):
             self._create_prediction(tmp_dir)
             prediction_path = os.path.join(tmp_dir, "predictions.zarr")
             detection_path = os.path.join(tmp_dir, "synapse_detection.tsv")
+            no_flow_path = os.path.join(tmp_dir, "synapse_detection_no-flow.tsv")
 
             detections = synapse_detection_from_prediction(prediction_path, detection_path, threshold=0.5)
             self.assertTrue(os.path.exists(detection_path))
             self.assertGreater(len(detections), 0)
             self.assertEqual(list(detections.columns), ["spot_id", "x", "y", "z"])
 
+            # The no-flow sibling file must be written by default, in the same format.
+            self.assertTrue(os.path.exists(no_flow_path))
+            no_flow_detections = pd.read_csv(no_flow_path, sep="\t")
+            self.assertEqual(list(no_flow_detections.columns), ["spot_id", "x", "y", "z"])
+            self.assertEqual(len(no_flow_detections), len(detections))
+            # Flow correction shifts coordinates, so the two outputs should differ.
+            self.assertFalse(np.allclose(no_flow_detections.values, detections.values))
+
             # The second call must load the result that was written before.
             reloaded = synapse_detection_from_prediction(prediction_path, detection_path, threshold=0.5)
             np.testing.assert_allclose(reloaded.values, detections.values)
+
+    def test_detection_from_prediction_no_flow_disabled(self):
+        from flamingo_tools.segmentation.synapse_detection import synapse_detection_from_prediction
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            self._create_prediction(tmp_dir)
+            prediction_path = os.path.join(tmp_dir, "predictions.zarr")
+            detection_path = os.path.join(tmp_dir, "synapse_detection.tsv")
+            no_flow_path = os.path.join(tmp_dir, "synapse_detection_no-flow.tsv")
+
+            synapse_detection_from_prediction(
+                prediction_path, detection_path, threshold=0.5, save_no_flow=False,
+            )
+            self.assertTrue(os.path.exists(detection_path))
+            self.assertFalse(os.path.exists(no_flow_path))
 
 
 class TestDetectionBlockShape(unittest.TestCase):

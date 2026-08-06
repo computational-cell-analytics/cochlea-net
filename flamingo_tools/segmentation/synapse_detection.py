@@ -94,7 +94,9 @@ def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n
         n_threads: Number of threads.
 
     Returns:
-        (N, 3) float array of [z, y, x] coordinates (sub-voxel if flow applied).
+        Tuple `(coords, raw_coords)` of (N, 3) float arrays of [z, y, x] coordinates.
+        `coords` is sub-voxel if flow correction was applied, otherwise identical to
+        `raw_coords`. `raw_coords` is always the un-corrected local-maxima positions.
     """
     have_flow = pred.ndim == 4 and pred.shape[0] >= 5
     # SelectChannel presents the 4-D (C, Z, Y, X) zarr as a 3-D (Z, Y, X) view
@@ -105,13 +107,14 @@ def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n
         heatmap, block_shape=block_shape, min_distance=min_distance,
         threshold_abs=threshold_abs, verbose=True, n_threads=n_threads,
     )
+    raw_coords = peak_coords.astype(float)
 
     if not have_flow or len(peak_coords) == 0:
         print("Use peak detection from local maxima.")
-        return peak_coords.astype(float)
+        return raw_coords, raw_coords
 
     print("Adjusting peak detection using heatmap.")
-    return _apply_flow_correction(pred, peak_coords, n_threads)
+    return _apply_flow_correction(pred, peak_coords, n_threads), raw_coords
 
 
 def map_and_filter_detections(
@@ -174,6 +177,18 @@ def map_and_filter_detections(
     return detections
 
 
+def _to_mobie_format(coords: np.ndarray, voxel_size: Tuple[float, float, float]) -> pd.DataFrame:
+    """Convert (N, 3) [z, y, x] pixel coordinates to a MoBIE-compatible spot table."""
+    coords = np.concatenate(
+        [np.arange(1, len(coords) + 1)[:, None], coords[:, ::-1]], axis=1
+    )
+    table = pd.DataFrame(coords, columns=["spot_id", "x", "y", "z"])
+    table["x"] *= voxel_size[0]
+    table["y"] *= voxel_size[1]
+    table["z"] *= voxel_size[2]
+    return table
+
+
 def synapse_detection_from_prediction(
     prediction_path: str,
     detection_path: str,
@@ -183,6 +198,7 @@ def synapse_detection_from_prediction(
     force_overwrite: bool = False,
     threshold: float = 0.5,
     n_threads: Optional[int] = None,
+    save_no_flow: bool = True,
 ) -> pd.DataFrame:
     """Run synapse detection for prediction.
 
@@ -198,6 +214,10 @@ def synapse_detection_from_prediction(
             threshold is loaded from cache or determined via gridsearch on the
             validation set used during training (requires *model_path*).
         n_threads: The number of threads for peak detection and flow correction.
+        save_no_flow: Whether to additionally save the un-corrected peak detections
+            (before sub-voxel flow correction) to a sibling file next to
+            *detection_path*, named `<name>_no-flow<ext>`. Written only when
+            *detection_path* is (re)computed, not when it is loaded from cache.
 
     Returns:
         The detections in MoBIE compatible format, with coordinates in micrometer.
@@ -209,22 +229,17 @@ def synapse_detection_from_prediction(
         pred = zarr.open(prediction_path, mode="r")[prediction_key]
         # Use the spatial chunk shape (drop the leading channel dim for multi-channel predictions).
         det_block_shape = block_shape or _detection_block_shape(pred.chunks[-3:])
-        detections = _flow_corrected_detections(
+        coords, no_flow_coords = _flow_corrected_detections(
             pred, min_distance=2, threshold_abs=threshold,
             block_shape=det_block_shape, n_threads=n_threads,
         )
-        # Save the result in MoBIE compatible format.
-        detections = np.concatenate(
-            [np.arange(1, len(detections) + 1)[:, None], detections[:, ::-1]], axis=1
-        )
-        detections = pd.DataFrame(detections, columns=["spot_id", "x", "y", "z"])
-
-        # scale coordinates
-        detections["x"] *= voxel_size[0]
-        detections["y"] *= voxel_size[1]
-        detections["z"] *= voxel_size[2]
-
+        detections = _to_mobie_format(coords, voxel_size)
         detections.to_csv(detection_path, index=False, sep="\t")
+
+        if save_no_flow:
+            base, ext = os.path.splitext(detection_path)
+            no_flow_path = f"{base}_no-flow{ext}"
+            _to_mobie_format(no_flow_coords, voxel_size).to_csv(no_flow_path, index=False, sep="\t")
     else:
         print(f"Skipping peak detection. {detection_path} already exists.")
         detections = pd.read_csv(detection_path, sep="\t")
