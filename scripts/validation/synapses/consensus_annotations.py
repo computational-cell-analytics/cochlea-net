@@ -3,16 +3,12 @@ import os
 from glob import glob
 from typing import Optional
 
-import numpy as np
 import pandas as pd
 from flamingo_tools.json_util import update_json
 from flamingo_tools.validation import (
-    average_scores_per_row, compute_consensus_scores, create_consensus_annotations, match_detections,
+    compute_consensus_scores, create_consensus_annotations, evaluate_pairwise_agreement, match_detections,
 )
 from flamingo_tools.synapse_detection.read_imaris_data import extract_training_data
-
-# Sibling script in this directory; resolved through sys.path[0] when this file is run as a script.
-from pairwise_agreement import average_pairwise_scores, compute_pairwise_agreement
 
 ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/Synapses_2026-04"
 ANNOTATION_FOLDERS = [
@@ -23,7 +19,6 @@ ANNOTATION_FOLDERS = [
 
 OUTPUT_FOLDER = os.path.join(ROOT, "consensus_annotation")
 VOXEL_SIZE = 0.38  # µm per voxel; the Imaris physical-size metadata is not authoritative.
-COORDINATE_COLUMNS = ["axis-0", "axis-1", "axis-2"]
 
 
 def _distance_um_to_voxels(distance: float, voxel_size: float = VOXEL_SIZE) -> float:
@@ -114,6 +109,22 @@ def consensus_annotations(
     print("Saved to", output_path)
 
 
+def annotations_per_crop(consensus_dir: str) -> dict:
+    """Map each crop to the individual annotations of all annotators.
+
+    Args:
+        consensus_dir: Directory containing the consensus annotations in CSV format. Only used to
+            determine the crops.
+
+    Returns:
+        Dictionary that maps a crop name to a dictionary of annotator name and annotation path.
+    """
+    return {
+        os.path.splitext(os.path.basename(consensus_file))[0]: match_annotations(consensus_file)
+        for consensus_file in sorted(glob(os.path.join(consensus_dir, "*.csv")))
+    }
+
+
 def evaluate_consensus(
     consensus_dir: str,
     table_dir: str,
@@ -170,75 +181,6 @@ def evaluate_consensus(
         update_json(scores, os.path.join(output_dir, "consensus_synapses.json"))
 
 
-def evaluate_solitary(
-    consensus_dir: str,
-    min_matches_for_consensus: int,
-    max_dist: float = 2.0,
-    voxel_size: float = VOXEL_SIZE,
-) -> pd.DataFrame:
-    """Evaluate each annotator against a consensus of the other annotators.
-
-    The evaluated annotator is left out of the reference it is compared against, so the score is
-    not correlated with the annotator's own annotation. This is the difference to
-    evaluate_consensus, where every annotator contributes to the reference.
-
-    Args:
-        consensus_dir: Directory containing the consensus annotations in CSV format. Only used to
-            determine the crops; the reference is recomputed from the individual annotations.
-        min_matches_for_consensus: Number of remaining annotators that must mark a point for it to
-            enter the reference. With three annotators, 1 gives their union and 2 their intersection.
-        max_dist: Maximal matching distance in µm for spots.
-        voxel_size: Isotropic voxel size in µm.
-
-    Returns:
-        Table with one row per left-out annotator and crop.
-    """
-    max_dist_voxels = _distance_um_to_voxels(max_dist, voxel_size)
-    consensus_files = sorted(glob(os.path.join(consensus_dir, "*.csv")))
-
-    results = {
-        "annotator": [],
-        "file_name": [],
-        "tps": [],
-        "fps": [],
-        "fns": [],
-    }
-    for consensus_file in consensus_files:
-        annotations = match_annotations(consensus_file)
-        file_name = os.path.splitext(os.path.basename(consensus_file))[0]
-
-        for left_out, prediction_path in annotations.items():
-            reference_paths = {
-                name: path for name, path in annotations.items() if name != left_out
-            }
-            if len(reference_paths) < min_matches_for_consensus:
-                print(f"Skipping {left_out} for {file_name}. "
-                      f"Only {len(reference_paths)} annotators are left for the reference.")
-                continue
-
-            reference, _ = create_consensus_annotations(
-                reference_paths, matching_distance=max_dist_voxels,
-                min_matches_for_consensus=min_matches_for_consensus,
-            )
-            # An empty consensus yields a dataframe without columns, so the coordinates
-            # cannot be selected. This happens when no annotation reaches the minimum matches.
-            if reference.empty:
-                reference_points = np.zeros((0, 3), dtype=float)
-            else:
-                reference_points = reference[COORDINATE_COLUMNS].values
-
-            prediction = pd.read_csv(prediction_path, usecols=COORDINATE_COLUMNS)[COORDINATE_COLUMNS]
-            tp, _, fp, fn = match_detections(prediction, reference_points, max_dist=max_dist_voxels)
-
-            results["annotator"].append(left_out)
-            results["file_name"].append(file_name)
-            results["tps"].append(len(tp))
-            results["fps"].append(len(fp))
-            results["fns"].append(len(fn))
-
-    return pd.DataFrame(results)
-
-
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--images", nargs="+", default=None)
@@ -251,8 +193,6 @@ def main():
                         help="Optional directory to save the accuracy JSON file (consensus_synapses.json).")
     parser.add_argument("--pairwise", action="store_true",
                         help="Also evaluate the direct agreement between all annotator pairs.")
-    parser.add_argument("--solitary", action="store_true",
-                        help="Also evaluate each annotator against a consensus of the other annotators.")
     args = parser.parse_args()
 
     if args.annotation_dirs is None:
@@ -290,38 +230,14 @@ def main():
     )
 
     # The consensus is derived from the same annotations it is compared against, so the scores
-    # above are correlated with the individual annotations. The evaluations below are not.
+    # above are correlated with the individual annotations. The pairwise agreement is not.
     if args.pairwise:
-        annotation_dirs = {
-            os.path.basename(folder).split("_")[-1]: os.path.join(folder, "labels")
-            for folder in annotation_folders
-        }
-        per_crop, summary = compute_pairwise_agreement(
-            annotation_dirs, matching_distance=args.matching_distance, voxel_size=VOXEL_SIZE,
+        scores = evaluate_pairwise_agreement(
+            annotations_per_crop(OUTPUT_FOLDER), table_dir=ROOT,
+            matching_distance=args.matching_distance, voxel_size=VOXEL_SIZE,
         )
-        print("Pairwise agreement between annotators:")
-        print(summary.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
         if args.output_dir is not None:
-            update_json(
-                {"pairwise": average_pairwise_scores(per_crop)},
-                os.path.join(args.output_dir, "consensus_synapses.json"),
-            )
-
-    if args.solitary:
-        solitary_scores = {}
-        for min_matches in (1, 2):
-            results = evaluate_solitary(
-                consensus_dir=OUTPUT_FOLDER, min_matches_for_consensus=min_matches,
-                max_dist=args.matching_distance,
-            )
-            print(f"Solitary evaluation against a reference of {min_matches} of 2 annotators:")
-            print(results)
-            solitary_scores[f"solitary_{min_matches}of2"] = average_scores_per_row(results)
-
-        print("Evaluation:")
-        print(pd.DataFrame(solitary_scores).T[["precision", "recall", "f1-score"]])
-        if args.output_dir is not None:
-            update_json(solitary_scores, os.path.join(args.output_dir, "consensus_synapses.json"))
+            update_json({"pairwise": scores}, os.path.join(args.output_dir, "consensus_synapses.json"))
 
 
 if __name__ == "__main__":

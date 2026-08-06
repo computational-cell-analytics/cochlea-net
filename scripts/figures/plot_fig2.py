@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import numpy as np
@@ -60,28 +61,75 @@ def plot_legend_fig02c(
 
 def fig_02c(
     save_path: str,
+    data_dir: str,
     plot: bool = False,
+    annotator_keyword: str = "all",
 ):
     """Scatter plot showing the precision, recall, and F1-score of SGN (distance U-Net, manual),
     IHC (distance U-Net, manual), and synapse detection (U-Net).
     """
     prism_style()
-    # precision, recall, f1-score
-    sgn_unet = [0.887, 0.88, 0.884]
-    sgn_annotator = [0.95, 0.849, 0.9]
 
-    ihc_v4c = [0.905, 0.831, 0.866]
-    ihc_annotator = [0.958, 0.956, 0.957]
+    # SGN
+    json_file = os.path.join(data_dir, "SGN.json")
+    with open(json_file, "r") as f:
+        param_dicts = json.loads(f.read())
+    sgn_unet = [
+        param_dicts["distance_unet"]["precision"],
+        param_dicts["distance_unet"]["recall"],
+        param_dicts["distance_unet"]["f1-score"],
+    ]
+    json_file = os.path.join(data_dir, "consensus_SGN.json")
+    with open(json_file, "r") as f:
+        param_dicts = json.loads(f.read())
+    sgn_annotator = [
+        param_dicts[annotator_keyword]["precision"],
+        param_dicts[annotator_keyword]["recall"],
+        param_dicts[annotator_keyword]["f1-score"],
+    ]
 
-    syn_unet = [0.971, 0.681, 0.8]
-    syn_annotator = [0.915, 0.945, 0.930]
+    # IHC
+    json_file = os.path.join(data_dir, "IHC_3D.json")
+    with open(json_file, "r") as f:
+        param_dicts = json.loads(f.read())
+    ihc_unet = [
+        param_dicts["v11"]["precision"],
+        param_dicts["v11"]["recall"],
+        param_dicts["v11"]["f1-score"],
+    ]
+    json_file = os.path.join(data_dir, "consensus_IHC.json")
+    with open(json_file, "r") as f:
+        param_dicts = json.loads(f.read())
+    ihc_annotator = [
+        param_dicts[annotator_keyword]["precision"],
+        param_dicts[annotator_keyword]["recall"],
+        param_dicts[annotator_keyword]["f1-score"],
+    ]
+
+    # synapses
+    json_file = os.path.join(data_dir, "synapses.json")
+    with open(json_file, "r") as f:
+        param_dicts = json.loads(f.read())
+    syn_unet = [
+        param_dicts["v5_05t"]["precision"],
+        param_dicts["v5_05t"]["recall"],
+        param_dicts["v5_05t"]["f1-score"],
+    ]
+    json_file = os.path.join(data_dir, "consensus_synapses.json")
+    with open(json_file, "r") as f:
+        param_dicts = json.loads(f.read())
+    syn_annotator = [
+        param_dicts[annotator_keyword]["precision"],
+        param_dicts[annotator_keyword]["recall"],
+        param_dicts[annotator_keyword]["f1-score"],
+    ]
 
     setting = ["SGN", "IHC", "Synapse"]
 
     # This is the version with IHC v4c segmentation:
     # 4th version of the network with optimized segmentation params and split of falsely merged IHCs
     manual = [sgn_annotator, ihc_annotator, syn_annotator]
-    automatic = [sgn_unet, ihc_v4c, syn_unet]
+    automatic = [sgn_unet, ihc_unet, syn_unet]
 
     precision_manual = [i[0] for i in manual]
     recall_manual = [i[1] for i in manual]
@@ -270,18 +318,34 @@ def main():
     parser = argparse.ArgumentParser(description="Generate plots for Figure 2 of the CochleaNet paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.", default="./panels/fig2")
     parser.add_argument("--plot", action="store_true")
+    _default_data_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "reproducibility", "model_accuracy",
+    )
+    parser.add_argument(
+        "--data_dir", "-d", type=str, default=_default_data_dir,
+        help="Directory containing SGN.json, IHC.json, IHC_3D.json and synapses.json accuracy files. "
+             f"Defaults to {_default_data_dir}.",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
 
     # Panel C: Evaluation of the segmentation results:
-    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c.{FILE_EXTENSION}"), plot=args.plot)
+    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c.{FILE_EXTENSION}"),
+            data_dir=args.data_dir, plot=args.plot)
+
+    annotator_keyword = "pairwise"
+    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c_{annotator_keyword}.{FILE_EXTENSION}"),
+            data_dir=args.data_dir, plot=args.plot,
+            annotator_keyword=annotator_keyword,)
+
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_shapes.{FILE_EXTENSION}"), plot_mode="shapes")
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_colors.{FILE_EXTENSION}"), plot_mode="colors")
 
     # Panel D: The number of SGNs, IHCs and average number of ribbon synapses per IHC
-    fig_02d(save_path=os.path.join(args.figure_dir, f"fig_02d.{FILE_EXTENSION}"),
-            plot=args.plot, plot_average_ribbon_synapses=True)
+    #fig_02d(save_path=os.path.join(args.figure_dir, f"fig_02d.{FILE_EXTENSION}"),
+    #        plot=args.plot, plot_average_ribbon_synapses=True)
 
 
 if __name__ == "__main__":

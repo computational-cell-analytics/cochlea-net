@@ -5,7 +5,7 @@ from typing import Optional
 
 import pandas as pd
 from flamingo_tools.json_util import update_json
-from flamingo_tools.validation import compute_consensus_scores, match_detections
+from flamingo_tools.validation import compute_consensus_scores, evaluate_pairwise_agreement, match_detections
 
 ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/F1ValidationIHCs"
 ANNOTATION_FOLDERS = ["Annotations_AMD", "Annotations_EK", "Annotations_LR"]
@@ -28,6 +28,18 @@ def match_annotations(consensus_path, root=ROOT, annotation_folders=ANNOTATION_F
         annotations[annotator] = annotation_path
 
     return annotations
+
+
+def annotations_per_crop(root: str = ROOT) -> dict:
+    """Map each crop to the individual annotations of all annotators.
+
+    Returns:
+        Dictionary that maps a crop name to a dictionary of annotator name and annotation path.
+    """
+    return {
+        os.path.splitext(os.path.basename(consensus_file))[0]: match_annotations(consensus_file, root=root)
+        for consensus_file in sorted(glob(os.path.join(root, CONSENSUS_FOLDER, "*.csv")))
+    }
 
 
 def evaluate_consensus(
@@ -88,9 +100,21 @@ def main():
                         help="Matching distance in voxels for annotations.")
     parser.add_argument("-o", "--output_dir", type=str, default=None,
                         help="Optional directory to save the accuracy JSON file (consensus_IHC.json).")
+    parser.add_argument("--pairwise", action="store_true",
+                        help="Also evaluate the direct agreement between all annotator pairs.")
     args = parser.parse_args()
 
     evaluate_consensus(root=args.input, output_dir=args.output_dir, max_dist=args.matching_distance)
+
+    # The consensus is derived from the same annotations it is compared against, so the scores
+    # above are correlated with the individual annotations. The pairwise agreement is not.
+    if args.pairwise:
+        scores = evaluate_pairwise_agreement(
+            annotations_per_crop(args.input), table_dir=args.input,
+            matching_distance=args.matching_distance,
+        )
+        if args.output_dir is not None:
+            update_json({"pairwise": scores}, os.path.join(args.output_dir, "consensus_IHC.json"))
 
 
 if __name__ == "__main__":
