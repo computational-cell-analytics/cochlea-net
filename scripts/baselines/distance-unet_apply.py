@@ -6,33 +6,59 @@ import importlib.util
 from pathlib import Path
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
-MODEL_DIR = os.path.join(COCHLEA_DIR, "trained_models/SGN")
-IMAGE_DIR = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/F1ValidationSGNs/for_consensus_annotation")
-VAL_SGN_DIR = os.path.join(COCHLEA_DIR, "predictions/val_sgn")
 
-MODEL_DICT = {
+
+MODEL_DIR_SGN = os.path.join(COCHLEA_DIR, "trained_models/SGN")
+IMAGE_DIR_SGN = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/F1ValidationSGNs/for_consensus_annotation")
+VAL_DIR_SGN = os.path.join(COCHLEA_DIR, "predictions/val_sgn")
+MODEL_DICT_SGN = {
     "distance_unet_f0": {
         "version": "SGN_v2", "fold": 0,
-        "path": os.path.join(MODEL_DIR, "v2_cochlea_distance_unet_SGN_supervised_2025-05-27"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2_cochlea_distance_unet_SGN_supervised_2025-05-27"),
     },
     "distance_unet_f1": {
         "version": "SGN_v2", "fold": 1,
-        "path": os.path.join(MODEL_DIR, "v2-1_cochlea_distance_unet_SGN_supervised_2026-05-04"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-1_cochlea_distance_unet_SGN_supervised_2026-05-04"),
     },
     "distance_unet_f2": {
         "version": "SGN_v2", "fold": 2,
-        "path": os.path.join(MODEL_DIR, "v2-2_cochlea_distance_unet_SGN_supervised_2026-05-05"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-2_cochlea_distance_unet_SGN_supervised_2026-05-05"),
     },
     "distance_unet_f3": {
         "version": "SGN_v2", "fold": 3,
-        "path": os.path.join(MODEL_DIR, "v2-3_cochlea_distance_unet_SGN_supervised_2026-05-07"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-3_cochlea_distance_unet_SGN_supervised_2026-05-07"),
     },
     "distance_unet_f4": {
         "version": "SGN_v2", "fold": 4,
-        "path": os.path.join(MODEL_DIR, "v2-4_cochlea_distance_unet_SGN_supervised_2026-05-07"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-4_cochlea_distance_unet_SGN_supervised_2026-05-07"),
     },
 }
 
+MODEL_DIR_IHC = os.path.join(COCHLEA_DIR, "trained_models/IHC")
+IMAGE_DIR_IHC = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/F1ValidationIHCs")
+VAL_DIR_IHC = os.path.join(COCHLEA_DIR, "predictions/val_ihc")
+MODEL_DICT_IHC = {
+    "distance_unet_f0": {
+        "version": "IHC_v11", "fold": 0,
+        "path": os.path.join(MODEL_DIR_IHC, "v11_cochlea_distance_unet_IHC_supervised_2026-07-20"),
+    },
+    "distance_unet_f1": {
+        "version": "IHC_v11", "fold": 1,
+        "path": os.path.join(MODEL_DIR_IHC, "v11-1_cochlea_distance_unet_IHC_supervised_2026-07-28"),
+    },
+    "distance_unet_f2": {
+        "version": "IHC_v11", "fold": 2,
+        "path": os.path.join(MODEL_DIR_IHC, "v11-2_cochlea_distance_unet_IHC_supervised_2026-07-28"),
+    },
+    "distance_unet_f3": {
+        "version": "IHC_v11", "fold": 3,
+        "path": os.path.join(MODEL_DIR_IHC, "v11-3_cochlea_distance_unet_IHC_supervised_2026-07-28"),
+    },
+    "distance_unet_f4": {
+        "version": "IHC_v11", "fold": 4,
+        "path": os.path.join(MODEL_DIR_IHC, "v11-4_cochlea_distance_unet_IHC_supervised_2026-07-28"),
+    },
+}
 
 # load run_prediction distance unet
 current_dir = Path(__file__).resolve().parent
@@ -83,7 +109,7 @@ def main():
 
     parser.add_argument("-m", "--model", type=str, default=None,
                         help="Model directory of the CochleaNet model to apply (matching --seg_class).")
-    parser.add_argument("-i", "--input", type=str, default=IMAGE_DIR,
+    parser.add_argument("-i", "--input", type=str, default=None,
                         help="Directory containing images in TIF format to run inference on.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output directory for predictions.")
@@ -95,24 +121,36 @@ def main():
     args = parser.parse_args()
 
     # Process all 5 folds of the network
-    if args.model is None and args.output is None:
+    if args.model is None and args.output is None and args.input is None:
         model_paths = []
         output_dirs = []
-        for name, model_dic in MODEL_DICT.items():
-            output_dir = os.path.join(VAL_SGN_DIR, name)
-            output_dirs.append(output_dir)
-            model_paths.append(model_dic["path"])
+        if args.seg_class == "sgn":
+            for name, model_dic in MODEL_DICT_SGN.items():
+                output_dir = os.path.join(VAL_DIR_SGN, name)
+                output_dirs.append(output_dir)
+                model_paths.append(model_dic["path"])
+                input_dir = IMAGE_DIR_SGN
+        elif args.seg_class == "ihc":
+            for name, model_dic in MODEL_DICT_IHC.items():
+                output_dir = os.path.join(VAL_DIR_IHC, name)
+                output_dirs.append(output_dir)
+                model_paths.append(model_dic["path"])
+                input_dir = IMAGE_DIR_IHC
+        else:
+            raise ValueError("Choose either 'sgn' or 'ihc' as --seg_class.")
     # raise an error if a non-viable combination of model and output is provided
-    elif args.model is None or args.output is None:
-        raise ValueError("Provide both, a model and an output directory, or neither.")
+    elif args.model is None or args.output is None or args.input:
+        raise ValueError("Provide all, a model, an input and an output directory, or none.")
     else:
         model_paths = [args.model]
         output_dirs = [args.output]
+        input_dir = args.input
 
     for (model_path, output_dir) in zip(model_paths, output_dirs):
+        print(f"Running prediction of {args.seg_class} with model {model_path}. Save results in {output_dir}.")
         os.makedirs(output_dir, exist_ok=True)
         run_prediction_wrapper(
-            image_dir=args.input,
+            image_dir=input_dir,
             output_dir=output_dir,
             model_dir=model_path,
             seg_class=args.seg_class,
