@@ -59,6 +59,27 @@ def plot_legend_fig02c(
         raise ValueError("Choose either 'shapes' or 'colors' as plot_mode.")
 
 
+def _read_scores(data_dir: str, file_name: str, key: str) -> list:
+    """Read the precision, recall, and F1-score of one entry from an accuracy JSON file.
+
+    Args:
+        data_dir: Directory containing the accuracy JSON files.
+        file_name: Name of the accuracy JSON file.
+        key: Top-level entry of the file, e.g. a network version or an annotator scenario.
+
+    Returns:
+        The precision, recall, and F1-score of the entry.
+    """
+    json_file = os.path.join(data_dir, file_name)
+    with open(json_file, "r") as f:
+        param_dicts = json.load(f)
+    if key not in param_dicts:
+        raise KeyError(f"{json_file} has no entry '{key}'. Available entries: {sorted(param_dicts)}.")
+
+    scores = param_dicts[key]
+    return [scores["precision"], scores["recall"], scores["f1-score"]]
+
+
 def fig_02c(
     save_path: str,
     data_dir: str,
@@ -71,58 +92,16 @@ def fig_02c(
     prism_style()
 
     # SGN
-    json_file = os.path.join(data_dir, "SGN.json")
-    with open(json_file, "r") as f:
-        param_dicts = json.loads(f.read())
-    sgn_unet = [
-        param_dicts["distance_unet"]["precision"],
-        param_dicts["distance_unet"]["recall"],
-        param_dicts["distance_unet"]["f1-score"],
-    ]
-    json_file = os.path.join(data_dir, "consensus_SGN.json")
-    with open(json_file, "r") as f:
-        param_dicts = json.loads(f.read())
-    sgn_annotator = [
-        param_dicts[annotator_keyword]["precision"],
-        param_dicts[annotator_keyword]["recall"],
-        param_dicts[annotator_keyword]["f1-score"],
-    ]
+    sgn_unet = _read_scores(data_dir, "SGN.json", "distance_unet")
+    sgn_annotator = _read_scores(data_dir, "consensus_SGN.json", annotator_keyword)
 
     # IHC
-    json_file = os.path.join(data_dir, "IHC_3D.json")
-    with open(json_file, "r") as f:
-        param_dicts = json.loads(f.read())
-    ihc_unet = [
-        param_dicts["v11"]["precision"],
-        param_dicts["v11"]["recall"],
-        param_dicts["v11"]["f1-score"],
-    ]
-    json_file = os.path.join(data_dir, "consensus_IHC.json")
-    with open(json_file, "r") as f:
-        param_dicts = json.loads(f.read())
-    ihc_annotator = [
-        param_dicts[annotator_keyword]["precision"],
-        param_dicts[annotator_keyword]["recall"],
-        param_dicts[annotator_keyword]["f1-score"],
-    ]
+    ihc_unet = _read_scores(data_dir, "IHC_3D.json", "v11")
+    ihc_annotator = _read_scores(data_dir, "consensus_IHC.json", annotator_keyword)
 
     # synapses
-    json_file = os.path.join(data_dir, "synapses.json")
-    with open(json_file, "r") as f:
-        param_dicts = json.loads(f.read())
-    syn_unet = [
-        param_dicts["v5_05t"]["precision"],
-        param_dicts["v5_05t"]["recall"],
-        param_dicts["v5_05t"]["f1-score"],
-    ]
-    json_file = os.path.join(data_dir, "consensus_synapses.json")
-    with open(json_file, "r") as f:
-        param_dicts = json.loads(f.read())
-    syn_annotator = [
-        param_dicts[annotator_keyword]["precision"],
-        param_dicts[annotator_keyword]["recall"],
-        param_dicts[annotator_keyword]["f1-score"],
-    ]
+    syn_unet = _read_scores(data_dir, "synapses.json", "v5_05t")
+    syn_annotator = _read_scores(data_dir, "consensus_synapses.json", annotator_keyword)
 
     setting = ["SGN", "IHC", "Synapse"]
 
@@ -324,8 +303,9 @@ def main():
     )
     parser.add_argument(
         "--data_dir", "-d", type=str, default=_default_data_dir,
-        help="Directory containing SGN.json, IHC.json, IHC_3D.json and synapses.json accuracy files. "
-             f"Defaults to {_default_data_dir}.",
+        help="Directory containing the model accuracy files (SGN.json, IHC.json, IHC_3D.json, "
+             "synapses.json) and the annotator accuracy files (consensus_SGN.json, consensus_IHC.json, "
+             f"consensus_synapses.json). Defaults to {_default_data_dir}.",
     )
     args = parser.parse_args()
 
@@ -344,8 +324,8 @@ def main():
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_colors.{FILE_EXTENSION}"), plot_mode="colors")
 
     # Panel D: The number of SGNs, IHCs and average number of ribbon synapses per IHC
-    #fig_02d(save_path=os.path.join(args.figure_dir, f"fig_02d.{FILE_EXTENSION}"),
-    #        plot=args.plot, plot_average_ribbon_synapses=True)
+    fig_02d(save_path=os.path.join(args.figure_dir, f"fig_02d.{FILE_EXTENSION}"),
+            plot=args.plot, plot_average_ribbon_synapses=True)
 
 
 if __name__ == "__main__":

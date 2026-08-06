@@ -54,7 +54,10 @@ def evaluate_consensus(
         output_dir: Optional output directory for consensus_IHC.json.
         max_dist: Maximal matching distance in voxels for annotations.
     """
-    consensus_files = sorted(glob(os.path.join(root, CONSENSUS_FOLDER, "*.csv")))
+    consensus_dir = os.path.join(root, CONSENSUS_FOLDER)
+    consensus_files = sorted(glob(os.path.join(consensus_dir, "*.csv")))
+    if len(consensus_files) == 0:
+        raise ValueError(f"Could not find any consensus annotation in {consensus_dir}.")
 
     results = {
         "annotator": [],

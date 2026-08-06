@@ -68,7 +68,8 @@ def evaluate_consensus(
         max_dist: Maximal matching distance in voxels for annotations.
     """
     consensus_files = sorted(glob(os.path.join(consensus_dir, "*.csv")))
-    assert len(consensus_files) > 0
+    if len(consensus_files) == 0:
+        raise ValueError(f"Could not find any consensus annotation in {consensus_dir}.")
 
     results = {
         "annotator": [],
