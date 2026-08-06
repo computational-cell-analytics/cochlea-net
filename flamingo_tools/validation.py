@@ -287,7 +287,7 @@ def compute_scores_for_annotated_slice(
     return {"tp": tp, "fp": fp, "fn": fn}
 
 
-def _scores_from_counts(tp: int, fp: int, fn: int) -> Dict[str, Optional[float]]:
+def compute_scores_from_counts(tp: int, fp: int, fn: int) -> Dict[str, Optional[float]]:
     """Compute precision, recall, and F1-score. A score without a defined value is None."""
     precision = tp / (tp + fp) if (tp + fp) > 0 else None
     recall = tp / (tp + fn) if (tp + fn) > 0 else None
@@ -326,13 +326,44 @@ def compute_consensus_scores(results: pd.DataFrame) -> Dict[str, dict]:
             "tp": [int(v) for v in table.tps],
             "fp": [int(v) for v in table.fps],
             "fn": [int(v) for v in table.fns],
-            **_scores_from_counts(int(table.tps.sum()), int(table.fps.sum()), int(table.fns.sum())),
+            **compute_scores_from_counts(int(table.tps.sum()), int(table.fps.sum()), int(table.fns.sum())),
         }
 
-    scores["all"] = _scores_from_counts(
+    scores["all"] = compute_scores_from_counts(
         int(results.tps.sum()), int(results.fps.sum()), int(results.fns.sum())
     )
     return scores
+
+
+def average_scores_per_row(results: pd.DataFrame) -> Dict[str, Optional[float]]:
+    """Compute the unweighted mean of the per-row precision, recall, and F1-score.
+
+    Each row counts equally, independent of how many annotations it holds.
+
+    Args:
+        results: Table with the columns "tps", "fps", and "fns". Each row holds the counts
+            of one comparison.
+
+    Returns:
+        Dictionary with the mean precision, recall, and F1-score. A score is None if no row
+        has a defined value for it.
+    """
+    required_columns = ["tps", "fps", "fns"]
+    missing = [column for column in required_columns if column not in results.columns]
+    if missing:
+        raise ValueError(f"The results table is missing the columns {missing}.")
+
+    per_row = [
+        compute_scores_from_counts(int(row.tps), int(row.fps), int(row.fns))
+        for row in results.itertuples()
+    ]
+
+    averages = {}
+    for name in ("precision", "recall", "f1-score"):
+        # A row with an undefined score is skipped for this score only.
+        values = [scores[name] for scores in per_row if scores[name] is not None]
+        averages[name] = round(float(np.mean(values)), 3) if values else None
+    return averages
 
 
 def create_consensus_annotations(

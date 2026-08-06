@@ -110,6 +110,50 @@ class TestConsensusScores(unittest.TestCase):
         with self.assertRaises(ValueError):
             compute_consensus_scores(table)
 
+    def test_compute_scores_from_counts(self):
+        from flamingo_tools.validation import compute_scores_from_counts
+
+        scores = compute_scores_from_counts(8, 2, 0)
+        self.assertAlmostEqual(scores["precision"], 0.8)
+        self.assertAlmostEqual(scores["recall"], 1.0)
+        self.assertAlmostEqual(scores["f1-score"], 0.889)
+
+        # Without any prediction the precision is undefined, and so is the F1-score.
+        scores = compute_scores_from_counts(0, 0, 5)
+        self.assertIsNone(scores["precision"])
+        self.assertAlmostEqual(scores["recall"], 0.0)
+        self.assertIsNone(scores["f1-score"])
+
+    def test_average_scores_per_row(self):
+        from flamingo_tools.validation import average_scores_per_row
+
+        # Row 1: P=0.8, R=1.0, F1=0.889.  Row 2: P=0.5, R=0.5, F1=0.5.
+        table = self._table([
+            ["AMD", "crop1", 8, 2, 0],
+            ["EK", "crop2", 5, 5, 5],
+        ])
+        averages = average_scores_per_row(table)
+        self.assertAlmostEqual(averages["precision"], 0.65)
+        self.assertAlmostEqual(averages["recall"], 0.75)
+        self.assertAlmostEqual(averages["f1-score"], 0.695)
+
+    def test_average_scores_per_row_skips_undefined(self):
+        from flamingo_tools.validation import average_scores_per_row
+
+        # The second row has no annotation at all, so none of its scores are defined.
+        table = self._table([
+            ["AMD", "crop1", 8, 2, 0],
+            ["EK", "crop2", 0, 0, 0],
+        ])
+        averages = average_scores_per_row(table)
+        self.assertAlmostEqual(averages["precision"], 0.8)
+        self.assertAlmostEqual(averages["recall"], 1.0)
+        self.assertAlmostEqual(averages["f1-score"], 0.889)
+
+        averages = average_scores_per_row(self._table([["EK", "crop2", 0, 0, 0]]))
+        for key in ("precision", "recall", "f1-score"):
+            self.assertIsNone(averages[key])
+
 
 if __name__ == "__main__":
     unittest.main()

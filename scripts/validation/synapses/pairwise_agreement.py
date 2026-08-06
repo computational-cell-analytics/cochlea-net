@@ -4,12 +4,12 @@ import argparse
 import os
 from itertools import combinations
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 import pandas as pd
 
-from flamingo_tools.validation import match_detections
+from flamingo_tools.validation import average_scores_per_row, match_detections
 
 
 ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/Synapses_2026-04"
@@ -54,7 +54,12 @@ def _read_coordinates(path: str, voxel_size: float) -> np.ndarray:
 
 
 def _agreement_metrics(n_a: int, n_b: int, n_matches: int) -> dict:
-    """Compute directional matched fractions and symmetric set-agreement scores."""
+    """Compute the agreement scores for one annotator pair.
+
+    Precision and recall are directional: they treat annotator a as the prediction and
+    annotator b as the reference. They swap when the two annotators are exchanged. The
+    F1-score is the harmonic mean of the two and does not depend on the direction.
+    """
     n_unmatched_a = n_a - n_matches
     n_unmatched_b = n_b - n_matches
     return {
@@ -63,9 +68,9 @@ def _agreement_metrics(n_a: int, n_b: int, n_matches: int) -> dict:
         "n_matches": n_matches,
         "n_unmatched_a": n_unmatched_a,
         "n_unmatched_b": n_unmatched_b,
-        "fraction_a_matched": _safe_ratio(n_matches, n_a),
-        "fraction_b_matched": _safe_ratio(n_matches, n_b),
-        "pairwise_f1": _safe_ratio(2 * n_matches, n_a + n_b),
+        "precision": _safe_ratio(n_matches, n_a),
+        "recall": _safe_ratio(n_matches, n_b),
+        "f1-score": _safe_ratio(2 * n_matches, n_a + n_b),
         "jaccard": _safe_ratio(n_matches, n_a + n_b - n_matches),
     }
 
@@ -162,12 +167,38 @@ def compute_pairwise_agreement(
             "matching_distance_um": matching_distance,
             "voxel_size_um": voxel_size,
             **_agreement_metrics(n_a, n_b, n_matches),
-            "macro_pairwise_f1": float(group["pairwise_f1"].mean()),
+            "macro_precision": float(group["precision"].mean()),
+            "macro_recall": float(group["recall"].mean()),
+            "macro_f1-score": float(group["f1-score"].mean()),
             "mean_match_distance_um": pooled_mean_distance,
             "max_match_distance_um": float(group["max_match_distance_um"].max()),
         })
 
     return per_crop, pd.DataFrame(summaries)
+
+
+def average_pairwise_scores(per_crop: pd.DataFrame) -> Dict[str, Optional[float]]:
+    """Average the pairwise agreement over all ordered annotator pairs and crops.
+
+    The per-crop table holds one row per unordered pair, with the counts of the direction
+    "a as prediction". This function adds the reverse direction of every row, so that neither
+    annotator is treated as the reference. Precision for the pair (a, b) is the recall for the
+    pair (b, a), so the returned precision and recall are equal by construction. The F1-score
+    differs from them, because it is a harmonic instead of an arithmetic mean.
+
+    Args:
+        per_crop: Per-crop table returned by compute_pairwise_agreement.
+
+    Returns:
+        Dictionary with the mean precision, recall, and F1-score.
+    """
+    forward = per_crop.rename(
+        columns={"n_matches": "tps", "n_unmatched_a": "fps", "n_unmatched_b": "fns"},
+    )
+    reverse = per_crop.rename(
+        columns={"n_matches": "tps", "n_unmatched_b": "fps", "n_unmatched_a": "fns"},
+    )
+    return average_scores_per_row(pd.concat([forward, reverse], ignore_index=True))
 
 
 def _parse_annotation_specs(specs: List[str]) -> Dict[str, str]:
