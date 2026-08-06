@@ -186,5 +186,10 @@
 		"precision": 0.958,
 		"recall": 0.956,
 		"f1-score": 0.957
+	},
+	"pairwise": {
+		"precision": 0.763,
+		"recall": 0.763,
+		"f1-score": 0.76
 	}
 }

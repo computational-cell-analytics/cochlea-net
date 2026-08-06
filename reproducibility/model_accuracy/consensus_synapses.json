@@ -114,5 +114,20 @@
 		"precision": 0.931,
 		"recall": 0.948,
 		"f1-score": 0.939
+	},
+	"pairwise": {
+		"precision": 0.885,
+		"recall": 0.885,
+		"f1-score": 0.879
+	},
+	"solitary_1of2": {
+		"precision": 0.94,
+		"recall": 0.831,
+		"f1-score": 0.877
+	},
+	"solitary_2of2": {
+		"precision": 0.825,
+		"recall": 0.947,
+		"f1-score": 0.878
 	}
 }
