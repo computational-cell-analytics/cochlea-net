@@ -4,6 +4,7 @@
 import os
 import re
 from collections import defaultdict
+from itertools import combinations
 from typing import Dict, List, Optional, Tuple
 
 import imageio.v3 as imageio
@@ -19,6 +20,9 @@ from skimage.segmentation import relabel_sequential
 from tqdm import tqdm
 
 from .s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
+
+# Column order of point annotations, which are stored in pixel coordinates.
+COORDINATE_COLUMNS = ["axis-0", "axis-1", "axis-2"]
 
 
 def _normalize_cochlea_name(name):
@@ -285,6 +289,283 @@ def compute_scores_for_annotated_slice(
     fp = len(result["fp"])
     fn = len(result["fn"])
     return {"tp": tp, "fp": fp, "fn": fn}
+
+
+def compute_scores_from_counts(tp: int, fp: int, fn: int) -> Dict[str, Optional[float]]:
+    """Compute precision, recall, and F1-score. A score without a defined value is None."""
+    precision = tp / (tp + fp) if (tp + fp) > 0 else None
+    recall = tp / (tp + fn) if (tp + fn) > 0 else None
+    if precision is None or recall is None or (precision + recall) == 0:
+        f1_score = None
+    else:
+        f1_score = 2 * precision * recall / (precision + recall)
+
+    return {
+        "precision": None if precision is None else round(float(precision), 3),
+        "recall": None if recall is None else round(float(recall), 3),
+        "f1-score": None if f1_score is None else round(float(f1_score), 3),
+    }
+
+
+def compute_consensus_scores(results: pd.DataFrame) -> Dict[str, dict]:
+    """Compute the scores of individual annotators with respect to a consensus annotation.
+
+    Args:
+        results: Table with the columns "annotator", "file_name", "tps", "fps", and "fns".
+            Each row holds the counts of one annotator for one annotated crop.
+
+    Returns:
+        Dictionary with one entry per annotator, which holds the per-crop counts and the scores
+        of this annotator, and an "all" entry with the scores pooled over all annotators.
+    """
+    required_columns = ["annotator", "file_name", "tps", "fps", "fns"]
+    missing = [column for column in required_columns if column not in results.columns]
+    if missing:
+        raise ValueError(f"The results table is missing the columns {missing}.")
+
+    scores = {}
+    for annotator, table in results.groupby("annotator", sort=True):
+        scores[annotator] = {
+            "crops": table.file_name.tolist(),
+            "tp": [int(v) for v in table.tps],
+            "fp": [int(v) for v in table.fps],
+            "fn": [int(v) for v in table.fns],
+            **compute_scores_from_counts(int(table.tps.sum()), int(table.fps.sum()), int(table.fns.sum())),
+        }
+
+    scores["all"] = compute_scores_from_counts(
+        int(results.tps.sum()), int(results.fps.sum()), int(results.fns.sum())
+    )
+    return scores
+
+
+def average_scores_per_row(results: pd.DataFrame) -> Dict[str, Optional[float]]:
+    """Compute the unweighted mean of the per-row precision, recall, and F1-score.
+
+    Each row counts equally, independent of how many annotations it holds.
+
+    Args:
+        results: Table with the columns "tps", "fps", and "fns". Each row holds the counts
+            of one comparison.
+
+    Returns:
+        Dictionary with the mean precision, recall, and F1-score. A score is None if no row
+        has a defined value for it.
+    """
+    required_columns = ["tps", "fps", "fns"]
+    missing = [column for column in required_columns if column not in results.columns]
+    if missing:
+        raise ValueError(f"The results table is missing the columns {missing}.")
+
+    per_row = [
+        compute_scores_from_counts(int(row.tps), int(row.fps), int(row.fns))
+        for row in results.itertuples()
+    ]
+
+    averages = {}
+    for name in ("precision", "recall", "f1-score"):
+        # A row with an undefined score is skipped for this score only.
+        values = [scores[name] for scores in per_row if scores[name] is not None]
+        averages[name] = round(float(np.mean(values)), 3) if values else None
+    return averages
+
+
+def _safe_ratio(numerator: int, denominator: int) -> float:
+    return float(numerator / denominator) if denominator else np.nan
+
+
+def _read_annotation_coordinates(path: str, voxel_size: float) -> np.ndarray:
+    """Read annotation coordinates and scale them by the voxel size."""
+    coordinates = pd.read_csv(path, usecols=COORDINATE_COLUMNS)[COORDINATE_COLUMNS]
+    return coordinates.values.astype(float) * voxel_size
+
+
+def _agreement_metrics(n_a: int, n_b: int, n_matches: int) -> dict:
+    """Compute the agreement scores for one annotator pair.
+
+    Precision and recall are directional: they treat annotator a as the prediction and
+    annotator b as the reference. They swap when the two annotators are exchanged. The
+    F1-score is the harmonic mean of the two and does not depend on the direction.
+    """
+    return {
+        "n_annotations_a": n_a,
+        "n_annotations_b": n_b,
+        "n_matches": n_matches,
+        "n_unmatched_a": n_a - n_matches,
+        "n_unmatched_b": n_b - n_matches,
+        "precision": _safe_ratio(n_matches, n_a),
+        "recall": _safe_ratio(n_matches, n_b),
+        "f1-score": _safe_ratio(2 * n_matches, n_a + n_b),
+        "jaccard": _safe_ratio(n_matches, n_a + n_b - n_matches),
+    }
+
+
+def compute_pairwise_agreement(
+    annotations_per_crop: Dict[str, Dict[str, str]],
+    matching_distance: float,
+    voxel_size: float = 1.0,
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Compute the agreement of all annotator pairs, without using a consensus annotation.
+
+    Every annotator pair is compared directly on the crops both annotated. No annotator is
+    treated as the reference, so the result is not correlated with a consensus annotation
+    that the same annotators contributed to.
+
+    Args:
+        annotations_per_crop: Mapping from crop name to a mapping from annotator name to the
+            path of the annotation in CSV format.
+        matching_distance: Maximum one-to-one matching distance, in the unit that results from
+            scaling the annotation coordinates by voxel_size.
+        voxel_size: Isotropic voxel size used to scale the annotation coordinates. The default
+            of 1.0 keeps the coordinates and the matching distance in voxels.
+
+    Returns:
+        A per-crop results table with one row per annotator pair and crop.
+        A summary table with one row per annotator pair, pooled over the crops.
+    """
+    if matching_distance < 0:
+        raise ValueError("matching_distance must be non-negative")
+    if voxel_size <= 0:
+        raise ValueError("voxel_size must be positive")
+
+    annotators = sorted({annotator for crop in annotations_per_crop.values() for annotator in crop})
+    if len(annotators) < 2:
+        raise ValueError(f"At least two annotators are required, got {annotators}.")
+
+    for annotator in annotators:
+        missing = sorted(crop for crop, paths in annotations_per_crop.items() if annotator not in paths)
+        if missing:
+            print(f"Warning: {annotator} has no annotation for {len(missing)} of "
+                  f"{len(annotations_per_crop)} crops: {missing}.")
+
+    records = []
+    for annotator_a, annotator_b in combinations(annotators, 2):
+        shared_crops = sorted(
+            crop for crop, paths in annotations_per_crop.items()
+            if annotator_a in paths and annotator_b in paths
+        )
+        if not shared_crops:
+            print(f"Warning: skipping the pair {annotator_a} and {annotator_b}. They share no crop.")
+            continue
+
+        for crop in shared_crops:
+            paths = annotations_per_crop[crop]
+            coordinates_a = _read_annotation_coordinates(paths[annotator_a], voxel_size)
+            coordinates_b = _read_annotation_coordinates(paths[annotator_b], voxel_size)
+            matched_a, matched_b, _, _ = match_detections(
+                coordinates_a, coordinates_b, max_dist=matching_distance,
+            )
+            match_distances = np.linalg.norm(
+                coordinates_a[matched_a] - coordinates_b[matched_b], axis=1,
+            )
+
+            records.append({
+                "annotator_a": annotator_a,
+                "annotator_b": annotator_b,
+                "crop": crop,
+                "matching_distance": matching_distance,
+                "voxel_size": voxel_size,
+                **_agreement_metrics(len(coordinates_a), len(coordinates_b), len(matched_a)),
+                "mean_match_distance": float(match_distances.mean()) if len(match_distances) else np.nan,
+                "max_match_distance": float(match_distances.max()) if len(match_distances) else np.nan,
+            })
+
+    if not records:
+        raise ValueError("No annotator pair shares a crop, so the agreement cannot be computed.")
+
+    per_crop = pd.DataFrame(records)
+    summaries = []
+    for (annotator_a, annotator_b), group in per_crop.groupby(["annotator_a", "annotator_b"], sort=True):
+        n_matches_per_crop = group["n_matches"].to_numpy()
+        mean_distances = group["mean_match_distance"].to_numpy()
+        have_matches = n_matches_per_crop > 0
+        # Weight each crop by its number of matches, so that the pooled mean is the mean over
+        # all matched pairs of points rather than the mean over crops.
+        pooled_mean_distance = (
+            float(np.average(mean_distances[have_matches], weights=n_matches_per_crop[have_matches]))
+            if have_matches.any() else np.nan
+        )
+
+        summaries.append({
+            "annotator_a": annotator_a,
+            "annotator_b": annotator_b,
+            "n_crops": len(group),
+            "matching_distance": matching_distance,
+            "voxel_size": voxel_size,
+            **_agreement_metrics(
+                int(group["n_annotations_a"].sum()),
+                int(group["n_annotations_b"].sum()),
+                int(group["n_matches"].sum()),
+            ),
+            "macro_precision": float(group["precision"].mean()),
+            "macro_recall": float(group["recall"].mean()),
+            "macro_f1-score": float(group["f1-score"].mean()),
+            "mean_match_distance": pooled_mean_distance,
+            "max_match_distance": float(group["max_match_distance"].max()),
+        })
+
+    return per_crop, pd.DataFrame(summaries)
+
+
+def average_pairwise_scores(per_crop: pd.DataFrame) -> Dict[str, Optional[float]]:
+    """Average the pairwise agreement over all ordered annotator pairs and crops.
+
+    The per-crop table holds one row per unordered pair, with the counts of the direction
+    "a as prediction". This function adds the reverse direction of every row, so that neither
+    annotator is treated as the reference. Precision for the pair (a, b) is the recall for the
+    pair (b, a), so the returned precision and recall are equal by construction. The F1-score
+    differs from them, because it is a harmonic instead of an arithmetic mean.
+
+    Args:
+        per_crop: Per-crop table returned by compute_pairwise_agreement.
+
+    Returns:
+        Dictionary with the mean precision, recall, and F1-score.
+    """
+    forward = per_crop.rename(
+        columns={"n_matches": "tps", "n_unmatched_a": "fps", "n_unmatched_b": "fns"},
+    )
+    reverse = per_crop.rename(
+        columns={"n_matches": "tps", "n_unmatched_b": "fps", "n_unmatched_a": "fns"},
+    )
+    return average_scores_per_row(pd.concat([forward, reverse], ignore_index=True))
+
+
+def evaluate_pairwise_agreement(
+    annotations_per_crop: Dict[str, Dict[str, str]],
+    table_dir: str,
+    matching_distance: float,
+    voxel_size: float = 1.0,
+) -> Dict[str, Optional[float]]:
+    """Evaluate the pairwise annotator agreement and save the result tables.
+
+    Args:
+        annotations_per_crop: Mapping from crop name to a mapping from annotator name to the
+            path of the annotation in CSV format.
+        table_dir: Output directory for pairwise_agreement_per_crop.csv and
+            pairwise_agreement_summary.csv.
+        matching_distance: Maximum one-to-one matching distance, in the unit that results from
+            scaling the annotation coordinates by voxel_size.
+        voxel_size: Isotropic voxel size used to scale the annotation coordinates.
+
+    Returns:
+        Dictionary with the mean precision, recall, and F1-score over all annotator pairs.
+    """
+    per_crop, summary = compute_pairwise_agreement(
+        annotations_per_crop, matching_distance=matching_distance, voxel_size=voxel_size,
+    )
+
+    per_crop_path = os.path.join(table_dir, "pairwise_agreement_per_crop.csv")
+    summary_path = os.path.join(table_dir, "pairwise_agreement_summary.csv")
+    per_crop.to_csv(per_crop_path, index=False)
+    summary.to_csv(summary_path, index=False)
+
+    print("Pairwise agreement between annotators:")
+    print(summary.to_string(index=False, float_format=lambda value: f"{value:.3f}"))
+    print(f"Saved per-crop results to {per_crop_path}")
+    print(f"Saved summary results to {summary_path}")
+
+    return average_pairwise_scores(per_crop)
 
 
 def create_consensus_annotations(

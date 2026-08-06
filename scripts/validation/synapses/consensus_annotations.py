@@ -4,7 +4,10 @@ from glob import glob
 from typing import Optional
 
 import pandas as pd
-from flamingo_tools.validation import create_consensus_annotations, match_detections
+from flamingo_tools.json_util import update_json
+from flamingo_tools.validation import (
+    compute_consensus_scores, create_consensus_annotations, evaluate_pairwise_agreement, match_detections,
+)
 from flamingo_tools.synapse_detection.read_imaris_data import extract_training_data
 
 ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/Synapses_2026-04"
@@ -106,9 +109,26 @@ def consensus_annotations(
     print("Saved to", output_path)
 
 
+def annotations_per_crop(consensus_dir: str) -> dict:
+    """Map each crop to the individual annotations of all annotators.
+
+    Args:
+        consensus_dir: Directory containing the consensus annotations in CSV format. Only used to
+            determine the crops.
+
+    Returns:
+        Dictionary that maps a crop name to a dictionary of annotator name and annotation path.
+    """
+    return {
+        os.path.splitext(os.path.basename(consensus_file))[0]: match_annotations(consensus_file)
+        for consensus_file in sorted(glob(os.path.join(consensus_dir, "*.csv")))
+    }
+
+
 def evaluate_consensus(
     consensus_dir: str,
-    output_dir: str,
+    table_dir: str,
+    output_dir: Optional[str] = None,
     max_dist: float = 2.0,
     voxel_size: float = VOXEL_SIZE,
 ) -> None:
@@ -117,12 +137,16 @@ def evaluate_consensus(
 
     Args:
         consensus_dir: Directory containing annotations in CSV format.
-        output_dir: Output directory for consensus_evaluation.csv
+        table_dir: Output directory for consensus_evaluation.csv
+        output_dir: Optional output directory for consensus_synapses.json.
         max_dist: Maximal matching distance in µm for spots.
         voxel_size: Isotropic voxel size in µm.
     """
     max_dist_voxels = _distance_um_to_voxels(max_dist, voxel_size)
     consensus_files = sorted(glob(os.path.join(consensus_dir, "*.csv")))
+    if len(consensus_files) == 0:
+        raise ValueError(f"Could not find any consensus annotation in {consensus_dir}.")
+
     results = {
         "annotator": [],
         "file_name": [],
@@ -146,23 +170,18 @@ def evaluate_consensus(
             results["fns"].append(len(fn))
 
     results = pd.DataFrame(results)
-    output_path = os.path.join(output_dir, "consensus_evaluation.csv")
+    output_path = os.path.join(table_dir, "consensus_evaluation.csv")
     results.to_csv(output_path, index=False)
 
-    tp = results.tps.sum()
-    fp = results.fps.sum()
-    fn = results.fns.sum()
-
-    precision = tp / (tp + fp)
-    recall = tp / (tp + fn)
-    f1_score = 2 * precision * recall / (precision + recall)
+    scores = compute_consensus_scores(results)
 
     print("All results:")
     print(results)
     print("Evaluation:")
-    print("Precision:", precision)
-    print("Recall:", recall)
-    print("F1-Score:", f1_score)
+    print(pd.DataFrame(scores).T[["precision", "recall", "f1-score"]])
+
+    if output_dir is not None:
+        update_json(scores, os.path.join(output_dir, "consensus_synapses.json"))
 
 
 def main():
@@ -173,6 +192,10 @@ def main():
 
     parser.add_argument("-d", "--matching_distance", type=float, default=2.,
                         help="Matching distance in µm for annotations.")
+    parser.add_argument("-o", "--output_dir", type=str, default=None,
+                        help="Optional directory to save the accuracy JSON file (consensus_synapses.json).")
+    parser.add_argument("--pairwise", action="store_true",
+                        help="Also evaluate the direct agreement between all annotator pairs.")
     args = parser.parse_args()
 
     if args.annotation_dirs is None:
@@ -204,7 +227,20 @@ def main():
         consensus_annotations(image_path, args.matching_distance)
 
     # evaluate consensus annotation
-    evaluate_consensus(consensus_dir=OUTPUT_FOLDER, output_dir=ROOT, max_dist=args.matching_distance)
+    evaluate_consensus(
+        consensus_dir=OUTPUT_FOLDER, table_dir=ROOT, output_dir=args.output_dir,
+        max_dist=args.matching_distance,
+    )
+
+    # The consensus is derived from the same annotations it is compared against, so the scores
+    # above are correlated with the individual annotations. The pairwise agreement is not.
+    if args.pairwise:
+        scores = evaluate_pairwise_agreement(
+            annotations_per_crop(OUTPUT_FOLDER), table_dir=ROOT,
+            matching_distance=args.matching_distance, voxel_size=VOXEL_SIZE,
+        )
+        if args.output_dir is not None:
+            update_json({"pairwise": scores}, os.path.join(args.output_dir, "consensus_synapses.json"))
 
 
 if __name__ == "__main__":

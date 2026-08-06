@@ -1,0 +1,123 @@
+{
+	"AMD": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195"
+		],
+		"tp": [
+			179,
+			69,
+			213,
+			187,
+			193,
+			237
+		],
+		"fp": [
+			11,
+			10,
+			18,
+			8,
+			7,
+			6
+		],
+		"fn": [
+			20,
+			13,
+			4,
+			7,
+			15,
+			12
+		],
+		"precision": 0.947,
+		"recall": 0.938,
+		"f1-score": 0.943
+	},
+	"EK": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195"
+		],
+		"tp": [
+			195,
+			81,
+			198,
+			180,
+			192,
+			218
+		],
+		"fp": [
+			12,
+			2,
+			4,
+			2,
+			4,
+			10
+		],
+		"fn": [
+			4,
+			1,
+			19,
+			14,
+			16,
+			31
+		],
+		"precision": 0.969,
+		"recall": 0.926,
+		"f1-score": 0.947
+	},
+	"LR": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195"
+		],
+		"tp": [
+			193,
+			82,
+			208,
+			194,
+			206,
+			242
+		],
+		"fp": [
+			29,
+			38,
+			26,
+			15,
+			22,
+			19
+		],
+		"fn": [
+			6,
+			0,
+			9,
+			0,
+			2,
+			7
+		],
+		"precision": 0.883,
+		"recall": 0.979,
+		"f1-score": 0.929
+	},
+	"all": {
+		"precision": 0.931,
+		"recall": 0.948,
+		"f1-score": 0.939
+	},
+	"pairwise": {
+		"precision": 0.885,
+		"recall": 0.885,
+		"f1-score": 0.879
+	}
+}

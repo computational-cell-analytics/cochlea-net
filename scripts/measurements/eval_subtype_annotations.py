@@ -1,4 +1,5 @@
 import argparse
+import copy
 import json
 import os
 from typing import List, Optional
@@ -8,7 +9,7 @@ import pandas as pd
 import flamingo_tools.intensity_annotation.eval_annotations as eval_utils
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE
+from flamingo_tools.postprocessing.sgn_subtype_utils import CUSTOM_THRESHOLDS, COCHLEAE, subtype_measurement_table
 
 MARKER_DIR_SUBTYPE = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/SGN_subtypes"
 
@@ -25,6 +26,7 @@ def eval_subtype_annotation(
     mobie_dir: str = MOBIE_FOLDER,
     seg_name: str = "SGN_v2",
     force_overwrite: bool = False,
+    compute_variance: bool = False,
     s3: Optional[bool] = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -45,6 +47,9 @@ def eval_subtype_annotation(
         seg_name: Identifier for segmentation.
         threshold_save_dir: Optional directory for saving the thresholds.
         force_overwrite: Whether to overwrite already existing results.
+        compute_variance: Whether to compare the marker percentages of the individual annotators
+            with each other and with the median thresholds. The result is saved per stain as
+            <cochlea>_<stain>_<seg>_variance.json next to the thresholds.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -78,44 +83,50 @@ def eval_subtype_annotation(
                 raise ValueError("Specify an output directory, when data is accessed from the S3 bucket.")
             else:
                 print(f"Using MoBIE directory {mobie_dir} for output paths.")
-                output_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
-                os.makedirs(output_dir, exist_ok=True)
+                out_dir = os.path.join(mobie_dir, cochlea, "tables", seg_name)
+                os.makedirs(out_dir, exist_ok=True)
                 # TODO: Overwrite default table after checking that other entries are identical.
-                out_path = os.path.join(output_dir, f"{subtype_str}_{seg_string}.tsv")
-                annot_out = os.path.join(output_dir, f"{subtype_str}_{seg_string}_annotations.tsv")
+                out_path = os.path.join(out_dir, f"{subtype_str}_{seg_string}.tsv")
+                annot_out = os.path.join(out_dir, f"{subtype_str}_{seg_string}_annotations.tsv")
 
         else:
-            os.makedirs(output_dir, exist_ok=True)
-            out_path = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
-            annot_out = os.path.join(output_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annot-overview.tsv")
+            out_dir = output_dir
+            os.makedirs(out_dir, exist_ok=True)
+            out_path = os.path.join(out_dir, f"{cochlea_str}_{subtype_str}_{seg_string}.tsv")
+            annot_out = os.path.join(out_dir, f"{cochlea_str}_{subtype_str}_{seg_string}_annot-overview.tsv")
 
         if os.path.exists(out_path) and os.path.exists(annot_out) and not force_overwrite:
             print(f"Skipping {out_path}. Output already exists.")
             continue
 
         # get the segmentation data and the segmentation table
+        # the paths are resolved per cochlea, so that the given paths stay valid for the next cochlea
         if data_seg_path is None:
             if s3:
-                data_seg_path = f"{cochlea}/images/ome-zarr/{seg_name}.ome.zarr"
+                seg_path = f"{cochlea}/images/ome-zarr/{seg_name}.ome.zarr"
             else:
-                data_seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+                seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+        else:
+            seg_path = data_seg_path
         if s3:
-            data_seg_path, fs = get_s3_path(data_seg_path, bucket_name=s3_bucket_name,
-                                            service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        data_seg = read_image_data(data_seg_path, input_key)
+            seg_path, fs = get_s3_path(seg_path, bucket_name=s3_bucket_name,
+                                       service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+        data_seg = read_image_data(seg_path, input_key)
 
         if table_seg_path is None:
             if s3:
-                table_seg_path = f"{cochlea}/tables/{seg_name}/default.tsv"
+                seg_table = f"{cochlea}/tables/{seg_name}/default.tsv"
             else:
-                table_seg_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, "default.tsv")
+                seg_table = os.path.join(mobie_dir, cochlea, "tables", seg_name, "default.tsv")
+        else:
+            seg_table = table_seg_path
         if s3:
-            table_path_s3, fs = get_s3_path(table_seg_path, bucket_name=s3_bucket_name,
+            table_path_s3, fs = get_s3_path(seg_table, bucket_name=s3_bucket_name,
                                             service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
             with fs.open(table_path_s3, "r") as f:
                 table_seg = pd.read_csv(f, sep="\t")
         else:
-            table_seg = pd.read_csv(table_seg_path, sep="\t")
+            table_seg = pd.read_csv(seg_table, sep="\t")
 
         # Check whether to use intensity ratio of subtype / PV or object measures for thresholding
         intensity_mode = COCHLEAE[cochlea]["intensity"]
@@ -124,27 +135,17 @@ def eval_subtype_annotation(
         annot_table = None
         for stain in stains:
 
-            if table_meas_path is None:
-                if intensity_mode == "ratio":
-                    table_meas_name = "subtype_ratio.tsv"
-                    column = f"{stain}_ratio_PV"
-                elif intensity_mode == "absolute":
-                    table_meas_name = f"{stain}_{seg_string}_object-measures.tsv"
-                    column = "median"
-                else:
-                    raise ValueError("Choose either 'ratio' or 'median' as intensity mode.")
-
-                if s3:
-                    table_meas_path = f"{cochlea}/tables/{seg_name}/{table_meas_name}"
-                else:
-                    table_meas_path = os.path.join(mobie_dir, cochlea, "tables", seg_name, table_meas_name)
+            # the column depends on the stain, so it must be resolved for every stain
+            meas_table, column = subtype_measurement_table(cochlea, stain, seg_name, s3=s3, mobie_dir=mobie_dir)
+            if table_meas_path is not None:
+                meas_table = table_meas_path
 
             if s3:
-                table_path_s3, fs = get_s3_path(table_meas_path)
+                table_path_s3, fs = get_s3_path(meas_table)
                 with fs.open(table_path_s3, "r") as f:
                     table_meas = pd.read_csv(f, sep="\t")
             else:
-                table_meas = pd.read_csv(table_meas_path, sep="\t")
+                table_meas = pd.read_csv(meas_table, sep="\t")
 
             # check for legacy formatting, e.g. M_LR_000143_L instead of M-LR-000143-L
             search_str = cochlea_str
@@ -171,7 +172,7 @@ def eval_subtype_annotation(
 
             # create dictionary containing median intensity and segmentation ids for every crop
             om_dic = eval_utils.get_object_measures(annot_dic, intensity_dic, intensity_mode, stain)
-            om_out_path = os.path.join(output_dir, f"{cochlea_str}_{stain}_{seg_string}_crop-intensity.json")
+            om_out_path = os.path.join(out_dir, f"{cochlea_str}_{stain}_{seg_string}_crop-intensity.json")
             with open(om_out_path, "w") as f:
                 json.dump(om_dic, f, sort_keys=True, indent=4)
 
@@ -184,17 +185,40 @@ def eval_subtype_annotation(
             # load measurement table of output segmentation
             # this step can (hopefully) be ignored for future analysis
             if "output_seg" in list(COCHLEAE[cochlea].keys()):
-                output_seg = COCHLEAE[cochlea]["output_seg"]
-                table_meas_path = os.path.join(cochlea, "tables", output_seg, "subtype_ratio.tsv")
-                table_path_s3, fs = get_s3_path(table_meas_path)
-                with fs.open(table_path_s3, "r") as f:
-                    table_meas = pd.read_csv(f, sep="\t")
+                apply_table, column = subtype_measurement_table(
+                    cochlea, stain, output_seg, s3=s3, mobie_dir=mobie_dir,
+                )
+                if s3:
+                    table_path_s3, fs = get_s3_path(apply_table)
+                    with fs.open(table_path_s3, "r") as f:
+                        table_meas = pd.read_csv(f, sep="\t")
+                else:
+                    table_meas = pd.read_csv(apply_table, sep="\t")
 
             # Apply the threshold to all SGNs.
             if CUSTOM_THRESHOLDS.get(cochlea, {}).get(stain) is not None:
                 custom_threshold_dic = CUSTOM_THRESHOLDS[cochlea][stain]
             else:
                 custom_threshold_dic = None
+
+            # Compare the thresholds of the individual annotators with the median thresholds.
+            if compute_variance:
+                variance_dir = out_dir if threshold_save_dir is None else threshold_save_dir
+                os.makedirs(variance_dir, exist_ok=True)
+                if custom_threshold_dic is not None:
+                    print(f"Custom thresholds are used for cochlea {cochlea} and stain {stain}. "
+                          "The 'median' scenario of the variance evaluation uses the annotated thresholds.")
+                variance_dic = eval_utils.evaluate_annotator_variance(
+                    copy.deepcopy(intensity_dic), table_seg.copy(), table_meas, column=column,
+                    cochlea=cochlea, marker_name=stain, seg_name=output_seg,
+                    custom_thresholds=custom_threshold_dic is not None,
+                )
+                variance_out_path = os.path.join(
+                    variance_dir, f"{cochlea_str}_{stain}_{seg_string}_variance.json"
+                )
+                # The keys are not sorted, so that the per-crop breakdown stays at the end of the file.
+                with open(variance_out_path, "w") as f:
+                    json.dump(variance_dic, f, indent=4)
 
             table_seg = eval_utils.apply_nearest_threshold(
                 intensity_dic, table_seg, table_meas, column=column, suffix=stain,
@@ -220,6 +244,9 @@ def main():
     parser.add_argument("-a", "--annotation_dirs", type=str, nargs="+", default=None,
                         help="Directories containing marker annotations.")
     parser.add_argument("-t", "--threshold_save_dir")
+    parser.add_argument("--variance", action="store_true",
+                        help="Compare the marker percentages of the individual annotators "
+                        "with each other and with the median thresholds, for every subtype stain.")
 
     # options for specific data paths
     parser.add_argument("--seg_data", type=str, default=None,
@@ -257,6 +284,7 @@ def main():
         mobie_dir=args.mobie_dir,
         seg_name=args.seg_name,
         force_overwrite=args.force,
+        compute_variance=args.variance,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

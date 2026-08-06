@@ -1,4 +1,5 @@
 import argparse
+import json
 import os
 
 import numpy as np
@@ -58,30 +59,56 @@ def plot_legend_fig02c(
         raise ValueError("Choose either 'shapes' or 'colors' as plot_mode.")
 
 
+def _read_scores(data_dir: str, file_name: str, key: str) -> list:
+    """Read the precision, recall, and F1-score of one entry from an accuracy JSON file.
+
+    Args:
+        data_dir: Directory containing the accuracy JSON files.
+        file_name: Name of the accuracy JSON file.
+        key: Top-level entry of the file, e.g. a network version or an annotator scenario.
+
+    Returns:
+        The precision, recall, and F1-score of the entry.
+    """
+    json_file = os.path.join(data_dir, file_name)
+    with open(json_file, "r") as f:
+        param_dicts = json.load(f)
+    if key not in param_dicts:
+        raise KeyError(f"{json_file} has no entry '{key}'. Available entries: {sorted(param_dicts)}.")
+
+    scores = param_dicts[key]
+    return [scores["precision"], scores["recall"], scores["f1-score"]]
+
+
 def fig_02c(
     save_path: str,
+    data_dir: str,
     plot: bool = False,
+    annotator_keyword: str = "all",
 ):
     """Scatter plot showing the precision, recall, and F1-score of SGN (distance U-Net, manual),
     IHC (distance U-Net, manual), and synapse detection (U-Net).
     """
     prism_style()
-    # precision, recall, f1-score
-    sgn_unet = [0.887, 0.88, 0.884]
-    sgn_annotator = [0.95, 0.849, 0.9]
 
-    ihc_v4c = [0.905, 0.831, 0.866]
-    ihc_annotator = [0.958, 0.956, 0.957]
+    # SGN
+    sgn_unet = _read_scores(data_dir, "SGN.json", "distance_unet")
+    sgn_annotator = _read_scores(data_dir, "consensus_SGN.json", annotator_keyword)
 
-    syn_unet = [0.971, 0.681, 0.8]
-    syn_annotator = [0.915, 0.945, 0.930]
+    # IHC
+    ihc_unet = _read_scores(data_dir, "IHC_3D.json", "v11")
+    ihc_annotator = _read_scores(data_dir, "consensus_IHC.json", annotator_keyword)
+
+    # synapses
+    syn_unet = _read_scores(data_dir, "synapses.json", "v5_05t")
+    syn_annotator = _read_scores(data_dir, "consensus_synapses.json", annotator_keyword)
 
     setting = ["SGN", "IHC", "Synapse"]
 
     # This is the version with IHC v4c segmentation:
     # 4th version of the network with optimized segmentation params and split of falsely merged IHCs
     manual = [sgn_annotator, ihc_annotator, syn_annotator]
-    automatic = [sgn_unet, ihc_v4c, syn_unet]
+    automatic = [sgn_unet, ihc_unet, syn_unet]
 
     precision_manual = [i[0] for i in manual]
     recall_manual = [i[1] for i in manual]
@@ -270,12 +297,29 @@ def main():
     parser = argparse.ArgumentParser(description="Generate plots for Figure 2 of the CochleaNet paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.", default="./panels/fig2")
     parser.add_argument("--plot", action="store_true")
+    _default_data_dir = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+        "reproducibility", "model_accuracy",
+    )
+    parser.add_argument(
+        "--data_dir", "-d", type=str, default=_default_data_dir,
+        help="Directory containing the model accuracy files (SGN.json, IHC.json, IHC_3D.json, "
+             "synapses.json) and the annotator accuracy files (consensus_SGN.json, consensus_IHC.json, "
+             f"consensus_synapses.json). Defaults to {_default_data_dir}.",
+    )
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
 
     # Panel C: Evaluation of the segmentation results:
-    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c.{FILE_EXTENSION}"), plot=args.plot)
+    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c.{FILE_EXTENSION}"),
+            data_dir=args.data_dir, plot=args.plot)
+
+    annotator_keyword = "pairwise"
+    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c_{annotator_keyword}.{FILE_EXTENSION}"),
+            data_dir=args.data_dir, plot=args.plot,
+            annotator_keyword=annotator_keyword,)
+
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_shapes.{FILE_EXTENSION}"), plot_mode="shapes")
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_colors.{FILE_EXTENSION}"), plot_mode="colors")
 
