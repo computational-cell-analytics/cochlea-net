@@ -1,5 +1,7 @@
+import multiprocessing
 import os
 import warnings
+from concurrent import futures
 from typing import Optional, Tuple, Union
 
 import numpy as np
@@ -16,6 +18,10 @@ from flamingo_tools.segmentation.unet_prediction import prediction_impl, SelectC
 # Must match the sigma used in CsvHeatmapFlowTransform during training.
 _HEATMAP_FLOW_SIGMA = 1
 
+# Peak detection reads whole chunks. A block that equals one chunk makes the halo
+# dominate the read volume, so grow the block until it reaches this voxel budget.
+_DETECTION_BLOCK_VOXELS = 32_000_000
+
 
 def _get_model_out_channels(model_path):
     """Return the number of output channels of a model file or trainer checkpoint."""
@@ -31,6 +37,49 @@ def _get_model_out_channels(model_path):
     if isinstance(obj, dict) and "model_state" in obj:
         return obj["init"]["model_kwargs"].get("out_channels", 1)
     return obj.state_dict()["out_conv.bias"].shape[0]
+
+
+def _detection_block_shape(chunks):
+    """Return the smallest multiple of *chunks* that fits into the block voxel budget."""
+    block = list(chunks)
+    while 2 * int(np.prod(block)) <= _DETECTION_BLOCK_VOXELS:
+        block[int(np.argmin(block))] *= 2
+    return tuple(block)
+
+
+def _apply_flow_correction(pred, peak_coords, n_threads):
+    """Shift peaks to sub-voxel positions with the stereographic flow channels.
+
+    The flow values are read one chunk at a time. A per-peak read decompresses a
+    full chunk for every single lookup.
+    """
+    chunk_shape = np.asarray(getattr(pred, "chunks", pred.shape)[-3:])
+    chunk_ids = peak_coords // chunk_shape
+    flat_ids = np.ravel_multi_index(chunk_ids.T, chunk_ids.max(axis=0) + 1)
+
+    order = np.argsort(flat_ids, kind="stable")
+    sorted_ids = flat_ids[order]
+    group_starts = np.flatnonzero(np.r_[True, sorted_ids[1:] != sorted_ids[:-1]])
+    groups = np.split(order, group_starts[1:])
+
+    adjusted = np.empty((len(peak_coords), 3), dtype="float64")
+
+    def correct_group(indices):
+        points = peak_coords[indices]
+        start = points.min(axis=0)
+        bounding_box = (slice(1, 5),) + tuple(
+            slice(int(beg), int(end)) for beg, end in zip(start, points.max(axis=0) + 1)
+        )
+        flow = np.asarray(pred[bounding_box])
+        local = points - start
+        values = flow[:, local[:, 0], local[:, 1], local[:, 2]].astype("float64")
+        denominator = 1.0 + values[0] + 1e-8
+        adjusted[indices] = points + _HEATMAP_FLOW_SIGMA * values[1:].T / denominator[:, None]
+
+    with futures.ThreadPoolExecutor(n_threads) as pool:
+        list(pool.map(correct_group, groups))
+
+    return adjusted
 
 
 def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n_threads):
@@ -60,21 +109,9 @@ def _flow_corrected_detections(pred, min_distance, threshold_abs, block_shape, n
     if not have_flow or len(peak_coords) == 0:
         print("Use peak detection from local maxima.")
         return peak_coords.astype(float)
-    else:
-        print("Adjusting peak detection using heatmap.")
 
-    s = _HEATMAP_FLOW_SIGMA
-    adjusted = np.empty((len(peak_coords), 3), dtype=float)
-    for i, (z, y, x) in enumerate(peak_coords):
-        zi, yi, xi = int(z), int(y), int(x)
-        w = float(pred[1, zi, yi, xi])
-        vz = float(pred[2, zi, yi, xi])
-        vy = float(pred[3, zi, yi, xi])
-        vx = float(pred[4, zi, yi, xi])
-        denom = 1.0 + w + 1e-8
-        adjusted[i] = [z + s * vz / denom, y + s * vy / denom, x + s * vx / denom]
-
-    return adjusted
+    print("Adjusting peak detection using heatmap.")
+    return _apply_flow_correction(pred, peak_coords, n_threads)
 
 
 def map_and_filter_detections(
@@ -145,29 +182,36 @@ def synapse_detection_from_prediction(
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     force_overwrite: bool = False,
     threshold: float = 0.5,
-):
+    n_threads: Optional[int] = None,
+) -> pd.DataFrame:
     """Run synapse detection for prediction.
 
     Args:
         prediction_path: Input path to synapse prediction in ZARR format.
         detection_path: Output path for synapse detection.
-        block_shape: The block-shape for running the prediction.
+        block_shape: The block-shape for peak detection. By default it is derived from the
+            chunks of the prediction.
         prediction_key: Input key for prediction.
         voxel_size: The voxel size of the data in micrometer.
         force_overwrite: Forcefully overwrite output detection.
         threshold: Absolute heatmap threshold for peak detection. If None, the
             threshold is loaded from cache or determined via gridsearch on the
             validation set used during training (requires *model_path*).
+        n_threads: The number of threads for peak detection and flow correction.
+
+    Returns:
+        The detections in MoBIE compatible format, with coordinates in micrometer.
     """
     print(f"Using detection threshold: {threshold:.3f}")
+    n_threads = min(16, multiprocessing.cpu_count()) if n_threads is None else n_threads
 
     if not os.path.exists(detection_path) or force_overwrite:
         pred = zarr.open(prediction_path, mode="r")[prediction_key]
-        # Use spatial chunk shape (drop leading channel dim for multi-channel predictions).
-        det_block_shape = block_shape or tuple(pred.chunks[-3:])
+        # Use the spatial chunk shape (drop the leading channel dim for multi-channel predictions).
+        det_block_shape = block_shape or _detection_block_shape(pred.chunks[-3:])
         detections = _flow_corrected_detections(
             pred, min_distance=2, threshold_abs=threshold,
-            block_shape=det_block_shape, n_threads=16,
+            block_shape=det_block_shape, n_threads=n_threads,
         )
         # Save the result in MoBIE compatible format.
         detections = np.concatenate(
@@ -183,6 +227,9 @@ def synapse_detection_from_prediction(
         detections.to_csv(detection_path, index=False, sep="\t")
     else:
         print(f"Skipping peak detection. {detection_path} already exists.")
+        detections = pd.read_csv(detection_path, sep="\t")
+
+    return detections
 
 
 def run_prediction(
@@ -194,6 +241,7 @@ def run_prediction(
     halo: Optional[Tuple[int, int, int]] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     threshold: float = 0.5,
+    n_threads: Optional[int] = None,
 ):
     """Run prediction for synapse detection.
 
@@ -206,6 +254,7 @@ def run_prediction(
         halo: The halo (= block overlap) to use for prediction.
         voxel_size: The voxel size of the data in micrometer.
         threshold: Threshold for peak detection.
+        n_threads: The number of threads for peak detection and flow correction.
     """
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
@@ -227,9 +276,9 @@ def run_prediction(
     synapse_detection_from_prediction(
         output_path, detection_path,
         prediction_key=prediction_key,
-        block_shape=block_shape,
         voxel_size=voxel_size,
         threshold=threshold,
+        n_threads=n_threads,
     )
 
 
@@ -305,13 +354,9 @@ def marker_detection(
             block_shape=None, halo=None,
         )
 
-    if not os.path.exists(detection_path):
-        synapse_detection_from_prediction(output_path, detection_path,
-                                          prediction_key=prediction_key, voxel_size=voxel_size)
-
-    else:
-        with open(detection_path, "r") as f:
-            detections = pd.read_csv(f, sep="\t")
+    detections = synapse_detection_from_prediction(
+        output_path, detection_path, prediction_key=prediction_key, voxel_size=voxel_size
+    )
 
     # 3.) Map the detections to IHC and filter them based on a distance criterion.
     # Use the function 'map_and_filter_detections' from above.

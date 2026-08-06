@@ -203,8 +203,10 @@ def prediction_impl(
             output = f.require_dataset(
                 "prediction",
                 shape=output_shape,
+                # zstd decompresses much faster than gzip, which dominates the cost of the
+                # block-wise reads in the detection and segmentation steps that follow.
+                compression="zstd",
                 chunks=output_chunks,
-                compression="gzip",
                 dtype="float32",
             )
 
