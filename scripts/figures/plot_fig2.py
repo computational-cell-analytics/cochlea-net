@@ -100,7 +100,7 @@ def fig_02c(
     ihc_annotator = _read_scores(data_dir, "consensus_IHC.json", annotator_keyword)
 
     # synapses
-    syn_unet = _read_scores(data_dir, "synapses.json", "v5_05t")
+    syn_unet = _read_scores(data_dir, "synapses.json", "v5")
     syn_annotator = _read_scores(data_dir, "consensus_synapses.json", annotator_keyword)
 
     setting = ["SGN", "IHC", "Synapse"]
