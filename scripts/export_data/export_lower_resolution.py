@@ -195,12 +195,14 @@ def export_lower_resolution(
                 else:
                     applied_filter = upscale_volume(data, filter_volume, upscale_factor=us_factor)
                 data[applied_filter == 0] = 0
-                if "PV" in channel:
-                    max_intensity = 1400
-                    data[data > max_intensity] = max_intensity
-                if "CTBP2" in channel:
-                    max_intensity = 1400
-                    data[data > max_intensity] = max_intensity
+
+            # filtering of bright outliers
+            if "PV" in channel:
+                max_intensity = 1400
+                data[data > max_intensity] = max_intensity
+            if "CTBP2" in channel:
+                max_intensity = 1400
+                data[data > max_intensity] = max_intensity
 
             if binarize:
                 data = (data > 0).astype("uint16")
