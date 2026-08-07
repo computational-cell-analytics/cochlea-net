@@ -102,7 +102,8 @@ class TestFlowCorrection(unittest.TestCase):
             detection_path = os.path.join(tmp_dir, "synapse_detection.tsv")
             no_flow_path = os.path.join(tmp_dir, "synapse_detection_no-flow.tsv")
 
-            detections = synapse_detection_from_prediction(prediction_path, detection_path, threshold=0.5)
+            detections = synapse_detection_from_prediction(prediction_path, detection_path, threshold=0.5,
+                                                           save_no_flow=True)
             self.assertTrue(os.path.exists(detection_path))
             self.assertGreater(len(detections), 0)
             self.assertEqual(list(detections.columns), ["spot_id", "x", "y", "z"])
@@ -116,7 +117,8 @@ class TestFlowCorrection(unittest.TestCase):
             self.assertFalse(np.allclose(no_flow_detections.values, detections.values))
 
             # The second call must load the result that was written before.
-            reloaded = synapse_detection_from_prediction(prediction_path, detection_path, threshold=0.5)
+            reloaded = synapse_detection_from_prediction(prediction_path, detection_path, threshold=0.5,
+                                                         save_no_flow=True)
             np.testing.assert_allclose(reloaded.values, detections.values)
 
     def test_detection_from_prediction_no_flow_disabled(self):
