@@ -29,12 +29,13 @@ from .data_transfer_utils import (
     MAX_RETRIES,
     RETRY_DELAY,
     SMB_SERVER,
+    SMB_TIMEOUT,
     RetryConfig,
     copy_file_resilient,
     read_into,
     remote_size_map_with_retry,
+    resumable_download,
     retry_io,
-    transfer_path,
     wait_for_path,
 )
 from .file_utils import _parse_shape, read_tif, read_raw
@@ -547,13 +548,14 @@ class SmbSource:
     """
 
     def __init__(self, username, password, remote_root, smb_server=SMB_SERVER, log_file=None,
-                 retries=MAX_RETRIES):
+                 retries=MAX_RETRIES, timeout=SMB_TIMEOUT):
         self.username = username
         self.password = password
         self.remote_root = remote_root.replace("\\", "/").rstrip("/")
         self.smb_server = smb_server
         self.log_file = log_file
         self.retries = retries
+        self.timeout = timeout
         self.size_map = None
 
     def list_files(self) -> dict:
@@ -568,7 +570,7 @@ class SmbSource:
         if self.size_map is None:
             self.size_map = remote_size_map_with_retry(
                 self.username, self.password, self.remote_root, os.getcwd(),
-                retries=self.retries, smb_server=self.smb_server,
+                retries=self.retries, smb_server=self.smb_server, timeout=self.timeout,
             )
             if self.size_map is None:
                 raise RuntimeError(f"Could not list the remote directory {self.remote_root}.")
@@ -577,7 +579,8 @@ class SmbSource:
     def download(self, rel_path: str, stage_dir: str) -> str:
         """Download one remote file into a local directory, keeping its relative path.
 
-        A file that is already present with the expected size is not downloaded again.
+        A file that is already present with the expected size is not downloaded again, and a
+        transfer that stopped part way is continued where it stopped instead of started again.
 
         Args:
             rel_path: Path of the file relative to the remote root.
@@ -587,7 +590,7 @@ class SmbSource:
             The local path of the downloaded file.
 
         Raises:
-            RuntimeError: The download failed or the local size does not match the remote size.
+            RuntimeError: The download did not reach the size the share reports.
         """
         rel_dir, name = posixpath.split(rel_path)
         local_dir = os.path.join(stage_dir, *rel_dir.split("/")) if rel_dir else stage_dir
@@ -599,17 +602,17 @@ class SmbSource:
             return local_path
 
         remote_cd = f"{self.remote_root}/{rel_dir}" if rel_dir else self.remote_root
-        ok = transfer_path(
-            self.username, self.password, remote_cd=remote_cd, mget_target=name,
-            local_cwd=local_dir, retries=self.retries, log_file=self.log_file,
-            smb_server=self.smb_server,
+        ok = resumable_download(
+            self.username, self.password, remote_cd=remote_cd, name=name, local_cwd=local_dir,
+            expected_size=expected, retries=self.retries, log_file=self.log_file,
+            smb_server=self.smb_server, timeout=self.timeout,
         )
         if not ok:
-            raise RuntimeError(f"Could not download {rel_path} from {self.remote_root}.")
-        if expected is not None and os.path.getsize(local_path) != expected:
+            got = os.path.getsize(local_path) if os.path.exists(local_path) else 0
             raise RuntimeError(
-                f"Downloaded {rel_path} has {os.path.getsize(local_path)} bytes, "
-                f"but the share reports {expected} bytes."
+                f"Could not download {rel_path} from {self.remote_root}: got {got} bytes, "
+                f"the share reports {expected} bytes. The partial file is kept at {local_path}, "
+                "so running the same command again continues from there."
             )
         return local_path
 
@@ -713,6 +716,7 @@ def convert_lightsheet_to_bdv(
     username: Optional[str] = None,
     password: Optional[str] = None,
     smb_server: str = SMB_SERVER,
+    smb_timeout: int = SMB_TIMEOUT,
     stage_dir: Optional[str] = None,
     slab_memory: float = DEFAULT_SLAB_MEMORY,
     retry_config: Optional[RetryConfig] = None,
@@ -771,6 +775,8 @@ def convert_lightsheet_to_bdv(
         username: GWDG username. Reads the input from the SMB share instead of from a path.
         password: GWDG password. Asked for interactively if it is not given.
         smb_server: The SMB server that holds the input data.
+        smb_timeout: The per-operation timeout for smbclient in seconds. Raise it if a download
+            stops with NT_STATUS_IO_TIMEOUT.
         stage_dir: Local directory that holds one input file at a time. Required with `username`.
         slab_memory: Memory budget for one z-slab, in GB. It sets how many planes are read at once.
         retry_config: Retry behavior for the image reads.
@@ -810,7 +816,7 @@ def convert_lightsheet_to_bdv(
             password = getpass.getpass("Enter password: ")
         smb_source = SmbSource(
             username, password, remote_root=root, smb_server=smb_server, log_file=log_file,
-            retries=retry_config.max_retries,
+            retries=retry_config.max_retries, timeout=smb_timeout,
         )
 
     if stage_dir is not None:
@@ -995,6 +1001,12 @@ def convert_lightsheet_to_bdv_cli():
         "--smb_server", "-s", default=SMB_SERVER, help="The SMB server that holds the input data."
     )
     parser.add_argument(
+        "--smb_timeout", type=int, default=SMB_TIMEOUT,
+        help="The per-operation timeout for smbclient in seconds. smbclient's own default is 20, "
+             "which a multi-GB read exceeds. Raise it further if a download stops with "
+             "NT_STATUS_IO_TIMEOUT."
+    )
+    parser.add_argument(
         "--stage_dir", default=None,
         help="Local directory that holds one input file at a time. Required with --username, "
              "optional for a mounted path where reading slabs directly is still too unreliable."
@@ -1050,6 +1062,7 @@ def convert_lightsheet_to_bdv_cli():
         metadata_file_name_pattern=metadata_pattern,
         username=args.username,
         smb_server=args.smb_server,
+        smb_timeout=args.smb_timeout,
         stage_dir=args.stage_dir,
         slab_memory=args.slab_memory,
         n_threads=args.n_threads,

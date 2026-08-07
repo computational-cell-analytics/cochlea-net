@@ -24,6 +24,10 @@ SMB_SERVER = "//wfs-medizin-spezial.top.gwdg.de/ukon-all$"
 MAX_RETRIES = 10
 RETRY_DELAY = 5  # seconds
 
+# The per-operation timeout passed to smbclient with -t. Its own default is 20 seconds, which a
+# multi-GB sequential read exceeds; the man page recommends raising it when requests time out.
+SMB_TIMEOUT = 60  # seconds
+
 # smbclient often exits 0 even when a cd/mput/put failed, so upload success
 # cannot rely on the return code alone. These tokens in the streamed output
 # mark a failed upload unit.
@@ -32,6 +36,21 @@ UPLOAD_ERROR_TOKENS = (
     "NT_STATUS_OBJECT_PATH_NOT_FOUND",
     "NT_STATUS_ACCESS_DENIED",
     "NT_STATUS_NO_SUCH_FILE",
+)
+
+# A transfer can stop in the middle of a file while smbclient still exits 0, so the return code
+# alone cannot be trusted. These tokens mean the session itself is broken and the only correct
+# answer is to reconnect and try again. Keep per-file errors such as NT_STATUS_NO_SUCH_FILE out of
+# this tuple: with recurse on, one missing file inside a directory transfer would otherwise mark
+# the whole unit failed and retry forever.
+TRANSPORT_ERROR_TOKENS = (
+    "NT_STATUS_CONNECTION_DISCONNECTED",
+    "NT_STATUS_IO_TIMEOUT",
+    "NT_STATUS_CONNECTION_RESET",
+    "NT_STATUS_CONNECTION_ABORTED",
+    "NT_STATUS_NETWORK_NAME_DELETED",
+    "NT_STATUS_USER_SESSION_DELETED",
+    "NT_STATUS_UNEXPECTED_NETWORK_ERROR",
 )
 
 
@@ -235,9 +254,10 @@ def run_smbclient(
     commands: list[str],
     cwd: str,
     smb_server: str = SMB_SERVER,
+    timeout: int = SMB_TIMEOUT,
 ) -> tuple[list[str], bool, int]:
     """Run smbclient with the given command list; stream output in real time.
-    Terminates the process immediately on the first disconnect signal.
+    Terminates the process immediately on the first transport failure.
 
     Args:
         username: GWDG username.
@@ -245,12 +265,14 @@ def run_smbclient(
         commands: smbclient command list to run.
         cwd: Current working directory.
         smb_server: SMB server to connect to.
+        timeout: The per-operation timeout in seconds, passed to smbclient with -t.
 
     Returns:
-      lines, had_disconnect, returncode.
+      lines, had_disconnect, returncode. `had_disconnect` is True for any token in
+      TRANSPORT_ERROR_TOKENS, not only for a dropped connection.
 
     """
-    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}%{password}"]
+    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}%{password}", "-t", str(timeout)]
     cmd_input = "\n".join(commands + ["exit"])
 
     proc = subprocess.Popen(
@@ -271,7 +293,7 @@ def run_smbclient(
         line = line.rstrip()
         print(line)
         lines.append(line)
-        if "NT_STATUS_CONNECTION_DISCONNECTED" in line and not had_disconnect:
+        if any(token in line for token in TRANSPORT_ERROR_TOKENS) and not had_disconnect:
             had_disconnect = True
             proc.terminate()
             break
@@ -416,6 +438,96 @@ def transfer_path(
         username, password, commands, local_cwd=local_cwd, label=mget_target,
         retries=retries, log_file=log_file, smb_server=smb_server, error_tokens=None,
     )
+
+
+def resumable_download(
+    username: str,
+    password: str,
+    remote_cd: str,
+    name: str,
+    local_cwd: str,
+    expected_size: Optional[int] = None,
+    retries: int = MAX_RETRIES,
+    log_file: Optional[str] = None,
+    smb_server: str = SMB_SERVER,
+    timeout: int = SMB_TIMEOUT,
+) -> bool:
+    """Download one file, continuing an interrupted transfer where it stopped.
+
+    Uses smbclient's `reget`, which restarts at the end of the local file, so an attempt that
+    stops part way through a multi-GB file is continued instead of started again. Unlike
+    `transfer_path` this takes a single name and does not send `recurse`, so the recursive
+    directory walker is not involved.
+
+    Success is decided by the local file size rather than by the return code, because smbclient
+    can abort a transfer mid-file and still exit 0.
+
+    NOTE: `reget` continues at the end of the local file without comparing what is already there
+    against the remote file. This suits raw acquisition data, which does not change on the share.
+    Delete the local file first if the remote file may have been replaced.
+
+    Args:
+        username: GWDG username.
+        password: GWDG password.
+        remote_cd: Remote directory to cd into before the download.
+        name: Name of the file inside remote_cd.
+        local_cwd: Local directory that receives the file.
+        expected_size: Size of the remote file in bytes, used to decide success.
+            Falls back to the smbclient return code when it is not known.
+        retries: Maximal number of attempts.
+        log_file: File to log a failed download.
+        smb_server: SMB server to connect to.
+        timeout: The per-operation timeout in seconds.
+
+    Returns:
+        True on success, False after exhausting the attempts.
+    """
+    remote_cd = remote_cd.replace("\\", "/")
+    os.makedirs(local_cwd, exist_ok=True)
+    local_path = os.path.join(local_cwd, name)
+
+    def _local_size():
+        return os.path.getsize(local_path) if os.path.exists(local_path) else 0
+
+    commands = [f'cd "{remote_cd}"', f'reget "{name}"']
+
+    for attempt in range(1, retries + 1):
+        have = _local_size()
+
+        if expected_size is not None:
+            if have == expected_size:
+                if attempt > 1:
+                    print(f"  [done] {name} is complete ({expected_size} bytes)")
+                return True
+            if have > expected_size:
+                print(f"  [warn] {name} is larger than the remote file; downloading it again")
+                os.remove(local_path)
+                have = 0
+
+        if attempt > 1:
+            print(f"  [retry {attempt}/{retries}] {name} from {have} bytes")
+            time.sleep(RETRY_DELAY)
+
+        _, had_disconnect, rc = run_smbclient(
+            username, password, commands, cwd=local_cwd, smb_server=smb_server, timeout=timeout,
+        )
+        got = _local_size()
+
+        if expected_size is None:
+            if not had_disconnect and rc == 0:
+                return True
+        else:
+            if got == expected_size:
+                return True
+            gained = got - have
+            print(f"  [warn] {name} stopped at {got}/{expected_size} bytes (+{gained} this attempt)")
+            if gained <= 0 and attempt > 1:
+                append_log(log_file, f"[warn] no progress on {name} at {got} bytes")
+
+    message = f"[error] failed to download {name} after {retries} attempts, {_local_size()} bytes"
+    print(f"  {message}")
+    append_log(log_file, message)
+    return False
 
 
 def remote_dir_exists(
@@ -575,6 +687,7 @@ def build_remote_size_map(
     full_remote: str,
     cwd: str,
     smb_server: str = SMB_SERVER,
+    timeout: int = SMB_TIMEOUT,
 ) -> Optional[dict]:
     """Return a map of remote file paths to sizes for a remote directory tree.
 
@@ -588,6 +701,7 @@ def build_remote_size_map(
         full_remote: Remote root directory.
         cwd: Local working directory for the smbclient process.
         smb_server: SMB server to connect to.
+        timeout: The per-operation timeout in seconds.
 
     Returns:
         {relative_path: size_in_bytes} for every remote file, or None if the
@@ -597,7 +711,7 @@ def build_remote_size_map(
     fr = full_remote.strip("/")
     lines, had_disconnect, _ = run_smbclient(
         username, password, [f'cd "{full_remote}"', "recurse", "prompt", "ls"],
-        cwd, smb_server=smb_server,
+        cwd, smb_server=smb_server, timeout=timeout,
     )
     if had_disconnect:
         return None
@@ -643,6 +757,7 @@ def remote_size_map_with_retry(
     cwd: str,
     retries: int = MAX_RETRIES,
     smb_server: str = SMB_SERVER,
+    timeout: int = SMB_TIMEOUT,
 ) -> Optional[dict]:
     """Build a remote size map, retrying on disconnect.
 
@@ -655,6 +770,7 @@ def remote_size_map_with_retry(
         cwd: Local working directory for the smbclient process.
         retries: Maximal number of retries.
         smb_server: SMB server to connect to.
+        timeout: The per-operation timeout in seconds.
 
     Returns:
         {relative_path: size_in_bytes}, or None after exhausting retries.
@@ -663,7 +779,9 @@ def remote_size_map_with_retry(
         if attempt > 1:
             print(f"  [retry {attempt}/{retries}] listing {full_remote}")
             time.sleep(RETRY_DELAY)
-        size_map = build_remote_size_map(username, password, full_remote, cwd, smb_server=smb_server)
+        size_map = build_remote_size_map(
+            username, password, full_remote, cwd, smb_server=smb_server, timeout=timeout,
+        )
         if size_map is not None:
             return size_map
     return None
