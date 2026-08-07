@@ -198,7 +198,7 @@ def synapse_detection_from_prediction(
     force_overwrite: bool = False,
     threshold: float = 0.5,
     n_threads: Optional[int] = None,
-    save_no_flow: bool = True,
+    save_no_flow: bool = False,
 ) -> pd.DataFrame:
     """Run synapse detection for prediction.
 
