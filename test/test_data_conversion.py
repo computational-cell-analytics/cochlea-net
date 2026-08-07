@@ -48,6 +48,48 @@ def make_raw_input(root, n_tiles=2, shape=RAW_SHAPE):
     return volumes
 
 
+class FakeShare:
+    """Serve smbclient `reget` requests from a local directory.
+
+    With max_bytes_per_call set, an attempt stops early and reports NT_STATUS_IO_TIMEOUT while
+    still exiting 0, which is exactly how the real failure presented.
+    """
+
+    def __init__(self, root, max_bytes_per_call=None):
+        self.root = root
+        self.max_bytes_per_call = max_bytes_per_call
+        self.calls = []
+
+    def __call__(self, username, password, commands, cwd, smb_server=None, timeout=None):
+        self.calls.append(list(commands))
+        remote_cd = commands[0].split('"')[1]
+        name = commands[1].split('"')[1]
+
+        rel_dir = remote_cd[len(self.root):].strip("/")
+        source = os.path.join(self.root, *rel_dir.split("/"), name) if rel_dir \
+            else os.path.join(self.root, name)
+        total = os.path.getsize(source)
+
+        os.makedirs(cwd, exist_ok=True)
+        local_path = os.path.join(cwd, name)
+        have = os.path.getsize(local_path) if os.path.exists(local_path) else 0
+
+        want = total - have
+        if self.max_bytes_per_call is not None:
+            want = min(want, self.max_bytes_per_call)
+        with open(source, "rb") as src:
+            src.seek(have)
+            chunk = src.read(want)
+        with open(local_path, "ab") as dst:
+            dst.write(chunk)
+
+        if have + len(chunk) < total:
+            # Report the abort the way smbclient did: a status line, no disconnect flag and
+            # exit code 0. Success must therefore be decided by the local size alone.
+            return [f"NT_STATUS_IO_TIMEOUT listing \\{name}"], False, 0
+        return [], False, 0
+
+
 def read_setup(out_path, setup_id, scale=0):
     from elf.io import open_file
 
@@ -207,33 +249,66 @@ class TestRawConversion(unittest.TestCase):
         self.assertTrue(np.array_equal(read_setup(self.out_path, 1), self.volumes[1]))
         self.assertEqual(os.listdir(stage_dir), [])
 
-    def test_smb_mode_downloads_every_file(self):
-        """Drive the SMB code path with smbclient replaced by a local copy."""
-        import flamingo_tools.data_conversion as dc
-
+    def _size_map(self):
         size_map = {}
         for dirpath, _, names in os.walk(self.root):
             for name in names:
                 path = os.path.join(dirpath, name)
                 rel = os.path.relpath(path, self.root).replace(os.sep, "/")
                 size_map[rel] = os.path.getsize(path)
+        return size_map
 
-        def fake_transfer_path(username, password, remote_cd, mget_target, local_cwd, **kwargs):
-            rel_dir = remote_cd[len(self.root):].strip("/")
-            source = os.path.join(self.root, *rel_dir.split("/"), mget_target) if rel_dir \
-                else os.path.join(self.root, mget_target)
-            os.makedirs(local_cwd, exist_ok=True)
-            with open(source, "rb") as src, open(os.path.join(local_cwd, mget_target), "wb") as dst:
-                dst.write(src.read())
-            return True
+    @staticmethod
+    def _retry_config(**kwargs):
+        from flamingo_tools.data_transfer_utils import RetryConfig
 
-        with mock.patch.object(dc, "remote_size_map_with_retry", return_value=size_map), \
-             mock.patch.object(dc, "transfer_path", side_effect=fake_transfer_path):
+        kwargs.setdefault("retry_delay", 0.0)
+        return RetryConfig(**kwargs)
+
+    def _convert_over_smb(self, share, **kwargs):
+        import flamingo_tools.data_conversion as dc
+        import flamingo_tools.data_transfer_utils as dtu
+
+        with mock.patch.object(dc, "remote_size_map_with_retry", return_value=self._size_map()), \
+             mock.patch.object(dtu, "run_smbclient", share), mock.patch("time.sleep"):
             self._convert(username="tester", password="secret",
-                          stage_dir=os.path.join(self.folder, "smb_stage"))
+                          stage_dir=os.path.join(self.folder, "smb_stage"), **kwargs)
+
+    def test_smb_mode_downloads_every_file(self):
+        share = FakeShare(self.root)
+        self._convert_over_smb(share)
+        for tile, expected in self.volumes.items():
+            self.assertTrue(np.array_equal(read_setup(self.out_path, tile), expected))
+
+    def test_smb_mode_resumes_a_truncated_download(self):
+        """Regression: a mid-file NT_STATUS_IO_TIMEOUT used to abort the whole conversion.
+
+        smbclient exits 0 after such an abort, so the transfer looked successful and the size
+        check then raised instead of continuing the download.
+        """
+        # A raw tile is 921600 bytes, so this truncates each one into several attempts.
+        share = FakeShare(self.root, max_bytes_per_call=300000)
+        self._convert_over_smb(share)
 
         for tile, expected in self.volumes.items():
             self.assertTrue(np.array_equal(read_setup(self.out_path, tile), expected))
+
+        regets = [c for c in share.calls if any("reget" in part for part in c)]
+        self.assertGreater(len(regets), len(self.volumes), "the download was not resumed")
+        flat = " ".join(part for call in share.calls for part in call)
+        self.assertNotIn("recurse", flat)
+        self.assertNotIn("mget", flat)
+
+    def test_single_attempt_still_reports_a_truncated_download(self):
+        """With no retries left the run must fail loudly rather than convert a partial file.
+
+        This is the behavior before the fix, and it confirms the test above passes because the
+        download is resumed and not because the truncation goes unnoticed.
+        """
+        share = FakeShare(self.root, max_bytes_per_call=300000)
+        with self.assertRaises(RuntimeError) as raised:
+            self._convert_over_smb(share, retry_config=self._retry_config(max_retries=1))
+        self.assertIn("the share reports", str(raised.exception))
 
     def test_dry_run_writes_nothing(self):
         self._convert(dry_run=True)

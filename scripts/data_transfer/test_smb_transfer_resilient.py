@@ -51,7 +51,7 @@ class Recorder:
         self.responses = responses or [([], False, 0)]
         self.calls = []
 
-    def __call__(self, username, password, commands, cwd, smb_server=smb.SMB_SERVER):
+    def __call__(self, username, password, commands, cwd, smb_server=smb.SMB_SERVER, **kwargs):
         self.calls.append((list(commands), cwd))
         idx = min(len(self.calls) - 1, len(self.responses) - 1)
         return self.responses[idx]
