@@ -28,367 +28,33 @@ import os
 import pathlib
 import posixpath
 import re
-import subprocess
 import sys
-import time
+import time  # noqa: F401  (tests patch smb.time.sleep)
 import warnings
 from typing import Optional
 
-UKON_OLD = "//wfs-medizin.top.gwdg.de/ukon-all$/ukon100"
-SMB_SERVER = "//wfs-medizin-spezial.top.gwdg.de/ukon-all$"
-MAX_RETRIES = 10
-RETRY_DELAY = 5  # seconds
-
-# smbclient often exits 0 even when a cd/mput/put failed, so upload success
-# cannot rely on the return code alone. These tokens in the streamed output
-# mark a failed upload unit.
-UPLOAD_ERROR_TOKENS = (
-    "NT_STATUS_OBJECT_NAME_NOT_FOUND",
-    "NT_STATUS_OBJECT_PATH_NOT_FOUND",
-    "NT_STATUS_ACCESS_DENIED",
-    "NT_STATUS_NO_SUCH_FILE",
+# The generic SMB primitives live in the package so that flamingo_tools.convert_data can use
+# the same implementation. Importing them by name keeps them patchable through this module.
+from flamingo_tools.data_transfer_utils import (
+    MAX_RETRIES,
+    RETRY_DELAY,
+    SMB_SERVER,
+    UKON_OLD,
+    UPLOAD_ERROR_TOKENS,
+    append_log,
+    build_remote_size_map,
+    ensure_remote_path,
+    list_remote_dirs,
+    remote_dir_exists,
+    remote_size_map_with_retry,
+    run_smbclient,
+    run_with_retry,
+    transfer_path,
+    upload_path,
 )
 
-
-def run_smbclient(
-    username: str,
-    password: str,
-    commands: list[str],
-    cwd: str,
-    smb_server: str = SMB_SERVER,
-) -> tuple[list[str], bool, int]:
-    """Run smbclient with the given command list; stream output in real time.
-    Terminates the process immediately on the first disconnect signal.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        remote_cd: path to cd into inside smbclient before mget.
-        cwd: Current working directory.smb_server
-
-    Returns:
-      lines, had_disconnect, returncode.
-
-    """
-    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}%{password}"]
-    cmd_input = "\n".join(commands + ["exit"])
-
-    proc = subprocess.Popen(
-        cmd,
-        stdin=subprocess.PIPE,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        cwd=cwd,
-        text=True,
-    )
-    proc.stdin.write(cmd_input)
-    proc.stdin.close()
-
-    lines = []
-    had_disconnect = False
-
-    for line in proc.stdout:
-        line = line.rstrip()
-        print(line)
-        lines.append(line)
-        if "NT_STATUS_CONNECTION_DISCONNECTED" in line and not had_disconnect:
-            had_disconnect = True
-            proc.terminate()
-            break
-
-    proc.wait()
-    return lines, had_disconnect, proc.returncode
-
-
-def list_remote_dirs(
-    username: str,
-    password: str,
-    remote_path: str,
-    cwd: str,
-    local_fallback: Optional[str] = None,
-    smb_server: str = SMB_SERVER,
-) -> list[str]:
-    """Return subdirectory names at remote_path via smbclient ls.
-    Falls back to listing local_fallback on disconnect (folder structure is
-    usually present locally after the first drop).
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        remote_path: Remote path on SMB client.
-        local_fallback: Path to local data to check directory structure.
-
-    Returns:
-        list of remote directories.
-    """
-    # Normalise to forward slashes for smbclient
-    remote_path = remote_path.replace("\\", "/")
-    lines, had_disconnect, _ = run_smbclient(
-        username, password, [f'cd "{remote_path}"', "ls"], cwd, smb_server=smb_server,
-    )
-
-    if had_disconnect and local_fallback and os.path.isdir(local_fallback):
-        print(f"  [fallback] listing local directory: {local_fallback}")
-        return sorted(
-            d for d in os.listdir(local_fallback)
-            if os.path.isdir(os.path.join(local_fallback, d))
-        )
-
-    dirs = []
-    for line in lines:
-        m = re.match(r"^\s+(.+?)\s+([DARHSE]+)\s+\d+", line)
-        if m:
-            name = m.group(1).strip()
-            attrs = m.group(2)
-            if name in (".", ".."):
-                continue
-            if "D" in attrs:
-                dirs.append(name)
-    return dirs
-
-
-def _run_with_retry(
-    username: str,
-    password: str,
-    commands: list[str],
-    local_cwd: str,
-    label: str,
-    retries: int = MAX_RETRIES,
-    log_file: Optional[str] = None,
-    smb_server: str = SMB_SERVER,
-    error_tokens: Optional[tuple[str, ...]] = None,
-) -> bool:
-    """Run an smbclient command list with reconnect-and-retry on disconnect.
-
-    Shared retry scaffold for both download (mget) and upload (mput/put) units.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        commands: smbclient command list to run each attempt.
-        local_cwd: local working directory passed to smbclient.
-        label: short name of the transfer unit, used in log and retry messages.
-        retries: Maximal number of retries.
-        log_file: File to log failed transfers.
-        smb_server: SMB server to connect to.
-        error_tokens: Substrings whose presence in the output marks a failed
-            attempt even when the return code is 0 (smbclient exits 0 on some
-            failed uploads). None disables the output scan (download behaviour).
-
-    Returns:
-        True on success, False after exhausting retries.
-    """
-    for attempt in range(1, retries + 1):
-        if attempt > 1:
-            print(f"  [retry {attempt}/{retries}] {label}")
-            time.sleep(RETRY_DELAY)
-
-        lines, had_disconnect, rc = run_smbclient(
-            username, password, commands, cwd=local_cwd, smb_server=smb_server,
-        )
-
-        if not had_disconnect and rc == 0:
-            if error_tokens and any(tok in line for line in lines for tok in error_tokens):
-                print(f"  [warn] smbclient reported an error for {label}")
-            else:
-                return True
-        elif not had_disconnect:
-            # Non-zero exit for a reason other than disconnect — still retry
-            print(f"  [warn] smbclient exited with code {rc} for {label}")
-
-    print(f"  [error] failed to transfer {label} after {retries} attempts — skipping")
-    if log_file is not None:
-        try:
-            with open(log_file, 'a') as file:
-                file.write(f"[error] failed to transfer {label} after {retries} attempts — skipping\n")
-        except Exception as e:
-            print(f"Error: {e}")
-    return False
-
-
-def transfer_path(
-    username: str,
-    password: str,
-    remote_cd: str,
-    mget_target: str,
-    local_cwd: str,
-    retries: int = MAX_RETRIES,
-    log_file: Optional[str] = None,
-    smb_server: str = SMB_SERVER,
-) -> bool:
-    """Download mget_target (file or directory) with reconnect-and-retry on disconnect.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        remote_cd: path to cd into inside smbclient before mget.
-        mget_target: name to pass to mget (supports wildcards).
-        local_cwd: local directory where mget places downloaded files.
-        retries: Maximal number of retries.
-        log_file: File to log failed transfers.
-
-    Returns:
-        True on success, False after exhausting retries.
-    """
-    remote_cd = remote_cd.replace("\\", "/")
-    os.makedirs(local_cwd, exist_ok=True)
-
-    commands = [f'cd "{remote_cd}"', "recurse", "prompt", f"mget {mget_target}"]
-    return _run_with_retry(
-        username, password, commands, local_cwd=local_cwd, label=mget_target,
-        retries=retries, log_file=log_file, smb_server=smb_server, error_tokens=None,
-    )
-
-
-def remote_dir_exists(
-    username: str,
-    password: str,
-    remote_path: str,
-    cwd: str,
-    smb_server: str = SMB_SERVER,
-) -> Optional[bool]:
-    """Check whether a directory exists on the SMB share.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        remote_path: Remote directory to check.
-        cwd: Local working directory for the smbclient process.
-        smb_server: SMB server to connect to.
-
-    Returns:
-        True if the directory exists, False if it is missing, None if the
-        connection dropped before the answer could be determined.
-    """
-    remote_path = remote_path.replace("\\", "/")
-    lines, had_disconnect, _ = run_smbclient(
-        username, password, [f'cd "{remote_path}"', "ls"], cwd, smb_server=smb_server,
-    )
-    if had_disconnect:
-        return None
-    missing_tokens = ("NT_STATUS_OBJECT_NAME_NOT_FOUND", "NT_STATUS_OBJECT_PATH_NOT_FOUND")
-    if any(tok in line for line in lines for tok in missing_tokens):
-        return False
-    return True
-
-
-def ensure_remote_path(
-    username: str,
-    password: str,
-    base: str,
-    target: str,
-    local_cwd: str,
-    retries: int = MAX_RETRIES,
-    smb_server: str = SMB_SERVER,
-) -> bool:
-    """Create a remote directory (and missing parents below `base`) via mkdir.
-
-    `mput`/`put` never create the directory they upload into, so the target
-    directory must exist first. smbclient `mkdir` creates a single level only,
-    so one mkdir per cumulative path component is issued. mkdir on an existing
-    directory returns NT_STATUS_OBJECT_NAME_COLLISION, which is harmless, so the
-    operation is idempotent. Only a disconnect triggers a retry.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        base: Prefix assumed to already exist; never created.
-        target: Full remote directory that must exist afterwards.
-        local_cwd: Local working directory for the smbclient process.
-        retries: Maximal number of retries on disconnect.
-        smb_server: SMB server to connect to.
-
-    Returns:
-        True on success, False after exhausting retries.
-    """
-    base_norm = base.replace("\\", "/").strip("/")
-    target_clean = target.replace("\\", "/")
-    lead_slash = "/" if target_clean.startswith("/") else ""
-    target_parts = target_clean.strip("/").split("/")
-    base_parts = base_norm.split("/") if base_norm else []
-
-    # Number of leading components already covered by base (0 if base is not a prefix).
-    start = len(base_parts) if target_parts[:len(base_parts)] == base_parts else 0
-    commands = [
-        f'mkdir "{lead_slash}{"/".join(target_parts[: i + 1])}"'
-        for i in range(start, len(target_parts))
-    ]
-    if not commands:
-        return True
-
-    for attempt in range(1, retries + 1):
-        if attempt > 1:
-            print(f"  [retry {attempt}/{retries}] mkdir {target}")
-            time.sleep(RETRY_DELAY)
-        _, had_disconnect, _ = run_smbclient(
-            username, password, commands, cwd=local_cwd, smb_server=smb_server,
-        )
-        if not had_disconnect:
-            return True
-
-    print(f"  [error] failed to create remote directory {target} after {retries} attempts")
-    return False
-
-
-def upload_path(
-    username: str,
-    password: str,
-    remote_dir: str,
-    local_target: str,
-    local_cwd: str,
-    is_dir: Optional[bool] = None,
-    base: Optional[str] = None,
-    ensure: bool = True,
-    retries: int = MAX_RETRIES,
-    log_file: Optional[str] = None,
-    smb_server: str = SMB_SERVER,
-) -> bool:
-    """Upload a single file or directory with reconnect-and-retry on disconnect.
-
-    Mirror of `transfer_path` for the ingest direction. A directory is uploaded
-    with `recurse; prompt; mput <dir>` (creates the remote subtree). A single
-    file is uploaded with `put <file>`, because with recurse ON `mput` filters
-    directory names and would skip a file such as attributes.json.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        remote_dir: Remote directory to cd into before the upload; must exist
-            (created here when `ensure` is True).
-        local_target: File or directory name inside local_cwd to upload.
-        local_cwd: Local source directory containing local_target.
-        is_dir: Whether local_target is a directory. Inferred when None.
-        base: Prefix assumed to exist for `ensure_remote_path`. Defaults to the
-            parent of remote_dir.
-        ensure: Create remote_dir first when True.
-        retries: Maximal number of retries.
-        log_file: File to log failed transfers.
-        smb_server: SMB server to connect to.
-
-    Returns:
-        True on success, False after exhausting retries.
-    """
-    remote_dir = remote_dir.replace("\\", "/").rstrip("/")
-    if is_dir is None:
-        is_dir = os.path.isdir(os.path.join(local_cwd, local_target))
-
-    if ensure:
-        ensure_base = base if base is not None else remote_dir.rsplit("/", 1)[0]
-        ensure_remote_path(
-            username, password, base=ensure_base, target=remote_dir,
-            local_cwd=local_cwd, retries=retries, smb_server=smb_server,
-        )
-
-    if is_dir:
-        commands = [f'cd "{remote_dir}"', "recurse", "prompt", f"mput {local_target}"]
-    else:
-        commands = [f'cd "{remote_dir}"', f"put {local_target}"]
-
-    return _run_with_retry(
-        username, password, commands, local_cwd=local_cwd, label=local_target,
-        retries=retries, log_file=log_file, smb_server=smb_server,
-        error_tokens=UPLOAD_ERROR_TOKENS,
-    )
+# Kept as a module-level alias: the existing tests and call sites use the private name.
+_run_with_retry = run_with_retry
 
 
 def _sort_key(name):
@@ -517,13 +183,8 @@ def verify_and_repair_n5(
         print(f"\n[error] {len(remaining)} chunk file(s) still truncated after {max_passes} repair passes:")
         for rel_path in remaining:
             print(f"  {rel_path}")
-        if log_file is not None:
-            try:
-                with open(log_file, 'a') as file:
-                    for rel_path in remaining:
-                        file.write(f"[error] chunk file still truncated after repair: {rel_path}\n")
-            except Exception as e:
-                print(f"Error: {e}")
+        for rel_path in remaining:
+            append_log(log_file, f"[error] chunk file still truncated after repair: {rel_path}")
 
 
 def iterative_n5_transfer(
@@ -812,73 +473,6 @@ def iterative_n5_upload(
     print("\n=== Iterative ingest complete ===")
 
 
-def build_remote_size_map(
-    username: str,
-    password: str,
-    full_remote: str,
-    cwd: str,
-    smb_server: str = SMB_SERVER,
-) -> Optional[dict]:
-    """Return a map of remote file paths to sizes for an uploaded N5 dataset.
-
-    Runs a single recursive `ls` and parses the per-directory blocks smbclient
-    prints. Paths are relative to full_remote, forward-slash separated, matching
-    the layout of the local dataset.
-
-    Args:
-        username: GWDG username.
-        password: GWDG password.
-        full_remote: Remote N5 root directory.
-        cwd: Local working directory for the smbclient process.
-        smb_server: SMB server to connect to.
-
-    Returns:
-        {relative_path: size_in_bytes} for every remote file, or None if the
-        connection dropped or the output could not be parsed.
-    """
-    full_remote = full_remote.replace("\\", "/")
-    fr = full_remote.strip("/")
-    lines, had_disconnect, _ = run_smbclient(
-        username, password, [f'cd "{full_remote}"', "recurse", "prompt", "ls"],
-        cwd, smb_server=smb_server,
-    )
-    if had_disconnect:
-        return None
-
-    size_map: dict = {}
-    cur_dir = ""
-    # Attribute letters are optional (a plain file may list only "name size date").
-    entry_re = re.compile(r"^\s+(.+?)\s+(?:([DARHSN]+)\s+)?(\d+)\s+\w")
-    for line in lines:
-        # smbclient closes each listing with a "N blocks of size M. K blocks available"
-        # summary line that would otherwise match the entry pattern.
-        if "blocks of size" in line:
-            continue
-        m = entry_re.match(line)
-        if m:
-            name, attrs, size = m.group(1).strip(), m.group(2) or "", m.group(3)
-            if name in (".", ".."):
-                continue
-            if "D" in attrs:
-                continue
-            rel = f"{cur_dir}/{name}" if cur_dir else name
-            size_map[rel] = int(size)
-            continue
-        stripped = line.strip()
-        if not stripped:
-            continue
-        # Directory header line, e.g. "\path\to\n5\setup0".
-        header = stripped.replace("\\", "/").strip("/")
-        if header == fr:
-            cur_dir = ""
-        elif header.startswith(fr + "/"):
-            cur_dir = header[len(fr) + 1:]
-        elif stripped.startswith("\\") or stripped.startswith("/"):
-            cur_dir = header
-
-    return size_map if size_map else None
-
-
 def verify_and_repair_upload(
     username: str,
     password: str,
@@ -981,13 +575,8 @@ def verify_and_repair_upload(
         print(f"\n[error] {len(remaining)} file(s) still mismatched after {max_passes} repair passes:")
         for rel in remaining:
             print(f"  {rel}")
-        if log_file is not None:
-            try:
-                with open(log_file, 'a') as file:
-                    for rel in remaining:
-                        file.write(f"[error] file still mismatched after repair: {rel}\n")
-            except Exception as e:
-                print(f"Error: {e}")
+        for rel in remaining:
+            append_log(log_file, f"[error] file still mismatched after repair: {rel}")
 
 
 def _looks_like_n5_local(path: str) -> bool:
@@ -1020,14 +609,9 @@ def _remote_size_map_with_retry(
     retries: int = MAX_RETRIES,
 ) -> Optional[dict]:
     """Call build_remote_size_map, retrying on a dropped listing (the listing is cheap metadata)."""
-    for attempt in range(1, retries + 1):
-        if attempt > 1:
-            print(f"  [retry {attempt}/{retries}] listing remote tree")
-            time.sleep(RETRY_DELAY)
-        size_map = build_remote_size_map(username, password, full_remote, cwd, smb_server=smb_server)
-        if size_map is not None:
-            return size_map
-    return None
+    return remote_size_map_with_retry(
+        username, password, full_remote, cwd, retries=retries, smb_server=smb_server,
+    )
 
 
 def generic_iterative_download(
@@ -1150,13 +734,8 @@ def verify_and_repair_download_generic(
         print(f"\n[error] {len(remaining)} file(s) still mismatched after {max_passes} repair passes:")
         for rel in remaining:
             print(f"  {rel}")
-        if log_file is not None:
-            try:
-                with open(log_file, 'a') as file:
-                    for rel in remaining:
-                        file.write(f"[error] file still mismatched after repair: {rel}\n")
-            except Exception as e:
-                print(f"Error: {e}")
+        for rel in remaining:
+            append_log(log_file, f"[error] file still mismatched after repair: {rel}")
 
 
 def generic_iterative_upload(
