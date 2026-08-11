@@ -27,12 +27,18 @@ The table is edited in place.
 Rows with complete and consistent measures are skipped and their crops are not read.
 Use `--recompute` to measure all crops again.
 
+A crop that cannot be measured does not stop the run.
+The script reports the crop, keeps its row empty, writes the measures of all other crops, and exits with a non-zero status.
+The next run then measures only the crops that failed.
+
 ### Overview
 
 Each analyzed table adds one entry to `doc/data/overview.json`, which reports the number of crops and instances per dataset.
 The entries are sorted alphabetically by table name.
 Existing entries of other tables are kept.
 Use `-o` to write the overview to a different location.
+
+A table with crops that have no instance count is not added to the overview, because its totals would be too low.
 
 ## IHC split for single sample
 

@@ -1,7 +1,8 @@
 import argparse
 import json
 import os
-from typing import Optional
+import sys
+from typing import List, Optional
 
 import pandas as pd
 
@@ -69,7 +70,7 @@ def resolve_layout(data_dir: str) -> Optional[str]:
     )
 
 
-def summarize_table(table_path: str, data_type: str) -> dict:
+def summarize_table(table_path: str, data_type: str) -> Optional[dict]:
     """Count the crops and instances per dataset of an analyzed table.
 
     Args:
@@ -78,13 +79,19 @@ def summarize_table(table_path: str, data_type: str) -> dict:
 
     Returns:
         The number of crops and instances for training and validation, and for testing if present.
+        None if the table contains crops without an instance count, which would understate the totals.
     """
     df = pd.read_csv(table_path, sep="\t")
     # For segmentations the instances below the size threshold are artifacts and are not counted.
     count_column = "n_samples" if data_type == "synapse" else "n_samples[>=1000px]"
 
+    unmeasured = df.loc[df[count_column].isna(), "Original"].tolist()
+    if unmeasured:
+        print(f"{os.path.basename(table_path)}: no instance count for {len(unmeasured)} crops: {unmeasured}")
+        return None
+
     splits = {name: df[df["Dataset"] == name] for name in ("train", "val", "test")}
-    instances = {name: int(split[count_column].fillna(0).sum()) for name, split in splits.items()}
+    instances = {name: int(split[count_column].sum()) for name, split in splits.items()}
 
     summary = {
         "n_crops": len(splits["train"]) + len(splits["val"]),
@@ -128,8 +135,10 @@ def analyze_table(
     test_dir: Optional[str] = None,
     recompute: bool = False,
     n_workers: int = 4,
-) -> None:
+) -> List[str]:
     """Add the metadata of the crops to a training data table and summarize it in the overview.
+
+    The overview is only updated if all crops of the table were measured.
 
     Args:
         table_path: File path to TSV table.
@@ -139,21 +148,29 @@ def analyze_table(
         test_dir: Directory containing the test crops. Only used for synapses.
         recompute: Measure all crops again, including the rows that are already complete.
         n_workers: Number of threads for reading the annotation crops.
+
+    Returns:
+        The names of the crops that could not be measured.
     """
     data_type = table_type(table_path)
     if data_type == "synapse":
         resolve_layout(data_dir)
-        add_metadata_to_crop_table_synapses(table_path, data_dir, test_dir=test_dir, recompute=recompute)
+        failed = add_metadata_to_crop_table_synapses(table_path, data_dir, test_dir=test_dir, recompute=recompute)
     else:
         if label_dir is None:
             label_dir = resolve_layout(data_dir)
-        add_metadata_to_crop_table(
+        failed = add_metadata_to_crop_table(
             table_path, data_dir, label_dir=label_dir, recompute=recompute, n_workers=n_workers,
         )
 
+    table_name = os.path.basename(table_path)
     summary = summarize_table(table_path, data_type)
-    update_overview(output_path, os.path.splitext(os.path.basename(table_path))[0], summary)
-    print(f"{os.path.basename(table_path)}: {summary}")
+    if summary is None:
+        print(f"{table_name}: incomplete, the overview is not updated.")
+    else:
+        update_overview(output_path, os.path.splitext(table_name)[0], summary)
+        print(f"{table_name}: {summary}")
+    return failed
 
 
 def main():
@@ -185,14 +202,23 @@ def main():
             parser.error("--data_dir is required when a single table is analyzed with --input.")
         tables = {args.input: {"data_dir": args.data_dir, "test_dir": args.test_dir}}
 
+    failed = {}
     for table_path, kwargs in tables.items():
-        analyze_table(
+        failed_crops = analyze_table(
             table_path,
             output_path=args.output,
             recompute=args.recompute,
             n_workers=args.n_workers,
             **kwargs,
         )
+        if failed_crops:
+            failed[os.path.basename(table_path)] = failed_crops
+
+    # Report the failures after all tables were processed, so that one bad crop does not cost a whole run.
+    if failed:
+        for table_name, failed_crops in failed.items():
+            print(f"{table_name}: {len(failed_crops)} crops could not be measured: {failed_crops}")
+        sys.exit(1)
 
 
 if __name__ == "__main__":
