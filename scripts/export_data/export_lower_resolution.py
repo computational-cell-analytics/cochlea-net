@@ -10,7 +10,7 @@ import zarr
 from elf.parallel import isin
 
 from flamingo_tools.export_data_utils import (
-    compute_crop_bb, crop_filter_volume, crop_suffix, filter_volume_downscale_factors, normalize_voxel_size,
+    compute_crop_bb, crop_filter_volume, export_output_path, filter_volume_downscale_factors, normalize_voxel_size,
 )
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.postprocessing.label_components import filter_cochlea_volume, filter_cochlea_volume_single
@@ -146,10 +146,7 @@ def export_lower_resolution(
 
         input_key = f"s{s}"
         for channel in channels:
-            if crop:
-                out_path = os.path.join(out_folder, f"{channel}{crop_suffix(crop_center, axis, suffix)}.tif")
-            else:
-                out_path = os.path.join(out_folder, f"{channel}.tif")
+            out_path = export_output_path(out_folder, channel, ome_zarr, crop_center, axis, suffix)
             if os.path.exists(out_path):
                 print(f"Skipping {out_path}. File already exists.")
                 continue
@@ -187,10 +184,8 @@ def export_lower_resolution(
                 data = (data > 0).astype("uint16")
 
             if ome_zarr:
-                out_path = os.path.join(out_folder, f"{channel}.ome.zarr")
-                output_key = "image"
                 f_out = zarr.open(out_path, mode="w")
-                f_out.create_array(output_key, data=data, compressors=zarr.codecs.GzipCodec())
+                f_out.create_array("image", data=data, compressors=zarr.codecs.GzipCodec())
             else:
                 tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
 

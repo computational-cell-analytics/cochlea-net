@@ -1,6 +1,7 @@
 """@private
 """
 
+import os
 from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
@@ -122,6 +123,33 @@ def crop_suffix(crop_center: List[float], axis: Optional[int] = None, suffix: Op
     if suffix is not None:
         parts.append(f"_{suffix}")
     return "".join(parts)
+
+
+def export_output_path(
+    out_folder: str,
+    name: str,
+    ome_zarr: bool = False,
+    crop_center: Optional[List[float]] = None,
+    axis: Optional[int] = None,
+    suffix: Optional[str] = None,
+) -> str:
+    """Build the output path for an exported channel.
+
+    Args:
+        out_folder: Folder for the exported data.
+        name: Name of the exported channel or segmentation.
+        ome_zarr: Whether the output is written as OME-Zarr instead of TIF.
+        crop_center: Optional crop center as [x, y, z] in µm. When given, the crop suffix is
+            appended to the file name, so crops at different positions do not overwrite each other.
+        axis: Optional axis index into (x, y, z), see `crop_suffix`.
+        suffix: Optional extra label, see `crop_suffix`.
+
+    Returns:
+        The output path.
+    """
+    base = name if crop_center is None else f"{name}{crop_suffix(crop_center, axis, suffix)}"
+    extension = "ome.zarr" if ome_zarr else "tif"
+    return os.path.join(out_folder, f"{base}.{extension}")
 
 
 def crop_filter_volume(

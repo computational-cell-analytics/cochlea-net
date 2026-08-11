@@ -123,13 +123,11 @@ def filter_subtypes(cochlea, segmentation, seg_name, subtype):
         subtypes_str = "/".join(subtype)
         print(f"subtypes {subtypes_str} with {len(label_ids_subtype)} instances")
 
-    filter_mask = ~np.isin(segmentation, label_ids_subtype)
-    segmentation[filter_mask] = 0
-    filter_mask = np.isin(segmentation, label_ids_subtype)
-    segmentation[filter_mask] = 1
+    subtype_mask = np.isin(segmentation, label_ids_subtype)
+    segmentation[~subtype_mask] = 0
+    segmentation[subtype_mask] = 1
 
-    segmentation = segmentation.astype("float32")
-    return segmentation
+    return segmentation.astype("float32")
 
 
 def export_lower_resolution(

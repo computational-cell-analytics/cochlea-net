@@ -145,10 +145,12 @@ def compute_table_on_the_fly(
     props = measure.regionprops(segmentation)
     label_ids = np.array([prop.label for prop in props])
     coordinates = np.array([prop.centroid for prop in props]).astype("float32")
-    # transform pixel distance to physical units
-    coordinates = coordinates * np.array(voxel_size)
-    bb_min = np.array([prop.bbox[:3] for prop in props]).astype("float32") * np.array(voxel_size)
-    bb_max = np.array([prop.bbox[3:] for prop in props]).astype("float32") * np.array(voxel_size)
+    # transform pixel distance to physical units.
+    # regionprops returns ZYX coordinates, so the (x, y, z) voxel size has to be reversed.
+    voxel_size_zyx = np.array(voxel_size)[::-1]
+    coordinates = coordinates * voxel_size_zyx
+    bb_min = np.array([prop.bbox[:3] for prop in props]).astype("float32") * voxel_size_zyx
+    bb_max = np.array([prop.bbox[3:] for prop in props]).astype("float32") * voxel_size_zyx
     sizes = np.array([prop.area for prop in props])
     table = pd.DataFrame({
         "label_id": label_ids,
@@ -485,6 +487,10 @@ def dilate_and_trim(
     """Dilate and trim original binary array according to a
     Euclidean Distance Trasform computed for a separate target array.
 
+    A newly dilated voxel is kept only if it is closer to the target than the nearest face
+    neighbour it grew from, by more than `offset`. The dilation therefore only moves downhill in
+    `edt`, towards the target structure.
+
     Args:
         arr_orig: Original 3D binary array
         edt: 3D array containing Euclidean Distance transform for guiding dilation
@@ -494,21 +500,25 @@ def dilate_and_trim(
     Returns:
         Dilated binary array
     """
-    border_coords = [(1, 0, 0), (-1, 0, 0), (0, 1, 0), (0, -1, 0), (0, 0, 1), (0, 0, -1)]
+    # Face neighbours as (axis, shift) pairs. Neighbours are read with np.roll, so an index at the
+    # array border wraps around, as it does for the negative indices of a plain coordinate offset.
+    border_coords = [(0, 1), (0, -1), (1, 1), (1, -1), (2, 1), (2, -1)]
     for _ in range(iterations):
         arr_dilated = binary_dilation(arr_orig)
-        for x in range(arr_dilated.shape[0]):
-            for y in range(arr_dilated.shape[1]):
-                for z in range(arr_dilated.shape[2]):
-                    if arr_dilated[x, y, z] != 0:
-                        if arr_orig[x, y, z] == 0:
-                            min_dist = float('inf')
-                            for dx, dy, dz in border_coords:
-                                nx, ny, nz = x + dx, y + dy, z + dz
-                                if arr_orig[nx, ny, nz] == 1:
-                                    min_dist = min([min_dist, edt[nx, ny, nz]])
-                            if edt[x, y, z] >= min_dist - offset:
-                                arr_dilated[x, y, z] = 0
+        candidates = arr_dilated & (arr_orig == 0)
+
+        # Distance of the source voxels only. A value above 1 dilates, but does not act as a source.
+        source_edt = np.where(arr_orig == 1, edt, np.inf)
+        min_dist = np.full(edt.shape, np.inf)
+        for axis, shift in border_coords:
+            np.minimum(min_dist, np.roll(source_edt, shift, axis=axis), out=min_dist)
+
+        trim = candidates & (edt >= min_dist - offset)
+        arr_dilated[trim] = 0
+
+        # The seed set only grows, so once an iteration keeps nothing the result cannot change.
+        if not (candidates & ~trim).any():
+            return arr_dilated
         arr_orig = arr_dilated
     return arr_dilated
 
@@ -646,7 +656,7 @@ def filter_cochlea_volume(
 
     # no dilation of combined structure
     else:
-        combined_dilated = arr_dilated + ihc_dilated + sgn_dilated
+        combined_dilated = arr_dilated + array_downscaled_ihc + array_downscaled_sgn
         combined_dilated[combined_dilated > 0] = 1
 
     return combined_dilated

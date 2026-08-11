@@ -107,11 +107,10 @@ def map_and_filter_detections(
 
     # Determine the halo. We set it to 2 pixels + the max-distance in pixels, to ensure all distances
     # that are smaller than the max distance are measured.
-    halo = (
-        2 + int(np.ceil(max_distance / voxel_size[0])),
-        2 + int(np.ceil(max_distance / voxel_size[1])),
-        2 + int(np.ceil(max_distance / voxel_size[2])),
-    )
+    # The halo and the sampling are applied to the ZYX segmentation, so both use the reversed
+    # (x, y, z) voxel size.
+    voxel_size_zyx = tuple(voxel_size)[::-1]
+    halo = tuple(2 + int(np.ceil(max_distance / vs)) for vs in voxel_size_zyx)
 
     # Map the detections to the objects in the (IHC) segmentation.
     object_ids, object_distances = map_points_to_objects(
@@ -119,7 +118,7 @@ def map_and_filter_detections(
         points=points,
         block_shape=block_shape,
         halo=halo,
-        sampling=voxel_size,
+        sampling=voxel_size_zyx,
         n_threads=n_threads,
         verbose=verbose,
     )

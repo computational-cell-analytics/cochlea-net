@@ -172,6 +172,35 @@ class TestFilterVolumeDownscaleFactors(unittest.TestCase):
         self.assertEqual(self.fn(100.0), (1, 1, 1))
 
 
+class TestExportOutputPath(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.export_data_utils import export_output_path
+        self.fn = export_output_path
+        self.crop_center = [100.0, 200.0, 300.0]
+
+    def test_without_crop(self):
+        self.assertEqual(self.fn("/out", "PV"), "/out/PV.tif")
+        self.assertEqual(self.fn("/out", "PV", ome_zarr=True), "/out/PV.ome.zarr")
+
+    def test_with_crop(self):
+        self.assertEqual(
+            self.fn("/out", "PV", crop_center=self.crop_center, axis=2, suffix="apex"),
+            "/out/PV_crop_0100-0200-0300_axis-2_apex.tif",
+        )
+
+    def test_ome_zarr_keeps_the_crop_suffix(self):
+        # Regression: the OME-Zarr path used to drop the suffix, so crops at different positions
+        # overwrote each other.
+        paths = {
+            self.fn("/out", "PV", ome_zarr=True, crop_center=center, axis=2, suffix=label)
+            for center, label in [([100.0, 200.0, 300.0], "apex"), ([400.0, 500.0, 600.0], "base")]
+        }
+        self.assertEqual(len(paths), 2)
+        self.assertTrue(all(p.endswith(".ome.zarr") for p in paths))
+        self.assertIn("/out/PV_crop_0100-0200-0300_axis-2_apex.ome.zarr", paths)
+
+
 class TestCropSuffix(unittest.TestCase):
 
     def setUp(self):
