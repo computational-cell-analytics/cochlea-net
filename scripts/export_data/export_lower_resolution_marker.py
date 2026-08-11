@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
@@ -59,6 +59,7 @@ def export_lower_resolution(
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
     suffix: Optional[str] = None,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
 ):
     crop = crop_center is not None
 
@@ -87,7 +88,7 @@ def export_lower_resolution(
                 f = zarr.open(s3_store, mode="r")
                 if crop:
                     start, stop = compute_crop_bb(
-                        crop_center, roi_halo, voxel_size=0.38, scale=s, shape=f[input_key].shape, axis=axis,
+                        crop_center, roi_halo, voxel_size=voxel_size, scale=s, shape=f[input_key].shape, axis=axis,
                     )
                     data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]].astype("float32")
                 else:
@@ -116,6 +117,8 @@ def main():
     parser.add_argument("--suffix", type=str, default=None,
                         help="Extra label appended to the output filename after the crop/axis suffix, "
                         "e.g. a position name such as 'apex'.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     args = parser.parse_args()
     if args.crop_center is not None:
         if args.roi_halo is None and args.axis is None:

@@ -9,7 +9,7 @@ co-registered channels of a cochlea.
 import argparse
 import json
 import os
-from typing import Dict, List, Optional, Union
+from typing import Dict, List, Optional, Sequence, Union
 
 import pandas as pd
 
@@ -54,27 +54,27 @@ def resolve_positions(ref_table: pd.DataFrame, positions: Dict[str, Dict[str, Li
     return resolved
 
 
-def _run_grid_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, extra):
+def _run_grid_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, voxel_size, extra):
     """Adapter for export_lower_resolution/_marker/_subtypes: identical (scale: List[int], ...) signature."""
-    kwargs = dict(cochlea=cochlea, scale=scale, output_folder=output_folder,
-                  crop_center=crop_center, roi_halo=roi_halo, axis=axis, suffix=suffix)
+    kwargs = dict(cochlea=cochlea, scale=scale, output_folder=output_folder, crop_center=crop_center,
+                  roi_halo=roi_halo, axis=axis, suffix=suffix, voxel_size=voxel_size)
     kwargs.update(extra)
     fn(**kwargs)
 
 
-def _run_synapse_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, extra):
+def _run_synapse_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, voxel_size, extra):
     """Adapter for export_synapse_detections: takes `scales` instead of `scale`."""
-    kwargs = dict(cochlea=cochlea, scales=scale, output_folder=output_folder,
-                  crop_center=crop_center, roi_halo=roi_halo, axis=axis, suffix=suffix)
+    kwargs = dict(cochlea=cochlea, scales=scale, output_folder=output_folder, crop_center=crop_center,
+                  roi_halo=roi_halo, axis=axis, suffix=suffix, voxel_size=voxel_size)
     kwargs.update(extra)
     fn(**kwargs)
 
 
-def _run_frequency_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, extra):
+def _run_frequency_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, voxel_size, extra):
     """Adapter for export_frequency_mapping: only accepts a single scale value, so loop over the list."""
     for s in scale:
-        kwargs = dict(cochlea=cochlea, scale=s, output_folder=output_folder,
-                      crop_center=crop_center, roi_halo=roi_halo, axis=axis, suffix=suffix)
+        kwargs = dict(cochlea=cochlea, scale=s, output_folder=output_folder, crop_center=crop_center,
+                      roi_halo=roi_halo, axis=axis, suffix=suffix, voxel_size=voxel_size)
         kwargs.update(extra)
         fn(**kwargs)
 
@@ -97,6 +97,7 @@ def run_exports(
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
     json_info: Optional[Union[Dict[str, dict], List[Dict[str, dict]]]] = None,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
 ):
     """Run the requested export functions for every resolved position.
 
@@ -111,6 +112,8 @@ def run_exports(
             export function's own entry below overrides it.
         axis: Optional axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at each
             position's center. Same override note as `roi_halo`.
+        voxel_size: Voxel size of the data in micrometer as [x, y, z]. Same override note as
+            `roi_halo`.
         json_info: Extra keyword arguments per export function, either:
             - a dict {export_function_key: {kwargs}}, applied to `export_functions` (looked
               up via `.get(key, {})`) -- e.g. {"synapse": {"synapse_name": "..."}}; or
@@ -119,8 +122,8 @@ def run_exports(
               function(s) run for that pass, so several distinct per-function configs (e.g.
               a combined SGN+IHC lower_resolution export plus separate IHC-only/SGN-only
               ones) can run from a single --json_info file instead of one invocation each.
-            In both modes, a per-function kwargs dict may itself include "roi_halo"/"axis"
-            keys to override the shared arguments above for that export function only.
+            In both modes, a per-function kwargs dict may itself include "roi_halo"/"axis"/
+            "voxel_size" keys to override the shared arguments above for that export function only.
     """
     if isinstance(json_info, list):
         passes = [(list(entry.keys()), entry) for entry in json_info]
@@ -139,7 +142,8 @@ def run_exports(
                 adapter, fn = EXPORT_DISPATCH[key]
                 extra = pass_json_info.get(key, {})
                 adapter(
-                    fn, cochlea, scale, output_folder, entry["crop_center"], roi_halo, axis, entry["label"], extra
+                    fn, cochlea, scale, output_folder, entry["crop_center"], roi_halo, axis, entry["label"],
+                    voxel_size, extra,
                 )
 
 
@@ -154,6 +158,7 @@ def export_by_position(
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
     json_info: Optional[Union[Dict[str, dict], List[Dict[str, dict]]]] = None,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
 ):
     """Export crops at tonotopic positions for a single cochlea.
 
@@ -175,6 +180,8 @@ def export_by_position(
             position's center. Same override note as `roi_halo`.
         json_info: Extra keyword arguments per export function -- a dict or a list of dicts,
             one independent export pass per entry. See `run_exports` for the full semantics.
+        voxel_size: Voxel size of the data in micrometer as [x, y, z]. Same override note as
+            `roi_halo`.
     """
     if positions is None:
         positions = DEFAULT_POSITIONS
@@ -190,7 +197,7 @@ def export_by_position(
     resolved = resolve_positions(ref_table, positions)
     run_exports(
         cochlea, resolved, export_functions, scale, output_folder,
-        roi_halo=roi_halo, axis=axis, json_info=json_info,
+        roi_halo=roi_halo, axis=axis, json_info=json_info, voxel_size=voxel_size,
     )
 
 
@@ -225,6 +232,8 @@ def main():
                         "also be a JSON list of such dicts, one independent export pass per entry -- "
                         "each entry's own key(s) then determine which export function(s) run for that "
                         "pass, and --export_functions is ignored.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     args = parser.parse_args()
 
     positions = DEFAULT_POSITIONS
@@ -248,6 +257,7 @@ def main():
         roi_halo=args.roi_halo,
         axis=args.axis,
         json_info=json_info,
+        voxel_size=args.voxel_size,
     )
 
 

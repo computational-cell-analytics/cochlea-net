@@ -71,6 +71,7 @@ class TestRunExports(unittest.TestCase):
                 "cochlea_x", resolved, ["lower_resolution", "synapse", "frequency"],
                 scale=[0, 1], output_folder="/tmp/out", roi_halo=None, axis=2,
                 json_info={"synapse": {"synapse_name": "syn_v1"}, "frequency": {"source_name": "SGN_v2"}},
+                voxel_size=[1.887779, 1.887779, 3.0],
             )
 
         self.assertEqual(calls["lower_resolution"]["cochlea"], "cochlea_x")
@@ -88,6 +89,52 @@ class TestRunExports(unittest.TestCase):
         self.assertEqual(len(calls["frequency"]), 2)
         self.assertEqual([c["scale"] for c in calls["frequency"]], [0, 1])
         self.assertTrue(all(c["source_name"] == "SGN_v2" for c in calls["frequency"]))
+
+        # voxel_size reaches every adapter shape.
+        voxel_size = [1.887779, 1.887779, 3.0]
+        self.assertEqual(calls["lower_resolution"]["voxel_size"], voxel_size)
+        self.assertEqual(calls["synapse"]["voxel_size"], voxel_size)
+        self.assertTrue(all(c["voxel_size"] == voxel_size for c in calls["frequency"]))
+
+    def test_json_info_voxel_size_overrides_shared_value(self):
+        calls = []
+
+        def fake_grid(**kwargs):
+            calls.append(kwargs)
+
+        with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
+            "lower_resolution": (self.mod._run_grid_export, fake_grid),
+            "marker": (self.mod._run_grid_export, fake_grid),
+        }):
+            resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
+                        "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
+            self.mod.run_exports(
+                "cochlea_x", resolved, ["lower_resolution", "marker"], scale=[0],
+                output_folder="/tmp/out", roi_halo=[8, 8, 8], axis=None,
+                json_info={"marker": {"voxel_size": [0.76, 0.76, 3.0]}},
+                voxel_size=[1.887779, 1.887779, 3.0],
+            )
+
+        self.assertEqual(calls[0]["voxel_size"], [1.887779, 1.887779, 3.0])
+        self.assertEqual(calls[1]["voxel_size"], [0.76, 0.76, 3.0])
+
+    def test_voxel_size_defaults_to_isotropic_038(self):
+        calls = []
+
+        def fake_grid(**kwargs):
+            calls.append(kwargs)
+
+        with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
+            "lower_resolution": (self.mod._run_grid_export, fake_grid),
+        }):
+            resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
+                        "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
+            self.mod.run_exports(
+                "cochlea_x", resolved, ["lower_resolution"], scale=[0],
+                output_folder="/tmp/out", roi_halo=[8, 8, 8],
+            )
+
+        self.assertEqual(tuple(calls[0]["voxel_size"]), (0.38, 0.38, 0.38))
 
     def test_no_json_info_uses_shared_kwargs_only(self):
         recorded = []

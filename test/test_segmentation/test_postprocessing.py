@@ -74,5 +74,42 @@ class TestPostprocessing(unittest.TestCase):
             self.assertTrue(np.allclose(values, expected_table[col_exp].values))
 
 
+class TestDownscaledCentroids(unittest.TestCase):
+    def setUp(self):
+        from flamingo_tools.postprocessing.label_components import downscaled_centroids
+
+        self.fn = downscaled_centroids
+        self.centroids = [(0.0, 0.0, 0.0), (10.0, 20.0, 30.0), (11.0, 21.0, 31.0)]
+
+    def test_scalar_scale_factor(self):
+        # Reference values computed by hand: coordinates are divided by 10 and truncated,
+        # ref_dimensions // 10 + 1 gives the array shape.
+        array = self.fn(self.centroids, scale_factor=10, ref_dimensions=(20.0, 30.0, 40.0),
+                        downsample_mode="accumulated")
+        self.assertEqual(array.shape, (3, 4, 5))
+        self.assertEqual(array[0, 0, 0], 1)
+        self.assertEqual(array[1, 2, 3], 2)
+        self.assertEqual(array.sum(), 3)
+
+    def test_scalar_and_uniform_sequence_agree(self):
+        expected = self.fn(self.centroids, scale_factor=10, ref_dimensions=(20.0, 30.0, 40.0))
+        result = self.fn(self.centroids, scale_factor=[10, 10, 10], ref_dimensions=(20.0, 30.0, 40.0))
+        np.testing.assert_array_equal(result, expected)
+
+    def test_per_axis_scale_factor(self):
+        # Axis order of scale_factor matches the centroid axis order.
+        array = self.fn(self.centroids, scale_factor=[2, 10, 20], ref_dimensions=(20.0, 30.0, 40.0),
+                        downsample_mode="capped")
+        self.assertEqual(array.shape, (11, 4, 3))
+        self.assertEqual(array[0, 0, 0], 1)
+        # The second and third centroid fall into the same cell, which "capped" writes once.
+        self.assertEqual(array[5, 2, 1], 1)
+        self.assertEqual(array.sum(), 2)
+
+    def test_shape_without_ref_dimensions(self):
+        array = self.fn(self.centroids, scale_factor=[2, 10, 20])
+        self.assertEqual(array.shape, (6, 3, 2))
+
+
 if __name__ == "__main__":
     unittest.main()

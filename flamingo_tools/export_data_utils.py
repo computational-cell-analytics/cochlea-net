@@ -1,15 +1,58 @@
 """@private
 """
 
-from typing import List, Optional, Tuple
+from typing import List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+
+# Physical size of one cell of the down-sampled cochlea filter volume, in µm.
+# 48 * 0.38 reproduces the down-sampling factor that was hard-coded for isotropic 0.38 µm data.
+FILTER_CELL_SIZE = 48 * 0.38
+
+
+def normalize_voxel_size(voxel_size: Union[float, Sequence[float]]) -> Tuple[float, float, float]:
+    """Normalize a voxel size to a (x, y, z) tuple of three values.
+
+    Args:
+        voxel_size: Voxel size in µm, either a single value for isotropic data, a sequence with a
+            single value, or a sequence of three values in (x, y, z) order.
+
+    Returns:
+        Voxel size as a tuple of three values in (x, y, z) order.
+    """
+    if isinstance(voxel_size, (int, float)):
+        return (float(voxel_size),) * 3
+    values = tuple(float(v) for v in voxel_size)
+    if len(values) == 1:
+        values = values * 3
+    if len(values) != 3:
+        raise ValueError(f"voxel_size must have 1 or 3 values, got {len(values)}.")
+    return values
+
+
+def filter_volume_downscale_factors(
+    voxel_size: Union[float, Sequence[float]],
+    cell_size: float = FILTER_CELL_SIZE,
+) -> Tuple[int, int, int]:
+    """Compute the per-axis down-sampling factor for the cochlea filter volume.
+
+    The factors are chosen so that one cell of the down-sampled volume covers `cell_size` µm on
+    every axis. This keeps the physical extent of a dilation step independent of the voxel size.
+
+    Args:
+        voxel_size: Voxel size in µm, scalar or (x, y, z).
+        cell_size: Target physical size of one cell of the down-sampled volume, in µm.
+
+    Returns:
+        Down-sampling factor in pixels per axis, in (x, y, z) order.
+    """
+    return tuple(max(1, int(round(cell_size / v))) for v in normalize_voxel_size(voxel_size))
 
 
 def compute_crop_bb(
     crop_center: List[float],
     roi_halo: Optional[List[int]],
-    voxel_size: float,
+    voxel_size: Union[float, Sequence[float]],
     scale: int,
     shape: Tuple[int, ...],
     axis: Optional[int] = None,
@@ -22,7 +65,8 @@ def compute_crop_bb(
             scale. Optional when `axis` is given: the two axes not collapsed by `axis` then
             span the full array extent (`shape`), i.e. the whole cross-sectional plane is
             cropped. Required otherwise.
-        voxel_size: Isotropic voxel size in µm at full resolution (scale 0).
+        voxel_size: Voxel size in µm at full resolution (scale 0), scalar for isotropic data or
+            three values in (x, y, z) order.
         scale: Scale level (0 = full resolution, each step doubles the effective voxel size).
         shape: Array shape in ZYX order at the target scale.
         axis: Optional axis index into (x, y, z), i.e. 0, 1, or 2. When given, that axis is
@@ -36,7 +80,8 @@ def compute_crop_bb(
     if roi_halo is None and axis is None:
         raise ValueError("roi_halo is required unless axis is also given.")
 
-    center_zyx = np.round(np.array(crop_center[::-1]) / (voxel_size * 2 ** scale)).astype(int)
+    voxel_size_zyx = np.array(normalize_voxel_size(voxel_size)[::-1])
+    center_zyx = np.round(np.array(crop_center[::-1]) / (voxel_size_zyx * 2 ** scale)).astype(int)
 
     if roi_halo is None:
         start = np.zeros(3, dtype=int)
@@ -83,20 +128,20 @@ def crop_filter_volume(
     filter_volume: np.ndarray,
     start: np.ndarray,
     stop: np.ndarray,
-    us_factor: int,
+    us_factor: Union[float, Sequence[float]],
 ) -> np.ndarray:
-    """Extract and upscale the sub-region of a downsampled cochlea filter volume for a crop.
+    """Extract the sub-region of a down-sampled cochlea filter volume that covers a crop.
 
     Instead of upscaling the entire filter volume to full resolution and then slicing, this
-    function only upscales the small portion covering the requested crop, which is far more
-    memory-efficient when exporting high-resolution crops.
+    function maps each target pixel to its filter volume cell, which is far more memory-efficient
+    when exporting high-resolution crops.
 
     Args:
-        filter_volume: Downsampled boolean cochlea mask in ZYX order.
+        filter_volume: Down-sampled boolean cochlea mask in ZYX order.
         start: Crop start in scale-s pixel coordinates, ZYX.
         stop: Crop stop in scale-s pixel coordinates, ZYX.
-        us_factor: Upscale factor to go from filter_volume resolution to scale-s resolution
-            (i.e. ds_factor // 2**scale).
+        us_factor: Size of one filter_volume cell in scale-s pixels, either a single value or one
+            value per axis in ZYX order (i.e. ds_factor / 2**scale). May be non-integer.
 
     Returns:
         Boolean mask aligned to the crop region, shape == stop - start. Regions of the crop
@@ -105,24 +150,18 @@ def crop_filter_volume(
         `filter_cochlea_volume`, and can be smaller than the full image -- e.g. for a
         whole-plane 2D crop) are zero-padded, i.e. treated as "not part of the cochlea".
     """
-    # Sub-region of filter_volume covering the crop (1-cell margin for safety).
-    start_fv = np.maximum(0, start // us_factor - 1)
-    stop_fv = np.minimum(np.array(filter_volume.shape), (stop - 1) // us_factor + 2)
-    sub = filter_volume[start_fv[0]:stop_fv[0], start_fv[1]:stop_fv[1], start_fv[2]:stop_fv[2]]
+    factors = np.broadcast_to(np.asarray(us_factor, dtype=float), (3,))
+    if np.any(factors <= 0):
+        raise ValueError(f"us_factor must be positive, got {us_factor}.")
 
-    # Upscale only the sub-region.
-    big = np.repeat(np.repeat(np.repeat(sub, us_factor, 0), us_factor, 1), us_factor, 2)
+    indices, valid = [], []
+    for ax in range(3):
+        index = np.floor(np.arange(start[ax], stop[ax]) / factors[ax]).astype(int)
+        valid.append((index >= 0) & (index < filter_volume.shape[ax]))
+        indices.append(np.clip(index, 0, filter_volume.shape[ax] - 1))
 
-    # Align to exact crop coordinates.
-    offset = start - start_fv * us_factor
-    crop_size = stop - start
-    cropped = big[offset[0]:offset[0] + crop_size[0],
-                  offset[1]:offset[1] + crop_size[1],
-                  offset[2]:offset[2] + crop_size[2]]
-
-    if cropped.shape != tuple(crop_size):
-        padded = np.zeros(tuple(crop_size), dtype=cropped.dtype)
-        padded[:cropped.shape[0], :cropped.shape[1], :cropped.shape[2]] = cropped
-        cropped = padded
-
+    cropped = filter_volume[np.ix_(*indices)].astype(bool)
+    cropped &= valid[0][:, None, None]
+    cropped &= valid[1][None, :, None]
+    cropped &= valid[2][None, None, :]
     return cropped

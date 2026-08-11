@@ -2,7 +2,7 @@ import math
 import multiprocessing as mp
 import os
 from concurrent import futures
-from typing import Callable, List, Optional, Tuple, Union
+from typing import Callable, List, Optional, Sequence, Tuple, Union
 
 import elf.parallel as parallel
 import numpy as np
@@ -244,7 +244,7 @@ def filter_segmentation(
 
 def downscaled_centroids(
     centroids: np.ndarray,
-    scale_factor: int,
+    scale_factor: Union[int, Sequence[int]],
     ref_dimensions: Optional[Tuple[float, float, float]] = None,
     component_labels: Optional[List[int]] = None,
     downsample_mode: str = "accumulated",
@@ -253,7 +253,8 @@ def downscaled_centroids(
 
     Args:
         centroids: Centroids of SGN segmentation, ndarray of shape (N, 3)
-        scale_factor: Factor for downscaling coordinates.
+        scale_factor: Factor for downscaling coordinates, either a single value or one value per
+            axis, in the same axis order as the centroids.
         ref_dimensions: Reference dimensions for downscaling. Taken from centroids if not supplied.
         component_labels: List of component labels, which has to be supplied for the downsampling mode 'components'
         downsample_mode: Flag for downsampling, either 'accumulated', 'capped', or 'components'.
@@ -261,18 +262,16 @@ def downscaled_centroids(
     Returns:
         The downscaled array
     """
-    centroids_scaled = [(c[0] / scale_factor, c[1] / scale_factor, c[2] / scale_factor) for c in centroids]
+    factors = np.broadcast_to(np.asarray(scale_factor), (3,))
+    centroids_scaled = [(c[0] / factors[0], c[1] / factors[1], c[2] / factors[2]) for c in centroids]
 
     if ref_dimensions is None:
-        bounding_dimensions = (max([c[0] for c in centroids]),
-                               max([c[1] for c in centroids]),
-                               max([c[2] for c in centroids]))
-        bounding_dimensions_scaled = tuple([round(b // scale_factor + 1) for b in bounding_dimensions])
-        new_array = np.zeros(bounding_dimensions_scaled)
+        ref_dimensions = (max([c[0] for c in centroids]),
+                          max([c[1] for c in centroids]),
+                          max([c[2] for c in centroids]))
 
-    else:
-        bounding_dimensions_scaled = tuple([round(b // scale_factor + 1) for b in ref_dimensions])
-        new_array = np.zeros(bounding_dimensions_scaled)
+    bounding_dimensions_scaled = tuple(round(b // f + 1) for b, f in zip(ref_dimensions, factors))
+    new_array = np.zeros(bounding_dimensions_scaled)
 
     if downsample_mode == "accumulated":
         for c in centroids_scaled:
@@ -517,10 +516,10 @@ def dilate_and_trim(
 def filter_cochlea_volume_single(
     table: pd.DataFrame,
     components: Optional[List[int]] = [1],
-    scale_factor: int = 48,
+    scale_factor: Union[int, Sequence[int]] = 48,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     dilation_iterations: int = 12,
-    padding: int = 1200,
+    padding_um: float = 456.0,
 ) -> np.ndarray:
     """Filter cochlea volume based on a segmentation table.
     Centroids contained in the segmentation table are used to create a down-scaled binary array.
@@ -529,10 +528,11 @@ def filter_cochlea_volume_single(
     Args:
         table: Segmentation table.
         components: Component labels for filtering segmentation table.
-        scale_factor: Down-sampling factor for filtering.
-        voxel_size: Voxel size of data in micrometer.
+        scale_factor: Down-sampling factor for filtering, in pixel. Either a single value or one
+            value per axis in (x, y, z) order.
+        voxel_size: Voxel size of data in micrometer, in (x, y, z) order.
         dilation_iterations: Iterations for dilating binary segmentation mask. A negative value omits binary closing.
-        padding: Padding in pixel to apply to guessed dimensions based on centroid coordinates.
+        padding_um: Padding in micrometer to apply to guessed dimensions based on centroid coordinates.
 
     Returns:
         Binary 3D array of filtered cochlea.
@@ -547,10 +547,10 @@ def filter_cochlea_volume_single(
                          table["anchor_z"] / voxel_size[2]))
 
     # padding the array allows for dilation without worrying about array borders
-    max_x = table["anchor_x"].max() / voxel_size[0] + padding
-    max_y = table["anchor_y"].max() / voxel_size[1] + padding
-    max_z = table["anchor_z"].max() / voxel_size[2] + padding
-    ref_dimensions = (max_x, max_y, max_z)
+    ref_dimensions = tuple(
+        (table[f"anchor_{axis}"].max() + padding_um) / voxel_size[num]
+        for num, axis in enumerate("xyz")
+    )
 
     # down-scale arrays
     array_downscaled = downscaled_centroids(centroids, ref_dimensions=ref_dimensions,
@@ -572,10 +572,10 @@ def filter_cochlea_volume(
     ihc_table: pd.DataFrame,
     sgn_components: Optional[List[int]] = [1],
     ihc_components: Optional[List[int]] = [1],
-    scale_factor: int = 48,
+    scale_factor: Union[int, Sequence[int]] = 48,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     dilation_iterations: int = 12,
-    padding: int = 1200,
+    padding_um: float = 456.0,
     dilation_method: str = "individual",
 ) -> np.ndarray:
     """Filter cochlea volume with SGN and IHC segmentation.
@@ -587,10 +587,11 @@ def filter_cochlea_volume(
         ihc_table: IHC segmentation table.
         sgn_components: Component labels for filtering SGN segmentation table.
         ihc_components: Component labels for filtering IHC segmentation table.
-        scale_factor: Down-sampling factor for filtering.
-        voxel_size: voxel_size of pixel in µm.
+        scale_factor: Down-sampling factor for filtering, in pixel. Either a single value or one
+            value per axis in (x, y, z) order.
+        voxel_size: voxel_size of pixel in µm, in (x, y, z) order.
         dilation_iterations: Iterations for dilating binary segmentation mask.
-        padding: Padding in pixel to apply to guessed dimensions based on centroid coordinates.
+        padding_um: Padding in micrometer to apply to guessed dimensions based on centroid coordinates.
         dilation_method: Dilation style for SGN and IHC segmentation, either 'individual', 'combined' or no dilation.
 
     Returns:
@@ -611,10 +612,10 @@ def filter_cochlea_volume(
                              ihc_table["anchor_z"] / voxel_size[2]))
 
     # padding the array allows for dilation without worrying about array borders
-    max_x = max([sgn_table["anchor_x"].max(), ihc_table["anchor_x"].max()]) / voxel_size[0] + padding
-    max_y = max([sgn_table["anchor_y"].max(), ihc_table["anchor_y"].max()]) / voxel_size[1] + padding
-    max_z = max([sgn_table["anchor_z"].max(), ihc_table["anchor_z"].max()]) / voxel_size[2] + padding
-    ref_dimensions = (max_x, max_y, max_z)
+    ref_dimensions = tuple(
+        (max([sgn_table[f"anchor_{axis}"].max(), ihc_table[f"anchor_{axis}"].max()]) + padding_um) / voxel_size[num]
+        for num, axis in enumerate("xyz")
+    )
 
     # down-scale arrays
     array_downscaled_sgn = downscaled_centroids(centroids_sgn, ref_dimensions=ref_dimensions,

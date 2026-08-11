@@ -1,14 +1,14 @@
 import argparse
 import json
 import os
-from typing import List, Optional
+from typing import List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 import tifffile
 import zarr
 
-from flamingo_tools.export_data_utils import compute_crop_bb, crop_suffix
+from flamingo_tools.export_data_utils import compute_crop_bb, crop_suffix, normalize_voxel_size
 from flamingo_tools.s3_utils import BUCKET_NAME, SERVICE_ENDPOINT, create_s3_target, get_s3_path
 from skimage.morphology import ball
 from tqdm import tqdm
@@ -30,6 +30,7 @@ def export_synapse_detections(
     suffix: Optional[str] = None,
     as_float: bool = False,
     use_syn_ids: bool = False,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
 ):
     """Export synapse detections from S3.
 
@@ -40,7 +41,8 @@ def export_synapse_detections(
         synapse_name: The name of the synapse detection source.
         reference_ihcs: Name of IHC segmentation.
         max_dist: Maximal distance of synapse to IHC segmentation.
-        radius: The radius for writing the synapse points to the output volume.
+        radius: The radius in pixel for writing the synapse points to the output volume. The
+            footprint is a sphere in pixel space, so it is anisotropic for anisotropic data.
         id_offset: Offset of label id of synapse output to have different colours for visualization.
         filter_ihc_components: Component label(s) for filtering IHC segmentation.
         crop_center: Optional crop center as [x, y, z] in µm. Requires roi_halo, unless axis is given.
@@ -52,7 +54,9 @@ def export_synapse_detections(
             e.g. a position name such as "apex".
         as_float: Whether to save the exported data as floating point values.
         use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
+        voxel_size: Voxel size of the data in micrometer, in (x, y, z) order.
     """
+    voxel_size = normalize_voxel_size(voxel_size)
     s3 = create_s3_target()
 
     content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
@@ -88,9 +92,8 @@ def export_synapse_detections(
         shape = f[input_key].shape
 
         # Scale the coordinates according to the scale level.
-        voxel_size = 0.38
-        coordinates = syn_table[["z", "y", "x"]].values
-        coordinates /= voxel_size
+        coordinates = syn_table[["z", "y", "x"]].values.astype("float64")
+        coordinates /= np.array(voxel_size[::-1])
         coordinates /= (2 ** scale)
         coordinates = np.round(coordinates, 0).astype("int")
 
@@ -169,6 +172,8 @@ def main():
                         "e.g. a position name such as 'apex'.")
     parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--use_syn_ids", action="store_true")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     args = parser.parse_args()
     if args.crop_center is not None:
         if args.roi_halo is None and args.axis is None:
@@ -183,7 +188,7 @@ def main():
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
         crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis, suffix=args.suffix,
-        as_float=args.as_float, use_syn_ids=args.use_syn_ids,
+        as_float=args.as_float, use_syn_ids=args.use_syn_ids, voxel_size=args.voxel_size,
     )
 
 
