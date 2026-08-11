@@ -1,0 +1,34 @@
+[
+	{
+		"lower_resolution": {
+			"channels": [
+				"MYO",
+				"PV"
+			],
+			"roi_halo": [600, 600, 5]
+		}
+	},
+	{
+		"lower_resolution": {
+			"channels": [
+				"IHC_LOWRES-v3"
+			],
+			"filter_by_components": [
+				1,
+				2
+			],
+			"roi_halo": [600, 600, 5]
+		}
+	},
+	{
+		"lower_resolution": {
+			"channels": [
+				"SGN_detect-v5b"
+			],
+			"filter_by_components": [
+				1
+			],
+			"roi_halo": [600, 600, 5]
+		}
+	}
+]
