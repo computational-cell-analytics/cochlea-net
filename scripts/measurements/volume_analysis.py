@@ -64,11 +64,7 @@ def compute_sgn_volumes_lavision():
     output_folder = "./data/volumes_lavision"
     os.makedirs(output_folder, exist_ok=True)
     cochleae = ["LaVision-M02", "LaVision-M03"]
-    # Note: we used a wrong voxel spacing in MoBIE (1.9 micron in-plane instead of 0.76)
-    # We solved this here in a hacky fashion by hard-coding the resolution for the volume
-    # calculation temporariliy in the measurement function.
-    voxel_size = (3.0, 1.887779, 1.887779)
-    # voxel_size = (3.0, 0.76, 0.76)
+    voxel_size = (1.887779, 1.887779, 3.0)
     for cochlea in cochleae:
         output_path = os.path.join(output_folder, f"{cochlea}.tsv")
         if os.path.exists(output_path):
@@ -80,11 +76,7 @@ def compute_ihc_volumes_lavision():
     output_folder = "./data/ihc_volumes_lavision"
     os.makedirs(output_folder, exist_ok=True)
     cochleae = ["LaVision-M02", "LaVision-M03"]
-    # Note: we used a wrong voxel spacing in MoBIE (1.9 micron in-plane instead of 0.76)
-    # We solved this here in a hacky fashion by hard-coding the resolution for the volume
-    # calculation temporariliy in the measurement function.
-    voxel_size = (3.0, 1.887779, 1.887779)
-    # voxel_size = (3.0, 0.76, 0.76)
+    voxel_size = (1.887779, 1.887779, 3.0)
     component_lists = [[1, 2], [1]]
     for cochlea, component_list in zip(cochleae, component_lists):
         output_path = os.path.join(output_folder, f"{cochlea}.tsv")

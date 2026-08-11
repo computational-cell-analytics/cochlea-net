@@ -1,0 +1,55 @@
+[
+	{
+		"lower_resolution": {
+			"channels": [
+				"PV",
+				"Vglut3",
+				"CTBP2"
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},
+	{
+		"lower_resolution": {
+			"channels": [
+				"IHC_v11"
+			],
+			"filter_by_components": [
+				2,
+				1,
+				6,
+				4,
+				3,
+				5
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},
+	{
+		"lower_resolution": {
+			"channels": [
+				"SGN_v2"
+			],
+			"filter_by_components": [
+				1
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},
+	{
+		"synapse": {
+			"synapse_name": "synapse_v5_ihc_v11",
+			"reference_ihcs": "IHC_v11",
+			"id_offset": 1,
+			"roi_halo": [1200, 1200, 10]	,
+			"filter_ihc_components": [
+				2,
+				1,
+				6,
+				4,
+				3,
+				5
+			]
+		}
+	}
+]

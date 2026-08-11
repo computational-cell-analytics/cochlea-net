@@ -1,12 +1,13 @@
 import argparse
 import os
+from typing import List, Optional, Sequence
 
 import numpy as np
 import pandas as pd
 import tifffile
 import zarr
 
-from flamingo_tools.export_data_utils import compute_crop_bb
+from flamingo_tools.export_data_utils import compute_crop_bb, crop_suffix
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.postprocessing.sgn_subtype_utils import STAIN_TO_TYPE, COCHLEAE
 # from skimage.segmentation import relabel_sequential
@@ -122,25 +123,32 @@ def filter_subtypes(cochlea, segmentation, seg_name, subtype):
         subtypes_str = "/".join(subtype)
         print(f"subtypes {subtypes_str} with {len(label_ids_subtype)} instances")
 
-    filter_mask = ~np.isin(segmentation, label_ids_subtype)
-    segmentation[filter_mask] = 0
-    filter_mask = np.isin(segmentation, label_ids_subtype)
-    segmentation[filter_mask] = 1
+    subtype_mask = np.isin(segmentation, label_ids_subtype)
+    segmentation[~subtype_mask] = 0
+    segmentation[subtype_mask] = 1
 
-    segmentation = segmentation.astype("float32")
-    return segmentation
+    return segmentation.astype("float32")
 
 
-def export_lower_resolution(args):
-
-    cochlea = args.cochlea
-    subtype_stains = args.stains
-    force_overwrite = args.force
-    crop = args.crop_center is not None
+def export_lower_resolution(
+    cochlea: str,
+    scale: List[int],
+    output_folder: str,
+    stains: Optional[List[str]] = None,
+    force: bool = False,
+    crop_center: Optional[List[float]] = None,
+    roi_halo: Optional[List[int]] = None,
+    axis: Optional[int] = None,
+    suffix: Optional[str] = None,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+):
+    subtype_stains = stains
+    force_overwrite = force
+    crop = crop_center is not None
     # iterate through exporting lower resolutions
-    for scale in args.scale:
-        output_folder = os.path.join(args.output_folder, cochlea, f"scale{scale}")
-        os.makedirs(output_folder, exist_ok=True)
+    for s in scale:
+        out_folder = os.path.join(output_folder, cochlea, f"scale{s}")
+        os.makedirs(out_folder, exist_ok=True)
         if cochlea in COCHLEAE.keys():
             if subtype_stains is None:
                 subtype_stains = COCHLEAE[cochlea]["subtype_stains"]
@@ -163,17 +171,22 @@ def export_lower_resolution(args):
             else:
                 subtype_str = "".join([s.replace(" ", "") for s in subtype])
 
-            out_path = os.path.join(output_folder, f"{seg_name}_{subtype_str}.tif")
+            if crop:
+                out_path = os.path.join(
+                    out_folder, f"{seg_name}_{subtype_str}{crop_suffix(crop_center, axis, suffix)}.tif"
+                )
+            else:
+                out_path = os.path.join(out_folder, f"{seg_name}_{subtype_str}.tif")
             if os.path.exists(out_path) and not force_overwrite:
                 continue
 
-            input_key = f"s{scale}"
+            input_key = f"s{s}"
             internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             f = zarr.open(s3_store, mode="r")
             if crop:
                 start, stop = compute_crop_bb(
-                    args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
+                    crop_center, roi_halo, voxel_size=voxel_size, scale=s, shape=f[input_key].shape, axis=axis,
                 )
                 data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
             else:
@@ -196,10 +209,25 @@ def main():
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
-                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale. "
+                        "Optional when --axis is given: the whole plane is cropped in that case.")
+    parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
+                        help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
+                        "Requires --crop_center.")
+    parser.add_argument("--suffix", type=str, default=None,
+                        help="Extra label appended to the output filename after the crop/axis suffix, "
+                        "e.g. a position name such as 'apex'.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     args = parser.parse_args()
+    if args.crop_center is not None:
+        if args.roi_halo is None and args.axis is None:
+            parser.error("--crop_center requires --roi_halo, unless --axis is also given "
+                         "(the whole plane is cropped in that case).")
+    elif args.axis is not None:
+        parser.error("--axis requires --crop_center.")
 
-    export_lower_resolution(args)
+    export_lower_resolution(**vars(args))
 
 
 if __name__ == "__main__":

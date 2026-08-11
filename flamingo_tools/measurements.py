@@ -33,8 +33,8 @@ def _measure_volume_and_surface(
     mask: np.typing.ArrayLike,
     voxel_size: Tuple[float, float, float],
 ) -> Tuple[float, float]:
-    # Use marching_cubes for 3D data
-    verts, faces, normals, _ = marching_cubes(mask, spacing=voxel_size)
+    # Use marching_cubes for 3D data. The mask is in ZYX order, so the spacing has to be reversed.
+    verts, faces, normals, _ = marching_cubes(mask, spacing=tuple(voxel_size)[::-1])
 
     mesh = trimesh.Trimesh(vertices=verts, faces=faces, vertex_normals=normals)
     surface = mesh.area
@@ -60,13 +60,14 @@ def _get_bounding_box_and_center(
     else:
         bb_extension = 2
 
+    # The table stores physical coordinates in (x, y, z) order, the output is in ZYX pixel order.
     bb_min = np.array([
-        row.bb_min_z.item() / voxel_size[0], row.bb_min_y.item() / voxel_size[1], row.bb_min_x.item() / voxel_size[2]
+        row.bb_min_z.item() / voxel_size[2], row.bb_min_y.item() / voxel_size[1], row.bb_min_x.item() / voxel_size[0]
     ]).astype("float32")
     bb_min = np.round(bb_min, 0).astype("int32")
 
     bb_max = np.array([
-        row.bb_max_z.item() / voxel_size[0], row.bb_max_y.item() / voxel_size[1], row.bb_max_x.item() / voxel_size[2]
+        row.bb_max_z.item() / voxel_size[2], row.bb_max_y.item() / voxel_size[1], row.bb_max_x.item() / voxel_size[0]
     ]).astype("float32")
     bb_max = np.round(bb_max, 0).astype("int32")
 
@@ -76,9 +77,9 @@ def _get_bounding_box_and_center(
     )
 
     center = (
-        int(row.anchor_z.item() / voxel_size[0]),
+        int(row.anchor_z.item() / voxel_size[2]),
         int(row.anchor_y.item() / voxel_size[1]),
-        int(row.anchor_x.item() / voxel_size[2]),
+        int(row.anchor_x.item() / voxel_size[0]),
     )
 
     return bb, center
@@ -206,9 +207,6 @@ def _morphology_features(seg_id, table, image, segmentation, voxel_size, **kwarg
 
     bb, center = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation=0)
     mask = segmentation[bb] == seg_id
-
-    # Hard-coded value for LaVision cochleae. This is a hack for the wrong voxel size in MoBIE.
-    # voxel_size = (3.0, 0.76, 0.76)
 
     volume, surface = _measure_volume_and_surface(mask, voxel_size)
     measures["volume"] = volume
