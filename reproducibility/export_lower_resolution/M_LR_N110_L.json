@@ -1,0 +1,28 @@
+[
+	{
+		"lower_resolution": {
+			"channels": [
+				"PV",
+				"Calb1",
+				"Ntng1"
+			],
+			"roi_halo": [800, 800, 10]
+		}
+	},
+	{
+		"subtypes": {
+			"roi_halo": [800, 800, 10]
+		}
+	},	
+	{
+		"lower_resolution": {
+			"channels": [
+				"SGN_v2"
+			],
+			"filter_by_components": [
+				1
+			],
+			"roi_halo": [800, 800, 10]
+		}
+	}
+]
