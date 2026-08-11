@@ -349,7 +349,8 @@ def extract_central_block_from_json(
             s3_seg_channel = dic["segmentation_channel"]
             table_path = f"{s3_name}/tables/{s3_seg_channel}/default.tsv"
         else:
-            table_path = os.path.join(mobie_dir, dic["dataset_name"], "tables", dic["segmentation_channel"], "default.tsv")
+            table_path = os.path.join(
+                mobie_dir, dic["dataset_name"], "tables", dic["segmentation_channel"], "default.tsv")
 
         equidistant_centers_single(
             table_path=table_path,
@@ -357,6 +358,7 @@ def extract_central_block_from_json(
             n_blocks=dic["n_blocks"],
             cell_type=dic["cell_type"],
             component_list=dic["component_list"],
+            include_gap=dic.get("include_gap", False),
             s3=s3,
             dict_index=dict_index,
             **kwargs,
