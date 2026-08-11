@@ -1,16 +1,98 @@
 import json
 import os
-from typing import List, Optional, Tuple
+from concurrent.futures import ThreadPoolExecutor
+from typing import Any, Dict, List, Optional, Tuple
 
 import imageio.v3 as imageio
 import numpy as np
 import pandas as pd
+import tifffile
 import zarr
 from scipy.ndimage import find_objects
 from scipy.ndimage import label as label_structures
 from tqdm import tqdm
 
 from flamingo_tools.s3_utils import get_s3_path
+
+# Columns that add_metadata_to_crop_table derives from the annotation crops.
+CROP_TABLE_COLUMNS = [
+    "n_samples",
+    "mean_vol[px]",
+    "min_vol[px]",
+    "max_vol[px]",
+    "dim",
+    "n_samples[>=1000px]",
+    "n_samples[<1000px]",
+]
+
+# Columns that add_metadata_to_crop_table_synapses derives from the crops.
+SYNAPSE_CROP_TABLE_COLUMNS = ["n_samples", "dim"]
+
+
+def _measure_annotation_crop(seg_file: str, min_size: int) -> Tuple[Dict[str, Any], List[Tuple[int, int]]]:
+    """Count the instances of an annotation crop and measure their volumes.
+
+    The crop is read plane by plane and counted with np.bincount, so the peak memory is one plane
+    instead of the full volume and the counting is a single pass instead of a sort.
+
+    Args:
+        seg_file: File path to the annotation TIF.
+        min_size: Minimal number of pixels per instance.
+
+    Returns:
+        The measures for the columns in CROP_TABLE_COLUMNS.
+        The label IDs and pixel counts of all instances below min_size.
+    """
+    counts = np.zeros(0, dtype=np.int64)
+    with tifffile.TiffFile(seg_file) as f:
+        series = f.series[0]
+        shape = tuple(series.shape)
+        # A multi-page series holds one plane per page. Everything else is read in one go.
+        planes = (page.asarray() for page in series.pages) if len(series.pages) > 1 else [series.asarray()]
+        for plane in planes:
+            plane_counts = np.bincount(plane.ravel())
+            if plane_counts.size > counts.size:
+                counts = np.pad(counts, (0, plane_counts.size - counts.size))
+            counts[:plane_counts.size] += plane_counts
+
+    # Drop the background bin and all label IDs that are not present in the crop.
+    label_ids = np.arange(1, counts.size, dtype=np.int64)
+    counts = counts[1:]
+    present = counts > 0
+    label_ids, counts = label_ids[present], counts[present]
+
+    kept = counts[counts >= min_size]
+    undersized = [(int(i), int(c)) for i, c in zip(label_ids, counts) if c < min_size]
+    measures = {
+        "n_samples": int(counts.size),
+        "mean_vol[px]": round(float(np.mean(kept)), 1) if kept.size else 0.0,
+        "min_vol[px]": int(kept.min()) if kept.size else 0,
+        "max_vol[px]": int(kept.max()) if kept.size else 0,
+        "dim": str(shape),
+        "n_samples[>=1000px]": int(kept.size),
+        "n_samples[<1000px]": len(undersized),
+    }
+    return measures, undersized
+
+
+def _crop_row_is_complete(row: pd.Series) -> bool:
+    """Check whether the measures of a table row are present and consistent.
+
+    A row with a total instance count that matches the sum of the two size-filtered counts was
+    measured with the same criteria that are applied now, so it does not have to be measured again.
+    """
+    if any(column not in row.index or pd.isna(row[column]) for column in CROP_TABLE_COLUMNS):
+        return False
+    return float(row["n_samples"]) == float(row["n_samples[>=1000px]"]) + float(row["n_samples[<1000px]"])
+
+
+def _apply_updates(df: pd.DataFrame, columns: List[str], updates: Dict[Any, Dict[str, Any]]) -> pd.DataFrame:
+    """Write the new measures into the table and keep the values of the rows that were skipped."""
+    for column in columns:
+        df[column] = [
+            updates[index][column] if index in updates else df.at[index, column] for index in df.index
+        ]
+    return df
 
 
 def add_metadata_to_crop_table(
@@ -19,9 +101,14 @@ def add_metadata_to_crop_table(
     table_out: Optional[str] = None,
     min_size: int = 1000,
     label_dir: str = None,
+    recompute: bool = False,
+    n_workers: int = 4,
 ):
     """Add meta information like volume and crop dimension to an existing table,
     which compiles the crops used for training and validation of a segmentation network.
+
+    Rows with complete and consistent measures are skipped, unless recompute is set.
+    Their annotation crops are not read.
 
     Args:
         table_in: File path to TSV table.
@@ -29,80 +116,37 @@ def add_metadata_to_crop_table(
         table_out: Output path for extended table.
         min_size: Minimal number of pixels per instance.
         label_dir: Directory containing annotations.
+        recompute: Measure all crops again, including the rows that are already complete.
+        n_workers: Number of threads for reading the annotation crops.
     """
     if table_out is None:
         table_out = table_in
 
     df = pd.read_csv(table_in, sep="\t")
-    n_samples = []
-    n_samples_undercut = []
-    mean_vol = []
-    min_vol = []
-    max_vol = []
-    dimensions = []
-    for _, row in df.iterrows():
-        file_name = row["Original"]
-        dataset = row["Dataset"]
+    for column in CROP_TABLE_COLUMNS:
+        if column not in df.columns:
+            df[column] = np.nan
+
+    row_ids = [index for index in df.index if recompute or not _crop_row_is_complete(df.loc[index])]
+
+    def measure_row(index):
+        file_name = df.at[index, "Original"]
         if label_dir is None:
-            seg_file = os.path.join(data_dir, dataset, f"{file_name}_annotations.tif")
+            seg_file = os.path.join(data_dir, df.at[index, "Dataset"], f"{file_name}_annotations.tif")
         else:
             seg_file = os.path.join(label_dir, f"{file_name}_annotations.tif")
-        arr = imageio.imread(seg_file)
-        unique_labels, counts = np.unique(arr, return_counts=True)
-        samples = len(unique_labels) - 1
-        counts_filtered = []
-        if len(unique_labels) > 1 and unique_labels[0] == 0:
-            unique_labels = unique_labels[1:]
-            counts = counts[1:]
-        # empty crop
-        else:
-            unique_labels = []
+        measures, undersized = _measure_annotation_crop(seg_file, min_size)
+        for label_id, count in undersized:
+            tqdm.write(f"{file_name}: Pixel count {count} lower than minimal number {min_size} for ID {label_id}.")
+        return index, measures
 
-        samples_undercut = 0
-        samples = 0
-        for (unique_label, count) in zip(unique_labels, counts):
-            if count < min_size:
-                samples_undercut += 1
-                print(f"{file_name}: Pixel count {count} lower than minimal number {min_size} for ID {unique_label}.")
-            else:
-                samples += 1
-                counts_filtered.append(count)
+    table_name = os.path.basename(table_in)
+    print(f"{table_name}: measuring {len(row_ids)} of {len(df)} crops.")
+    with ThreadPoolExecutor(max_workers=n_workers) as pool:
+        results = list(tqdm(pool.map(measure_row, row_ids), total=len(row_ids), desc=f"Measure crops of {table_name}"))
 
-        n_samples.append(int(samples))
-        n_samples_undercut.append(int(samples_undercut))
-        mean_vol.append(round(np.mean(counts_filtered), 1))
-        if len(counts_filtered) == 0:
-            min_vol.append(0)
-            max_vol.append(0)
-        else:
-            min_vol.append(int(min(counts_filtered)))
-            max_vol.append(int(max(counts_filtered)))
-        dimensions.append(str(arr.shape))
-
-    n_samples_total = [int(n + n_under) for (n, n_under) in zip(n_samples, n_samples_undercut)]
-
-    df.loc[:, "n_samples"] = n_samples_total
-    df.loc[:, "dim"] = dimensions
-    df.loc[:, "n_samples[>=1000px]"] = n_samples
-    df.loc[:, "n_samples[<1000px]"] = n_samples_undercut
-    df.loc[:, "mean_vol[px]"] = mean_vol
-    df.loc[:, "min_vol[px]"] = min_vol
-    df.loc[:, "max_vol[px]"] = max_vol
-
-    df_reordered = df.loc[:, [
-        "Original",
-        "Standardized",
-        "Dataset",
-        "Crop_center",
-        "n_samples",
-        "mean_vol[px]",
-        "min_vol[px]",
-        "max_vol[px]",
-        "dim",
-        "n_samples[>=1000px]",
-        "n_samples[<1000px]",
-    ]]
-
+    df = _apply_updates(df, CROP_TABLE_COLUMNS, dict(results))
+    df_reordered = df.loc[:, ["Original", "Standardized", "Dataset", "Crop_center"] + CROP_TABLE_COLUMNS]
     df_reordered.to_csv(table_out, sep="\t", index=False)
 
 
@@ -112,9 +156,12 @@ def add_metadata_to_crop_table_synapses(
     test_dir: Optional[str] = None,
     input_key: str = "raw",
     table_out: Optional[str] = None,
+    recompute: bool = False,
 ):
     """Add meta information like the number of instances and crop dimensions to an existing table,
     which compiles the crops used for training, validation and testing of the network for synapse detection.
+
+    Rows with complete measures are skipped, unless recompute is set.
 
     Args:
         table_in: File path to TSV table.
@@ -122,17 +169,27 @@ def add_metadata_to_crop_table_synapses(
         test_dir: Directory used for testing. Features sub-directories 'images' and 'labels'.
         input_key: Input key for ZARR image file. Used to determine crop dimensions.
         table_out: Output path for extended table.
+        recompute: Measure all crops again, including the rows that are already complete.
     """
     if table_out is None:
         table_out = table_in
 
     df = pd.read_csv(table_in, sep="\t")
-    dimensions = []
-    samples = []
+    for column in SYNAPSE_CROP_TABLE_COLUMNS:
+        if column not in df.columns:
+            df[column] = np.nan
 
-    for _, row in df.iterrows():
-        file_name = row["Original"]
-        dataset = row["Dataset"]
+    row_ids = [
+        index for index in df.index
+        if recompute or any(pd.isna(df.at[index, column]) for column in SYNAPSE_CROP_TABLE_COLUMNS)
+    ]
+
+    table_name = os.path.basename(table_in)
+    print(f"{table_name}: measuring {len(row_ids)} of {len(df)} crops.")
+    updates = {}
+    for index in tqdm(row_ids, desc=f"Measure crops of {table_name}"):
+        file_name = df.at[index, "Original"]
+        dataset = df.at[index, "Dataset"]
         if dataset in ["train", "val"]:
             data_dir = train_dir
         else:
@@ -140,27 +197,15 @@ def add_metadata_to_crop_table_synapses(
                 raise ValueError(f"Supply a test directory for {file_name}.")
             data_dir = test_dir
 
-        print(file_name)
         image_path = os.path.join(data_dir, "images", f"{file_name}.zarr")
         image = zarr.open(image_path)[input_key]
-        dimensions.append(image.shape)
 
         label_path = os.path.join(data_dir, "labels", f"{file_name}.csv")
         label_df = pd.read_csv(label_path, sep="\t")
-        samples.append(len(label_df))
+        updates[index] = {"n_samples": len(label_df), "dim": str(tuple(image.shape))}
 
-    df.loc[:, "n_samples"] = samples
-    df.loc[:, "dim"] = dimensions
-
-    df_reordered = df.loc[:, [
-        "Original",
-        "Standardized",
-        "Dataset",
-        "Crop_center",
-        "n_samples",
-        "dim",
-    ]]
-
+    df = _apply_updates(df, SYNAPSE_CROP_TABLE_COLUMNS, updates)
+    df_reordered = df.loc[:, ["Original", "Standardized", "Dataset", "Crop_center"] + SYNAPSE_CROP_TABLE_COLUMNS]
     df_reordered.to_csv(table_out, sep="\t", index=False)
 
 
