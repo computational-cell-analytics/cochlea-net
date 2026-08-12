@@ -370,8 +370,8 @@ def main():
                     segm="IHC", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
 
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_ihc_accuracy.{FILE_EXTENSION}"),
-            segm="IHC_3D", show_legend=True, data_dir=data_dir, use_folds=args.use_folds,
-            key_list=["v9", "v10", "v11"], ylim=[0.80, 1.0],)
+                    segm="IHC_3D", show_legend=True, data_dir=data_dir, use_folds=args.use_folds,
+                    key_list=["v9", "v10", "v11"], ylim=[0.80, 1.0],)
         plot_fold_accuracy(
             save_path=os.path.join(args.figure_dir, f"supp_fig_sgn_folds.{FILE_EXTENSION}"),
             data_dir=data_dir,

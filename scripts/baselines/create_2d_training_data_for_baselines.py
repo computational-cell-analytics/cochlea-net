@@ -76,5 +76,6 @@ def main():
     else:
         raise ValueError("Either provide --input and --output or neither for default processing using --cell_type.")
 
+
 if __name__ == "__main__":
     main()

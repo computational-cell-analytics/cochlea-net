@@ -794,9 +794,9 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
     """
     full_remote = f"{remote_dir}/{n5_name}"
     is_n5 = not args.generic and (
-        bool(setup_filter)
-        or _looks_like_n5_remote(args.username, password, full_remote, output_dir,
-                                 smb_server=args.smb_server)
+        bool(setup_filter) or
+        _looks_like_n5_remote(args.username, password, full_remote, output_dir,
+                              smb_server=args.smb_server)
     )
 
     def _verify():
