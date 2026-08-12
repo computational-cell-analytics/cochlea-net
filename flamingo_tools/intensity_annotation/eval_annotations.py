@@ -44,8 +44,10 @@ def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> 
     dic["center_strings"] = center_strings
     remove_strings = []
     for center_str in center_strings:
-        files_neg = [c for c in cochlea_files if all(x in c for x in [cochlea, center_str, "NegativeExcluded"])]
-        files_pos = [c for c in cochlea_files if all(x in c for x in [cochlea, center_str, "WeakPositive"])]
+        files_neg = [c for c in cochlea_files if
+                     all(x in c for x in [cochlea, center_str]) and "negativeexcluded" in c.lower()]
+        files_pos = [c for c in cochlea_files if
+                     all(x in c for x in [cochlea, center_str]) and "positiveincluded" in c.lower()]
         if len(files_neg) != 1 or len(files_pos) != 1:
             print(f"Skipping crop {center_str} for cochlea {cochlea}. "
                   f"Missing or multiple annotation files in {annotation_dir}.")
