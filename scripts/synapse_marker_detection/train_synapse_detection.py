@@ -20,17 +20,26 @@ COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 ROOT_SYNAPSE_DATA = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data")
 
 
-def train(root_data_dir, version="v5", val_sample_size=3):
+def train(root_data_dir, version="v5", val_sample_size=3, model_suffix=None):
+    if model_suffix is None:
+        model_suffix = version
+        json_path = os.path.join(root_data_dir, version, "train_val_split.json")
+        random_state = 42
+    else:
+        json_path = os.path.join(root_data_dir, version, f"train_val_split_{model_suffix}.json")
+        random_state = sum([ord(char) for char in model_suffix.lower()])
+        print(f"Using random state {random_state}.")
+
     image_dir = os.path.join(root_data_dir, version, "images")
     label_dir = os.path.join(root_data_dir, version, "labels")
-    model_name = f"synapse_detection_{version}"
+    model_name = f"synapse_detection_{model_suffix}"
 
     image_paths = sorted(glob(os.path.join(image_dir, "*.zarr")))
     label_paths = sorted(glob(os.path.join(label_dir, "*.csv")))
     assert len(image_paths) == len(label_paths)
 
     train_paths, val_paths, train_label_paths, val_label_paths = train_test_split(
-        image_paths, label_paths, test_size=val_sample_size, random_state=42
+        image_paths, label_paths, test_size=val_sample_size, random_state=random_state,
     )
 
     # We need to give the paths for the test loader, although it's never used.
@@ -41,7 +50,6 @@ def train(root_data_dir, version="v5", val_sample_size=3):
         "val": [os.path.splitext(os.path.basename(f))[0] for f in val_paths],
     }
 
-    json_path = os.path.join(root_data_dir, version, "train_val_split.json")
     with open(json_path, "w") as f:
         json.dump(train_val_dic, f, indent='\t', separators=(',', ': '))
 
@@ -89,9 +97,15 @@ def main():
 
     parser.add_argument("-i", "--input_dir", type=str, default=ROOT_SYNAPSE_DATA)
     parser.add_argument("-v", "--version", type=str, default="v5")
+    parser.add_argument("-m", "--model_suffix", type=str, default=None,
+                        help="Custom suffix for model name. Default: Same as version.")
 
     args = parser.parse_args()
-    train(args.input_dir, args.version)
+    train(
+        root_data_dir=args.input_dir,
+        version=args.version,
+        model_suffix=args.model_suffix,
+    )
 
 
 if __name__ == "__main__":

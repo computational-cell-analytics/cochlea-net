@@ -38,23 +38,23 @@ MODEL_DIR_IHC = os.path.join(COCHLEA_DIR, "trained_models/IHC")
 IMAGE_DIR_IHC = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/F1ValidationIHCs")
 VAL_DIR_IHC = os.path.join(COCHLEA_DIR, "predictions/val_ihc")
 MODEL_DICT_IHC = {
-    "distance_unet_f0": {
+    "distance_unet_v11-f0": {
         "version": "IHC_v11", "fold": 0,
         "path": os.path.join(MODEL_DIR_IHC, "v11_cochlea_distance_unet_IHC_supervised_2026-07-20"),
     },
-    "distance_unet_f1": {
+    "distance_unet_v11-f1": {
         "version": "IHC_v11", "fold": 1,
         "path": os.path.join(MODEL_DIR_IHC, "v11-1_cochlea_distance_unet_IHC_supervised_2026-07-28"),
     },
-    "distance_unet_f2": {
+    "distance_unet_v11-f2": {
         "version": "IHC_v11", "fold": 2,
         "path": os.path.join(MODEL_DIR_IHC, "v11-2_cochlea_distance_unet_IHC_supervised_2026-07-28"),
     },
-    "distance_unet_f3": {
+    "distance_unet_v11-f3": {
         "version": "IHC_v11", "fold": 3,
         "path": os.path.join(MODEL_DIR_IHC, "v11-3_cochlea_distance_unet_IHC_supervised_2026-07-28"),
     },
-    "distance_unet_f4": {
+    "distance_unet_v11-f4": {
         "version": "IHC_v11", "fold": 4,
         "path": os.path.join(MODEL_DIR_IHC, "v11-4_cochlea_distance_unet_IHC_supervised_2026-07-28"),
     },
