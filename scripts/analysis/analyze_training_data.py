@@ -14,17 +14,18 @@ from flamingo_tools.analysis.training_data_utils import (
 DOC_DATA_DIR = os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "doc", "data"))
 
 # Tables analyzed with the --all flag, together with the directories containing their crops.
+TRAINING_DATA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data"
 DEFAULT_TABLES = {
     "synapses_v5.tsv": {
-        "data_dir": "",
-        "test_dir": None,
+        "data_dir": os.path.join(TRAINING_DATA_DIR, "synapses/training_data/v5"),
+        "test_dir": os.path.join(TRAINING_DATA_DIR, "synapses/test_data/v5"),
     },
     "IHC_v11.tsv": {
-        "data_dir": "",
+        "data_dir": os.path.join(TRAINING_DATA_DIR, "IHC/IHC_v11_2026-07"),
         "label_dir": None,
     },
     "SGN_v2.tsv": {
-        "data_dir": "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/SGN/2025-05_supervised",  # noqa
+        "data_dir": os.path.join(TRAINING_DATA_DIR, "SGN/2025-05_supervised"),  # noqa
         "label_dir": None,
     },
 }
