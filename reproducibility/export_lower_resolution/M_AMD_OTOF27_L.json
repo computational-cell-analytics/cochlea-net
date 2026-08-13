@@ -1,0 +1,31 @@
+[
+	{
+		"lower_resolution": {
+			"channels": [
+				"Vglut3",
+				"Otof",
+				"Alphatag"
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},
+	{
+		"marker": {
+			"channels": [
+				"IHC_v11"
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},	
+	{
+		"lower_resolution": {
+			"channels": [
+				"IHC_v11"
+			],
+			"filter_by_components": [
+				1
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	}
+]

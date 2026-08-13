@@ -284,10 +284,11 @@ def get_single_annotation_parameters(
         param_dic["threshold_source"] = "single-annotation-positive"
         print(f"All instances are annotated as positive in {name}. Using a threshold of 0.")
     elif labels == {NEGATIVE_LABEL}:
-        param_dic["median_intensity"] = 10 * float(table_measure[column].max())
+        factor = 1.5
+        param_dic["median_intensity"] = factor * float(table_measure[column].max())
         param_dic["threshold_source"] = "single-annotation-negative"
         print(f"All instances are annotated as negative in {name}. "
-              f"Using a threshold of {param_dic['median_intensity']}, ten times the highest '{column}' value.")
+              f"Using a threshold of {param_dic['median_intensity']}, {factor} times the highest '{column}' value.")
     elif len(labels) == 0:
         print(f"No annotated instance in {name}. No threshold can be derived from it.")
     else:
