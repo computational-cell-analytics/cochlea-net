@@ -44,6 +44,7 @@ def eval_marker_annotation(
     marker_name: str = "GFP",
     force_overwrite: bool = False,
     compute_variance: bool = False,
+    use_filename_threshold: bool = False,
     s3: Optional[bool] = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -68,6 +69,8 @@ def eval_marker_annotation(
         compute_variance: Whether to compare the marker percentages of the individual annotators
             with each other and with the median thresholds. The result is saved as
             <cochlea>_<marker>_<seg>_variance.json next to the thresholds.
+        use_filename_threshold: Whether to use the threshold recorded as a suffix in the annotation
+            file name, e.g. "_46.tif", for a crop whose annotations do not yield a threshold.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -170,7 +173,8 @@ def eval_marker_annotation(
 
         # Find the thresholds from the annotated blocks and save it if specified.
         intensity_dic, _ = eval_utils.find_thresholds(annotations, search_str, data_seg, table_meas,
-                                                      voxel_size=voxel_size, pattern=marker_pattern)
+                                                      voxel_size=voxel_size, pattern=marker_pattern,
+                                                      use_filename_threshold=use_filename_threshold)
         if threshold_save_dir is not None:
             os.makedirs(threshold_save_dir, exist_ok=True)
             threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")
@@ -214,6 +218,9 @@ def main():
     parser.add_argument("--variance", action="store_true",
                         help="Compare the marker percentages of the individual annotators "
                         "with each other and with the median thresholds.")
+    parser.add_argument("--filename_threshold", action="store_true",
+                        help="Use the threshold recorded as a suffix in the annotation file name, "
+                        "e.g. \"_46.tif\", for a crop whose annotations do not yield a threshold.")
 
     # options for specific data paths
     parser.add_argument("--seg_data", type=str, default=None,
@@ -254,6 +261,7 @@ def main():
         marker_name=args.marker_name,
         force_overwrite=args.force,
         compute_variance=args.variance,
+        use_filename_threshold=args.filename_threshold,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
