@@ -254,6 +254,7 @@ def get_single_annotation_parameters(
     file_path: str,
     table_measure: pd.DataFrame,
     column: str = "median",
+    all_negative_threshold_factor: float = 1.5,
 ) -> dict:
     """Derive the threshold of a crop that has only one of the two annotation files.
 
@@ -270,6 +271,8 @@ def get_single_annotation_parameters(
         file_path: File path of the single annotation.
         table_measure: Table containing object measures.
         column: Name of column in measurement table.
+        all_negative_threshold_factor: Factor applied to the highest '{column}' value to estimate
+            the threshold for an all-negative annotation.
 
     Returns:
         Parameter dictionary featuring analysis of crop.
@@ -284,11 +287,11 @@ def get_single_annotation_parameters(
         param_dic["threshold_source"] = "single-annotation-positive"
         print(f"All instances are annotated as positive in {name}. Using a threshold of 0.")
     elif labels == {NEGATIVE_LABEL}:
-        factor = 1.5
-        param_dic["median_intensity"] = factor * float(table_measure[column].max())
+        param_dic["median_intensity"] = all_negative_threshold_factor * float(table_measure[column].max())
         param_dic["threshold_source"] = "single-annotation-negative"
         print(f"All instances are annotated as negative in {name}. "
-              f"Using a threshold of {param_dic['median_intensity']}, {factor} times the highest '{column}' value.")
+              f"Using a threshold of {param_dic['median_intensity']}, "
+              f"{all_negative_threshold_factor} times the highest '{column}' value.")
     elif len(labels) == 0:
         print(f"No annotated instance in {name}. No threshold can be derived from it.")
     else:
