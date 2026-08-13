@@ -5,7 +5,25 @@
     "n_crops_val": 9,
     "n_instances": 1693,
     "n_instances_train": 1530,
-    "n_instances_val": 163
+    "n_instances_val": 163,
+    "species": {
+      "gerbil": {
+        "n_crops": 36,
+        "n_crops_train": 33,
+        "n_crops_val": 3,
+        "n_instances": 358,
+        "n_instances_train": 308,
+        "n_instances_val": 50
+      },
+      "mouse": {
+        "n_crops": 53,
+        "n_crops_train": 47,
+        "n_crops_val": 6,
+        "n_instances": 1335,
+        "n_instances_train": 1222,
+        "n_instances_val": 113
+      }
+    }
   },
   "SGN_v2": {
     "n_crops": 48,
@@ -13,7 +31,17 @@
     "n_crops_val": 3,
     "n_instances": 2602,
     "n_instances_train": 2265,
-    "n_instances_val": 337
+    "n_instances_val": 337,
+    "species": {
+      "mouse": {
+        "n_crops": 48,
+        "n_crops_train": 45,
+        "n_crops_val": 3,
+        "n_instances": 2602,
+        "n_instances_train": 2265,
+        "n_instances_val": 337
+      }
+    }
   },
   "synapses_v5": {
     "n_crops": 29,
@@ -23,6 +51,18 @@
     "n_instances_train": 6056,
     "n_instances_val": 523,
     "n_crops_test": 6,
-    "n_instances_test": 1425
+    "n_instances_test": 1425,
+    "species": {
+      "mouse": {
+        "n_crops": 29,
+        "n_crops_train": 26,
+        "n_crops_val": 3,
+        "n_instances": 6579,
+        "n_instances_train": 6056,
+        "n_instances_val": 523,
+        "n_crops_test": 6,
+        "n_instances_test": 1425
+      }
+    }
   }
 }

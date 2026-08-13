@@ -40,6 +40,19 @@ Use `-o` to write the overview to a different location.
 
 A table with crops that have no instance count is not added to the overview, because its totals would be too low.
 
+#### Species
+
+Each entry also reports the same crop and instance counts per species, under the key `species`.
+Only the species present in the table are listed.
+
+The species comes from the first component of the `Standardized` name.
+The components are separated by `-` or `_`, because some crops keep the older underscore form.
+The dictionary `SPECIES_PREFIXES` in the script maps this component to the species, for example `M` to `mouse` and `G` to `gerbil`.
+Extend the dictionary to add a species.
+
+A crop whose first component is not in the dictionary is counted under `unknown`.
+The script reports these crops, so that a new prefix does not pass unnoticed.
+
 ## IHC split for single sample
 
 Due to the lack of annotation data, one volume was split into a subvolume for training and validation for the initial trainings.

@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import re
 import sys
 from typing import List, Optional
 
@@ -32,6 +33,10 @@ DEFAULT_TABLES = {
 
 TABLE_TYPES = ["IHC", "SGN", "synapse"]
 
+# Species encoded in the first component of the standardized crop name.
+SPECIES_PREFIXES = {"M": "mouse", "G": "gerbil"}
+UNKNOWN_SPECIES = "unknown"
+
 
 def table_type(table_path: str) -> str:
     """Derive the type of training data from the file name of the table.
@@ -49,6 +54,22 @@ def table_type(table_path: str) -> str:
             f"The name of the table '{file_name}' must contain exactly one of {TABLE_TYPES}, but it contains {matches}."
         )
     return matches[0]
+
+
+def species_from_name(standardized_name: str) -> str:
+    """Derive the species from the first component of a standardized crop name.
+
+    The components are separated by '-' or '_', because some crops keep the older underscore form.
+
+    Args:
+        standardized_name: The standardized name of a crop.
+
+    Returns:
+        The species that matches the first component, or 'unknown' for a prefix outside
+        SPECIES_PREFIXES.
+    """
+    prefix = re.split(r"[-_]", standardized_name)[0]
+    return SPECIES_PREFIXES.get(prefix, UNKNOWN_SPECIES)
 
 
 def resolve_layout(data_dir: str) -> Optional[str]:
@@ -71,6 +92,24 @@ def resolve_layout(data_dir: str) -> Optional[str]:
     )
 
 
+def _count_splits(df: pd.DataFrame, count_column: str) -> dict:
+    splits = {name: df[df["Dataset"] == name] for name in ("train", "val", "test")}
+    instances = {name: int(split[count_column].sum()) for name, split in splits.items()}
+
+    counts = {
+        "n_crops": len(splits["train"]) + len(splits["val"]),
+        "n_crops_train": len(splits["train"]),
+        "n_crops_val": len(splits["val"]),
+        "n_instances": instances["train"] + instances["val"],
+        "n_instances_train": instances["train"],
+        "n_instances_val": instances["val"],
+    }
+    if len(splits["test"]) != 0:
+        counts["n_crops_test"] = len(splits["test"])
+        counts["n_instances_test"] = instances["test"]
+    return counts
+
+
 def summarize_table(table_path: str, data_type: str) -> Optional[dict]:
     """Count the crops and instances per dataset of an analyzed table.
 
@@ -80,6 +119,7 @@ def summarize_table(table_path: str, data_type: str) -> Optional[dict]:
 
     Returns:
         The number of crops and instances for training and validation, and for testing if present.
+        The entry 'species' repeats these counts for each species present in the table.
         None if the table contains crops without an instance count, which would understate the totals.
     """
     df = pd.read_csv(table_path, sep="\t")
@@ -91,20 +131,13 @@ def summarize_table(table_path: str, data_type: str) -> Optional[dict]:
         print(f"{os.path.basename(table_path)}: no instance count for {len(unmeasured)} crops: {unmeasured}")
         return None
 
-    splits = {name: df[df["Dataset"] == name] for name in ("train", "val", "test")}
-    instances = {name: int(split[count_column].sum()) for name, split in splits.items()}
+    species = df["Standardized"].astype(str).map(species_from_name)
+    unknown = df.loc[species == UNKNOWN_SPECIES, "Original"].tolist()
+    if unknown:
+        print(f"{os.path.basename(table_path)}: unknown species prefix for {len(unknown)} crops: {unknown}")
 
-    summary = {
-        "n_crops": len(splits["train"]) + len(splits["val"]),
-        "n_crops_train": len(splits["train"]),
-        "n_crops_val": len(splits["val"]),
-        "n_instances": instances["train"] + instances["val"],
-        "n_instances_train": instances["train"],
-        "n_instances_val": instances["val"],
-    }
-    if len(splits["test"]) != 0:
-        summary["n_crops_test"] = len(splits["test"])
-        summary["n_instances_test"] = instances["test"]
+    summary = _count_splits(df, count_column)
+    summary["species"] = {name: _count_splits(group, count_column) for name, group in sorted(df.groupby(species))}
     return summary
 
 
