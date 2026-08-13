@@ -1,0 +1,30 @@
+[
+	{
+		"lower_resolution": {
+			"channels": [
+				"PV",
+				"GFP"
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},
+	{
+		"marker": {
+			"channels": [
+				"SGN_v2"
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	},	
+	{
+		"lower_resolution": {
+			"channels": [
+				"SGN_v2"
+			],
+			"filter_by_components": [
+				1
+			],
+			"roi_halo": [1200, 1200, 10]
+		}
+	}
+]

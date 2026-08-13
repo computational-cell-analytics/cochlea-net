@@ -1,6 +1,6 @@
 import argparse
 import os
-from typing import List, Optional
+from typing import List, Optional, Sequence, Tuple
 import warnings
 
 import numpy as np
@@ -9,7 +9,9 @@ import tifffile
 import zarr
 from elf.parallel import isin
 
-from flamingo_tools.export_data_utils import compute_crop_bb, crop_filter_volume
+from flamingo_tools.export_data_utils import (
+    compute_crop_bb, crop_filter_volume, export_output_path, filter_volume_downscale_factors, normalize_voxel_size,
+)
 from flamingo_tools.s3_utils import get_s3_path, BUCKET_NAME, SERVICE_ENDPOINT
 from flamingo_tools.postprocessing.label_components import filter_cochlea_volume, filter_cochlea_volume_single
 # from skimage.segmentation import relabel_sequential
@@ -37,9 +39,10 @@ def filter_component(fs, segmentation, cochlea, seg_name, components):
 def filter_cochlea(
     cochlea: str,
     filter_cochlea_channels: str,
+    ds_factor: Sequence[int],
+    voxel_size: Tuple[float, float, float],
     sgn_components: Optional[List[int]] = None,
     ihc_components: Optional[List[int]] = None,
-    ds_factor: int = 24,
     dilation_iterations: int = 8,
 ) -> np.ndarray:
     """Pre-process information for filtering cochlea volume based on segmentation table.
@@ -52,9 +55,10 @@ def filter_cochlea(
     Args:
         cochlea: Name of cochlea.
         filter_cochlea_channels: Segmentation table(s) used for filtering.
+        ds_factor: Down-sampling factor for filtering, in pixel per axis, in (x, y, z) order.
+        voxel_size: Voxel size of the data in micrometer, in (x, y, z) order.
         sgn_components: Component labels for filtering SGN segmentation table.
         ihc_components: Component labels for filtering IHC segmentation table.
-        ds_factor: Down-sampling factor for filtering.
         dilation_iterations: Iterations for dilating binary segmentation mask.
 
     Returns:
@@ -84,11 +88,11 @@ def filter_cochlea(
 
     if sgn_channel is None:
         # filter based in IHC segmentation
-        return filter_cochlea_volume_single(table_ihc, components=ihc_components,
+        return filter_cochlea_volume_single(table_ihc, components=ihc_components, voxel_size=voxel_size,
                                             scale_factor=ds_factor, dilation_iterations=dilation_iterations)
     elif ihc_channel is None:
         # filter based on SGN segmentation
-        return filter_cochlea_volume_single(table_sgn, components=sgn_components,
+        return filter_cochlea_volume_single(table_sgn, components=sgn_components, voxel_size=voxel_size,
                                             scale_factor=ds_factor, dilation_iterations=dilation_iterations)
     else:
         # filter based on SGN and IHC segmentation with a specialized function
@@ -96,106 +100,92 @@ def filter_cochlea(
                                      sgn_components=sgn_components,
                                      ihc_components=ihc_components,
                                      scale_factor=ds_factor,
+                                     voxel_size=voxel_size,
                                      dilation_iterations=dilation_iterations)
 
 
-def upscale_volume(
-    target_data: np.ndarray,
-    downscaled_volume: np.ndarray,
-    upscale_factor: int,
-) -> np.ndarray:
-    """Up-scale binary 3D mask to dimensions of target data.
-    After an initial up-scaling, the dimensions are cropped or zero-padded to fit the target shape.
-
-    Args:
-        target_data: Reference data for up-scaling.
-        downscaled_volume: Down-scaled binary 3D array.
-        upscale_factor: Initial factor for up-scaling binary array.
-
-    Returns:
-        Resized binary array.
-    """
-    target_shape = target_data.shape
-    upscaled_filter = np.repeat(
-        np.repeat(
-            np.repeat(downscaled_volume, upscale_factor, axis=0),
-            upscale_factor, axis=1),
-        upscale_factor, axis=2)
-    resized = np.zeros(target_shape, dtype=target_data.dtype)
-    min_x, min_y, min_z = tuple(min(upscaled_filter.shape[i], target_shape[i]) for i in range(3))
-    resized[:min_x, :min_y, :min_z] = upscaled_filter[:min_x, :min_y, :min_z]
-    return resized
-
-
-def export_lower_resolution(args):
-    crop = args.crop_center is not None
+def export_lower_resolution(
+    cochlea: str,
+    scale: List[int],
+    output_folder: str,
+    channels: List[str] = ["PV", "VGlut3", "CTBP2"],
+    filter_by_components: Optional[List[int]] = None,
+    filter_sgn_components: List[int] = [1],
+    filter_ihc_components: List[int] = [1],
+    binarize: bool = False,
+    filter_cochlea_channels: Optional[List[str]] = None,
+    filter_dilation_iterations: int = 8,
+    ome_zarr: bool = False,
+    crop_center: Optional[List[float]] = None,
+    roi_halo: Optional[List[int]] = None,
+    axis: Optional[int] = None,
+    suffix: Optional[str] = None,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+):
+    crop = crop_center is not None
+    voxel_size = normalize_voxel_size(voxel_size)
 
     # calculate single filter mask for all lower resolutions
-    if args.filter_cochlea_channels is not None:
-        ds_factor = 48
-        filter_volume = filter_cochlea(args.cochlea, args.filter_cochlea_channels,
-                                       sgn_components=args.filter_sgn_components,
-                                       ihc_components=args.filter_ihc_components,
-                                       dilation_iterations=args.filter_dilation_iterations, ds_factor=ds_factor)
+    if filter_cochlea_channels is not None:
+        ds_factor = filter_volume_downscale_factors(voxel_size)
+        filter_volume = filter_cochlea(cochlea, filter_cochlea_channels,
+                                       ds_factor=ds_factor, voxel_size=voxel_size,
+                                       sgn_components=filter_sgn_components,
+                                       ihc_components=filter_ihc_components,
+                                       dilation_iterations=filter_dilation_iterations)
         filter_volume = np.transpose(filter_volume, (2, 1, 0))
+        ds_factor_zyx = np.array(ds_factor[::-1], dtype="float64")
 
     # iterate through exporting lower resolutions
-    for scale in args.scale:
-        if args.filter_cochlea_channels is not None:
-            output_folder = os.path.join(args.output_folder, args.cochlea,
-                                         f"scale{scale}_dilation{args.filter_dilation_iterations}")
+    for s in scale:
+        if filter_cochlea_channels is not None:
+            out_folder = os.path.join(output_folder, cochlea, f"scale{s}_dilation{filter_dilation_iterations}")
         else:
-            output_folder = os.path.join(args.output_folder, args.cochlea, f"scale{scale}")
-        os.makedirs(output_folder, exist_ok=True)
+            out_folder = os.path.join(output_folder, cochlea, f"scale{s}")
+        os.makedirs(out_folder, exist_ok=True)
 
-        input_key = f"s{scale}"
-        for channel in args.channels:
-            if crop:
-                coord_string = "-".join([str(int(round(c))).zfill(4) for c in args.crop_center])
-                out_path = os.path.join(output_folder, f"{channel}_crop_{coord_string}.tif")
-            else:
-                out_path = os.path.join(output_folder, f"{channel}.tif")
+        input_key = f"s{s}"
+        for channel in channels:
+            out_path = export_output_path(out_folder, channel, ome_zarr, crop_center, axis, suffix)
             if os.path.exists(out_path):
                 print(f"Skipping {out_path}. File already exists.")
                 continue
 
             print("Exporting channel", channel)
-            internal_path = os.path.join(args.cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
+            internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
             s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
             f = zarr.open(s3_store, mode="r")
             if crop:
                 start, stop = compute_crop_bb(
-                    args.crop_center, args.roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape
+                    crop_center, roi_halo, voxel_size=voxel_size, scale=s, shape=f[input_key].shape, axis=axis,
                 )
                 data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]].astype("float32")
             else:
                 data = f[input_key][:].astype("float32")
+                start, stop = np.zeros(3, dtype=int), np.array(data.shape, dtype=int)
             print("Data shape", data.shape)
-            if args.filter_by_components is not None:
-                print(f"Filtering channel {channel} by components {args.filter_by_components}.")
-                data = filter_component(fs, data, args.cochlea, channel, args.filter_by_components)
-            if args.filter_cochlea_channels is not None:
-                us_factor = ds_factor // (2 ** scale)
-                if crop:
-                    applied_filter = crop_filter_volume(filter_volume, start, stop, us_factor)
-                else:
-                    applied_filter = upscale_volume(data, filter_volume, upscale_factor=us_factor)
+            if filter_by_components is not None:
+                print(f"Filtering channel {channel} by components {filter_by_components}.")
+                data = filter_component(fs, data, cochlea, channel, filter_by_components)
+            if filter_cochlea_channels is not None:
+                us_factor = ds_factor_zyx / (2 ** s)
+                applied_filter = crop_filter_volume(filter_volume, start, stop, us_factor)
                 data[applied_filter == 0] = 0
-                if "PV" in channel:
-                    max_intensity = 1400
-                    data[data > max_intensity] = 0
-                if "CTBP2" in channel:
-                    max_intensity = 1400
-                    data[data > max_intensity] = 300
 
-            if args.binarize:
+            # filtering of bright outliers
+            if "PV" in channel and "LaVision" not in cochlea:
+                max_intensity = 1400
+                data[data > max_intensity] = max_intensity
+            if "CTBP2" in channel:
+                max_intensity = 1400
+                data[data > max_intensity] = max_intensity
+
+            if binarize:
                 data = (data > 0).astype("uint16")
 
-            if args.ome_zarr:
-                out_path = os.path.join(output_folder, f"{channel}.ome.zarr")
-                output_key = "image"
+            if ome_zarr:
                 f_out = zarr.open(out_path, mode="w")
-                f_out.create_array(output_key, data=data, compressors=zarr.codecs.GzipCodec())
+                f_out.create_array("image", data=data, compressors=zarr.codecs.GzipCodec())
             else:
                 tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
 
@@ -216,10 +206,25 @@ def main():
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
-                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale. "
+                        "Optional when --axis is given: the whole plane is cropped in that case.")
+    parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
+                        help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
+                        "Requires --crop_center.")
+    parser.add_argument("--suffix", type=str, default=None,
+                        help="Extra label appended to the output filename after the crop/axis suffix, "
+                        "e.g. a position name such as 'apex'.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     args = parser.parse_args()
+    if args.crop_center is not None:
+        if args.roi_halo is None and args.axis is None:
+            parser.error("--crop_center requires --roi_halo, unless --axis is also given "
+                         "(the whole plane is cropped in that case).")
+    elif args.axis is not None:
+        parser.error("--axis requires --crop_center.")
 
-    export_lower_resolution(args)
+    export_lower_resolution(**vars(args))
 
 
 if __name__ == "__main__":

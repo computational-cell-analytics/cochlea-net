@@ -203,8 +203,10 @@ def prediction_impl(
             output = f.require_dataset(
                 "prediction",
                 shape=output_shape,
+                # zstd decompresses much faster than gzip, which dominates the cost of the
+                # block-wise reads in the detection and segmentation steps that follow.
+                compression="zstd",
                 chunks=output_chunks,
-                compression="gzip",
                 dtype="float32",
             )
 
@@ -425,6 +427,19 @@ def distance_watershed_implementation(
 ) -> None:
     """Parallel implementation of the distance-prediction based watershed.
 
+    The seeds and the segmentation are rewritten from scratch on every call, so calling this
+    function twice for the same output folder replaces the previous segmentation. The seeds must
+    not be inherited from an earlier run: `elf.parallel.label` skips blocks that hold no mask
+    voxels without zeroing them, and it merges labels across block faces based on the content of
+    the seed volume. Stale seeds therefore get fused into the current labels, which produces
+    single label IDs that cover two places far apart in the volume.
+
+    Note that `predictions.zarr` and `mask.zarr` in the output folder are reused instead. The
+    prediction accumulates over the slurm array tasks that each write a subset of the blocks, and
+    the mask is reused through explicit checks in the callers. Predicting with a different model
+    into an existing output folder therefore keeps stale predictions in the blocks that the mask
+    excludes.
+
     Args:
         input_path: The path to the zarr file with the network predictions.
         output_folder: The folder for storing the segmentation and intermediate results.
@@ -472,9 +487,10 @@ def distance_watershed_implementation(
     else:
         block_shape = center_distances.chunks
         seed_path = os.path.join(output_folder, "seeds.zarr")
-        seed_file = open_file(os.path.join(seed_path), "a")
-        seeds = seed_file.require_dataset(
-            "seeds", shape=center_distances.shape, chunks=block_shape, compression="gzip", dtype="uint64"
+        seed_file = open_file(seed_path, "a")
+        seeds = seed_file.create_dataset(
+            "seeds", shape=center_distances.shape, chunks=block_shape, compression="gzip", dtype="uint64",
+            overwrite=True,
         )
 
     # Compute the seed inputs:
@@ -501,7 +517,8 @@ def distance_watershed_implementation(
         seg_path = os.path.join(output_folder, "segmentation.zarr" if original_shape is None else "seg_downscaled.zarr")
         seg_file = open_file(seg_path, "a")
         seg = seg_file.create_dataset(
-            "segmentation", shape=seeds.shape, chunks=block_shape, compression="gzip", dtype="uint64"
+            "segmentation", shape=seeds.shape, chunks=block_shape, compression="gzip", dtype="uint64",
+            overwrite=True,
         )
 
     # Compute the segmentation with a seeded watershed
@@ -526,6 +543,7 @@ def distance_watershed_implementation(
         with open_file(out_path, "a") as f:
             out_seg_volume = f.create_dataset(
                 "segmentation", shape=original_shape, compression="gzip", dtype="uint64", chunks=block_shape,
+                overwrite=True,
             )
             blocking = Blocking([0] * len(original_shape), output_seg.shape, block_shape)
 

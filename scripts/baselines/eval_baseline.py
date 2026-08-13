@@ -39,6 +39,11 @@ IHC_BASELINES = [
     "distance_unet_v9",
     "distance_unet_v10",
     "distance_unet_v11",
+    "distance_unet_v11-f0",
+    "distance_unet_v11-f1",
+    "distance_unet_v11-f2",
+    "distance_unet_v11-f3",
+    "distance_unet_v11-f4",
     "micro-sam",
     "micro-sam_finetuned",
 ]

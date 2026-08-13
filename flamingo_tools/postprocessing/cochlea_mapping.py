@@ -697,6 +697,12 @@ def get_centers_from_path_dict(
                 min_dist = dist
                 nearest_node = key
         centers.append(path_dict[nearest_node]["pos"])
+
+    n_unique = len({tuple(c) for c in centers})
+    if n_unique != len(centers):
+        print(f"Warning: only {n_unique} of {len(centers)} centers are unique. "
+              f"The central path has {len(path_dict)} nodes, which is too few to separate the requested centers.")
+
     return centers
 
 
@@ -763,20 +769,20 @@ def equidistant_centers(
     new_subset = table[table["component_labels"].isin(component_label)]
     centroids = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
 
+    centroids_components = []
+    for label in component_label:
+        subset = table[table["component_labels"] == label]
+        subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
+        centroids_components.append(subset_centroids)
+
     if cell_type == "ihc":
         total_distance, path, path_dict = measure_run_length_ihcs(
-            centroids, component_label=component_label, include_gap=include_gap,
+            centroids, centroids_components, component_label=component_label, include_gap=include_gap,
         )
-        return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
-
     else:
-        centroids_components = []
-        for label in component_label:
-            subset = table[table["component_labels"] == label]
-            subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-            centroids_components.append(subset_centroids)
         total_distance, path, path_dict = measure_run_length_sgns(centroids_components, include_gap=include_gap)
-        return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
+
+    return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
 
 def tonotopic_mapping(
@@ -983,6 +989,7 @@ def equidistant_centers_single(
     cell_type: str = "sgn",
     component_list: List[int] = [1],
     offset_blocks: bool = True,
+    include_gap: bool = False,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -999,6 +1006,8 @@ def equidistant_centers_single(
         force_overwrite: Forcefully overwrite existing output path.
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
+        include_gap: Include the distance between different components for calculating the run length.
+            Use the same value as for the tonotopic mapping to keep the centers consistent with the table.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -1035,6 +1044,7 @@ def equidistant_centers_single(
         target["n_blocks"] = n_blocks
         target["cell_type"] = cell_type
         target["component_list"] = component_list
+        target["include_gap"] = include_gap
 
     else:
         dic = {}
@@ -1043,10 +1053,11 @@ def equidistant_centers_single(
         target["n_blocks"] = n_blocks
         target["cell_type"] = cell_type
         target["component_list"] = component_list
+        target["include_gap"] = include_gap
 
     centers = equidistant_centers(
         table, component_label=component_list, cell_type=cell_type,
-        n_blocks=n_blocks, offset_blocks=offset_blocks,
+        n_blocks=n_blocks, offset_blocks=offset_blocks, include_gap=include_gap,
     )
     centers = [[round(c) for c in center] for center in centers]
 

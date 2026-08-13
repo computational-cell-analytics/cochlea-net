@@ -44,6 +44,7 @@ def eval_marker_annotation(
     marker_name: str = "GFP",
     force_overwrite: bool = False,
     compute_variance: bool = False,
+    use_filename_threshold: bool = False,
     s3: Optional[bool] = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -68,11 +69,16 @@ def eval_marker_annotation(
         compute_variance: Whether to compare the marker percentages of the individual annotators
             with each other and with the median thresholds. The result is saved as
             <cochlea>_<marker>_<seg>_variance.json next to the thresholds.
+        use_filename_threshold: Whether to use the threshold recorded as a suffix in the annotation
+            file name, e.g. "_46.tif", for a crop whose annotations do not yield a threshold.
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
     """
+    marker_pattern = None
+    if marker_name in ["OTOF", "Alphatag"]:
+        marker_pattern = f"{marker_name}_"
 
     if marker_name == "rbOtof":
         halo_size = 150
@@ -112,11 +118,11 @@ def eval_marker_annotation(
         # check for legacy formatting, e.g. M_LR_000143_L instead of M-LR-000143-L
         search_str = cochlea_str
         annotations = [a for a in annotation_dirs if
-                       len(eval_utils.find_annotations(a, search_str)["center_strings"]) != 0]
+                       len(eval_utils.find_annotations(a, search_str, marker_pattern)["center_strings"]) != 0]
         if len(annotations) == 0:
             search_str = cochlea
             annotations = [a for a in annotation_dirs if
-                           len(eval_utils.find_annotations(a, search_str)["center_strings"]) != 0]
+                           len(eval_utils.find_annotations(a, search_str, marker_pattern)["center_strings"]) != 0]
 
         print(f"Evaluating data for cochlea {cochlea} in {annotations}.")
 
@@ -167,7 +173,8 @@ def eval_marker_annotation(
 
         # Find the thresholds from the annotated blocks and save it if specified.
         intensity_dic, _ = eval_utils.find_thresholds(annotations, search_str, data_seg, table_meas,
-                                                      voxel_size=voxel_size)
+                                                      voxel_size=voxel_size, pattern=marker_pattern,
+                                                      use_filename_threshold=use_filename_threshold)
         if threshold_save_dir is not None:
             os.makedirs(threshold_save_dir, exist_ok=True)
             threshold_out_path = os.path.join(threshold_save_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")
@@ -211,6 +218,9 @@ def main():
     parser.add_argument("--variance", action="store_true",
                         help="Compare the marker percentages of the individual annotators "
                         "with each other and with the median thresholds.")
+    parser.add_argument("--filename_threshold", action="store_true",
+                        help="Use the threshold recorded as a suffix in the annotation file name, "
+                        "e.g. \"_46.tif\", for a crop whose annotations do not yield a threshold.")
 
     # options for specific data paths
     parser.add_argument("--seg_data", type=str, default=None,
@@ -251,6 +261,7 @@ def main():
         marker_name=args.marker_name,
         force_overwrite=args.force,
         compute_variance=args.variance,
+        use_filename_threshold=args.filename_threshold,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

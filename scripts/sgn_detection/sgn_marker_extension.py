@@ -7,6 +7,7 @@ import zarr
 from elf.io import open_file
 import scipy.ndimage as ndimage
 
+from flamingo_tools.export_data_utils import normalize_voxel_size
 from flamingo_tools.s3_utils import get_s3_path
 from flamingo_tools.segmentation.sgn_detection import distance_based_marker_extension
 from flamingo_tools.file_utils import read_image_data
@@ -25,18 +26,15 @@ def main():
     parser.add_argument("--component_labels", type=int, nargs="+", default=[1],
                         help="Component labels of SGN_detect.")
     parser.add_argument("-d", "--extension_distance", type=float, default=12, help="Extension distance.")
-    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[3.0, 1.887779, 1.887779],
-                        help="Voxel size of input in micrometer. Default: [3.0, 1.887779, 1.887779]")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[1.887779, 1.887779, 3.0],
+                        help="Voxel size of input in micrometer as x y z. Default: 1.887779 1.887779 3.0")
 
     args = parser.parse_args()
 
     block_shape = (128, 128, 128)
     chunks = (128, 128, 128)
 
-    if len(args.voxel_size) == 1:
-        voxel_size = tuple(args.voxel_size, args.voxel_size, args.voxel_size)
-    else:
-        voxel_size = tuple(args.voxel_size)
+    voxel_size = normalize_voxel_size(args.voxel_size)
 
     if args.input is not None:
         data = read_image_data(args.input, None)
@@ -53,9 +51,11 @@ def main():
             table = pd.read_csv(f, sep="\t")
 
         table = table.loc[table["component_labels"].isin(args.component_labels)]
-        markers = list(zip(table["anchor_x"] / voxel_size[0],
+        # distance_based_marker_extension matches the markers against ZYX block coordinates, so the
+        # anchors from the table have to be emitted in ZYX pixel order.
+        markers = list(zip(table["anchor_z"] / voxel_size[2],
                            table["anchor_y"] / voxel_size[1],
-                           table["anchor_z"] / voxel_size[2]))
+                           table["anchor_x"] / voxel_size[0]))
         markers = np.array(markers)
 
         s3_path = os.path.join(f"{args.cochlea}", "images", "ome-zarr", f"{args.seg_channel}.ome.zarr")
@@ -79,7 +79,7 @@ def main():
         markers=markers,
         output=output_dataset,
         extension_distance=args.extension_distance,
-        sampling=voxel_size,
+        sampling=voxel_size[::-1],
         block_shape=block_shape,
         n_threads=16,
     )

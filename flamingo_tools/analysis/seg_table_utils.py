@@ -4,7 +4,100 @@ from typing import List, Optional, Tuple
 
 import pandas as pd
 
+from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.s3_utils import get_s3_path
+
+
+def closest_row_to_value(
+    df: pd.DataFrame,
+    column: str,
+    value: float,
+) -> pd.Series:
+    """Find the table row whose column value is closest to a target value.
+
+    Args:
+        df: Segmentation table.
+        column: Column name to match against, e.g. "length_fraction" or "frequency[kHz]".
+        value: Target value to find the closest row for.
+
+    Returns:
+        The row with the smallest absolute difference between `column` and `value`.
+    """
+    if column not in df.columns:
+        raise ValueError(f"Column '{column}' not in table. Available columns: {list(df.columns)}")
+    diff = (df[column] - value).abs()
+    return df.iloc[diff.argmin()]
+
+
+def print_table_info(
+    table_path: str,
+    column: str = "length_fraction",
+    values: List[float] = [0.5],
+    component_list: Optional[List[int]] = None,
+    s3: bool = False,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    output_path: Optional[str] = None,
+    force_overwrite: bool = False,
+) -> List[Tuple[int, Tuple[float, float, float]]]:
+    """Find and print the table row(s) closest to given column value(s).
+
+    For each target value, prints the label ID and the central coordinate
+    (anchor_x, anchor_y, anchor_z) in micrometer of the closest matching row.
+
+    Args:
+        table_path: Path to segmentation table (local file or S3 key).
+        column: Column name to match against, e.g. "length_fraction" or "frequency[kHz]".
+        values: Target value(s) to find the closest row for.
+        component_list: Optional component_labels filter applied before matching.
+        s3: Flag for using S3 bucket.
+        s3_credentials: Input file containing S3 credentials.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+        output_path: Optional output path for a JSON file with the results.
+        force_overwrite: Forcefully overwrite an existing output_path.
+
+    Returns:
+        List of (label_id, (x, y, z)) tuples, one per entry in `values`.
+    """
+    if s3:
+        tsv_path, fs = get_s3_path(
+            table_path,
+            bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint,
+            credential_file=s3_credentials,
+        )
+        with fs.open(tsv_path, "r") as f:
+            df = pd.read_csv(f, sep="\t")
+    else:
+        df = pd.read_csv(table_path, sep="\t")
+
+    if component_list is not None:
+        df = filter_table(df, column_subset=component_list)
+
+    results = []
+    for value in values:
+        row = closest_row_to_value(df, column, value)
+        label_id = int(row["label_id"])
+        coord = (float(row["anchor_x"]), float(row["anchor_y"]), float(row["anchor_z"]))
+        print(
+            f"{column}={value}: label_id={label_id}, "
+            f"coordinate (x, y, z) [µm] = ({coord[0]:.3f}, {coord[1]:.3f}, {coord[2]:.3f})"
+        )
+        results.append((label_id, coord))
+
+    if output_path is not None:
+        param_dict = {
+            "column": column,
+            "results": [
+                {"value": value, "label_id": label_id, "coordinate": list(coord)}
+                for value, (label_id, coord) in zip(values, results)
+            ],
+        }
+        export_dictionary_as_json(param_dict, output_path, force_overwrite=force_overwrite)
+
+    return results
 
 
 def filter_table(

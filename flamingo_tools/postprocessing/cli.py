@@ -26,6 +26,9 @@ def equidistant_centers():
     parser.add_argument("--cell_type", type=str, default="sgn",
                         help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("--include_gap", action="store_true",
+                        help="Include the distance between different components for calculating the run length. "
+                        "Use the same setting as for the tonotopic mapping of the cochlea.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -45,6 +48,7 @@ def equidistant_centers():
         n_blocks=args.n_blocks,
         cell_type=args.cell_type,
         component_list=args.components,
+        include_gap=args.include_gap,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
@@ -154,6 +158,9 @@ def json_block_extraction():
                         help="List of connected components.")
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
                         help="Number of blocks to extract. Default: 6")
+    parser.add_argument("--include_gap", action="store_true",
+                        help="Include the distance between different components for calculating the run length. "
+                        "Use the same setting as for the tonotopic mapping of the cochlea.")
     parser.add_argument("--roi_halo", type=int, nargs="+", default=[256, 256, 64],
                         help="ROI halo around center coordinate [pixel]. "
                         "Cropped mask has twice the size. Default: 256 256 64")

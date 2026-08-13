@@ -1,0 +1,12 @@
+[
+	{
+		"dataset_name": "LaVision-M03",
+		"segmentation_channel": "SGN_detect-v5b",
+		"component_list":
+		[
+			1
+		],
+		"apex_position": "apex_lower",
+		"cell_type": "sgn"
+	}
+]

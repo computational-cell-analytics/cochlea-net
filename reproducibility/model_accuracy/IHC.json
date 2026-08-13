@@ -76,6 +76,41 @@
 		"runtime": 59.849,
 		"runtime_std": 39.546
 	},
+	"distance_unet_v11-f0": {
+		"precision": 0.812,
+		"recall": 0.639,
+		"f1-score": 0.707,
+		"runtime": 74.59,
+		"runtime_std": 32.059
+	},
+	"distance_unet_v11-f1": {
+		"precision": 0.85,
+		"recall": 0.619,
+		"f1-score": 0.705,
+		"runtime": 69.792,
+		"runtime_std": 33.984
+	},
+	"distance_unet_v11-f2": {
+		"precision": 0.775,
+		"recall": 0.713,
+		"f1-score": 0.734,
+		"runtime": 65.722,
+		"runtime_std": 33.299
+	},
+	"distance_unet_v11-f3": {
+		"precision": 0.834,
+		"recall": 0.694,
+		"f1-score": 0.745,
+		"runtime": 79.382,
+		"runtime_std": 36.343
+	},
+	"distance_unet_v11-f4": {
+		"precision": 0.828,
+		"recall": 0.688,
+		"f1-score": 0.747,
+		"runtime": 84.944,
+		"runtime_std": 40.644
+	},
 	"micro-sam": {
 		"precision": 0.053,
 		"recall": 0.684,

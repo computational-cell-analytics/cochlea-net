@@ -1,5 +1,6 @@
 import os
 import multiprocessing as mp
+import re
 from concurrent import futures
 from typing import Dict, List, Optional, Tuple
 
@@ -8,9 +9,50 @@ import pandas as pd
 import tifffile
 from tqdm import tqdm
 
+from ..export_data_utils import normalize_voxel_size
+
+# Label values used by the napari annotation layer, see `annotation_utils.annotation_napari`.
+NEGATIVE_LABEL = 1
+POSITIVE_LABEL = 2
+
+# The threshold an annotator dialed in is appended to the file name, either as a bare number
+# ("_46.tif") or with a "thr" prefix ("_thr39.tif").
+_THRESHOLD_PATTERN = re.compile(r"^(?:thr)?(\d+(?:\.\d+)?)")
+
 
 def coord_from_string(center_str: str) -> Tuple[int]:
     return tuple([int(c) for c in center_str.split("-")])
+
+
+def threshold_from_filename(file_path: str) -> Optional[float]:
+    """Read the threshold that an annotator recorded in the annotation file name.
+
+    Args:
+        file_path: File path of the annotation.
+
+    Returns:
+        The threshold, or None if the file name does not end in a numeric token.
+    """
+    stem = os.path.splitext(os.path.basename(file_path))[0]
+    match = _THRESHOLD_PATTERN.match(stem.rsplit("_", 1)[-1])
+    return None if match is None else float(match.group(1))
+
+
+def threshold_from_filenames(file_paths: List[Optional[str]]) -> Optional[float]:
+    """Average the thresholds recorded in the names of the annotation files of one crop.
+
+    The "allNegativeExcluded" file holds the high threshold and the "allPositiveIncluded" file the
+    low one, so the true threshold is inside that band, like the value derived from the annotations.
+
+    Args:
+        file_paths: File paths of the annotations of a single crop. Missing files may be None.
+
+    Returns:
+        The averaged threshold, or None if no file name contains one.
+    """
+    thresholds = [threshold_from_filename(path) for path in file_paths if path is not None]
+    thresholds = [thr for thr in thresholds if thr is not None]
+    return None if len(thresholds) == 0 else float(np.average(thresholds))
 
 
 def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> dict:
@@ -18,41 +60,50 @@ def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> 
 
     Annotations should have format positive-negative_<cochlea>_crop_<coord>_allNegativeExcluded_thr<thr>.tif
 
+    A crop with only one of the two files is kept, with None for the missing side. Such a crop can
+    still yield a threshold if the annotation is uniformly positive or negative,
+    see `get_single_annotation_parameters`.
+
     Args:
         annotation_dir: Directory containing annotations.
         cochlea: The name of the cochlea to analyze.
+        pattern: Optional substring that a file name must contain, used to select a single stain.
 
     Returns:
         Dictionary with information about the intensity annotations.
     """
+    crop_token = f"{cochlea}_crop_"
 
-    def extract_center_string(cochlea, name):
+    def extract_center_string(name):
         # Extract center crop coordinate from file name
-        crop_suffix = name.split(f"{cochlea}_crop_")[1]
+        crop_suffix = name.split(crop_token)[1]
         center_str = crop_suffix.split("_")[0]
         return center_str
 
-    if pattern is not None:
-        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name and
-                         pattern in entry.name]
-    else:
-        cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if cochlea in entry.name]
+    cochlea_files = [entry.name for entry in os.scandir(annotation_dir) if crop_token in entry.name and
+                     (pattern is None or pattern in entry.name)]
     dic = {"cochlea": cochlea}
     dic["cochlea_files"] = cochlea_files
-    center_strings = list(set([extract_center_string(cochlea, name=f) for f in cochlea_files]))
+    center_strings = list(set([extract_center_string(f) for f in cochlea_files]))
     center_strings.sort()
     dic["center_strings"] = center_strings
     remove_strings = []
     for center_str in center_strings:
-        files_neg = [c for c in cochlea_files if all(x in c for x in [cochlea, center_str, "NegativeExcluded"])]
-        files_pos = [c for c in cochlea_files if all(x in c for x in [cochlea, center_str, "WeakPositive"])]
-        if len(files_neg) != 1 or len(files_pos) != 1:
+        files_neg = [c for c in cochlea_files if center_str in c and "negativeexcluded" in c.lower()]
+        files_pos = [c for c in cochlea_files if center_str in c and "positiveincluded" in c.lower()]
+        if len(files_neg) > 1 or len(files_pos) > 1 or len(files_neg) + len(files_pos) == 0:
             print(f"Skipping crop {center_str} for cochlea {cochlea}. "
                   f"Missing or multiple annotation files in {annotation_dir}.")
             remove_strings.append(center_str)
-        else:
-            dic[center_str] = {"file_neg": os.path.join(annotation_dir, files_neg[0]),
-                               "file_pos": os.path.join(annotation_dir, files_pos[0])}
+            continue
+        if len(files_neg) == 0 or len(files_pos) == 0:
+            missing = "allPositiveIncluded" if len(files_pos) == 0 else "allNegativeExcluded"
+            print(f"Crop {center_str} for cochlea {cochlea} has no {missing} annotation. "
+                  "Trying to derive a threshold from the single annotation.")
+        dic[center_str] = {
+            "file_neg": os.path.join(annotation_dir, files_neg[0]) if files_neg else None,
+            "file_pos": os.path.join(annotation_dir, files_pos[0]) if files_pos else None,
+        }
     for rm_str in remove_strings:
         dic["center_strings"].remove(rm_str)
 
@@ -61,28 +112,38 @@ def find_annotations(annotation_dir: str, cochlea: str, pattern: str = None) -> 
 
 def get_roi(
     coord: tuple,
-    roi_halo: tuple,
+    crop_shape: Tuple[int, ...],
+    data_shape: Tuple[int, ...],
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
-) -> Tuple[int]:
-    """Get parameters for loading ROI of segmentation.
+) -> Tuple[slice, ...]:
+    """Get the region of interest that an exported crop was taken from.
+
+    The crop was written by `export_data_utils.compute_crop_bb`, which clamps the bounding box to
+    the volume with `start = max(0, center - halo)` and `stop = min(shape, center + halo)`. A crop
+    at a volume border is therefore smaller than 2 * halo and not centered on `coord`, so its halo
+    cannot be recovered as `shape // 2`. Clamping the start into `[0, data_shape - crop_shape]`
+    inverts that formula for an unclipped crop and for a crop clipped at either border, so the ROI
+    always has exactly `crop_shape` and stays aligned with the crop.
 
     Args:
-        coord: Center coordinate.
-        roi_halo: Halo for roi.
-        voxel_size: Voxel size of array in micrometer.
+        coord: Center coordinate of the crop in micrometer, in (x, y, z) order.
+        crop_shape: Shape of the exported crop in pixel, in (z, y, x) order.
+        data_shape: Shape of the full volume in pixel, in (z, y, x) order.
+        voxel_size: Voxel size of array in micrometer, in (x, y, z) order.
 
     Returns:
-        The region of interest.
+        The region of interest, in (z, y, x) order.
     """
-    coords = list(coord)
-    # reverse dimensions for correct extraction
-    coords.reverse()
-    coords = np.array(coords)
-    coords = coords / voxel_size
-    coords = np.round(coords).astype(np.int32)
+    voxel_size_zyx = np.array(normalize_voxel_size(voxel_size)[::-1])
+    center_zyx = np.round(np.array(coord[::-1]) / voxel_size_zyx).astype(np.int32)
 
-    roi = tuple(slice(co - rh, co + rh) for co, rh in zip(coords, roi_halo))
-    return roi
+    roi = []
+    for center, extent, dim in zip(center_zyx, crop_shape, data_shape):
+        if extent > dim:
+            raise ValueError(f"The crop shape {tuple(crop_shape)} does not fit the volume {tuple(data_shape)}.")
+        start = int(min(max(int(center) - extent // 2, 0), dim - extent))
+        roi.append(slice(start, start + extent))
+    return tuple(roi)
 
 
 def find_overlapping_masks(
@@ -102,10 +163,14 @@ def find_overlapping_masks(
     Returns:
         Matching IDs of reference array.
     """
+    if arr_base.shape != arr_ref.shape:
+        raise ValueError(f"Shape mismatch between annotation {arr_base.shape} and segmentation {arr_ref.shape}.")
+
     arr_base_labeled = arr_base == label_id_base
 
     # iterate through segmentation ids in reference mask
-    ref_ids = list(np.unique(arr_ref)[1:])
+    ref_ids = np.unique(arr_ref)
+    ref_ids = list(ref_ids[ref_ids != 0])
 
     def check_overlap(ref_id):
         # check overlap of reference ID and base
@@ -142,14 +207,94 @@ def find_inbetween_ids(
     Returns:
         A list of the ids that are in between the respective thresholds.
     """
-    # negative annotation == 1, positive annotation == 2
-    negexc_neg = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=1)
-    allweak_pos = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=2)
+    negexc_neg = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=NEGATIVE_LABEL)
+    allweak_pos = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=POSITIVE_LABEL)
 
-    negexc_pos = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=2)
-    allweak_neg = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=1)
+    negexc_pos = find_overlapping_masks(arr_negexc, roi_seg, label_id_base=POSITIVE_LABEL)
+    allweak_neg = find_overlapping_masks(arr_allweak, roi_seg, label_id_base=NEGATIVE_LABEL)
     inbetween_ids = [int(i) for i in set(negexc_neg).intersection(set(allweak_pos))]
     return inbetween_ids, allweak_pos, negexc_neg, allweak_neg, negexc_pos
+
+
+def read_annotation(file_path: str) -> np.ndarray:
+    """Read an annotation volume, rejecting a file that is not a 3D volume.
+
+    A truncated TIF makes `tifffile.imread` fall back to a single 2D plane instead of raising, which
+    would otherwise be reconstructed into a wrong region of interest.
+
+    Args:
+        file_path: File path of the annotation.
+
+    Returns:
+        The annotation volume.
+    """
+    arr = tifffile.imread(file_path)
+    if arr.ndim != 3:
+        raise ValueError(f"Expected a 3D annotation in {file_path}, got shape {arr.shape}. "
+                         "The file is probably truncated.")
+    return arr
+
+
+def _empty_crop_parameters() -> dict:
+    """Build the crop parameters of a crop that could not be analyzed.
+
+    All keys of `get_crop_parameters` are present, so that the consumers of the annotation
+    dictionary do not have to special-case a failed crop.
+    """
+    param_dic = {key: [] for key in
+                 ["seg_ids", "inbetween_ids", "allweak_pos", "allweak_neg", "negexc_neg", "negexc_pos"]}
+    param_dic.update({key: float("nan") for key in
+                      ["allweak_pos_mean", "allweak_neg_mean", "negexc_neg_mean", "negexc_pos_mean"]})
+    param_dic["median_intensity"] = None
+    param_dic["threshold_source"] = None
+    return param_dic
+
+
+def get_single_annotation_parameters(
+    file_path: str,
+    table_measure: pd.DataFrame,
+    column: str = "median",
+) -> dict:
+    """Derive the threshold of a crop that has only one of the two annotation files.
+
+    One annotation is enough when it labels every instance the same way. An annotation without any
+    positive instance means that the whole crop is negative, so the threshold is set above the
+    highest measured value. An annotation without any negative instance means the opposite. The
+    maximum is taken over the full measurement table, because the threshold is applied to a whole
+    section of the cochlea and not only to the crop.
+
+    A one-sided annotation that contains both classes does not define a threshold, because the
+    second file is the one that bounds it from the other side.
+
+    Args:
+        file_path: File path of the single annotation.
+        table_measure: Table containing object measures.
+        column: Name of column in measurement table.
+
+    Returns:
+        Parameter dictionary featuring analysis of crop.
+    """
+    param_dic = _empty_crop_parameters()
+    arr = read_annotation(file_path)
+    labels = set(np.unique(arr).tolist()) - {0}
+    name = os.path.basename(file_path)
+
+    if labels == {POSITIVE_LABEL}:
+        param_dic["median_intensity"] = 0.0
+        param_dic["threshold_source"] = "single-annotation-positive"
+        print(f"All instances are annotated as positive in {name}. Using a threshold of 0.")
+    elif labels == {NEGATIVE_LABEL}:
+        param_dic["median_intensity"] = 10 * float(table_measure[column].max())
+        param_dic["threshold_source"] = "single-annotation-negative"
+        print(f"All instances are annotated as negative in {name}. "
+              f"Using a threshold of {param_dic['median_intensity']}, ten times the highest '{column}' value.")
+    elif len(labels) == 0:
+        print(f"No annotated instance in {name}. No threshold can be derived from it.")
+    else:
+        print(f"Both positive and negative instances are annotated in {name}, "
+              "but the second annotation file of this crop is missing. No threshold can be derived from it.")
+
+    return param_dic
 
 
 def get_crop_parameters(
@@ -175,18 +320,21 @@ def get_crop_parameters(
     Returns:
         parameter dictionary featuring analysis of crop
     """
-    arr_negexc = tifffile.imread(file_negexc)
-    arr_allweak = tifffile.imread(file_allweak)
+    arr_negexc = read_annotation(file_negexc)
+    arr_allweak = read_annotation(file_allweak)
+    if arr_negexc.shape != arr_allweak.shape:
+        raise ValueError(f"The two annotations of this crop have different shapes, "
+                         f"{arr_negexc.shape} and {arr_allweak.shape}.")
 
-    roi_halo = tuple([r // 2 for r in arr_negexc.shape])
-    roi = get_roi(center, roi_halo, voxel_size=voxel_size)
+    roi = get_roi(center, arr_negexc.shape, data_seg.shape, voxel_size=voxel_size)
 
     roi_seg = data_seg[roi]
     inbetween_ids, allweak_pos, negexc_neg, allweak_neg, negexc_pos = find_inbetween_ids(arr_negexc,
                                                                                          arr_allweak, roi_seg)
 
-    param_dic = {}
-    param_dic["seg_ids"] = list(np.unique(roi_seg)[1:])
+    param_dic = {"threshold_source": "annotation"}
+    seg_ids = np.unique(roi_seg)
+    param_dic["seg_ids"] = list(seg_ids[seg_ids != 0])
     param_dic["inbetween_ids"] = inbetween_ids
     param_dic["allweak_pos"] = allweak_pos
     param_dic["allweak_neg"] = allweak_neg
@@ -233,23 +381,57 @@ def localize_median_intensities(
     column: str = "median",
     pattern: Optional[str] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    use_filename_threshold: bool = False,
 ) -> str:
     """Find median intensities in blocks and assign them to center positions of cropped block.
+
+    A crop that cannot be analyzed does not abort the other crops. Its threshold is None, unless
+    `use_filename_threshold` allows to fall back to the threshold recorded in the file name.
+
+    Args:
+        annotation_dir: Directory containing annotations.
+        cochlea: The name of the cochlea to analyze.
+        data_seg: Segmentation data.
+        table_measure: Table containing object measures.
+        column: Name of column in measurement table.
+        pattern: Optional substring that an annotation file name must contain.
+        voxel_size: Voxel size in micrometer.
+        use_filename_threshold: Whether to use the threshold recorded in the annotation file name
+            when the annotations do not yield one.
+
+    Returns:
+        Dictionary with the analysis of the annotations per crop.
     """
     annotation_dic = find_annotations(annotation_dir, cochlea, pattern=pattern)
-    # center_keys = [key for key in annotation_dic["center_strings"] if key in annotation_dic.keys()]
 
     for center_str in annotation_dic["center_strings"]:
         center_coord = coord_from_string(center_str)
         print(f"Getting median intensities for {center_coord}.")
         file_pos = annotation_dic[center_str]["file_pos"]
         file_neg = annotation_dic[center_str]["file_neg"]
-        param_dic = get_crop_parameters(file_neg, file_pos, center_coord, data_seg,
-                                        table_measure, column=column, voxel_size=voxel_size)
+        try:
+            if file_pos is None or file_neg is None:
+                param_dic = get_single_annotation_parameters(
+                    file_neg if file_pos is None else file_pos, table_measure, column=column,
+                )
+            else:
+                param_dic = get_crop_parameters(file_neg, file_pos, center_coord, data_seg,
+                                                table_measure, column=column, voxel_size=voxel_size)
+        except Exception as error:
+            print(f"Could not analyze the annotations of crop {center_str}: {error}")
+            param_dic = _empty_crop_parameters()
 
-        median_intensity = param_dic["median_intensity"]
-        if median_intensity is None:
+        if param_dic["median_intensity"] is None:
+            param_dic["threshold_source"] = None
             print(f"No threshold identified for {center_str}.")
+            if use_filename_threshold:
+                threshold = threshold_from_filenames([file_neg, file_pos])
+                if threshold is None:
+                    print(f"No threshold in the annotation file names of crop {center_str} either.")
+                else:
+                    param_dic["median_intensity"] = threshold
+                    param_dic["threshold_source"] = "filename"
+                    print(f"Using the threshold {threshold} from the annotation file names of crop {center_str}.")
 
         for key in param_dic.keys():
             annotation_dic[center_str][key] = param_dic[key]
@@ -300,6 +482,9 @@ def map_crops_to_length_fraction(
     The crop center is only a point in space, so the length fraction is averaged over the
     segmentation instances around it. The halo is doubled until at least one instance is in range.
 
+    A crop without a threshold is left out, so that the neighboring crops cover a larger part of the
+    cochlea. Keeping it would let it claim a section in which no instance can be classified.
+
     Args:
         intensity_dic: Dictionary with the crop center strings as keys.
         table_seg: Segmentation table.
@@ -311,6 +496,10 @@ def map_crops_to_length_fraction(
     """
     lf_intensity = {}
     for key in intensity_dic.keys():
+        if threshold_dic is None and _threshold_value(intensity_dic[key]["median_intensity"]) is None:
+            print(f"Skipping crop {key}. No threshold available, "
+                  "so the neighboring crops cover this part of the cochlea.")
+            continue
         length_fraction = get_length_fraction_from_center(table_seg, key, halo_size=halo_size)
         while length_fraction is None:
             halo_size = 2 * halo_size
@@ -321,7 +510,7 @@ def map_crops_to_length_fraction(
 
         intensity_dic[key]["length_fraction"] = length_fraction
         if threshold_dic is None:
-            threshold = intensity_dic[key]["median_intensity"]
+            threshold = _threshold_value(intensity_dic[key]["median_intensity"])
         else:
             if isinstance(threshold_dic, (int, float)):
                 threshold = threshold_dic
@@ -368,6 +557,9 @@ def apply_nearest_threshold(
     lf_intensity = map_crops_to_length_fraction(
         intensity_dic, table_seg, threshold_dic=threshold_dic, halo_size=halo_size,
     )
+    if len(lf_intensity) == 0:
+        raise ValueError("No crop has a threshold, so no marker label can be assigned. "
+                         "Check the annotation files of this cochlea.")
     lf_fractions = list(lf_intensity.keys())
     lf_limits = length_fraction_limits(lf_fractions)
 
@@ -595,8 +787,23 @@ def find_thresholds(
     column: str = "median",
     pattern: Optional[str] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
+    use_filename_threshold: bool = False,
 ) -> Tuple[dict, dict]:
     """ Find the median intensities by averaging the individual annotations for specific crops.
+
+    Args:
+        cochlea_annotations: Directories containing the annotations of the individual annotators.
+        cochlea: The name of the cochlea to analyze.
+        data_seg: Segmentation data.
+        table_meas: Table containing object measures.
+        column: Name of column in measurement table.
+        pattern: Optional substring that an annotation file name must contain.
+        voxel_size: Voxel size in micrometer.
+        use_filename_threshold: Whether to use the threshold recorded in the annotation file name
+            when the annotations of a crop do not yield one.
+
+    Returns:
+        The threshold per crop, averaged over the annotators, and the analysis per annotator.
     """
     annotation_dics = {}
     annotated_centers = []
@@ -604,7 +811,8 @@ def find_thresholds(
         print(f"Localizing threshold with median intensities for {os.path.abspath(annotation_dir)}.")
         annotation_dic = localize_median_intensities(annotation_dir, cochlea, data_seg,
                                                      table_meas, column=column, pattern=pattern,
-                                                     voxel_size=voxel_size)
+                                                     voxel_size=voxel_size,
+                                                     use_filename_threshold=use_filename_threshold)
         annotated_centers.extend(annotation_dic["center_strings"])
         annotation_dics[annotation_dir] = annotation_dic
 
@@ -618,6 +826,7 @@ def find_thresholds(
         annotator_failure = []
         annotator_missing = []
         annotator_intensities = {}
+        threshold_sources = {}
         # loop over annotated block from single user
         for annotator_key in annotation_dics.keys():
             subdirname = os.path.basename(os.path.abspath(annotator_key))
@@ -625,7 +834,8 @@ def find_thresholds(
                 annotator_missing.append(subdirname)
                 continue
             else:
-                median_intensity = annotation_dics[annotator_key][annotated_center]["median_intensity"]
+                crop_dic = annotation_dics[annotator_key][annotated_center]
+                median_intensity = crop_dic["median_intensity"]
                 if median_intensity is None:
                     print(f"No threshold for {subdirname} and crop {annotated_center}.")
                     annotator_failure.append(subdirname)
@@ -633,16 +843,18 @@ def find_thresholds(
                     intensities.append(median_intensity)
                     annotator_success.append(subdirname)
                     annotator_intensities[subdirname] = float(median_intensity)
+                    threshold_sources[subdirname] = crop_dic.get("threshold_source")
 
         if len(intensities) == 0:
             print(f"No viable annotation for cochlea {cochlea} and crop {annotated_center}.")
             median_int_avg = None
         else:
-            median_int_avg = float(sum(intensities) / len(intensities)),
+            median_int_avg = float(sum(intensities) / len(intensities))
 
         intensity_dic[annotated_center] = {
             "median_intensity": median_int_avg,
             "annotator_intensities": annotator_intensities,
+            "threshold_sources": threshold_sources,
             "annotation_success": annotator_success,
             "annotation_failure": annotator_failure,
             "annotation_missing": annotator_missing,

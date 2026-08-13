@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+from typing import Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -9,13 +10,15 @@ import tifffile
 import zarr
 from matplotlib import cm, colors
 
-from flamingo_tools.export_data_utils import compute_crop_bb
+from flamingo_tools.export_data_utils import compute_crop_bb, crop_suffix
 from flamingo_tools.s3_utils import BUCKET_NAME, SERVICE_ENDPOINT, create_s3_target, get_s3_path
 # from tqdm import tqdm
 
 
 def export_frequency_mapping(cochlea, scale, output_folder, source_name, colormap=None,
-                             crop_center=None, roi_halo=None):
+                             crop_center=None, roi_halo=None, axis: Optional[int] = None,
+                             suffix: Optional[str] = None,
+                             voxel_size: Sequence[float] = (0.38, 0.38, 0.38)):
     s3 = create_s3_target()
 
     content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
@@ -40,7 +43,9 @@ def export_frequency_mapping(cochlea, scale, output_folder, source_name, colorma
     input_key = f"s{scale}"
     f = zarr.open(s3_store, mode="r")
     if crop_center is not None:
-        start, stop = compute_crop_bb(crop_center, roi_halo, voxel_size=0.38, scale=scale, shape=f[input_key].shape)
+        start, stop = compute_crop_bb(
+            crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=f[input_key].shape, axis=axis
+        )
         seg = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
     else:
         seg = f[input_key][:]
@@ -63,10 +68,11 @@ def export_frequency_mapping(cochlea, scale, output_folder, source_name, colorma
     out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
     os.makedirs(out_folder, exist_ok=True)
 
+    out_suffix = crop_suffix(crop_center, axis, suffix) if crop_center is not None else ""
     if colormap is None:
-        out_path = os.path.join(out_folder, f"frequencies_{source_name}.tif")
+        out_path = os.path.join(out_folder, f"frequencies_{source_name}{out_suffix}.tif")
     else:
-        out_path = os.path.join(out_folder, f"frequencies_{source_name}_{colormap}.tif")
+        out_path = os.path.join(out_folder, f"frequencies_{source_name}_{colormap}{out_suffix}.tif")
 
     print("Writing output to", out_path)
     tifffile.imwrite(out_path, output, bigtiff=True, compression="zlib")
@@ -95,12 +101,28 @@ def main():
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
-                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale.")
+                        help="Halo around the crop center as halo_x halo_y halo_z in pixels at the target scale. "
+                        "Optional when --axis is given: the whole plane is cropped in that case.")
+    parser.add_argument("--axis", type=int, choices=[0, 1, 2], default=None,
+                        help="Axis (0=x, 1=y, 2=z) to crop as a single-pixel 2D slice at the crop center. "
+                        "Requires --crop_center.")
+    parser.add_argument("--suffix", type=str, default=None,
+                        help="Extra label appended to the output filename after the crop/axis suffix, "
+                        "e.g. a position name such as 'apex'.")
+    parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     args = parser.parse_args()
+    if args.crop_center is not None:
+        if args.roi_halo is None and args.axis is None:
+            parser.error("--crop_center requires --roi_halo, unless --axis is also given "
+                         "(the whole plane is cropped in that case).")
+    elif args.axis is not None:
+        parser.error("--axis requires --crop_center.")
 
     export_frequency_mapping(
         args.cochlea, args.scale, args.output_folder, args.source_name, args.colormap,
-        crop_center=args.crop_center, roi_halo=args.roi_halo,
+        crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis, suffix=args.suffix,
+        voxel_size=args.voxel_size,
     )
 
 

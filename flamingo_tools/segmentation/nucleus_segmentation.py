@@ -23,7 +23,7 @@ def _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threa
         table = compute_table_on_the_fly(segmentation, voxel_size=voxel_size)
 
     def segment_nucleus(seg_id):
-        bb = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation=None)
+        bb, _ = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation=None)
         image_local, seg_local = image[bb], segmentation[bb]
         mask = seg_local == seg_id
 
