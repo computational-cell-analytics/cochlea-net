@@ -611,5 +611,168 @@ class TestImgPathsWithoutCropOutput(unittest.TestCase):
             self.assertTrue(any("img_paths" in str(w.message) for w in caught))
 
 
+def _overlap_entry(fraction, label_ids=None, hull_vertices=None, slice_min=0.0, slice_max=10.0, mode="2d"):
+    """Build a minimal density result entry for the overlap tests."""
+    entry = {
+        "reference_fraction": fraction,
+        "n_sgns": 0 if label_ids is None else len(label_ids),
+        "slice_min": slice_min,
+        "slice_max": slice_max,
+        "mode": mode,
+        "axis": "z",
+        "hull_vertices": hull_vertices,
+    }
+    if label_ids is not None:
+        entry["label_ids"] = list(label_ids)
+    return entry
+
+
+UNIT_SQUARE = [[0.0, 0.0], [1.0, 0.0], [1.0, 1.0], [0.0, 1.0]]
+OFFSET_SQUARE = [[0.5, 0.5], [1.5, 0.5], [1.5, 1.5], [0.5, 1.5]]
+DISTANT_SQUARE = [[5.0, 5.0], [6.0, 5.0], [6.0, 6.0], [5.0, 6.0]]
+
+
+class TestDensityPositionOverlap(unittest.TestCase):
+    def test_shared_ids_and_hull_iou(self):
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2, 3, 4], UNIT_SQUARE, slice_min=0.0, slice_max=10.0),
+            "0.15": _overlap_entry(0.15, [3, 4, 5, 6], OFFSET_SQUARE, slice_min=5.0, slice_max=15.0),
+        }
+        records = density_position_overlap(results)
+
+        self.assertEqual(len(records), 1)
+        record = records[0]
+        self.assertEqual(record["n_shared"], 2)
+        self.assertAlmostEqual(record["jaccard"], 1 / 3)
+        self.assertAlmostEqual(record["shared_fraction"], 0.5)
+        # Half-offset unit squares: intersection 0.25, union 1.75.
+        self.assertAlmostEqual(record["hull_intersection"], 0.25)
+        self.assertAlmostEqual(record["hull_iou"], 1 / 7)
+        self.assertAlmostEqual(record["slice_overlap"], 5.0)
+
+    def test_disjoint_hulls(self):
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2, 3], UNIT_SQUARE, slice_min=0.0, slice_max=10.0),
+            "0.9": _overlap_entry(0.9, [4, 5, 6], DISTANT_SQUARE, slice_min=20.0, slice_max=30.0),
+        }
+        record = density_position_overlap(results)[0]
+
+        self.assertEqual(record["n_shared"], 0)
+        self.assertAlmostEqual(record["jaccard"], 0.0)
+        self.assertAlmostEqual(record["hull_iou"], 0.0)
+        self.assertAlmostEqual(record["slice_overlap"], 0.0)
+
+    def test_missing_ids_and_hull(self):
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        results = {
+            "apex": _overlap_entry(0.15, slice_min=0.0, slice_max=10.0),
+            "base": _overlap_entry(0.85, slice_min=2.0, slice_max=10.0),
+        }
+        record = density_position_overlap(results)[0]
+
+        self.assertIsNone(record["n_shared"])
+        self.assertIsNone(record["jaccard"])
+        self.assertIsNone(record["shared_fraction"])
+        self.assertIsNone(record["hull_iou"])
+        self.assertAlmostEqual(record["slice_overlap"], 8.0)
+
+    def test_3d_mode_has_no_hull_iou(self):
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        hull_3d = [[0.0, 0.0, 0.0], [1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]]
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2], hull_3d, mode="3d"),
+            "0.15": _overlap_entry(0.15, [2, 3], hull_3d, mode="3d"),
+        }
+        record = density_position_overlap(results)[0]
+
+        self.assertIsNone(record["hull_iou"])
+        self.assertEqual(record["n_shared"], 1)
+
+    def test_mismatched_mode_not_compared(self):
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2], UNIT_SQUARE, mode="2d"),
+            "0.15": _overlap_entry(0.15, [2, 3], UNIT_SQUARE, mode="3d"),
+        }
+        record = density_position_overlap(results)[0]
+
+        self.assertIsNone(record["hull_iou"])
+        self.assertIsNone(record["slice_overlap"])
+        self.assertEqual(record["n_shared"], 1)
+
+    def test_all_pairs_sorted_by_fraction(self):
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        results = {
+            "0.9": _overlap_entry(0.9, [1]),
+            "0.1": _overlap_entry(0.1, [2]),
+            "0.5": _overlap_entry(0.5, [3]),
+        }
+        records = density_position_overlap(results)
+
+        self.assertEqual(len(records), 3)
+        self.assertEqual(
+            [(r["fraction_a"], r["fraction_b"]) for r in records],
+            [(0.1, 0.5), (0.1, 0.9), (0.5, 0.9)],
+        )
+
+    def test_json_file_input(self):
+        import json
+        import os
+        import tempfile
+        from flamingo_tools.analysis.density_utils import density_position_overlap
+
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2, 3], UNIT_SQUARE),
+            "0.15": _overlap_entry(0.15, [2, 3, 4], OFFSET_SQUARE),
+        }
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            json_path = os.path.join(tmp_dir, "SGN_density_2d_extended.json")
+            with open(json_path, "w") as f:
+                json.dump(results, f)
+            records = density_position_overlap(json_path)
+
+        self.assertEqual(len(records), 1)
+        self.assertEqual(records[0]["n_shared"], 2)
+
+
+class TestReportDensityOverlap(unittest.TestCase):
+    def test_warns_above_threshold(self):
+        import warnings
+        from flamingo_tools.analysis.density_utils import report_density_overlap
+
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2, 3, 4], UNIT_SQUARE),
+            "0.15": _overlap_entry(0.15, [3, 4, 5, 6], OFFSET_SQUARE),
+        }
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            records = report_density_overlap(results, name="test", warn_threshold=0.1)
+
+        self.assertEqual(len(records), 1)
+        self.assertTrue(any("not independent measurements" in str(w.message) for w in caught))
+
+    def test_no_warning_without_shared_ids(self):
+        import warnings
+        from flamingo_tools.analysis.density_utils import report_density_overlap
+
+        results = {
+            "0.1": _overlap_entry(0.1, [1, 2], UNIT_SQUARE),
+            "0.15": _overlap_entry(0.15, [3, 4], OFFSET_SQUARE),
+        }
+        with warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            report_density_overlap(results, warn_threshold=0.1)
+
+        self.assertFalse(any("not independent measurements" in str(w.message) for w in caught))
+
+
 if __name__ == "__main__":
     unittest.main()
