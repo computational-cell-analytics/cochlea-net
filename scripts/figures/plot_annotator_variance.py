@@ -22,12 +22,17 @@ from plot_fig4 import COCHLEAE_DICT
 FILE_EXTENSION = "png"
 png_dpi = 300
 
-DEFAULT_INPUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "annotator_variance")
+DEFAULT_INPUT_DIR = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "..", "..", "annotator_variance_ChReef"
+)
 
 # Display names for the annotators. The order also fixes the marker shape and the x offset.
+# The marker annotations and the subtype annotations use a different key for the same annotator.
 ANNOTATOR_ALIAS = {
     "ResultsAMD": "Annotator 1",
+    "Result_AMD": "Annotator 1",
     "ResultsEK": "Annotator 2",
+    "Result_EK": "Annotator 2",
     "ResultsLR": "Annotator 3",
 }
 
@@ -196,6 +201,43 @@ def _annotator_order(df: pd.DataFrame, show_median: bool) -> List[str]:
     return annotators
 
 
+def _annotator_shapes(annotators: Sequence[str]) -> Dict[str, str]:
+    """Assign a marker shape per scenario.
+
+    The shape follows the alias, not the position within `annotators`. An annotator keeps its shape
+    for every cochlea and cohort, also if only a subset of the annotators is plotted.
+    """
+    order = list(dict.fromkeys(ANNOTATOR_ALIAS.values()))
+    shapes = {}
+    for name in annotators:
+        if name == MEDIAN_KEY:
+            shapes[name] = "_"
+            continue
+        label = ANNOTATOR_ALIAS.get(name)
+        if label in order:
+            index = order.index(label)
+        else:
+            index = len(order)
+            order.append(label if label is not None else name)
+        shapes[name] = ANNOTATOR_MARKERS[index % len(ANNOTATOR_MARKERS)]
+    return shapes
+
+
+def _x_offsets(
+    series_names: Sequence[str],
+    annotators: Sequence[str],
+    annotator_offset: float = 0.06,
+) -> Tuple[Dict[str, float], Dict[str, float]]:
+    """Get the x offsets. The series are spread over the slot of a cochlea, the annotators within
+    a series."""
+    series_offset = max(annotator_offset * len(annotators) + 0.06, 0.2)
+    series_shift = {name: (num - (len(series_names) - 1) / 2) * series_offset
+                    for num, name in enumerate(series_names)}
+    annotator_shift = {name: (num - (len(annotators) - 1) / 2) * annotator_offset
+                       for num, name in enumerate(annotators)}
+    return series_shift, annotator_shift
+
+
 def _series_colors(series_names: Sequence[str]) -> Dict[str, str]:
     colors = {}
     fallback = [color for color in prism_palette if color not in CLASS_COLORS.values()]
@@ -277,17 +319,8 @@ def plot_annotator_variance(
     series_names = list(dict.fromkeys(df["series"]))
     colors = _series_colors(series_names)
     annotators = _annotator_order(df, show_median)
-    shapes = {annotator: "_" if annotator == MEDIAN_KEY else ANNOTATOR_MARKERS[num % len(ANNOTATOR_MARKERS)]
-              for num, annotator in enumerate(a for a in annotators if a != MEDIAN_KEY)}
-    shapes[MEDIAN_KEY] = "_"
-
-    # x offsets: the series are spread over the slot of a cochlea, the annotators within a series.
-    annotator_offset = 0.06
-    series_offset = max(annotator_offset * len(annotators) + 0.06, 0.2)
-    series_shift = {name: (num - (len(series_names) - 1) / 2) * series_offset
-                    for num, name in enumerate(series_names)}
-    annotator_shift = {name: (num - (len(annotators) - 1) / 2) * annotator_offset
-                       for num, name in enumerate(annotators)}
+    shapes = _annotator_shapes(annotators)
+    series_shift, annotator_shift = _x_offsets(series_names, annotators)
 
     values = df["percent"].to_numpy()
     if ylim is None:
@@ -382,6 +415,120 @@ def plot_annotator_variance(
         plt.close(fig)
 
 
+def plot_annotator_offset(
+    df: pd.DataFrame,
+    save_path: str,
+    reference_class: str = "positive",
+    ylim: Optional[Tuple[float, float]] = None,
+    default_ylim: Tuple[float, float] = (-5.0, 5.0),
+    show_legend: bool = True,
+    figsize: Tuple[float, float] = (12, 5),
+    plot: bool = False,
+) -> None:
+    """Plot the deviation of the annotators from the median, with the median as the zero reference.
+
+    This function is specific for a marker that divides the cells into positive and negative.
+    The percentages of both classes add up to 100, so the deviation of the negative class is the
+    mirror image of the positive one and only `reference_class` is plotted.
+
+    Args:
+        df: Long-form table created by `load_variance_records`.
+        save_path: File path for the figure.
+        reference_class: Marker class used for the deviation, either "positive" or "negative".
+        ylim: Y limits. They are derived from the data by default.
+        default_ylim: Y limits used if the deviations stay within this range.
+        show_legend: Draw the legend in the figure.
+        figsize: Figure size.
+        plot: Show the figure.
+    """
+    prism_style()
+
+    main_label_size = 20
+    main_tick_size = 16
+    xtick_size = 14
+
+    classes = set(df["class_name"])
+    if not classes <= {"positive", "negative"}:
+        raise ValueError(
+            f"plot_annotator_offset needs a positive / negative marker, but the input has {sorted(classes)}."
+        )
+    df = df[df["class_name"] == reference_class]
+    if len(df) == 0:
+        raise ValueError(f"No data for the class {reference_class}.")
+
+    # Subtract the median per cochlea and series, which puts every cochlea on the same reference.
+    offsets = []
+    for (cochlea, series), group in df.groupby(["cochlea", "series"], sort=False):
+        reference = group.loc[group["is_median"], "percent"]
+        if len(reference) == 0:
+            print(f"Warning: skipping {cochlea} / {series}. No median scenario available.")
+            continue
+        annotated = group[~group["is_median"]].copy()
+        annotated["offset"] = annotated["percent"] - float(reference.iloc[0])
+        offsets.append(annotated)
+    if len(offsets) == 0:
+        raise ValueError("No cochlea with a median scenario.")
+    df = pd.concat(offsets, ignore_index=True)
+
+    cochleae = list(dict.fromkeys(df["cochlea"]))
+    known = [name for name in COCHLEAE_DICT if name in cochleae]
+    cochleae = known + sorted(name for name in cochleae if name not in COCHLEAE_DICT)
+    labels = [df.loc[df["cochlea"] == name, "label"].iloc[0] for name in cochleae]
+
+    series_names = list(dict.fromkeys(df["series"]))
+    colors = _series_colors(series_names)
+    annotators = _annotator_order(df, show_median=False)
+    shapes = _annotator_shapes(annotators)
+    series_shift, annotator_shift = _x_offsets(series_names, annotators)
+
+    if ylim is None:
+        # The default range is kept unless a deviation exceeds it, so figures stay comparable.
+        limit = max(abs(default_ylim[0]), abs(default_ylim[1]),
+                    float(np.ceil(1.1 * df["offset"].abs().max())))
+        ylim = (-limit, limit)
+
+    fig, ax = plt.subplots(figsize=figsize)
+    ax.axhline(0, color="black", linewidth=1.2, zorder=1)
+
+    for num, cochlea in enumerate(cochleae):
+        for series in series_names:
+            subset = df[(df["cochlea"] == cochlea) & (df["series"] == series)]
+            for _, row in subset.iterrows():
+                x_pos = num + series_shift[series] + annotator_shift[row["annotator"]]
+                ax.scatter(
+                    x_pos, row["offset"], marker=shapes[row["annotator"]], s=90,
+                    color=colors[series], alpha=0.6, zorder=2,
+                )
+
+    ax.set_ylim(*ylim)
+    ax.tick_params(axis="y", labelsize=main_tick_size)
+    ax.set_xlim(-0.5, len(cochleae) - 0.5)
+    ax.set_xticks(range(len(cochleae)))
+    ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=xtick_size)
+    ax.set_ylabel("Deviation from median [% points]", fontsize=main_label_size)
+    prism_cleanup_axes(ax)
+
+    if show_legend:
+        # The color only carries information if the input mixes several stains.
+        legend_series = series_names if len(series_names) > 1 else []
+        handles, legend_labels = _legend_entries(legend_series, colors, annotators, shapes)
+        ax.legend(
+            handles, legend_labels, loc="lower center", bbox_to_anchor=(0.5, 1.02),
+            ncol=len(legend_labels), frameon=False, fontsize=main_tick_size, handletextpad=0.4,
+            columnspacing=1.2,
+        )
+
+    if save_path.endswith(".png"):
+        fig.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
+    else:
+        fig.savefig(save_path, bbox_inches="tight", pad_inches=0)
+
+    if plot:
+        plt.show()
+    else:
+        plt.close(fig)
+
+
 def plot_annotator_variance_legend(
     df: pd.DataFrame,
     save_path: str,
@@ -399,9 +546,7 @@ def plot_annotator_variance_legend(
     series_names = list(dict.fromkeys(df["series"]))
     colors = _series_colors(series_names)
     annotators = _annotator_order(df, show_median)
-    shapes = {annotator: ANNOTATOR_MARKERS[num % len(ANNOTATOR_MARKERS)]
-              for num, annotator in enumerate(a for a in annotators if a != MEDIAN_KEY)}
-    shapes[MEDIAN_KEY] = "_"
+    shapes = _annotator_shapes(annotators)
 
     handles, labels = _legend_entries(series_names, colors, annotators, shapes)
     legend = plt.legend(handles, labels, loc=(0, 0), ncol=len(labels), framealpha=1, frameon=False)
@@ -428,14 +573,20 @@ def main():
     parser.add_argument("--min_gap", type=float, default=15.0,
                         help="Minimal gap in percentage points for an automatic break.")
     parser.add_argument("--no_median", action="store_true", help="Do not plot the median scenario.")
+    parser.add_argument("--min_crops", type=int, default=5,
+                        help="Minimal number of annotated crops to include an annotator.")
+    parser.add_argument("--ylim", type=float, nargs=2, default=None, metavar=("LOWER", "UPPER"),
+                        help="Y limits of the offset plot, e.g. -3 3.")
     parser.add_argument("--no_alias", action="store_true", help="Do not use the cochlea alias.")
     parser.add_argument("--plot", action="store_true", help="Show the figures.")
+    parser.add_argument("--offset", action="store_true", help="Plot offset figures.")
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
 
     df = load_variance_records(
         args.input_dir, marker=args.marker, pattern=args.pattern, use_alias=not args.no_alias,
+        min_crops=args.min_crops,
     )
     marker_name = args.marker if args.marker is not None else "-".join(sorted(set(df["marker"].dropna())))
     show_median = not args.no_median
@@ -459,6 +610,18 @@ def main():
         save_path=os.path.join(args.figure_dir, f"annotator_variance_{marker_name}{suffix}_legend.{FILE_EXTENSION}"),
         classes=args.classes, show_median=show_median,
     )
+
+    if args.offset:
+        plot_annotator_offset(
+            df,
+            save_path=os.path.join(args.figure_dir, f"annotator_offset_{marker_name}.{FILE_EXTENSION}"),
+            ylim=None if args.ylim is None else tuple(args.ylim), plot=args.plot,
+        )
+        plot_annotator_variance_legend(
+            df,
+            save_path=os.path.join(args.figure_dir, f"annotator_offset_{marker_name}_legend.{FILE_EXTENSION}"),
+            classes=["positive"], show_median=False,
+        )
 
 
 if __name__ == "__main__":
