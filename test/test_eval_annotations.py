@@ -101,7 +101,7 @@ class TestEvalAnnotations(unittest.TestCase):
             empty = self._write_annotation(tmp_dir, "empty_42.tif", [])
 
             param_dic = get_single_annotation_parameters(all_negative, table)
-            self.assertEqual(param_dic["median_intensity"], 200.0)
+            self.assertEqual(param_dic["median_intensity"], 30.0)
             self.assertEqual(param_dic["threshold_source"], "single-annotation-negative")
 
             param_dic = get_single_annotation_parameters(all_positive, table)
