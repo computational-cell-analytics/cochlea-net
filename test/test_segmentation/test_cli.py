@@ -24,10 +24,14 @@ class TestSegmentationCLI(unittest.TestCase):
             data_path = self._create_data(tmp_dir)
             output_folder = os.path.join(tmp_dir, "output")
 
-            subprocess.run([
+            result = subprocess.run([
                 "flamingo_tools.run_segmentation",
                 "-i", data_path, "-o", output_folder, "-m", "SGN", "--min_size", "0"
-            ])
+            ], capture_output=True, text=True)
+            self.assertEqual(
+                result.returncode, 0,
+                msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
 
             expected_path = os.path.join(output_folder, "segmentation.zarr")
             expected_key = "segmentation"
@@ -42,9 +46,13 @@ class TestSegmentationCLI(unittest.TestCase):
             data_path = self._create_data(tmp_dir)
             output_folder = os.path.join(tmp_dir, "output")
 
-            subprocess.run([
+            result = subprocess.run([
                 "flamingo_tools.run_detection", "-i", data_path, "-o", output_folder
-            ])
+            ], capture_output=True, text=True)
+            self.assertEqual(
+                result.returncode, 0,
+                msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
 
             expected_path = os.path.join(output_folder, "synapse_detection.tsv")
             self.assertTrue(os.path.exists(expected_path))
