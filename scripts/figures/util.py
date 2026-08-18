@@ -160,6 +160,10 @@ prism_palette = [
     "#BAB0AC"   # gray
 ]
 
+# Cochlea side colors for the ChReef analysis: the left cochlea is injected, the right is not.
+COLOR_LEFT = "#8E00DB"
+COLOR_RIGHT = "#DB0063"
+
 
 def custom_formatter_1(x, pos):
     if np.isclose(x, 1.0):
@@ -472,27 +476,27 @@ COCHLEA_DICT = {
     "M_AMD_000127_R": {"alias": "M_04R", "component": [1], "color": "#1CA0E8"},
     # Mouse cochleae for the ChReef analysis.
     "M_LR_000143_L": {"alias": "M0L", "component": [1]},
-    "M_LR_000144_L": {"alias": "M_05L", "component": [1]},
-    "M_LR_000145_L": {"alias": "M_06L", "component": [1]},
-    "M_LR_000153_L": {"alias": "M_07L", "component": [1, 2, 3]},
-    "M_LR_000155_L": {"alias": "M_08L", "component": [1]},
-    "M_LR_000189_L": {"alias": "M_09L", "component": [1]},
+    "M_LR_000144_L": {"alias": "M_05L", "component": [1], "color": "#9C5027"},
+    "M_LR_000145_L": {"alias": "M_06L", "component": [1], "color": "#279C52"},
+    "M_LR_000153_L": {"alias": "M_07L", "component": [1, 2, 3], "color": "#67279C"},
+    "M_LR_000155_L": {"alias": "M_08L", "component": [1], "color": "#27339C"},
+    "M_LR_000189_L": {"alias": "M_09L", "component": [1], "color": "#9C276F"},
     "M_LR_000143_R": {"alias": "M0R", "component": [1]},
-    "M_LR_000144_R": {"alias": "M_05R", "component": [1]},
-    "M_LR_000145_R": {"alias": "M_06R", "component": [1]},
-    "M_LR_000153_R": {"alias": "M_07R", "component": [1]},
-    "M_LR_000155_R": {"alias": "M_08R", "component": [1]},
-    "M_LR_000189_R": {"alias": "M_09R", "component": [1]},
+    "M_LR_000144_R": {"alias": "M_05R", "component": [1], "color": "#9C5027"},
+    "M_LR_000145_R": {"alias": "M_06R", "component": [1], "color": "#279C52"},
+    "M_LR_000153_R": {"alias": "M_07R", "component": [1], "color": "#67279C"},
+    "M_LR_000155_R": {"alias": "M_08R", "component": [1], "color": "#27339C"},
+    "M_LR_000189_R": {"alias": "M_09R", "component": [1], "color": "#9C276F"},
     # Gerbil cochleae for the ChReef analysis. The components match the component_list used to
     # generate each SGN_density_2d.json.
-    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5]},
-    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2]},
-    "G_EK_000071_L": {"alias": "G_2L", "component": [1]},
-    "G_EK_000071_R": {"alias": "G_2R", "component": [1]},
-    "G_EK_000074_L": {"alias": "G_3L", "component": [1]},
-    "G_EK_000074_R": {"alias": "G_3R", "component": [1]},
-    "G_EK_000076_L": {"alias": "G_4L", "component": [1, 2, 3]},
-    "G_EK_000076_R": {"alias": "G_4R", "component": [1]},
+    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5], "color": "#9C5027"},
+    "G_EK_000071_L": {"alias": "G_2L", "component": [1], "color": "#279C52"},
+    "G_EK_000074_L": {"alias": "G_3L", "component": [1], "color": "#67279C"},
+    "G_EK_000076_L": {"alias": "G_4L", "component": [1, 2, 3], "color": "#27339C"},
+    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2], "color": "#9C5027"},
+    "G_EK_000071_R": {"alias": "G_2R", "component": [1], "color": "#279C52"},
+    "G_EK_000074_R": {"alias": "G_3R", "component": [1], "color": "#67279C"},
+    "G_EK_000076_R": {"alias": "G_4R", "component": [1], "color": "#27339C"},
 }
 
 MWFLS_COCHLEAE = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]

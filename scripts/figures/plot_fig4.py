@@ -12,7 +12,7 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import frequency_mapping, prism_style, prism_cleanup_axes
 from util import export_legend, custom_formatter_1, get_marker_handle, get_trendline_handle
-from util import COCHLEA_DICT
+from util import COCHLEA_DICT, COLOR_LEFT, COLOR_RIGHT
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
@@ -65,8 +65,6 @@ COLORS_RIGHT = {
 FILE_EXTENSION = "png"
 png_dpi = 300
 
-COLOR_LEFT = "#8E00DB"
-COLOR_RIGHT = "#DB0063"
 COLOR_UNTREATED = "#DB7B00"
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"

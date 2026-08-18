@@ -18,6 +18,8 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import (
     COCHLEA_DICT,
+    COLOR_LEFT,
+    COLOR_RIGHT,
     density_by_fraction_bins,
     density_by_sliding_window,
     get_flatline_handle,
@@ -38,17 +40,15 @@ IDISCO = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
 MWFLS = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]
 
 CHREEF_MOUSE = [
-    "M_LR_000143_L",
     "M_LR_000144_L",
-    "M_LR_000145_L",
-    "M_LR_000153_L",
-    "M_LR_000155_L",
-    "M_LR_000189_L",
-    "M_LR_000143_R",
     "M_LR_000144_R",
+    "M_LR_000145_L",
     "M_LR_000145_R",
+    "M_LR_000153_L",
     "M_LR_000153_R",
+    "M_LR_000155_L",
     "M_LR_000155_R",
+    "M_LR_000189_L",
     "M_LR_000189_R",
 ]
 
@@ -89,6 +89,13 @@ COHORT_ANIMALS = {"chreef_gerbil": "gerbil"}
 
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
+
+# Trendline per cochlea side for the ChReef cohorts, following fig_04e and fig_e_gerbil.
+# The left cochlea is injected, the right one is not.
+SIDE_TRENDLINES = {
+    "L": {"label": "Injected", "color": "grey", "linestyle": "dashed", "alpha": 0.6},
+    "R": {"label": "Non-Injected", "color": "grey", "linestyle": "dotted", "alpha": 0.7},
+}
 
 # Greenwood parameters f(x) = A * (10 ** (a * x) - k), see cochlea_mapping.map_frequency.
 GREENWOOD = {
@@ -173,7 +180,7 @@ def build_plot_metadata(cochleae: List[str], cohort: Optional[str] = None) -> di
         cohort: Name of the cohort the cochleae belong to. Used for the per-cohort trendlines.
 
     Returns:
-        Mapping of cochlea name to a dict with the keys alias, color, marker and cohort.
+        Mapping of cochlea name to a dict with the keys alias, color, marker, side and cohort.
     """
     # The prism palette only holds 10 colors. A larger cohort would reuse a color, which makes two
     # cochleae indistinguishable in the sliding mode, where no marker separates them.
@@ -189,6 +196,7 @@ def build_plot_metadata(cochleae: List[str], cohort: Optional[str] = None) -> di
             "alias": entry["alias"],
             "color": entry.get("color", palette[num % len(palette)]),
             "marker": MARKER_RIGHT if cochlea.endswith("_R") else MARKER_LEFT,
+            "side": "R" if cochlea.endswith("_R") else "L",
         }
         if cohort is not None:
             metadata[cochlea]["cohort"] = cohort
@@ -223,6 +231,7 @@ def fig_sgn_density_profile(
     trendline: bool = False,
     trendline_std: bool = False,
     trendline_colors: dict = None,
+    trendline_by_side: bool = False,
     top_axis: bool = False,
     animal: str = "mouse",
     show_legend: bool = False,
@@ -247,6 +256,9 @@ def fig_sgn_density_profile(
         trendline_std: Visualize the standard deviation of the trendline.
         trendline_colors: Mapping of cohort name to color. One trendline is drawn per cohort.
             A single gray trendline is drawn over all cochleae when this is None.
+        trendline_by_side: Draw one trendline for the left and one for the right cochleae, instead
+            of a single trendline. Use it for the ChReef cohorts, where the left cochlea is
+            injected and the right one is not. Takes precedence over trendline_colors.
         top_axis: Plot the top x-axis as the frequency range.
         animal: Species for the frequency mapping of the top axis. Either 'mouse' or 'gerbil'.
         show_legend: Show legend below the plot.
@@ -267,6 +279,7 @@ def fig_sgn_density_profile(
     color_dict = {}
     marker_dict = {}
     alias_to_cohort = {}
+    alias_to_side = {}
     cochleae_length = []
     for name, values in length_data.items():
         meta = cochleae_dict[name]
@@ -276,6 +289,7 @@ def fig_sgn_density_profile(
         marker_dict[alias] = meta.get("marker", "o")
         if "cohort" in meta:
             alias_to_cohort[alias] = meta["cohort"]
+        alias_to_side[alias] = meta["side"]
 
         fraction, density, total_length = _density_profile(values, mode, n_bins, window, n_points)
         cochleae_length.append(total_length)
@@ -296,8 +310,14 @@ def fig_sgn_density_profile(
 
     # Lay out the legend before the figure, so that the plot keeps its height when a cohort with
     # many cochleae needs several legend rows.
-    n_entries = len(length_data) + (len(trendline_colors) if trendline and trendline_colors else 0)
-    n_col = min((n_entries + 1) // 2, 5)
+    if trendline and trendline_by_side:
+        n_trend = len({side for side in alias_to_side.values() if side in SIDE_TRENDLINES})
+    elif trendline and trendline_colors:
+        n_trend = len(trendline_colors)
+    else:
+        n_trend = 0
+    n_entries = len(length_data) + n_trend
+    n_col = min((n_entries + 1) // 2, 6)
     n_row = int(np.ceil(n_entries / n_col)) if show_legend else 0
     # One row of legend entries plus the space that the x-axis label needs below the axes.
     legend_height = 0.32 * n_row + 0.7 if show_legend else 0
@@ -324,15 +344,15 @@ def fig_sgn_density_profile(
                 td.setdefault(fraction, []).append(density)
         return dict(sorted(td.items()))
 
-    def _draw_trendline(ax, trend_dict, color):
+    def _draw_trendline(ax, trend_dict, color, linestyle="dashed", alpha=None):
         x_pos = list(trend_dict.keys())
         center_line = [np.nanmean(v) for v in trend_dict.values()]
         val_std = [np.nanstd(v) for v in trend_dict.values()]
         lower_std = [m - s for m, s in zip(center_line, val_std)]
         upper_std = [m + s for m, s in zip(center_line, val_std)]
 
-        ax.plot(x_pos, center_line, linestyle="dashed", color=color,
-                alpha=line_alphas["center"], linewidth=3, zorder=2)
+        ax.plot(x_pos, center_line, linestyle=linestyle, color=color,
+                alpha=line_alphas["center"] if alpha is None else alpha, linewidth=3, zorder=2)
         ax.plot(x_pos, upper_std, linestyle="solid", color=color,
                 alpha=line_alphas["upper"], zorder=0)
         ax.plot(x_pos, lower_std, linestyle="solid", color=color,
@@ -340,8 +360,17 @@ def fig_sgn_density_profile(
         ax.fill_between(x_pos, lower_std, upper_std,
                         color=color, alpha=line_alphas["fill"], interpolate=True)
 
+    sides_drawn = []
     if trendline:
-        if trendline_colors and alias_to_cohort:
+        if trendline_by_side:
+            for side, style in SIDE_TRENDLINES.items():
+                side_aliases = {a for a in color_dict if alias_to_side.get(a) == side}
+                if not side_aliases:
+                    continue
+                _draw_trendline(ax, _build_trend_dict(side_aliases), style["color"],
+                                linestyle=style["linestyle"], alpha=style["alpha"])
+                sides_drawn.append(side)
+        elif trendline_colors and alias_to_cohort:
             for cohort, color in trendline_colors.items():
                 cohort_aliases = {a for a in color_dict if alias_to_cohort.get(a) == cohort}
                 if cohort_aliases:
@@ -376,7 +405,12 @@ def fig_sgn_density_profile(
         else:
             handles = [get_marker_handle(color_dict[key], marker_dict[key]) for key in label]
 
-        if trendline and trendline_colors:
+        if trendline and trendline_by_side:
+            for side in sides_drawn:
+                style = SIDE_TRENDLINES[side]
+                handles.append(get_flatline_handle(style["color"], linestyle=style["linestyle"]))
+                label.append(style["label"])
+        elif trendline and trendline_colors:
             for cohort_name, trendline_color in trendline_colors.items():
                 handles.append(get_flatline_handle(trendline_color, linestyle="dashed"))
                 label.append(cohort_name)
@@ -441,31 +475,72 @@ def main():
     if not cohorts:
         raise RuntimeError("None of the selected cohorts has a tonotopically mapped SGN table.")
 
-    for mode in modes:
-        for cohort in cohorts:
-            fig_sgn_density_profile(
-                length_data[cohort],
-                save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
-                mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
-                cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
-                trendline=True, trendline_std=True, top_axis=True,
-                animal=COHORT_ANIMALS.get(cohort, "mouse"),
-                show_legend=True, length_info=True,
-            )
+    # ChReef mouse with bins
+    cohort = "chreef_mouse"
+    mode = "bins"
+    n_bins = 10
+    fig_sgn_density_profile(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
+        mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
+        cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
+        trendline=True, trendline_std=False, trendline_by_side=True, top_axis=True,
+        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        show_legend=True, length_info=True,
+    )
+
+    cohort = "chreef_gerbil"
+    mode = "bins"
+    n_bins = 10
+    fig_sgn_density_profile(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
+        mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
+        cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
+        trendline=True, trendline_std=False, trendline_by_side=True, top_axis=True,
+        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        show_legend=True, length_info=True,
+    )
+
+    cohort = "idisco"
+    mode = "bins"
+    n_bins = 20
+    fig_sgn_density_profile(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
+        mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
+        cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
+        trendline=True, trendline_std=True, top_axis=True,
+        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        show_legend=True, length_info=True,
+    )
+
+
+#    for mode in modes:
+#        for cohort in cohorts:
+#            fig_sgn_density_profile(
+#                length_data[cohort],
+#                save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
+#                mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
+#                cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
+#                trendline=True, trendline_std=True, top_axis=True,
+#                animal=COHORT_ANIMALS.get(cohort, "mouse"),
+#                show_legend=True, length_info=True,
+#            )
 
         # The combined figure uses one trendline per cohort. The top frequency axis is dropped,
         # because the Greenwood mapping differs between mouse and gerbil.
-        combined_data = {c: v for cohort in cohorts for c, v in length_data[cohort].items()}
-        combined_meta = {c: v for cohort in cohorts for c, v in metadata[cohort].items()}
-        fig_sgn_density_profile(
-            combined_data,
-            save_path=os.path.join(args.figure_dir, f"sgn_density_combined_{mode}.{FILE_EXTENSION}"),
-            mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
-            cochleae_dict=combined_meta, use_alias=use_alias, plot=args.plot,
-            trendline=True, trendline_std=True,
-            trendline_colors={COHORT_LABELS[c]: COHORT_COLORS[c] for c in cohorts},
-            show_legend=True,
-        )
+#        combined_data = {c: v for cohort in cohorts for c, v in length_data[cohort].items()}
+#        combined_meta = {c: v for cohort in cohorts for c, v in metadata[cohort].items()}
+#        fig_sgn_density_profile(
+#            combined_data,
+#            save_path=os.path.join(args.figure_dir, f"sgn_density_combined_{mode}.{FILE_EXTENSION}"),
+#            mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
+#            cochleae_dict=combined_meta, use_alias=use_alias, plot=args.plot,
+#            trendline=True, trendline_std=True,
+#            trendline_colors={COHORT_LABELS[c]: COHORT_COLORS[c] for c in cohorts},
+#            show_legend=True,
+#        )
 
 
 if __name__ == "__main__":

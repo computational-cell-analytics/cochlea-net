@@ -15,6 +15,8 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from plot_fig4 import group_lr, plot_legend_fig04_trendline
 from util import (
     COCHLEA_DICT,
+    COLOR_LEFT,
+    COLOR_RIGHT,
     custom_formatter_1,
     export_legend,
     frequency_mapping,
@@ -68,8 +70,6 @@ COLORS_ANIMAL = {
 
 FILE_EXTENSION = "png"
 
-COLOR_LEFT = "#8E00DB"
-COLOR_RIGHT = "#DB0063"
 COLOR_REFERENCE = "#DB7B00"
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
