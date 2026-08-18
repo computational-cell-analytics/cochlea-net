@@ -34,6 +34,10 @@ COCHLEAE = {
                      "label_stains": {"subtype_label": ["CR", "Ntng1"], "subtype_label_Lypd1": ["CR", "Lypd1"]}},
     "M_AMD_N180_R": {"seg_data": "SGN_merged", "stains": ["CR", "Ntng1"],
                      "subtype_stains": ["CR", "Ntng1"], "intensity": "absolute"},
+    "M_AMD_N190_L": {"seg_data": "CR_Ntng1_SGN_v2", "stains": ["CR", "Ntng1"],
+                     "subtype_stains": ["CR", "Ntng1"], "intensity": "absolute"},
+    "M_AMD_N190_R": {"seg_data": "CR_Ntng1_SGN_v2", "stains": ["CR", "Ntng1"],
+                     "subtype_stains": ["CR", "Ntng1"], "intensity": "absolute"},
 }
 
 ALIAS = {
