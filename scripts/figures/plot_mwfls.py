@@ -36,6 +36,7 @@ def fig_cohort_boxplot(
     save_path: str,
     idisco_syn_version: str = "v4c",
     mwfls_syn_version: str = "v9",
+    sgn_version: str = "SGN_v2",
     plot: bool = False,
     remove_outliers: bool = False,
 ):
@@ -64,19 +65,19 @@ def fig_cohort_boxplot(
     sgn_outlier = {}
     for cohort in cohorts:
         sgn_outlier[cohort] = [
-            VALUE_DICT[name]["SGN"][0]["count"]
+            VALUE_DICT[name]["SGN"][sgn_version]["count"]
             for name in COHORT_DICT[cohort] if
             name in OUTLIER_DICT["SGN"] and
             remove_outliers
         ]
         sgn_by_cohort[cohort] = [
-            VALUE_DICT[name]["SGN"][0]["count"]
+            VALUE_DICT[name]["SGN"][sgn_version]["count"]
             for name in COHORT_DICT[cohort] if
             name not in OUTLIER_DICT["SGN"] or
             not remove_outliers
         ]
         ihc_by_cohort[cohort] = [
-            VALUE_DICT[name]["IHC"][0]["count"]
+            VALUE_DICT[name]["IHC"][f"IHC_{syn_versions[cohort]}"]["count"]
             for name in COHORT_DICT[cohort]
         ]
 

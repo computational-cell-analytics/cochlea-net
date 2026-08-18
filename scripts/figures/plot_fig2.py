@@ -7,7 +7,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 
-from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT
+from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT, VALUE_DICT
 from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter_2
 
 png_dpi = 300
@@ -162,7 +162,8 @@ def fig_02c(
 
 # Load the synapse counts for all IHCs from the relevant tables.
 def _load_ribbon_synapse_counts(
-    ihc_version: str = "v4c",
+    synapse_dir: str = None,
+    ihc_version: str = "v11",
     cochleae: list[str] = [
         "M_LR_000226_L",
         "M_LR_000226_R",
@@ -170,8 +171,9 @@ def _load_ribbon_synapse_counts(
         "M_LR_000227_R",
     ],
 ) -> list:
-    measure_synapse_dir = f"ihc_counts_{ihc_version}"
-    synapse_dir = os.path.join(SYNAPSE_DIR_ROOT, measure_synapse_dir)
+    if synapse_dir is None:
+        measure_synapse_dir = f"ihc_counts_{ihc_version}"
+        synapse_dir = os.path.join(SYNAPSE_DIR_ROOT, measure_synapse_dir)
     tables = [entry.path for entry in os.scandir(synapse_dir) if any(c in entry.name for c in cochleae)]
     syn_counts = []
     for tab in tables:
@@ -184,6 +186,8 @@ def fig_02d(
     save_path: str,
     plot: bool = False,
     plot_average_ribbon_synapses: bool = False,
+    ihc_version: str = "IHC_v11",
+    sgn_version: str = "SGN_v2",
 ):
     """Box plot showing the counts for SGN and IHC per (mouse) cochlea in comparison to literature values.
     """
@@ -194,8 +198,15 @@ def fig_02d(
     rows = 1
     columns = 3 if plot_average_ribbon_synapses else 2
 
-    sgn_values = [11153, 11398, 10333, 11820]
-    ihc_values = [712, 710, 721, 675]
+    cochleae = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
+    sgn_values = []
+    ihc_values = []
+    for c in cochleae:
+        if c in list(VALUE_DICT.keys()):
+            ihc_values.append(VALUE_DICT[c]["IHC"][ihc_version]["count"])
+            sgn_values.append(VALUE_DICT[c]["SGN"][sgn_version]["count"])
+        else:
+            raise ValueError(f"Cochlea {c} is not in value dictionary.")
 
     fig, axes = plt.subplots(rows, columns, figsize=(10, 4.5))
     ax = axes.flatten()

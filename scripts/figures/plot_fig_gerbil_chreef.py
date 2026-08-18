@@ -14,6 +14,7 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from plot_fig4 import group_lr, plot_legend_fig04_trendline
 from util import (
+    COCHLEA_DICT,
     custom_formatter_1,
     export_legend,
     frequency_mapping,
@@ -44,18 +45,19 @@ POSITION_DICT = {
 POSITIONS = list(POSITION_DICT)
 POSITION_LABELS = {"apex": "Apex", "mid": "Mid", "base": "Base"}
 
-# The gerbil cochleae for the ChReef analysis, with the Rosenthal's canal component(s)
-# to keep per cochlea (from the component_list used to generate each SGN_density_2d.json).
-COCHLEAE_DICT = {
-    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5]},
-    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2]},
-    "G_EK_000071_L": {"alias": "G_2L", "component": [1]},
-    "G_EK_000071_R": {"alias": "G_2R", "component": [1]},
-    "G_EK_000074_L": {"alias": "G_3L", "component": [1]},
-    "G_EK_000074_R": {"alias": "G_3R", "component": [1]},
-    "G_EK_000076_L": {"alias": "G_4L", "component": [1, 2, 3]},
-    "G_EK_000076_R": {"alias": "G_4R", "component": [1]},
-}
+# The gerbil cochleae for the ChReef analysis. The metadata lives in util.COCHLEA_DICT.
+COCHLEAE = [
+    "G_EK_000049_L",
+    "G_EK_000049_R",
+    "G_EK_000071_L",
+    "G_EK_000071_R",
+    "G_EK_000074_L",
+    "G_EK_000074_R",
+    "G_EK_000076_L",
+    "G_EK_000076_R",
+]
+
+COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in COCHLEAE}
 
 COLORS_ANIMAL = {
     "G1": "#9C5027",

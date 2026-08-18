@@ -12,28 +12,31 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import frequency_mapping, prism_style, prism_cleanup_axes
 from util import export_legend, custom_formatter_1, get_marker_handle, get_trendline_handle
+from util import COCHLEA_DICT
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements2"  # noqa
 
-# The cochlea for the CHReef analysis.
-COCHLEAE_DICT = {
-    "M_LR_000143_L": {"alias": "M0L", "component": [1]},
-    "M_LR_000144_L": {"alias": "M_05L", "component": [1]},
-    "M_LR_000145_L": {"alias": "M_06L", "component": [1]},
-    "M_LR_000153_L": {"alias": "M_07L", "component": [1, 2, 3]},
-    "M_LR_000155_L": {"alias": "M_08L", "component": [1]},
-    "M_LR_000189_L": {"alias": "M_09L", "component": [1]},
-    "M_LR_000143_R": {"alias": "M0R", "component": [1]},
-    "M_LR_000144_R": {"alias": "M_05R", "component": [1]},
-    "M_LR_000145_R": {"alias": "M_06R", "component": [1]},
-    "M_LR_000153_R": {"alias": "M_07R", "component": [1]},
-    "M_LR_000155_R": {"alias": "M_08R", "component": [1]},
-    "M_LR_000189_R": {"alias": "M_09R", "component": [1]},
-    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5]},
-    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2]},
-}
+# The cochlea for the CHReef analysis. The metadata lives in util.COCHLEA_DICT.
+COCHLEAE = [
+    "M_LR_000143_L",
+    "M_LR_000144_L",
+    "M_LR_000145_L",
+    "M_LR_000153_L",
+    "M_LR_000155_L",
+    "M_LR_000189_L",
+    "M_LR_000143_R",
+    "M_LR_000144_R",
+    "M_LR_000145_R",
+    "M_LR_000153_R",
+    "M_LR_000155_R",
+    "M_LR_000189_R",
+    "G_EK_000049_L",
+    "G_EK_000049_R",
+]
+
+COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in COCHLEAE}
 
 COLORS_ANIMAL = {
     "M05": "#9C5027",
