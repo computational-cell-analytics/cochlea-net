@@ -54,6 +54,8 @@ ALIAS = {
     "M_LR_000099_L": "M_00L",
     "M_AMD_N180_L": "M_16L",
     "M_AMD_N180_R": "M_16R",
+    "M_AMD_N190_L": "M_29L",
+    "M_AMD_N190_R": "M_29R",
 }
 
 CUSTOM_THRESHOLDS = {

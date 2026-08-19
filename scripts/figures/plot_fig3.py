@@ -69,7 +69,13 @@ COCHLEAE_DICT = {
 
 GROUPINGS = {
     "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
-    # , "M_AMD_N180_L", "M_AMD_N180_R"
+    "Type Ia;Type Ib;Type Ic;Type II-noPV": ["M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R"],
+    "Type Ia;Type Ib;Type Ic;Type II-old+new": [
+        "M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
+    ],
+    "Type Ia;Type Ib;Type Ic;Type II-all": [
+        "M_LR_000098_L", "M_LR_N98_R", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
+    ],
     "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
     "Type Ib;Type Ic;inconclusive": ["M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_R"],
     "Type Ib;Type Ic;Type IbIc": ["M_LR_000099_L"],
@@ -155,7 +161,7 @@ def get_tonotopic_data(
     s3 = create_s3_target()
     chreef_data = {}
     for cochlea in cochleae:
-        print("Processsing cochlea:", cochlea)
+        print("Processing cochlea:", cochlea)
         content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
         info = json.loads(content.read())
         sources = info["sources"]
@@ -1014,10 +1020,14 @@ def plot_subtype_fraction(
 
     colors = [COLORS[t] for t in types]
     # Plot with reversed order so first entry in `types` is at the top [types[::-1]]
+
+    number_cochlea = len(results.items())
+    width_graph = 6.7 * number_cochlea / 3
+
     ax = df.T.plot(
         kind="bar",
         stacked=True,
-        figsize=(6.7, 5),
+        figsize=(width_graph, 5),
         color=colors,
         legend=False,
     )
@@ -1262,6 +1272,38 @@ def main():
                             grouping=grouping)
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),
                              grouping=grouping, combine_IbIc=True)
+
+    grouping = "Type Ia;Type Ib;Type Ic;Type II-noPV"
+    plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03f_legend_Ia-IbIc-II-noPV.{FILE_EXTENSION}"),
+                         grouping="Type Ia;Type Ib;Type Ic;Type II")
+    fig_03_subtype_fraction(
+        save_path=os.path.join(args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II-noPV.{FILE_EXTENSION}"),
+        grouping=grouping,
+    )
+    fig_03_subtype_tonotopic(
+        save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II-noPV.{FILE_EXTENSION}"),
+        grouping=grouping, combine_IbIc=True,
+    )
+
+    grouping = "Type Ia;Type Ib;Type Ic;Type II-old+new"
+    fig_03_subtype_fraction(
+        save_path=os.path.join(args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II-old+new.{FILE_EXTENSION}"),
+        grouping=grouping,
+    )
+    fig_03_subtype_tonotopic(
+        save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II-old+new.{FILE_EXTENSION}"),
+        grouping=grouping, combine_IbIc=True,
+    )
+
+    grouping = "Type Ia;Type Ib;Type Ic;Type II-all"
+    fig_03_subtype_fraction(
+        save_path=os.path.join(args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II-all.{FILE_EXTENSION}"),
+        grouping=grouping,
+    )
+    fig_03_subtype_tonotopic(
+        save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II-all.{FILE_EXTENSION}"),
+        grouping=grouping, combine_IbIc=True,
+    )
 
     grouping = "Type Ia;Type Ib/Ic;Type II"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03f_legend_Ia-IbIc-II.{FILE_EXTENSION}"),
