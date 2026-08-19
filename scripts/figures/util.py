@@ -487,7 +487,7 @@ COCHLEA_DICT = {
     "M_LR_000153_R": {"alias": "M_07R", "component": [1], "color": "#67279C"},
     "M_LR_000155_R": {"alias": "M_08R", "component": [1], "color": "#27339C"},
     "M_LR_000189_R": {"alias": "M_09R", "component": [1], "color": "#9C276F"},
-    # Gerbil cochleae for the ChReef analysis. The components match the component_list used to
+    # Gerbil cochleae for the f-Crimson analysis. The components match the component_list used to
     # generate each SGN_density_2d.json.
     "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5], "color": "#9C5027"},
     "G_EK_000071_L": {"alias": "G_2L", "component": [1], "color": "#279C52"},
@@ -497,6 +497,10 @@ COCHLEA_DICT = {
     "G_EK_000071_R": {"alias": "G_2R", "component": [1], "color": "#279C52"},
     "G_EK_000074_R": {"alias": "G_3R", "component": [1], "color": "#67279C"},
     "G_EK_000076_R": {"alias": "G_4R", "component": [1], "color": "#27339C"},
+    # Gerbil wild type cochleae
+    "G_EK_000233_L": {"alias": "G_5L", "component": [1], "color": "#279C52"},
+    "G_LR_000301_R": {"alias": "G_6R", "component": [1], "color": "#67279C"},
+    "G_LR_000302_R": {"alias": "G_7R", "component": [1], "color": "#27339C"},
 }
 
 MWFLS_COCHLEAE = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]

@@ -52,7 +52,7 @@ CHREEF_MOUSE = [
     "M_LR_000189_R",
 ]
 
-CHREEF_GERBIL = [
+FCRIMSON_GERBIL = [
     "G_EK_000049_L",
     "G_EK_000049_R",
     "G_EK_000071_L",
@@ -63,29 +63,37 @@ CHREEF_GERBIL = [
     "G_EK_000076_R",
 ]
 
+WT_GERBIL = [
+    "G_EK_000233_L",
+    "G_LR_000301_R",
+    "G_LR_000302_R",
+]
+
 COHORTS = {
     "idisco": IDISCO,
     "mwfls": MWFLS,
     "chreef_mouse": CHREEF_MOUSE,
-    "chreef_gerbil": CHREEF_GERBIL,
+    "fcrimson_gerbil": FCRIMSON_GERBIL,
+    "wt_gerbil": WT_GERBIL,
 }
 
 COHORT_LABELS = {
     "idisco": "iDISCO",
     "mwfls": "MWfLS",
     "chreef_mouse": "ChReef mouse",
-    "chreef_gerbil": "ChReef gerbil",
+    "fcrimson_gerbil": "f-Crimson gerbil",
+    "wt_gerbil": "WT gerbil",
 }
 
 COHORT_COLORS = {
     "idisco": "#10CC17",
     "mwfls": "#3F69FF",
     "chreef_mouse": "#DB0063",
-    "chreef_gerbil": "#8E00DB",
+    "fcrimson_gerbil": "#8E00DB",
 }
 
 # Everything that is not listed here is a mouse.
-COHORT_ANIMALS = {"chreef_gerbil": "gerbil"}
+COHORT_ANIMALS = {"fcrimson_gerbil": "gerbil", "wt_gerbil": "gerbil"}
 
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
@@ -323,9 +331,14 @@ def fig_sgn_density_profile(
     legend_height = 0.32 * n_row + 0.7 if show_legend else 0
     fig, ax = plt.subplots(figsize=(6.7, 5 + legend_height))
 
+
     for name, grp in result.groupby("cochlea"):
         fraction = grp["fraction"].to_numpy()
         density = grp["density"].to_numpy()
+        if n_bins == 20 and name == "M_02L":
+            # mask the 9th point, it is an outlier. do not use it for the trendline
+            print("masked point")
+
         valid = ~np.isnan(density)
         if mode == "sliding":
             ax.plot(fraction[valid], density[valid], label=name, color=color_dict[name], alpha=alpha)
@@ -489,7 +502,7 @@ def main():
         show_legend=True, length_info=True,
     )
 
-    cohort = "chreef_gerbil"
+    cohort = "fcrimson_gerbil"
     mode = "bins"
     n_bins = 10
     fig_sgn_density_profile(
@@ -511,6 +524,19 @@ def main():
         mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
         cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
         trendline=True, trendline_std=True, top_axis=True,
+        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        show_legend=True, length_info=True,
+    )
+
+    cohort = "wt_gerbil"
+    mode = "bins"
+    n_bins = 10
+    fig_sgn_density_profile(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
+        mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
+        cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
+        trendline=True, trendline_std=False, top_axis=True,
         animal=COHORT_ANIMALS.get(cohort, "mouse"),
         show_legend=True, length_info=True,
     )
