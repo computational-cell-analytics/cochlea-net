@@ -51,7 +51,7 @@ CHREEF_MOUSE = [
     "M_LR_000189_R",
 ]
 
-FCRIMSON_GERBIL = [
+FCHRIMSON_GERBIL = [
     "G_EK_000049_L",
     "G_EK_000049_R",
     "G_EK_000071_L",
@@ -72,7 +72,7 @@ COHORTS = {
     "idisco": IDISCO,
     "mwfls": MWFLS,
     "chreef_mouse": CHREEF_MOUSE,
-    "fcrimson_gerbil": FCRIMSON_GERBIL,
+    "fchrimson_gerbil": FCHRIMSON_GERBIL,
     "wt_gerbil": WT_GERBIL,
 }
 
@@ -80,7 +80,7 @@ COHORT_LABELS = {
     "idisco": "iDISCO",
     "mwfls": "MWfLS",
     "chreef_mouse": "ChReef mouse",
-    "fcrimson_gerbil": "f-Crimson gerbil",
+    "fchrimson_gerbil": "f-Chrimson gerbil",
     "wt_gerbil": "WT gerbil",
 }
 
@@ -88,11 +88,11 @@ COHORT_COLORS = {
     "idisco": "#10CC17",
     "mwfls": "#3F69FF",
     "chreef_mouse": "#DB0063",
-    "fcrimson_gerbil": "#8E00DB",
+    "fchrimson_gerbil": "#8E00DB",
 }
 
 # Everything that is not listed here is a mouse.
-COHORT_ANIMALS = {"fcrimson_gerbil": "gerbil", "wt_gerbil": "gerbil"}
+COHORT_ANIMALS = {"fchrimson_gerbil": "gerbil", "wt_gerbil": "gerbil"}
 
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
@@ -591,8 +591,8 @@ def main():
         show_legend=True, length_info=False,
     )
 
-    # f-Crimson gerbil
-    cohort = "fcrimson_gerbil"
+    # f-Chrimson gerbil
+    cohort = "fchrimson_gerbil"
     mode = "bins"
     n_bins = 10
     fig_sgn_density_profile(
