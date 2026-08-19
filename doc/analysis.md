@@ -246,6 +246,104 @@ It contains the number and the percentage of instances per subtype for each anno
 An annotator must have annotated every stain of a pairing. Other annotators are skipped with a warning.
 
 
+### 4b - Automatic intensity thresholding
+The script `scripts/measurements/thresholds_marker.py` assigns the marker labels without annotations.
+An instance is positive when it reaches every threshold of its cochlea in the `THRESHOLD_DICT` dictionary of the script.
+Several columns can be combined this way, which is what the OTOF cochleae need.
+A cochlea without an entry falls back to an Otsu threshold on a single column and prints a warning that the threshold is not validated.
+The output has the same format as the annotation based path of step 4, so both can be compared directly.
+
+```python
+THRESHOLD_DICT = {
+    "M_AMD_OTOF27_L": {"median_bg": 23, "p95_sub_p5": 240},
+    ...
+}
+```
+
+The features are the columns of the object-measures tables, plus:
+- `median_bg`, the median of the table computed with a background mask;
+- `p95_sub_p5`, `p90_sub_p10`, `p90_sub_median` and `iqr`, differences of percentiles of the plain table.
+
+A percentile difference measures the contrast within an object. It does not depend on the local background level, because the offset cancels in the difference.
+
+For the OTOF cochleae the rule is a level test on `median_bg` plus a contrast gate `p95_sub_p5 >= 240`, which is shared by all four cochleae.
+The level alone is not sufficient. It calls IHCs positive that sit on a raised background but have no bright substructure, for example the label ids 185 to 189 of `M_AMD_OTOF27_L`.
+The contrast gate removes them, because their `percentile-95` minus `percentile-5` stays near 100.
+`M_AMD_OTOF27_R` is an all-negative control. Its highest `p95_sub_p5` is 116, so the gate keeps it at zero positives.
+
+The marker group selects the cochleae, the segmentation and the marker stain.
+The connected components of each cochlea are stored in the dictionaries `COCHLEAE_OTOF` and `COCHLEAE_CHREEF` of the script.
+```bash
+# Otof marker on IHC segmentation, segmentation table from S3 and object measures from disk
+python /path/to/cochlea-net-repo/scripts/measurements/thresholds_marker.py -g otof --s3 \
+    --meas_dir ./otof_object_measures -o /path/to/output_dir -t /path/to/output_dir -p /path/to/plot_dir
+
+# ChReef marker on SGN segmentation, single cochlea, Otsu fallback
+python /path/to/cochlea-net-repo/scripts/measurements/thresholds_marker.py -g chreef --s3 \
+    -c M_LR_000144_L -o /path/to/output_dir -t /path/to/output_dir
+```
+The tables are found in `<cochlea>/tables/<seg_name>` by the file name `<stain>_<seg_name>_object-measures[-bg-mask].tsv`.
+Both the plain and the background-subtracted table are read when both exist, so that a rule can use features of either.
+`--meas_dir` reads the tables from a directory instead, by the file name `<cochlea>_<stain>_<seg_name>_object-measures[-bg-mask].tsv`.
+Use it when the percentile columns are only available locally, as for the OTOF cochleae.
+`--meas_table` passes one table explicitly, `--components` overrides the components of the dictionary, and `--threshold` sets a single threshold on `--intensity_column` without editing the script.
+
+The segmentation table is saved as `<cochlea>_<stain>_<seg_name>.tsv`, with the assignment in the `marker_labels` column.
+A positive instance is 1, a negative instance is 2, and an instance outside the components or without an object measure is 0.
+The `-t, --threshold_save_dir` argument saves the thresholds as `<cochlea>_<stain>_<seg_name>.json`, with the method, every threshold, the counts and percentages, and the percentage of instances that pass each threshold on its own.
+These keys match the variance files of step 4, so the automatic and the annotated percentages can be compared per cochlea.
+The `-p, --plot_dir` argument saves a histogram for a rule with one feature, and a scatter plot of the first two features for a rule with several.
+
+#### Local thresholds per crop
+One threshold per cochlea ignores that the imaging conditions change along the cochlea.
+The annotation crops sit at six positions, and the annotator thresholds differ strongly between them, for example from 60 to 165 within `M_AMD_OTOF28_L`.
+The `--local` argument uses one threshold per crop, from the `LOCAL_THRESHOLD_DICT` dictionary of the script.
+```bash
+python /path/to/cochlea-net-repo/scripts/measurements/thresholds_marker.py -g otof --s3 --local \
+    --meas_dir ./otof_object_measures -o /path/to/output_dir -t /path/to/output_dir -p /path/to/plot_dir
+```
+The assignment follows the same principle as step 4.
+Each crop center is mapped onto the `length_fraction` of the cochlea, and the crop governs the band up to the middle of the distance to its neighbour.
+The mapping runs on the instances of the connected components only, because an instance outside them carries a placeholder length fraction of 0, which would pull the crop positions toward the start of the cochlea.
+The segmentation table therefore needs the `length_fraction` column, which the tonotopic mapping adds.
+
+A crop in which the annotators found no positive instance gets an infinite threshold, so its whole band stays negative.
+This replaces the convention of 1.5 times the highest median, which depended on a maximum measured elsewhere in the cochlea.
+`M_AMD_OTOF27_R` is such a case for all six of its crops.
+
+The local thresholds use the `mean` column of the plain object-measures table, so they do not depend on the table computed with a background mask.
+The threshold JSON records `"scope": "local"` and a per-crop breakdown with the threshold, its length fraction, its band and the counts inside it.
+The plot shows the feature over the length fraction, with one threshold line per band.
+Instances whose `length_fraction` is exactly 0 or 1 fall between the bands and stay unassigned, which affects a handful of instances per cochlea.
+
+A cochlea that is not in `LOCAL_THRESHOLD_DICT` warns and falls back to the thresholds of the whole cochlea, so `--local` is safe to pass for a mixed set of cochleae.
+
+Measured against the annotated crops, with positives weighted 3 times and scored leave-one-instance-out, the local thresholds miss 10 of the 89 annotated positives, against 15 for a single threshold on the same column.
+The positive fraction of the whole cochlea also comes much closer to the annotator result, on average 1.2 points away instead of 5.0.
+
+#### Deriving a threshold from annotated crops
+`scripts/measurements/eval_marker_thresholds.py` derives the thresholds and reports how well they reproduce the annotations.
+It needs the segmentation crops that the annotators worked on, the per-crop thresholds from step 4, and the object measures.
+For each crop it applies the annotator threshold to the instances of that crop, which gives a reference label per instance.
+```bash
+python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_thresholds.py \
+    --crop_dir otof_crops --threshold_dir otof_crop_thresholds --meas_dir otof_object_measures \
+    -o otof_threshold_sweep.json
+```
+The `--local` argument fits one threshold per crop instead, and compares the local and the global result leave-one-instance-out.
+`--positive_weight` sets how much a reference-positive instance counts when a threshold is chosen and when it is scored, which matters for Otof, where a missed positive weighs more than a missed negative.
+```bash
+python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_thresholds.py --local \
+    --level mean --positive_weight 3 -o otof_local_sweep.json
+```
+
+Without `--level` the script ranks combinations of a level feature and a contrast gate.
+The gate threshold is shared by all cochleae and the level threshold is fitted per cochlea, which keeps the number of free parameters low.
+The ranking uses a repeated 5-fold cross validation, not the in-sample error, because a rule with more parameters always fits the annotations better.
+For the OTOF cochleae the chosen rule makes 18 errors on 499 annotated instances and 20.4 under cross validation, against 18 and 24.9 for a single threshold on `percentile-90`.
+The script prints `THRESHOLD_DICT` entries that can be pasted into `thresholds_marker.py`.
+A plateau marked with `*` is unbounded, which means the data of that cochlea does not pin the threshold.
+
 ### Example for standard output table
 
 For an easier analysis, it makes sense to limit entries in the segmentation table to segmentation instances in specific components.

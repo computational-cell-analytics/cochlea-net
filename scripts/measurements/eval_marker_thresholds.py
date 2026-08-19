@@ -230,6 +230,124 @@ def search_rules(
     return results
 
 
+def all_negative_crops(
+    cochlea: str,
+    threshold_dir: str,
+    marker_name: str = "OTOF",
+    seg_name: str = "IHC_v11",
+) -> set:
+    """Find the crops that the annotators marked entirely negative.
+
+    Such a crop carries no annotator threshold. The 1.5 x maximum convention of
+    `get_single_annotation_parameters` is not used here, because it depends on a maximum measured
+    elsewhere in the cochlea. The crop is given an infinite threshold instead, so that its whole
+    length-fraction band stays negative.
+    """
+    cochlea_str = cochlea.replace("_", "-")
+    seg_string = seg_name.replace("_", "-")
+    path = os.path.join(threshold_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json")
+    with open(path, "r") as f:
+        crop_thresholds = json.load(f)
+
+    crops = set()
+    for center, entry in crop_thresholds.items():
+        sources = {source for source in entry.get("threshold_sources", {}).values() if source}
+        if sources and sources <= {"single-annotation-negative"}:
+            crops.add(center)
+    return crops
+
+
+def _weights(y: np.ndarray, positive_weight: float) -> np.ndarray:
+    """Weight of every instance, so that a reference-positive instance counts more."""
+    return np.where(y == 1, positive_weight, 1.0)
+
+
+def fit_threshold(values: np.ndarray, y: np.ndarray, positive_weight: float = 1.0) -> float:
+    """Threshold that maximises the weighted accuracy, at the middle of the optimal plateau.
+
+    A set of instances of a single class gives an infinite threshold for all-negative, so that
+    nothing is called positive, and minus infinity for all-positive.
+    """
+    if len(np.unique(y)) < 2:
+        return float("inf") if (len(y) == 0 or y[0] == 0) else float("-inf")
+    grid = _threshold_grid(values)
+    weights = _weights(y, positive_weight)[:, None]
+    score = (((values[:, None] >= grid[None, :]) == y[:, None]) * weights).sum(axis=0) / weights.sum()
+    optimal = np.where(score == score.max())[0]
+    return float(np.median(grid[optimal]))
+
+
+def fit_local_thresholds(
+    reference: pd.DataFrame,
+    level: str,
+    all_negative: set,
+    positive_weight: float = 1.0,
+) -> Dict[str, float]:
+    """Fit one threshold per crop, so that local imaging variation is accounted for."""
+    thresholds = {}
+    for center, group in reference.groupby("crop"):
+        if center in all_negative:
+            thresholds[center] = float("inf")
+        else:
+            thresholds[center] = fit_threshold(
+                group[level].to_numpy(dtype="float64"), group["reference"].to_numpy(), positive_weight
+            )
+    return dict(sorted(thresholds.items()))
+
+
+def _counts(prediction: np.ndarray, y: np.ndarray) -> dict:
+    true_positive = int(((prediction == 1) & (y == 1)).sum())
+    false_positive = int(((prediction == 1) & (y == 0)).sum())
+    false_negative = int(((prediction == 0) & (y == 1)).sum())
+    true_negative = int(((prediction == 0) & (y == 0)).sum())
+    recall = true_positive / (true_positive + false_negative) if true_positive + false_negative else 1.0
+    precision = true_positive / (true_positive + false_positive) if true_positive + false_positive else 1.0
+    f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+    return {
+        "n_errors": false_positive + false_negative,
+        "true_positive": true_positive, "false_positive": false_positive,
+        "false_negative": false_negative, "true_negative": true_negative,
+        "recall": round(recall, 4), "precision": round(precision, 4), "f1": round(f1, 4),
+    }
+
+
+def leave_one_out(
+    reference: pd.DataFrame,
+    level: str,
+    scope: str,
+    all_negative: set,
+    positive_weight: float = 1.0,
+) -> dict:
+    """Score a rule by refitting its threshold without the instance that it is scored on.
+
+    Args:
+        reference: Reference table from `build_reference`.
+        level: Feature that is thresholded.
+        scope: "global" for one threshold per cochlea, "local" for one threshold per crop.
+        all_negative: Crops that the annotators marked entirely negative.
+        positive_weight: Weight of a reference-positive instance.
+
+    Returns:
+        The confusion counts and the derived recall, precision and F1.
+    """
+    groups = [reference] if scope == "global" else [group for _, group in reference.groupby("crop")]
+    predictions, truths = [], []
+    for group in groups:
+        y = group["reference"].to_numpy()
+        values = group[level].to_numpy(dtype="float64")
+        centers = group["crop"].to_numpy()
+        for index in range(len(y)):
+            if scope == "local" and centers[index] in all_negative:
+                predictions.append(0)
+            else:
+                keep = np.ones(len(y), dtype=bool)
+                keep[index] = False
+                threshold = fit_threshold(values[keep], y[keep], positive_weight)
+                predictions.append(int(values[index] >= threshold))
+            truths.append(int(y[index]))
+    return _counts(np.array(predictions), np.array(truths))
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate marker threshold rules against the annotated crops of the OTOF cochleae."
@@ -245,6 +363,10 @@ def main():
                         help="Evaluate only this level feature, instead of searching.")
     parser.add_argument("--gate", type=str, nargs="*", default=None, metavar="FEATURE=VALUE",
                         help="Evaluate only these gate thresholds, e.g. p95_sub_p5=240.")
+    parser.add_argument("--local", action="store_true",
+                        help="Fit one threshold per crop instead of one per cochlea.")
+    parser.add_argument("--positive_weight", type=float, default=3.0,
+                        help="Weight of a reference-positive instance when fitting and scoring.")
     parser.add_argument("--marker_name", type=str, default="OTOF",
                         help="Identifier for the marker stain in the threshold file name.")
     parser.add_argument("--seg_name", type=str, default="IHC_v11", help="Identifier for the segmentation.")
@@ -262,6 +384,67 @@ def main():
         n_positive = int(reference["reference"].sum())
         print(f"{cochlea}: {len(reference)} annotated instances, {n_positive} positive "
               f"({percentage(n_positive, len(reference))} %), {len(feature_table)} instances measured.")
+
+    if args.local:
+        level = args.level if args.level is not None else "mean"
+        all_negative = {
+            cochlea: all_negative_crops(cochlea, args.threshold_dir, args.marker_name, args.seg_name)
+            for cochlea in args.cochlea
+        }
+        print(f"\nLocal thresholds on '{level}', reference-positive instances weighted "
+              f"{args.positive_weight}x.")
+        print("A crop the annotators marked entirely negative gets an infinite threshold.")
+
+        print(f"\n  {'cochlea':16s} {'crop':>16s} {'threshold':>10s} {'n':>4s} {'ref pos':>8s}")
+        local_thresholds = {}
+        for cochlea, reference in references.items():
+            local_thresholds[cochlea] = fit_local_thresholds(
+                reference, level, all_negative[cochlea], args.positive_weight
+            )
+            for center, threshold in local_thresholds[cochlea].items():
+                group = reference[reference["crop"] == center]
+                text = "inf" if not np.isfinite(threshold) else f"{threshold:.1f}"
+                print(f"  {cochlea:16s} {center:>16s} {text:>10s} {len(group):4d} "
+                      f"{int(group['reference'].sum()):8d}")
+
+        print(f"\n  {'scope':7s} {'errors':>7s} {'missed pos':>11s} {'false pos':>10s} "
+              f"{'recall':>7s} {'precision':>10s} {'F1':>6s}")
+        comparison = {}
+        for scope in ("global", "local"):
+            totals = [
+                leave_one_out(reference, level, scope, all_negative[cochlea], args.positive_weight)
+                for cochlea, reference in references.items()
+            ]
+            merged = {key: sum(item[key] for item in totals) for key in
+                      ("n_errors", "true_positive", "false_positive", "false_negative", "true_negative")}
+            recall = merged["true_positive"] / max(merged["true_positive"] + merged["false_negative"], 1)
+            precision = merged["true_positive"] / max(merged["true_positive"] + merged["false_positive"], 1)
+            f1 = 2 * precision * recall / (precision + recall) if precision + recall else 0.0
+            merged.update({"recall": round(recall, 4), "precision": round(precision, 4), "f1": round(f1, 4)})
+            comparison[scope] = merged
+            print(f"  {scope:7s} {merged['n_errors']:7d} {merged['false_negative']:11d} "
+                  f"{merged['false_positive']:10d} {recall:7.3f} {precision:10.3f} {f1:6.3f}")
+        print("  Scored leave-one-instance-out, so a threshold never sees the instance it is scored on.")
+
+        print("\nLOCAL_THRESHOLD_DICT entries for scripts/measurements/thresholds_marker.py:")
+        for cochlea, thresholds in local_thresholds.items():
+            body = ", ".join(
+                f'"{center}": ' + ("float(\"inf\")" if not np.isfinite(value) else f"{value:.1f}")
+                for center, value in thresholds.items()
+            )
+            print(f'    "{cochlea}": {{{body}}},')
+
+        if args.output is not None:
+            export_dictionary_as_json(
+                {"feature": level, "positive_weight": args.positive_weight,
+                 "thresholds": {c: {k: (None if not np.isfinite(v) else v) for k, v in t.items()}
+                                for c, t in local_thresholds.items()},
+                 "all_negative_crops": {c: sorted(v) for c, v in all_negative.items()},
+                 "comparison": comparison},
+                args.output, force_overwrite=True,
+            )
+            print(f"\nSaved the results to {args.output}.")
+        return
 
     if args.level is None:
         print("\nRule search, ranked by cross-validated errors "
