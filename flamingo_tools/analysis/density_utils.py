@@ -267,6 +267,221 @@ def _bbox_extent(coords: np.ndarray) -> float:
     return result
 
 
+def _polygon_area(poly: np.ndarray) -> float:
+    """Shoelace area of a polygon with vertices in shape (k, 2)."""
+    if len(poly) < 3:
+        return 0.0
+    x, y = poly[:, 0], poly[:, 1]
+    return 0.5 * abs(float(np.dot(x, np.roll(y, -1)) - np.dot(y, np.roll(x, -1))))
+
+
+def _as_convex_polygon(vertices) -> Optional[np.ndarray]:
+    """Return the vertices as a counter-clockwise convex polygon of shape (k, 2), or None.
+
+    The hull vertices stored in a density JSON are already a convex hull, but the winding order
+    is not guaranteed. Sutherland-Hodgman clipping needs a consistent order, so the hull is
+    recomputed here.
+    """
+    if vertices is None:
+        return None
+    poly = np.asarray(vertices, dtype=float)
+    if poly.ndim != 2 or poly.shape[1] != 2 or len(poly) < 3:
+        return None
+    try:
+        return poly[ConvexHull(poly).vertices]
+    except Exception:
+        return None
+
+
+def _convex_polygon_intersection(poly_a: np.ndarray, poly_b: np.ndarray) -> np.ndarray:
+    """Intersection of two counter-clockwise convex polygons via Sutherland-Hodgman clipping.
+
+    Both inputs must be convex, which makes the clipped result exact. Returns shape (k, 2),
+    empty when the polygons are disjoint.
+    """
+    output = list(poly_a)
+    for i in range(len(poly_b)):
+        start, end = poly_b[i], poly_b[(i + 1) % len(poly_b)]
+        edge = end - start
+        candidates, output = output, []
+        for j in range(len(candidates)):
+            current, previous = candidates[j], candidates[j - 1]
+            side_cur = edge[0] * (current[1] - start[1]) - edge[1] * (current[0] - start[0])
+            side_prv = edge[0] * (previous[1] - start[1]) - edge[1] * (previous[0] - start[0])
+            if side_cur >= 0:
+                if side_prv < 0:
+                    t = side_prv / (side_prv - side_cur)
+                    output.append(previous + t * (current - previous))
+                output.append(current)
+            elif side_prv >= 0:
+                t = side_prv / (side_prv - side_cur)
+                output.append(previous + t * (current - previous))
+        if not output:
+            return np.zeros((0, 2))
+    return np.asarray(output)
+
+
+def _label_id_set(entry: dict) -> Optional[set]:
+    """Label ids of a density entry as a set, or None when the entry does not store them."""
+    label_ids = entry.get("label_ids")
+    if label_ids is None:
+        return None
+    return {int(i) for i in label_ids}
+
+
+def _pair_overlap(key_a: str, entry_a: dict, key_b: str, entry_b: dict) -> dict:
+    """Overlap measures for one pair of density positions — see density_position_overlap."""
+    record = {
+        "key_a": key_a,
+        "key_b": key_b,
+        "fraction_a": entry_a.get("reference_fraction"),
+        "fraction_b": entry_b.get("reference_fraction"),
+        "n_a": entry_a.get("n_sgns"),
+        "n_b": entry_b.get("n_sgns"),
+        "n_shared": None,
+        "jaccard": None,
+        "shared_fraction": None,
+        "hull_iou": None,
+        "hull_intersection": None,
+        "slice_overlap": None,
+        "mode": entry_a.get("mode"),
+        "axis": entry_a.get("axis"),
+    }
+
+    ids_a, ids_b = _label_id_set(entry_a), _label_id_set(entry_b)
+    if ids_a is not None and ids_b is not None:
+        shared = len(ids_a & ids_b)
+        union = len(ids_a | ids_b)
+        smaller = min(len(ids_a), len(ids_b))
+        record["n_shared"] = shared
+        record["jaccard"] = shared / union if union else 0.0
+        record["shared_fraction"] = shared / smaller if smaller else 0.0
+
+    # A hull area only compares within one projection plane, and a slice interval only within
+    # one slice axis, so both are skipped when the two entries were not computed alike.
+    comparable = (
+        entry_a.get("mode") == entry_b.get("mode") and entry_a.get("axis") == entry_b.get("axis")
+    )
+    if not comparable:
+        return record
+
+    bounds = [entry.get(key) for entry in (entry_a, entry_b) for key in ("slice_min", "slice_max")]
+    if all(b is not None for b in bounds):
+        min_a, max_a, min_b, max_b = bounds
+        record["slice_overlap"] = max(0.0, min(max_a, max_b) - max(min_a, min_b))
+
+    if entry_a.get("mode") != "2d":
+        return record
+
+    poly_a = _as_convex_polygon(entry_a.get("hull_vertices"))
+    poly_b = _as_convex_polygon(entry_b.get("hull_vertices"))
+    if poly_a is None or poly_b is None:
+        return record
+
+    intersection = _polygon_area(_convex_polygon_intersection(poly_a, poly_b))
+    union = _polygon_area(poly_a) + _polygon_area(poly_b) - intersection
+    record["hull_intersection"] = intersection
+    record["hull_iou"] = intersection / union if union > 0 else 0.0
+    return record
+
+
+def density_position_overlap(density_results: Union[str, os.PathLike, dict]) -> List[dict]:
+    """Measure how much the positions of an SGN density result overlap each other.
+
+    Averaging the density of several positions inside one cochlear region is only meaningful when
+    the positions are independent measurements. This function quantifies their overlap for every
+    unordered pair of positions.
+
+    Args:
+        density_results: Parsed SGN density dict, or the path of a density JSON file.
+
+    Returns:
+        One record per position pair, with the keys key_a, key_b, fraction_a, fraction_b, n_a,
+        n_b, n_shared, jaccard, shared_fraction, hull_iou, hull_intersection, slice_overlap, mode
+        and axis. A measure is None when the entries do not carry the data it needs — old density
+        files store neither label_ids nor hull_vertices, a 3D hull has no projected area, and
+        entries computed with a different mode or axis are not comparable.
+    """
+    if not isinstance(density_results, dict):
+        with open(density_results, "r") as f:
+            density_results = json.load(f)
+
+    keys = sorted(
+        density_results,
+        key=lambda k: (density_results[k].get("reference_fraction") is None,
+                       density_results[k].get("reference_fraction")),
+    )
+    records = []
+    for i, key_a in enumerate(keys):
+        for key_b in keys[i + 1:]:
+            records.append(_pair_overlap(key_a, density_results[key_a], key_b, density_results[key_b]))
+    return records
+
+
+def report_density_overlap(
+    density_results: Union[str, os.PathLike, dict],
+    name: Optional[str] = None,
+    warn_threshold: float = 0.1,
+) -> List[dict]:
+    """Print the position overlap of an SGN density result to stdout.
+
+    A high hull IoU alone does not mean two positions share cells: Rosenthal's canal spirals, so
+    two slices at different positions can project onto almost the same area while lying far apart
+    along the slice axis. The shared label ids and the slice interval overlap are printed next to
+    the hull IoU for that reason.
+
+    Args:
+        density_results: Parsed SGN density dict, or the path of a density JSON file.
+        name: Optional name of the cochlea, used in the header line.
+        warn_threshold: Warn when a position pair shares more than this fraction of the smaller
+            label id set.
+
+    Returns:
+        The records of density_position_overlap.
+    """
+    records = density_position_overlap(density_results)
+
+    header = "Density position overlap"
+    if name is not None:
+        header = f"{header}: {name}"
+    if records:
+        header = f"{header} (mode={records[0]['mode']}, axis={records[0]['axis']})"
+    print(header)
+
+    for record in records:
+        if record["n_shared"] is None:
+            ids = "shared ids n/a"
+        else:
+            smaller = min(record["n_a"], record["n_b"])
+            ids = (
+                f"shared ids {record['n_shared']:4d}/{smaller:<5d}"
+                f"(J={record['jaccard']:.3f}, {record['shared_fraction']:.2f} of smaller)"
+            )
+        hull = "n/a  " if record["hull_iou"] is None else f"{record['hull_iou']:.3f}"
+        slice_overlap = "    n/a" if record["slice_overlap"] is None else f"{record['slice_overlap']:6.1f}"
+        print(
+            f"  {record['fraction_a']!s:>5} vs {record['fraction_b']!s:<6}{ids}"
+            f"  hull IoU {hull}  slice overlap {slice_overlap} um"
+        )
+
+    shared_fractions = [r["shared_fraction"] for r in records if r["shared_fraction"] is not None]
+    if not shared_fractions:
+        print(f"  no label ids stored; {len(records)} position pairs compared by hull and slice only")
+        return records
+
+    print(f"  max shared-id fraction {max(shared_fractions):.2f} over {len(records)} position pairs")
+    exceeding = [
+        f"{r['fraction_a']} vs {r['fraction_b']}"
+        for r in records if r["shared_fraction"] is not None and r["shared_fraction"] > warn_threshold
+    ]
+    if exceeding:
+        warnings.warn(
+            f"Position pairs sharing more than {warn_threshold:.0%} of their SGNs: "
+            f"{', '.join(exceeding)}. These positions are not independent measurements."
+        )
+    return records
+
+
 def _filter_by_segmentation_overlap(
     table: pd.DataFrame,
     segmentation,

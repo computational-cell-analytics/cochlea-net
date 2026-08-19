@@ -12,69 +12,113 @@ png_dpi = 300
 VALUE_DICT = {
     # iDISCO
     "M_LR_000226_L": {
-        "IHC": [
-            {"count": 712, "version": "IHC_v4c"},
-        ],
-        "SGN": [
-            {"count": 11153, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v4c": {
+                "count": 712, "version": "IHC_v4c",
+            },
+            "IHC_v11": {
+                "count": 687, "component_list": [1, 3], "version": "IHC_v11",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 11153, "version": "SGN_v2",
+            },
+        },
     },
     "M_LR_000226_R": {
-        "IHC": [
-            {"count": 710, "version": "IHC_v4c"},
-        ],
-        "SGN": [
-            {"count": 11398, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v4c": {
+                "count": 710, "version": "IHC_v4c",
+            },
+            "IHC_v11": {
+                "count": 648, "version": "IHC_v11",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 11398, "version": "SGN_v2",
+            },
+        },
     },
     "M_LR_000227_L": {
-        "IHC": [
-            {"count": 721, "version": "IHC_v4c"},
-        ],
-        "SGN": [
-            {"count": 10333, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v4c": {
+                "count": 721, "version": "IHC_v4c",
+            },
+            "IHC_v11": {
+                "count": 617, "version": "IHC_v11",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 10333, "version": "SGN_v2",
+            },
+        },
     },
     "M_LR_000227_R": {
-        "IHC": [
-            {"count": 675, "version": "IHC_v4c"},
-        ],
-        "SGN": [
-            {"count": 11820, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v4c": {
+                "count": 675, "version": "IHC_v4c",
+            },
+            "IHC_v11": {
+                "count": 640, "version": "IHC_v11",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 11820, "version": "SGN_v2",
+            },
+        },
     },
     # PELCOfHC2longnoDCM
     "M_AMD_000126_L": {
-        "IHC": [
-            {"count": 665, "version": "IHC_v9"},
-        ],
-        "SGN": [
-            {"count": 11360, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v9": {
+                "count": 665, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 11360, "version": "SGN_v2",
+            },
+        },
     },
     "M_AMD_000126_R": {
-        "IHC": [
-            {"count": 669, "version": "IHC_v9"},
-        ],
-        "SGN": [
-            {"count": 10751, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v9": {
+                "count": 669, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 10751, "version": "SGN_v2",
+            },
+        },
     },
     "M_AMD_000127_L": {
-        "IHC": [
-            {"count": 617, "version": "IHC_v9"},
-        ],
-        "SGN": [
-            {"count": 1665, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v9": {
+                "count": 617, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 1665, "version": "SGN_v2",
+            },
+        },
     },
     "M_AMD_000127_R": {
-        "IHC": [
-            {"count": 647, "version": "IHC_v9"},
-        ],
-        "SGN": [
-            {"count": 7860, "version": "SGN_v2"},
-        ],
+        "IHC": {
+            "IHC_v9": {
+                "count": 647, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 7860, "version": "SGN_v2",
+            },
+        },
     },
 }
 
@@ -116,6 +160,10 @@ prism_palette = [
     "#BAB0AC"   # gray
 ]
 
+# Cochlea side colors for the ChReef analysis: the left cochlea is injected, the right is not.
+COLOR_LEFT = "#8E00DB"
+COLOR_RIGHT = "#DB0063"
+
 
 def custom_formatter_1(x, pos):
     if np.isclose(x, 1.0):
@@ -154,6 +202,11 @@ def get_marker_handle(color, marker, edgecolors=None):
 
 def get_flatline_handle(color, linestyle="solid"):
     return Line2D([], [], lw=3, color=color, linestyle=linestyle)
+
+
+def get_line_marker_handle(color, linestyle="solid", marker="o"):
+    """Get a legend handle that shows a line and its markers."""
+    return Line2D([], [], lw=3, color=color, linestyle=linestyle, marker=marker)
 
 
 def get_trendline_handle(linestyle, linewidth):
@@ -303,6 +356,82 @@ def average_by_fraction(length_fraction, syn_count, n_bins=10):
     return avg_per_bin
 
 
+def length_column(table):
+    """Get the name of the absolute run length column, which holds a non-ASCII character.
+
+    Some tables are stored with a mangled 'length[µm]' header, so the column is matched by prefix.
+    """
+    for column in table.columns:
+        if column.startswith("length["):
+            return column
+    raise KeyError(f"No 'length[µm]' column in {list(table.columns)}.")
+
+
+def total_run_length(table):
+    """Get the total length of the central path through Rosenthal's canal in µm.
+
+    The tonotopic mapping writes 'length[µm]' as 'length_fraction' times the total path length,
+    so the ratio of the two columns is constant. Rows with a length fraction of 0 carry no
+    information, and rows outside of the mapped components are set to 0 by the tonotopic mapping.
+
+    Args:
+        table: Segmentation table with the columns 'length_fraction' and 'length[µm]'.
+
+    Returns:
+        Total length of the central path in µm.
+    """
+    fraction = np.asarray(table["length_fraction"], dtype=float)
+    length = np.asarray(table[length_column(table)], dtype=float)
+    valid = fraction > 0
+    if not valid.any():
+        raise ValueError("The table does not contain any instance with a length fraction above 0.")
+    return float(np.median(length[valid] / fraction[valid]))
+
+
+def density_by_fraction_bins(length_fraction, total_length, n_bins=10):
+    """Compute the linear density in cells/µm for equally spaced length fraction bins.
+
+    Args:
+        length_fraction: Length fraction of every instance along Rosenthal's canal.
+        total_length: Total length of the central path in µm.
+        n_bins: Number of bins to divide the length fraction into.
+
+    Returns:
+        Midpoint of every bin.
+        Density in cells/µm per bin.
+    """
+    edges = np.linspace(0, 1, n_bins + 1)
+    midpoints = (edges[:-1] + edges[1:]) / 2
+    counts, _ = np.histogram(np.asarray(length_fraction, dtype=float), bins=edges)
+    return midpoints, counts / (total_length / n_bins)
+
+
+def density_by_sliding_window(length_fraction, total_length, window=0.05, n_points=200):
+    """Compute the linear density in cells/µm with a centered sliding window.
+
+    The window is given as a length fraction. The evaluation grid is limited to
+    [window / 2, 1 - window / 2], so that every point uses a full window and no roll-off
+    occurs at the ends.
+
+    Args:
+        length_fraction: Length fraction of every instance along Rosenthal's canal.
+        total_length: Total length of the central path in µm.
+        window: Width of the sliding window as a length fraction.
+        n_points: Number of points to evaluate the window at.
+
+    Returns:
+        Positions of the evaluation grid as a length fraction.
+        Density in cells/µm at every position.
+    """
+    if not 0 < window <= 1:
+        raise ValueError(f"The window must be a length fraction in (0, 1], got {window}.")
+    values = np.sort(np.asarray(length_fraction, dtype=float))
+    positions = np.linspace(window / 2, 1 - window / 2, n_points)
+    lower = np.searchsorted(values, positions - window / 2, side="left")
+    upper = np.searchsorted(values, positions + window / 2, side="right")
+    return positions, (upper - lower) / (window * total_length)
+
+
 # For mouse
 def literature_reference_values(structure):
     if structure == "SGN":
@@ -334,12 +463,54 @@ COHORT_DICT = {
     "MWfLS": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
 }
 
-MWFLS_COCHLEAE_DICT = {
-    "M_AMD_000126_L": {"alias": "M_03L", "color": "#5B1CE8", "component": [1]},
-    "M_AMD_000126_R": {"alias": "M_03R", "color": "#1C1FE8", "component": [1]},
-    "M_AMD_000127_L": {"alias": "M_04L", "color": "#1C60E9", "component": [1]},
-    "M_AMD_000127_R": {"alias": "M_04R", "color": "#1CA0E8", "component": [1]},
+# Central registry of the cochleae used by the figure scripts. "component" holds the Rosenthal's
+# canal component label(s) to keep when filtering a segmentation table. "color" is optional,
+# because some scripts color by animal instead of by cochlea.
+# TODO: plot_fig3.py and plot_fig6.py still define their own COCHLEAE_DICT. Deriving them from
+# this registry also touches plot_mwfls.py, which imports COCHLEAE_DICT from plot_fig3.
+COCHLEA_DICT = {
+    # iDISCO reference cochleae.
+    "M_LR_000226_L": {"alias": "M_01L", "component": [1], "color": "#9C5027"},
+    "M_LR_000226_R": {"alias": "M_01R", "component": [1], "color": "#279C52"},
+    "M_LR_000227_L": {"alias": "M_02L", "component": [1], "color": "#67279C"},
+    "M_LR_000227_R": {"alias": "M_02R", "component": [1], "color": "#27339C"},
+    # MWfLS cochleae.
+    "M_AMD_000126_L": {"alias": "M_03L", "component": [1], "color": "#5B1CE8"},
+    "M_AMD_000126_R": {"alias": "M_03R", "component": [1], "color": "#1C1FE8"},
+    "M_AMD_000127_L": {"alias": "M_04L", "component": [1], "color": "#1C60E9"},
+    "M_AMD_000127_R": {"alias": "M_04R", "component": [1], "color": "#1CA0E8"},
+    # Mouse cochleae for the ChReef analysis.
+    "M_LR_000143_L": {"alias": "M0L", "component": [1]},
+    "M_LR_000144_L": {"alias": "M_05L", "component": [1], "color": "#9C5027"},
+    "M_LR_000145_L": {"alias": "M_06L", "component": [1], "color": "#279C52"},
+    "M_LR_000153_L": {"alias": "M_07L", "component": [1, 2, 3], "color": "#67279C"},
+    "M_LR_000155_L": {"alias": "M_08L", "component": [1], "color": "#27339C"},
+    "M_LR_000189_L": {"alias": "M_09L", "component": [1], "color": "#9C276F"},
+    "M_LR_000143_R": {"alias": "M0R", "component": [1]},
+    "M_LR_000144_R": {"alias": "M_05R", "component": [1], "color": "#9C5027"},
+    "M_LR_000145_R": {"alias": "M_06R", "component": [1], "color": "#279C52"},
+    "M_LR_000153_R": {"alias": "M_07R", "component": [1], "color": "#67279C"},
+    "M_LR_000155_R": {"alias": "M_08R", "component": [1], "color": "#27339C"},
+    "M_LR_000189_R": {"alias": "M_09R", "component": [1], "color": "#9C276F"},
+    # Gerbil cochleae for the f-Crimson analysis. The components match the component_list used to
+    # generate each SGN_density_2d.json.
+    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5], "color": "#9C5027"},
+    "G_EK_000071_L": {"alias": "G_2L", "component": [1], "color": "#279C52"},
+    "G_EK_000074_L": {"alias": "G_3L", "component": [1], "color": "#67279C"},
+    "G_EK_000076_L": {"alias": "G_4L", "component": [1, 2, 3], "color": "#27339C"},
+    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2], "color": "#9C5027"},
+    "G_EK_000071_R": {"alias": "G_2R", "component": [1], "color": "#279C52"},
+    "G_EK_000074_R": {"alias": "G_3R", "component": [1], "color": "#67279C"},
+    "G_EK_000076_R": {"alias": "G_4R", "component": [1], "color": "#27339C"},
+    # Gerbil wild type cochleae
+    "G_EK_000233_L": {"alias": "G_5L", "component": [1], "color": "#279C52"},
+    "G_LR_000301_R": {"alias": "G_6R", "component": [1], "color": "#67279C"},
+    "G_LR_000302_R": {"alias": "G_7R", "component": [1], "color": "#27339C"},
 }
+
+MWFLS_COCHLEAE = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]
+
+MWFLS_COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in MWFLS_COCHLEAE}
 
 OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}
 
