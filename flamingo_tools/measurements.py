@@ -611,7 +611,7 @@ def object_measures_single(
                 print("Using background mask for calculating object measures.")
                 feature_set = "default_background_subtract"
                 dilation = 4
-                median_only = True
+                median_only = False
 
                 if s3:
                     img_path_bg_mask, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,
