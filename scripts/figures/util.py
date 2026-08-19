@@ -204,6 +204,11 @@ def get_flatline_handle(color, linestyle="solid"):
     return Line2D([], [], lw=3, color=color, linestyle=linestyle)
 
 
+def get_line_marker_handle(color, linestyle="solid", marker="o"):
+    """Get a legend handle that shows a line and its markers."""
+    return Line2D([], [], lw=3, color=color, linestyle=linestyle, marker=marker)
+
+
 def get_trendline_handle(linestyle, linewidth):
     return Line2D(
         [], [], lw=3, color="gray", linestyle=linestyle,
