@@ -206,6 +206,9 @@ python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_annotations.py
 ```
 If no output directory is passed, the output will be saved as a table in `<mobie_project>/<cochlea>/tables/<seg_name>/<marker_name>_<seg_name>.tsv`.
 
+The `--column` argument selects the column of the measurement table that the threshold applies to, and `--bg_mask` reads the object measures computed with a background mask.
+The threshold rule is unchanged: it stays the value between the clearly positive and the clearly negative population, only measured on another column.
+
 The `-t, --threshold_save_dir` argument saves the thresholds as `<cochlea>_<stain>_<seg_name>.json`.
 For each crop, this file contains the threshold averaged over all annotators as `median_intensity`, and the threshold of each single annotator as `annotator_intensities`.
 The annotator name is the name of the annotation directory, e.g. `ResultsAMD`.
@@ -245,6 +248,47 @@ The result is saved as `<cochlea>_subtypes_variance.json`.
 It contains the number and the percentage of instances per subtype for each annotator, the variance of the percentages over all annotators, and the difference to the `median` scenario.
 An annotator must have annotated every stain of a pairing. Other annotators are skipped with a warning.
 
+
+### 4b - Regenerating the OTOF marker labels
+The four cochleae `M_AMD_OTOF27_L`, `M_AMD_OTOF27_R`, `M_AMD_OTOF28_L` and `M_AMD_OTOF28_R` have their per-crop thresholds stored, so their marker labels can be regenerated without the annotation files.
+The script `scripts/measurements/regenerate_otof_MAMDOTOF27_28_thresholds.py` holds two threshold sets and applies either of them.
+Both threshold the `mean` of the object measures, but of a different table.
+
+| set | argument | table |
+|---|---|---|
+| annotator | `--local_annotator` | `Otof_IHC-v11_object-measures-bg-mask.tsv` |
+| optimal | `--local_optimal` | `Otof_IHC-v11_object-measures.tsv` |
+
+The annotator set is the value between the clearly positive and the clearly negative population of each crop, the rule that `get_crop_parameters` applies to an annotated crop, averaged over both annotators.
+Every value can therefore be reproduced from the annotations, which is why this set is the reference.
+The optimal set was fitted on the plain `mean` by a leave-one-instance-out sweep with a positive instance weighted three times.
+It reproduces the annotated calls slightly better, but it cannot be derived by hand.
+
+```bash
+python /path/to/cochlea-net-repo/scripts/measurements/regenerate_otof_MAMDOTOF27_28_thresholds.py \
+    --local_annotator --s3 -o /path/to/output_dir
+```
+The resulting fraction of positive IHCs:
+
+| cochlea | annotator | optimal |
+|---|---|---|
+| M_AMD_OTOF27_L | 16.34 % | 17.10 % |
+| M_AMD_OTOF27_R | 0.00 % | 0.00 % |
+| M_AMD_OTOF28_L | 33.99 % | 37.92 % |
+| M_AMD_OTOF28_R | 17.61 % | 17.92 % |
+
+The assignment follows the same principle as step 4.
+Each crop center is mapped onto the `length_fraction` of the cochlea, and the crop governs the band up to the middle of the distance to its neighbour.
+The mapping runs on the instances of the connected components only, because an instance outside them carries a placeholder length fraction of 0, which would pull the crop positions toward the start of the cochlea.
+The segmentation table therefore needs the `component_labels` and `length_fraction` columns, which the component labeling and the tonotopic mapping add.
+An instance whose `length_fraction` is exactly 0 or 1 falls between the bands and stays unassigned, which affects a handful of instances per cochlea.
+
+`M_AMD_OTOF27_R` is an untreated control. Its crops carry a threshold above every measured value, so the whole cochlea is negative. The same holds for the crop `0397-0162-0613` of `M_AMD_OTOF28_R`.
+
+For each cochlea the script writes `<cochlea>_Otof_IHC-v11.tsv` with the assignment in the `marker_labels` column, a JSON with the thresholds and the counts per band, and a plot of the `mean` over the length fraction with one threshold line per band.
+A positive instance is 1, a negative instance is 2, and an instance outside the components or without an object measure is 0.
+
+Note on the object measures: a table computed with `--bg_mask` before the fix of `_normalize_background` has an unsubtracted median, and every other statistic subtracted by its own background counterpart rather than by one background level. Such a table must be regenerated before it is thresholded.
 
 ### Example for standard output table
 

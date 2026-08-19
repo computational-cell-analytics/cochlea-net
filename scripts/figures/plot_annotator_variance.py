@@ -22,10 +22,6 @@ from plot_fig4 import COCHLEAE_DICT
 FILE_EXTENSION = "png"
 png_dpi = 300
 
-DEFAULT_INPUT_DIR = os.path.join(
-    os.path.dirname(os.path.abspath(__file__)), "..", "..", "annotator_variance_ChReef"
-)
-
 # Display names for the annotators. The order also fixes the marker shape and the x offset.
 # The marker annotations and the subtype annotations use a different key for the same annotator.
 ANNOTATOR_ALIAS = {
@@ -556,7 +552,7 @@ def plot_annotator_variance_legend(
 
 def main():
     parser = argparse.ArgumentParser(description="Plot the annotator variance of marker annotations.")
-    parser.add_argument("--input_dir", "-i", type=str, default=DEFAULT_INPUT_DIR,
+    parser.add_argument("--input_dir", "-i", type=str, required=True,
                         help="Directory containing the variance JSON files.")
     parser.add_argument("--figure_dir", "-f", type=str, default="./panels/annotator_variance",
                         help="Output directory for plots.")

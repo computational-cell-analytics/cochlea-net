@@ -42,6 +42,8 @@ def eval_marker_annotation(
     mobie_dir: str = MOBIE_FOLDER,
     seg_name: str = "SGN_v2",
     marker_name: str = "GFP",
+    column: str = "median",
+    use_bg_mask: bool = False,
     force_overwrite: bool = False,
     compute_variance: bool = False,
     use_filename_threshold: bool = False,
@@ -64,6 +66,8 @@ def eval_marker_annotation(
         mobie_dir: Local MoBIE directory used for creating data paths.
         seg_name: Identifier for segmentation.
         marker_name: Identifier for marker stain.
+        column: Name of the column of the measurement table that the threshold applies to.
+        use_bg_mask: Whether to use the object measures computed with a background mask.
         threshold_save_dir: Optional directory for saving the thresholds.
         force_overwrite: Whether to overwrite already existing results.
         compute_variance: Whether to compare the marker percentages of the individual annotators
@@ -156,7 +160,8 @@ def eval_marker_annotation(
             table_seg = pd.read_csv(seg_table, sep="\t")
 
         if table_meas_path is None:
-            table_meas_name = f"{marker_name}_{seg_string}_object-measures.tsv"
+            suffix = "-bg-mask" if use_bg_mask else ""
+            table_meas_name = f"{marker_name}_{seg_string}_object-measures{suffix}.tsv"
             if s3:
                 meas_table = f"{cochlea}/tables/{seg_name}/{table_meas_name}"
             else:
@@ -173,7 +178,8 @@ def eval_marker_annotation(
 
         # Find the thresholds from the annotated blocks and save it if specified.
         intensity_dic, _ = eval_utils.find_thresholds(annotations, search_str, data_seg, table_meas,
-                                                      voxel_size=voxel_size, pattern=marker_pattern,
+                                                      column=column, voxel_size=voxel_size,
+                                                      pattern=marker_pattern,
                                                       use_filename_threshold=use_filename_threshold)
         if threshold_save_dir is not None:
             os.makedirs(threshold_save_dir, exist_ok=True)
@@ -197,7 +203,9 @@ def eval_marker_annotation(
                 json.dump(variance_dic, f, indent=4)
 
         # Apply the threshold to all SGNs.
-        table_seg = eval_utils.apply_nearest_threshold(intensity_dic, table_seg, table_meas, halo_size=halo_size)
+        table_seg = eval_utils.apply_nearest_threshold(
+            intensity_dic, table_seg, table_meas, column=column, halo_size=halo_size,
+        )
 
         # Save the table with positives / negatives for all SGNs.
         table_seg.to_csv(out_path, sep="\t", index=False)
@@ -233,6 +241,10 @@ def main():
     # options for creating data paths automatically
     parser.add_argument("--seg_name", type=str, default="SGN_v2")
     parser.add_argument("--marker_name", type=str, default="GFP")
+    parser.add_argument("--column", type=str, default="median",
+                        help="Column of the measurement table that the threshold applies to.")
+    parser.add_argument("--bg_mask", action="store_true",
+                        help="Use the object measures computed with a background mask.")
     parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
                         help="Directory containing MoBIE project.")
 
@@ -259,6 +271,8 @@ def main():
         mobie_dir=args.mobie_dir,
         seg_name=args.seg_name,
         marker_name=args.marker_name,
+        column=args.column,
+        use_bg_mask=args.bg_mask,
         force_overwrite=args.force,
         compute_variance=args.variance,
         use_filename_threshold=args.filename_threshold,

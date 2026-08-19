@@ -101,6 +101,14 @@ def _spherical_mask(
     return (dist2 <= radius ** 2).astype(bool)
 
 
+# Measures that are normalized against the local background level. "stdev" is left out, because a
+# constant offset does not change a spread, and "label_id", "volume" and "surface" are not intensities.
+BACKGROUND_NORMALIZED_MEASURES = (
+    "median", "mean", "min", "max",
+    "percentile-5", "percentile-10", "percentile-25", "percentile-75", "percentile-90", "percentile-95",
+)
+
+
 def _normalize_background(
     measures: dict,
     image: np.typing.ArrayLike,
@@ -108,7 +116,6 @@ def _normalize_background(
     center: Tuple[int],
     radius: float,
     norm=np.divide,
-    median_only: bool = False,
 ) -> dict:
     # Compute the bounding box and get the local image data.
     bb = tuple(
@@ -136,20 +143,15 @@ def _normalize_background(
     # Compute the features over the mask.
     masked_intensity = local_image[radius_mask]
 
-    # Standardize the measures.
-    bg_measures = {"median": np.median(masked_intensity)}
-    if not median_only:
-        bg_measures = {
-            "mean": np.mean(masked_intensity),
-            "stdev": np.std(masked_intensity),
-            "min": np.min(masked_intensity),
-            "max": np.max(masked_intensity),
-        }
-        for percentile in (5, 10, 25, 75, 90, 95):
-            bg_measures[f"percentile-{percentile}"] = np.percentile(masked_intensity, percentile)
-
-    for measure, val in bg_measures.items():
-        measures[measure] = norm(measures[measure], val)
+    # Standardize every intensity measure against a single background level, the median of the
+    # background mask. Normalizing each statistic against its own background counterpart instead
+    # would make the percentiles non-monotonic and the result hard to interpret.
+    # The values are cast to float, so that an object darker than its background gives a negative
+    # value instead of an unsigned wraparound.
+    background_level = float(np.median(masked_intensity))
+    for measure in BACKGROUND_NORMALIZED_MEASURES:
+        if measure in measures:
+            measures[measure] = norm(float(measures[measure]), background_level)
 
     return measures
 
@@ -192,7 +194,7 @@ def _default_object_features(
         # The voxel size is given in micrometer per pixel.
         # So we have to divide by the voxel size to obtain the radius in pixel.
         radius_in_pixel = background_radius / voxel_size[1]
-        measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm, median_only)
+        measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm)
 
     # Do the volume and surface measurement.
     if not median_only:
@@ -609,7 +611,7 @@ def object_measures_single(
                 print("Using background mask for calculating object measures.")
                 feature_set = "default_background_subtract"
                 dilation = 4
-                median_only = True
+                median_only = False
 
                 if s3:
                     img_path_bg_mask, fs = s3_utils.get_s3_path(img_path, bucket_name=s3_bucket_name,

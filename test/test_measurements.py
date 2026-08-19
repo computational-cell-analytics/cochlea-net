@@ -80,6 +80,53 @@ class TestMeasurements(unittest.TestCase):
         for col in expected_columns:
             self.assertIn(col, table.columns)
 
+    def test_normalize_background(self):
+        """Every intensity measure drops by the background level, and the spread stays unchanged."""
+        from flamingo_tools.measurements import _default_object_features, BACKGROUND_NORMALIZED_MEASURES
+
+        background, voxel_size = 100, (0.38, 0.38, 0.38)
+        rng = np.random.default_rng(0)
+        shape = (80, 80, 80)
+        bb = (slice(38, 44),) * 3
+
+        image = np.full(shape, background, dtype="uint16")
+        image[bb] = rng.integers(150, 400, size=(6, 6, 6)).astype("uint16")
+        segmentation = np.zeros(shape, dtype="uint32")
+        segmentation[bb] = 1
+        table = pd.DataFrame({
+            "label_id": [1],
+            "bb_min_x": [38 * 0.38], "bb_min_y": [38 * 0.38], "bb_min_z": [38 * 0.38],
+            "bb_max_x": [44 * 0.38], "bb_max_y": [44 * 0.38], "bb_max_z": [44 * 0.38],
+            "anchor_x": [41 * 0.38], "anchor_y": [41 * 0.38], "anchor_z": [41 * 0.38],
+        })
+
+        raw = _default_object_features(1, table, image, segmentation, voxel_size=voxel_size)
+        subtracted = _default_object_features(
+            1, table, image, segmentation, voxel_size=voxel_size,
+            background_radius=0.38 * 20, norm=np.subtract,
+        )
+
+        for measure in BACKGROUND_NORMALIZED_MEASURES:
+            self.assertAlmostEqual(raw[measure] - subtracted[measure], background, places=6)
+        # A constant offset does not change a spread.
+        self.assertAlmostEqual(raw["stdev"], subtracted["stdev"], places=9)
+
+        percentiles = [
+            subtracted[name] for name in
+            ("percentile-5", "percentile-10", "percentile-25", "median",
+             "percentile-75", "percentile-90", "percentile-95")
+        ]
+        self.assertEqual(percentiles, sorted(percentiles))
+
+        # An object darker than its background gives a negative value, not an unsigned wraparound.
+        dark = np.full(shape, background, dtype="uint16")
+        dark[bb] = 40
+        measures = _default_object_features(
+            1, table, dark, segmentation, voxel_size=voxel_size,
+            background_radius=0.38 * 20, norm=np.subtract,
+        )
+        self.assertAlmostEqual(measures["median"], 40 - background, places=6)
+
 
 if __name__ == "__main__":
     unittest.main()
