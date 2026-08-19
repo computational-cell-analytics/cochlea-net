@@ -90,29 +90,30 @@ THRESHOLD_DICT = {
     "M_AMD_OTOF28_R": {"median_bg": 51, "p95_sub_p5": 240},
 }
 
-# Feature that carries the local thresholds. It comes from the plain object-measures table, so the
-# local rule does not depend on the table computed with a background mask.
-LOCAL_THRESHOLD_FEATURE = "mean"
+# Feature that carries the local thresholds. It is the background-subtracted "mean" of the object
+# measures, which separated the annotated populations best: see the --columns mode of
+# scripts/measurements/eval_marker_thresholds.py. Of the 17 annotated crops that contain positive
+# instances, the two populations do not overlap at all in 14, against 13 for the background-
+# subtracted median that was used before.
+LOCAL_THRESHOLD_FEATURE = "mean_bg"
 
-# Threshold per cochlea and crop center, from the sweep in scripts/measurements/eval_marker_thresholds.py.
-# The crops sit at six positions along the cochlea, so these thresholds follow the local imaging
-# conditions, which one threshold per cochlea cannot. A crop that the annotators marked entirely
-# negative has an infinite threshold, so that its whole length-fraction band stays negative. This
-# replaces the earlier convention of 1.5 times the highest median, which depended on a maximum
-# measured elsewhere in the cochlea.
-# Scored leave-one-instance-out with positives weighted 3 times, the local thresholds miss 10 of the
-# 89 annotated positives, against 15 for a single threshold on the same feature.
+# Threshold per cochlea and crop center. Each one is the value between the two populations of that
+# crop, the same rule that `get_crop_parameters` applies to an annotated crop: the middle between
+# the highest negative and the lowest positive instance. The thresholds are therefore reproducible
+# by hand from the annotations, and are not tuned against an accuracy measure.
+# A crop in which the annotators found no positive instance has an infinite threshold, so that its
+# whole length-fraction band stays negative.
 LOCAL_THRESHOLD_DICT = {
-    "M_AMD_OTOF27_L": {"0568-0112-0692": 187.1, "0653-1306-0537": 417.4, "0709-0690-1017": 162.3,
-                       "0795-0604-0099": 195.6, "1085-1389-0594": 197.5, "1259-0662-0447": 268.9},
+    "M_AMD_OTOF27_L": {"0568-0112-0692": 64.9, "0653-1306-0537": 303.4, "0709-0690-1017": 61.5,
+                       "0795-0604-0099": 82.1, "1085-1389-0594": 90.0, "1259-0662-0447": 159.9},
     "M_AMD_OTOF27_R": {"0625-0676-0122": float("inf"), "0659-1149-0749": float("inf"),
                        "0795-0468-1234": float("inf"), "1005-0278-0513": float("inf"),
                        "1195-1045-0730": float("inf"), "1204-0549-1311": float("inf")},
-    "M_AMD_OTOF28_L": {"0181-1327-0785": 363.9, "0405-0603-0943": 215.2, "0472-1367-0217": 319.4,
-                       "0662-1598-0752": 198.8, "0733-0749-0275": 342.0, "0733-0989-0838": 340.8},
-    "M_AMD_OTOF28_R": {"0311-1418-0473": 570.2, "0397-0162-0613": float("inf"),
-                       "0405-0891-0963": 185.1, "0527-0802-0061": 242.9,
-                       "0725-1540-0481": 256.7, "0944-0849-0402": 228.3},
+    "M_AMD_OTOF28_L": {"0181-1327-0785": 251.9, "0405-0603-0943": 98.2, "0472-1367-0217": 192.4,
+                       "0662-1598-0752": 86.8, "0733-0749-0275": 228.0, "0733-0989-0838": 226.8},
+    "M_AMD_OTOF28_R": {"0311-1418-0473": 450.2, "0397-0162-0613": float("inf"),
+                       "0405-0891-0963": 76.2, "0527-0802-0061": 129.4,
+                       "0725-1540-0481": 143.2, "0944-0849-0402": 118.0},
 }
 
 PLOT_OUT = "./marker_threshold_plots"
@@ -137,15 +138,49 @@ def marker_threshold(intensities: np.ndarray) -> float:
     return float(threshold_otsu(values))
 
 
-def build_features(table_plain: Optional[pd.DataFrame], table_bg: Optional[pd.DataFrame]) -> pd.DataFrame:
+PERCENTILE_ORDER = ["percentile-5", "percentile-10", "percentile-25", "median",
+                    "percentile-75", "percentile-90", "percentile-95"]
+
+# Statistics of the object measures that carry a background-subtracted value.
+BACKGROUND_SUBTRACTED = ["median", "mean", "min", "max"] + [
+    name for name in PERCENTILE_ORDER if name != "median"
+]
+
+
+def _has_subtracted_percentiles(table: pd.DataFrame) -> bool:
+    """Whether a background-subtracted table was written after the fix of `_normalize_background`.
+
+    Before the fix every statistic was subtracted by its own background counterpart, which makes
+    the percentiles of an object non-monotonic. After the fix a single background level is
+    subtracted, so the order of the percentiles is preserved.
+    """
+    if any(name not in table.columns for name in PERCENTILE_ORDER):
+        return False
+    values = table[PERCENTILE_ORDER].to_numpy(dtype="float64")
+    return bool((values[:, :-1] <= values[:, 1:] + 1e-9).all())
+
+
+def build_features(
+    table_plain: Optional[pd.DataFrame],
+    table_bg: Optional[pd.DataFrame],
+    table_bg_reference: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
     """Combine the plain and the background-subtracted object measures into one feature table.
 
     The plain table contributes its own columns and the derived features of DERIVED_FEATURES.
-    The background-subtracted table contributes its median as "median_bg".
+    The background-subtracted table contributes one column per statistic, with the suffix "_bg",
+    for example "mean_bg". "median_bg" therefore keeps its earlier meaning.
+
+    A background-subtracted table written before the fix of `_normalize_background` does not have
+    its median subtracted, and subtracts every other statistic by its own background counterpart.
+    Such a table is repaired here: the background level per object is recovered as the difference
+    to a table written with median_only, and subtracted from the intact plain measures.
 
     Args:
         table_plain: Object measures without a background mask.
         table_bg: Object measures with a background mask.
+        table_bg_reference: Object measures with a background mask, written with median_only=True.
+            Only needed to repair a table written before the fix.
 
     Returns:
         Feature table with a "label_id" column.
@@ -162,8 +197,29 @@ def build_features(table_plain: Optional[pd.DataFrame], table_bg: Optional[pd.Da
                 features[name] = features[left] - features[right]
 
     if table_bg is not None:
-        bg = table_bg[["label_id", "median"]].rename(columns={"median": BG_FEATURE})
-        features = features.merge(bg, on="label_id", how="inner" if table_plain is not None else "left")
+        columns = [name for name in BACKGROUND_SUBTRACTED if name in table_bg.columns]
+        if len(table_bg.columns) <= 2 or _has_subtracted_percentiles(table_bg):
+            subtracted = table_bg[["label_id"] + columns].rename(
+                columns={name: f"{name}_bg" for name in columns}
+            )
+        else:
+            if table_bg_reference is None:
+                raise ValueError(
+                    "The background-subtracted table has non-monotonic percentiles, so it was written "
+                    "before the fix of _normalize_background. Pass the median_only table of this cochlea "
+                    "with --bg_reference_dir, so that the background level can be recovered."
+                )
+            warnings.warn("Repairing a background-subtracted table written before the fix of "
+                          "_normalize_background. Regenerate the object measures to remove this step.")
+            reference = table_bg_reference[["label_id", "median"]].rename(columns={"median": "_reference"})
+            level = table_bg[["label_id", "median"]].merge(reference, on="label_id", how="inner")
+            level["_level"] = level["median"] - level["_reference"]
+            merged = table_plain.merge(level[["label_id", "_level"]], on="label_id", how="inner")
+            subtracted = pd.DataFrame({"label_id": merged["label_id"]})
+            for name in columns:
+                if name in merged.columns:
+                    subtracted[f"{name}_bg"] = merged[name] - merged["_level"]
+        features = features.merge(subtracted, on="label_id", how="inner" if table_plain is not None else "left")
 
     features["label_id"] = features["label_id"].astype("int64")
     return features
@@ -446,6 +502,8 @@ def threshold_marker(
     table_seg_path: Optional[str] = None,
     table_meas_path: Optional[str] = None,
     meas_dir: Optional[str] = None,
+    bg_dir: Optional[str] = None,
+    bg_reference_dir: Optional[str] = None,
     intensity_column: Optional[str] = None,
     threshold: Optional[float] = None,
     local: bool = False,
@@ -480,6 +538,10 @@ def threshold_marker(
         table_meas_path: Path to a single table with object measures.
         meas_dir: Directory with the object-measures tables of all cochleae. Use this to read the
             measures from disk while the segmentation table comes from the S3 bucket.
+        bg_dir: Directory with the background-subtracted object-measures tables, when they are not
+            next to the plain ones.
+        bg_reference_dir: Directory with background-subtracted tables written with median_only=True.
+            Only needed to repair tables written before the fix of `_normalize_background`.
         intensity_column: Column for the Otsu fallback. Overrides the value of the marker family.
         threshold: Fixed threshold on the intensity column, which overrides THRESHOLD_DICT.
         local: Whether to use one threshold per annotation crop from LOCAL_THRESHOLD_DICT, instead
@@ -553,6 +615,19 @@ def threshold_marker(
                 key: _read_table(path, s3_meas, s3_credentials, s3_bucket_name, s3_service_endpoint)
                 for key, path in meas_tables.items()
             }
+            if bg_dir is not None:
+                extra = _find_meas_tables(cochlea, seg_name, marker_name, meas_dir=bg_dir,
+                                          mobie_dir=mobie_dir)
+                if "bg" in extra:
+                    meas_tables["bg"] = extra["bg"]
+                    loaded["bg"] = _read_table(extra["bg"])
+            reference_bg = None
+            if bg_reference_dir is not None:
+                reference_tables = _find_meas_tables(
+                    cochlea, seg_name, marker_name, meas_dir=bg_reference_dir, mobie_dir=mobie_dir,
+                )
+                if "bg" in reference_tables:
+                    reference_bg = _read_table(reference_tables["bg"])
         except FileNotFoundError as e:
             warnings.warn(f"Skipping cochlea {cochlea}. {e}")
             continue
@@ -562,7 +637,11 @@ def threshold_marker(
                           "Run the component labeling first.")
             continue
 
-        features = build_features(loaded.get("plain"), loaded.get("bg"))
+        try:
+            features = build_features(loaded.get("plain"), loaded.get("bg"), reference_bg)
+        except ValueError as e:
+            warnings.warn(f"Skipping cochlea {cochlea}. {e}")
+            continue
         valid_ids = filter_table(table_seg, components).label_id
         if len(valid_ids) == 0:
             warnings.warn(f"Skipping cochlea {cochlea}. No instance is in the components {components}.")
@@ -587,7 +666,7 @@ def threshold_marker(
                 warnings.warn(f"Skipping cochlea {cochlea}. The feature '{LOCAL_THRESHOLD_FEATURE}' is not in "
                               "the measurement tables.")
                 continue
-            thresholds, method = dict(LOCAL_THRESHOLD_DICT[cochlea]), "local"
+            thresholds, method = dict(LOCAL_THRESHOLD_DICT[cochlea]), "annotator-local"
             table_seg, crop_counts = apply_local_thresholds(
                 table_seg, features, thresholds, components, feature=LOCAL_THRESHOLD_FEATURE,
             )
@@ -687,6 +766,12 @@ def main():
     parser.add_argument("--meas_table", type=str, default=None, help="Path to a single object-measures table.")
     parser.add_argument("--meas_dir", type=str, default=None,
                         help="Directory with the object-measures tables of all cochleae.")
+    parser.add_argument("--bg_dir", type=str, default=None,
+                        help="Directory with the background-subtracted object-measures tables, "
+                        "when they are not next to the plain ones.")
+    parser.add_argument("--bg_reference_dir", type=str, default=None,
+                        help="Directory with background-subtracted tables written with median_only=True. "
+                        "Only needed to repair tables written before the fix of _normalize_background.")
 
     # options for creating data paths automatically
     parser.add_argument("--seg_name", type=str, default=None,
@@ -722,6 +807,8 @@ def main():
         table_seg_path=args.seg_table,
         table_meas_path=args.meas_table,
         meas_dir=args.meas_dir,
+        bg_dir=args.bg_dir,
+        bg_reference_dir=args.bg_reference_dir,
         intensity_column=args.intensity_column,
         threshold=args.threshold,
         local=args.local,

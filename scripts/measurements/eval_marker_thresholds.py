@@ -4,6 +4,7 @@ import itertools
 import json
 import os
 import re
+import warnings
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -13,7 +14,7 @@ import tifffile
 from flamingo_tools.intensity_annotation.eval_annotations import percentage
 from flamingo_tools.json_util import export_dictionary_as_json
 
-from thresholds_marker import BG_FEATURE, build_features
+from apply_marker_thresholds import BG_FEATURE, build_features
 
 COCHLEAE = ["M_AMD_OTOF27_L", "M_AMD_OTOF27_R", "M_AMD_OTOF28_L", "M_AMD_OTOF28_R"]
 
@@ -348,6 +349,149 @@ def leave_one_out(
     return _counts(np.array(predictions), np.array(truths))
 
 
+# Statistics that carry a background-subtracted value, and are therefore candidate columns.
+CANDIDATE_COLUMNS = [
+    "median", "mean", "min", "max",
+    "percentile-5", "percentile-10", "percentile-25", "percentile-75", "percentile-90", "percentile-95",
+]
+
+
+def build_background_subtracted(
+    table_plain: pd.DataFrame,
+    table_bg: pd.DataFrame,
+    table_bg_median_only: Optional[pd.DataFrame] = None,
+) -> pd.DataFrame:
+    """Build a feature table of background-subtracted object measures.
+
+    A table written before the fix of `_normalize_background` does not have its median subtracted,
+    and every other statistic is subtracted by its own background counterpart instead of by one
+    background level. Such a table is repaired here, by recovering the background level per object
+    as the difference to a table that was written with `median_only=True`, and subtracting it from
+    the intact plain measures. A table written after the fix is used as it is.
+
+    Args:
+        table_plain: Object measures without a background mask.
+        table_bg: Object measures with a background mask.
+        table_bg_median_only: Object measures with a background mask, written with median_only=True.
+            Only needed to repair a table written before the fix.
+
+    Returns:
+        Feature table with a "label_id" column and one column per candidate statistic.
+    """
+    merged = table_plain.merge(table_bg[["label_id", "median"]].rename(columns={"median": "_bg_median"}),
+                               on="label_id", how="inner")
+    percentiles = ["percentile-5", "percentile-10", "percentile-25", "median",
+                   "percentile-75", "percentile-90", "percentile-95"]
+    available = [name for name in percentiles if name in table_bg.columns]
+    monotonic = True
+    if len(available) == len(percentiles):
+        values = table_bg[percentiles].to_numpy(dtype="float64")
+        monotonic = bool((values[:, :-1] <= values[:, 1:] + 1e-9).all())
+
+    if monotonic:
+        features = table_bg[["label_id"] + [c for c in CANDIDATE_COLUMNS if c in table_bg.columns]].copy()
+        features["label_id"] = features["label_id"].astype("int64")
+        return features
+
+    if table_bg_median_only is None:
+        raise ValueError(
+            "The background-subtracted table has non-monotonic percentiles, which means it was written "
+            "before the fix of _normalize_background. Pass the median_only table of the same cochlea, "
+            "so that the background level can be recovered."
+        )
+    warnings.warn("Repairing a background-subtracted table written before the fix of _normalize_background. "
+                  "Regenerate the object measures to remove this step.")
+    reference = table_bg_median_only[["label_id", "median"]].rename(columns={"median": "_reference"})
+    merged = merged.merge(reference, on="label_id", how="inner")
+    background_level = merged["_bg_median"] - merged["_reference"]
+
+    features = pd.DataFrame({"label_id": merged["label_id"].astype("int64")})
+    for name in CANDIDATE_COLUMNS:
+        if name in merged.columns:
+            features[name] = merged[name] - background_level
+    return features
+
+
+def reference_split(
+    cochlea: str,
+    crop_dir: str,
+    threshold_dir: str,
+    table_bg_median_only: pd.DataFrame,
+    marker_name: str = "OTOF",
+    seg_name: str = "IHC_v11",
+) -> pd.DataFrame:
+    """Recover the positive and negative instances of every annotated crop.
+
+    The per-crop thresholds of the annotators were derived on the background-subtracted median, so
+    applying them to that column reproduces the assignment the annotators made. The split is what
+    has to stay fixed when another column is evaluated.
+
+    Returns:
+        Table with the columns "label_id", "crop" and "reference".
+    """
+    cochlea_str = cochlea.replace("_", "-")
+    seg_string = seg_name.replace("_", "-")
+    with open(os.path.join(threshold_dir, f"{cochlea_str}_{marker_name}_{seg_string}.json"), "r") as f:
+        crop_thresholds = json.load(f)
+
+    lut = table_bg_median_only.set_index(table_bg_median_only["label_id"].astype("int64"))["median"]
+    rows = []
+    for path in sorted(glob.glob(os.path.join(crop_dir, f"{cochlea_str}_crop_*_{seg_string}.tif"))):
+        center = re.search(r"_crop_(\d+-\d+-\d+)_", os.path.basename(path)).group(1)
+        threshold = crop_thresholds.get(center, {}).get("median_intensity")
+        if threshold is None:
+            print(f"  {cochlea} {center}: no annotator threshold, crop skipped.")
+            continue
+        labels = np.unique(tifffile.imread(path))
+        for label_id in (int(label) for label in labels[labels > 0]):
+            if label_id in lut.index:
+                rows.append({"label_id": label_id, "crop": center,
+                             "reference": int(lut.loc[label_id] >= threshold)})
+    return pd.DataFrame(rows).drop_duplicates("label_id").reset_index(drop=True)
+
+
+def annotator_threshold(values: np.ndarray, is_positive: np.ndarray) -> float:
+    """Threshold halfway between the negative and the positive population of a crop.
+
+    This is the rule of `get_crop_parameters` in the annotation path: the value between the
+    highest negative and the lowest positive instance. A crop without a positive instance gives
+    an infinite threshold, so that nothing in it is called positive.
+    """
+    positive, negative = values[is_positive == 1], values[is_positive == 0]
+    if len(positive) == 0:
+        return float("inf")
+    if len(negative) == 0:
+        return float("-inf")
+    return float((negative.max() + positive.min()) / 2)
+
+
+def rank_columns(references: Dict[str, pd.DataFrame], columns: List[str]) -> List[dict]:
+    """Rank candidate columns by how well one threshold per crop reproduces the annotator split."""
+    results = []
+    for column in columns:
+        separated = overlapping = false_negative = false_positive = 0
+        for reference in references.values():
+            for _, group in reference.groupby("crop"):
+                y = group["reference"].to_numpy()
+                values = group[column].to_numpy(dtype="float64")
+                if y.sum() == 0 or (y == 0).sum() == 0:
+                    continue
+                if values[y == 0].max() < values[y == 1].min():
+                    separated += 1
+                else:
+                    overlapping += 1
+                prediction = (values >= annotator_threshold(values, y)).astype(int)
+                false_negative += int(((prediction == 0) & (y == 1)).sum())
+                false_positive += int(((prediction == 1) & (y == 0)).sum())
+        results.append({
+            "column": column, "crops_separated": separated, "crops_overlapping": overlapping,
+            "n_errors": false_negative + false_positive,
+            "false_negative": false_negative, "false_positive": false_positive,
+        })
+    results.sort(key=lambda item: (item["n_errors"], -item["crops_separated"]))
+    return results
+
+
 def main():
     parser = argparse.ArgumentParser(
         description="Evaluate marker threshold rules against the annotated crops of the OTOF cochleae."
@@ -363,6 +507,10 @@ def main():
                         help="Evaluate only this level feature, instead of searching.")
     parser.add_argument("--gate", type=str, nargs="*", default=None, metavar="FEATURE=VALUE",
                         help="Evaluate only these gate thresholds, e.g. p95_sub_p5=240.")
+    parser.add_argument("--columns", action="store_true",
+                        help="Rank the columns of the background-subtracted object measures.")
+    parser.add_argument("--bg_mask_dir", type=str, default=None,
+                        help="Directory with the background-subtracted object-measures tables.")
     parser.add_argument("--local", action="store_true",
                         help="Fit one threshold per crop instead of one per cochlea.")
     parser.add_argument("--positive_weight", type=float, default=3.0,
@@ -372,6 +520,65 @@ def main():
     parser.add_argument("--seg_name", type=str, default="IHC_v11", help="Identifier for the segmentation.")
     parser.add_argument("-o", "--output", type=str, default=None, help="Output path for a JSON with the results.")
     args = parser.parse_args()
+
+    if args.columns:
+        if args.bg_mask_dir is None:
+            raise ValueError("Pass --bg_mask_dir with the background-subtracted object measures.")
+        split_references = {}
+        for cochlea in args.cochlea:
+            cochlea_str = cochlea.replace("_", "-")
+            seg_string = args.seg_name.replace("_", "-")
+            prefix = f"{cochlea_str}_Otof_{seg_string}_object-measures"
+            plain = pd.read_csv(os.path.join(args.meas_dir, f"{prefix}.tsv"), sep="\t")
+            median_only = pd.read_csv(os.path.join(args.meas_dir, f"{prefix}-bg-mask.tsv"), sep="\t")
+            background = pd.read_csv(os.path.join(args.bg_mask_dir, f"{prefix}-bg-mask.tsv"), sep="\t")
+            features = build_background_subtracted(plain, background, median_only)
+            split = reference_split(cochlea, args.crop_dir, args.threshold_dir, median_only,
+                                    args.marker_name, args.seg_name)
+            split_references[cochlea] = split.merge(features, on="label_id", how="inner")
+            n_positive = int(split_references[cochlea]["reference"].sum())
+            print(f"{cochlea}: {len(split_references[cochlea])} annotated instances, {n_positive} positive.")
+
+        available = [c for c in CANDIDATE_COLUMNS
+                     if all(c in ref.columns for ref in split_references.values())]
+        results = rank_columns(split_references, available)
+        print("\nColumns of the background-subtracted object measures, ranked by how well one "
+              "threshold per crop\nreproduces the annotator split. The threshold is the value "
+              "between the two populations.")
+        print(f"\n  {'column':16s} {'separated':>10s} {'overlapping':>12s} {'errors':>7s} "
+              f"{'missed pos':>11s} {'false pos':>10s}")
+        for item in results:
+            print(f"  {item['column']:16s} {item['crops_separated']:10d} {item['crops_overlapping']:12d} "
+                  f"{item['n_errors']:7d} {item['false_negative']:11d} {item['false_positive']:10d}")
+        print("  'separated' counts the crops in which the two populations do not overlap at all.")
+        print("  The median is the column the split was derived from, so its perfect score is circular.")
+
+        best = next(item for item in results if item["column"] != "median")
+        column = best["column"]
+        print(f"\nBest column that is not the reference: '{column}'.")
+        print("\nLOCAL_THRESHOLD_DICT entries for scripts/measurements/apply_marker_thresholds.py:")
+        thresholds = {}
+        for cochlea, reference in split_references.items():
+            thresholds[cochlea] = {}
+            for center, group in sorted(reference.groupby("crop")):
+                thresholds[cochlea][center] = annotator_threshold(
+                    group[column].to_numpy(dtype="float64"), group["reference"].to_numpy()
+                )
+            body = ", ".join(
+                f'"{center}": ' + ("float(\"inf\")" if not np.isfinite(value) else f"{value:.1f}")
+                for center, value in thresholds[cochlea].items()
+            )
+            print(f'    "{cochlea}": {{{body}}},')
+
+        if args.output is not None:
+            export_dictionary_as_json(
+                {"column": column, "ranking": results,
+                 "thresholds": {c: {k: (None if not np.isfinite(v) else v) for k, v in t.items()}
+                                for c, t in thresholds.items()}},
+                args.output, force_overwrite=True,
+            )
+            print(f"\nSaved the results to {args.output}.")
+        return
 
     references, features = {}, {}
     for cochlea in args.cochlea:
@@ -426,7 +633,7 @@ def main():
                   f"{merged['false_positive']:10d} {recall:7.3f} {precision:10.3f} {f1:6.3f}")
         print("  Scored leave-one-instance-out, so a threshold never sees the instance it is scored on.")
 
-        print("\nLOCAL_THRESHOLD_DICT entries for scripts/measurements/thresholds_marker.py:")
+        print("\nLOCAL_THRESHOLD_DICT entries for scripts/measurements/apply_marker_thresholds.py:")
         for cochlea, thresholds in local_thresholds.items():
             body = ", ".join(
                 f'"{center}": ' + ("float(\"inf\")" if not np.isfinite(value) else f"{value:.1f}")
@@ -489,7 +696,7 @@ def main():
     annotated = sum(item["n_annotated"] for item in per_cochlea.values())
     print(f"  total errors {total}/{annotated}. A plateau marked * is unbounded, so the data of that "
           "cochlea does not pin the threshold.")
-    print("\nTHRESHOLD_DICT entries for scripts/measurements/thresholds_marker.py:")
+    print("\nTHRESHOLD_DICT entries for scripts/measurements/apply_marker_thresholds.py:")
     for cochlea, item in per_cochlea.items():
         entries = {level: round(item["threshold"])}
         entries.update({k: round(v) for k, v in gates.items()})
