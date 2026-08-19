@@ -59,9 +59,9 @@ LEGEND_LABEL = {
 
 }
 
-# The cochlea for the CHReef analysis.
+# The cochlea for the ChReef analysis.
 COCHLEAE_DICT = {
-    "M_LR_000226_L": {"alias": "M_01L", "component": [1], "color": "#9C5027"},
+    "M_LR_000226_L": {"alias": "M_01L", "component": [1, 3], "color": "#9C5027"},
     "M_LR_000226_R": {"alias": "M_01R", "component": [1], "color": "#279C52"},
     "M_LR_000227_L": {"alias": "M_02L", "component": [1], "color": "#67279C"},
     "M_LR_000227_R": {"alias": "M_02R", "component": [1], "color": "#27339C"},
@@ -128,7 +128,7 @@ def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficie
 
 def get_tonotopic_data(
     cochleae_dict: dict = COCHLEAE_DICT,
-    source_name: str = "IHC_v4c",
+    source_name: str = "IHC_v11",
     synapse_dir: str = SYNAPSE_DIR,
     cache_path: str = None,
 ):
@@ -411,6 +411,7 @@ def supp_fig_03a_meyer(
     trendline_colors: dict = None,
     show_legend: bool = False,
     length_info: bool = False,
+    ihc_version: str = "ihc_counts_v11",
 ):
     """Plot Supplementary Figure 3a.
 
@@ -439,7 +440,6 @@ def supp_fig_03a_meyer(
     else:
         alpha = 1
 
-    ihc_version = "ihc_counts_v4c"
     if trendline_std:
         line_alphas = {
             "center": 0.6,
@@ -759,10 +759,7 @@ def fig_03c_octave(
         plot: Plot figure.
         trendline: Visualize trendline of averages.
     """
-    ihc_version = "ihc_counts_v4c"
     prism_style()
-    tables = glob(os.path.join(SYNAPSE_DIR_ROOT, ihc_version, "ihc_count_M_LR*.tsv"))
-    assert len(tables) == 4, len(tables)
     main_label_size = 28
     main_tick_size = 20
     xtick_size = 16
@@ -1243,19 +1240,21 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
-    tonotopic_data = get_tonotopic_data()
+    tonotopic_data = get_tonotopic_data(source_name="IHC_v11")
 
     # Panel A: Tonotopic mapping of SGNs and IHCs (rendering in napari + heatmap)
     cmap = "plasma"
     if args.napari:
         fig_01a()
 
-    fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
-            plot=args.plot, plot_napari=args.napari, cmap=cmap, dark_mode=True)
+    if os.path.isdir(INPUT_ROOT):
+        fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
+                plot=args.plot, plot_napari=args.napari, cmap=cmap, dark_mode=True)
 
     supp_fig_03a_meyer(tonotopic_data=tonotopic_data,
                        save_path=os.path.join(args.figure_dir, f"supp_fig_03a_meyer_trend.{FILE_EXTENSION}"),
-                       plot=args.plot, n_bins=25, top_axis=True, trendline=True)
+                       plot=args.plot, n_bins=25, top_axis=True, trendline=True,
+                       ihc_version="ihc_counts_v11")
     plot_legend_supp_fig03a(save_path=os.path.join(args.figure_dir, f"supp_fig_03a_meyer_lgnd3.{FILE_EXTENSION}"),
                             ncol=3)
 
@@ -1263,6 +1262,7 @@ def main():
     fig_03c_octave(tonotopic_data=tonotopic_data,
                    save_path=os.path.join(args.figure_dir, f"fig_03c_octave.{FILE_EXTENSION}"),
                    plot=args.plot, trendline=True)
+
     plot_legend_fig03c(save_path=os.path.join(args.figure_dir, f"fig_03c_legend.{FILE_EXTENSION}"), ncol=1)
 
     grouping = "Type Ia;Type Ib;Type Ic;Type II"
