@@ -104,6 +104,10 @@ class TestEvalAnnotations(unittest.TestCase):
             self.assertEqual(param_dic["median_intensity"], 30.0)
             self.assertEqual(param_dic["threshold_source"], "single-annotation-negative")
 
+            param_dic = get_single_annotation_parameters(all_negative, table, all_negative_threshold_factor=10.0)
+            self.assertEqual(param_dic["median_intensity"], 200.0)
+            self.assertEqual(param_dic["threshold_source"], "single-annotation-negative")
+
             param_dic = get_single_annotation_parameters(all_positive, table)
             self.assertEqual(param_dic["median_intensity"], 0.0)
             self.assertEqual(param_dic["threshold_source"], "single-annotation-positive")

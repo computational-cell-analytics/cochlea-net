@@ -20,14 +20,16 @@ COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 ROOT_SYNAPSE_DATA = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data")
 
 
-def train(root_data_dir, version="v5", val_sample_size=3, model_suffix=None):
+def train(root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None):
     if model_suffix is None:
         model_suffix = version
         json_path = os.path.join(root_data_dir, version, "train_val_split.json")
-        random_state = 42
+        if random_state is None:
+            random_state = 42
     else:
         json_path = os.path.join(root_data_dir, version, f"train_val_split_{model_suffix}.json")
-        random_state = sum([ord(char) for char in model_suffix.lower()])
+        if random_state is None:
+            random_state = sum([ord(char) for char in model_suffix.lower()])
         print(f"Using random state {random_state}.")
 
     image_dir = os.path.join(root_data_dir, version, "images")
@@ -97,6 +99,8 @@ def main():
 
     parser.add_argument("-i", "--input_dir", type=str, default=ROOT_SYNAPSE_DATA)
     parser.add_argument("-v", "--version", type=str, default="v5")
+    parser.add_argument("-r", "--random_state", type=int, default=None,
+                        help="Random state for train and validation split. Default: 42 for fixed versions.")
     parser.add_argument("-m", "--model_suffix", type=str, default=None,
                         help="Custom suffix for model name. Default: Same as version.")
 
@@ -105,6 +109,7 @@ def main():
         root_data_dir=args.input_dir,
         version=args.version,
         model_suffix=args.model_suffix,
+        random_state=args.random_state,
     )
 
 

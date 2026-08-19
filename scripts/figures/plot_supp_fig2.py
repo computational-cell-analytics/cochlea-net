@@ -1,7 +1,7 @@
 import argparse
 import json
 import os
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -29,12 +29,24 @@ PLOT_METADATA = {
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "spiner2D": {"label": "Spiner", "marker": "o"},
         "distance_unet": {"label": "CochleaNet", "marker": "s"},
+        "distance_unet_f0": {"label": "Fold 1", "marker": "s"},
+        "distance_unet_f1": {"label": "Fold 2", "marker": "v"},
+        "distance_unet_f2": {"label": "Fold 3", "marker": "D"},
+        "distance_unet_f3": {"label": "Fold 4", "marker": "^"},
+        "distance_unet_f4": {"label": "Fold 5", "marker": "o"},
     },
     "IHC": {
         "micro-sam": {"label": "µSAM", "marker": "D"},
+        "micro-sam_finetuned": {"label": "µSAM finetuned", "marker": "D"},
         "cellpose3": {"label": "Cellpose 3", "marker": "v"},
+        "cellpose3_finetuned": {"label": "Cellpose 3 finetuned", "marker": "v"},
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
-        "distance_unet": {"label": "CochleaNet", "marker": "s"},
+        "distance_unet_v11": {"label": "CochleaNet", "marker": "s"},
+        "distance_unet_v11-f0": {"label": "Fold 1", "marker": "s"},
+        "distance_unet_v11-f1": {"label": "Fold 2", "marker": "v"},
+        "distance_unet_v11-f2": {"label": "Fold 3", "marker": "D"},
+        "distance_unet_v11-f3": {"label": "Fold 4", "marker": "^"},
+        "distance_unet_v11-f4": {"label": "Fold 5", "marker": "o"},
     },
     "IHC_3D": {
         "v4b": {"label": "v4b", "marker": "D"},
@@ -45,6 +57,11 @@ PLOT_METADATA = {
     },
     "synapses": {
         "v3": {"label": "v3", "marker": "D"},
+        "v5-f0": {"label": "Fold 1", "marker": "s"},
+        "v5-f1": {"label": "Fold 2", "marker": "v"},
+        "v5-f2": {"label": "Fold 3", "marker": "D"},
+        "v5-f3": {"label": "Fold 4", "marker": "^"},
+        "v5-f4": {"label": "Fold 5", "marker": "o"},
         "v5": {"label": "v5", "marker": "^"},
         "v3_05t": {"label": "v3_old", "marker": "s"},
         "v5_f1val_threshold": {"label": "v5_optimal", "marker": "o"},
@@ -70,6 +87,35 @@ PLOT_METADATA = {
         "v5_05t_for_consensus_annotations_synapses_LR": {"label": "v5_0.5t_LR", "marker": ">"},
     },
 }
+
+# Fold keys per structure for the combined fold-variation panel. The outer key selects the
+# accuracy file (<key>.json) and the x-axis position; the value lists the fold entries to average.
+FOLD_KEYS = {
+    "SGN": [
+        "distance_unet_f0",
+        "distance_unet_f1",
+        "distance_unet_f2",
+        "distance_unet_f3",
+        "distance_unet_f4",
+    ],
+    "IHC": [
+        "distance_unet_v11-f0",
+        "distance_unet_v11-f1",
+        "distance_unet_v11-f2",
+        "distance_unet_v11-f3",
+        "distance_unet_v11-f4",
+    ],
+    "synapses": [
+        "v5-f0",
+        "v5-f1",
+        "v5-f2",
+        "v5-f3",
+        "v5-f4",
+    ],
+}
+
+# X-axis labels for the combined fold-variation panel.
+FOLD_GROUP_LABELS = {"SGN": "SGN", "IHC": "IHC", "synapses": "Synapses"}
 
 
 def plot_legend_supp_fig02(save_path):
@@ -333,6 +379,110 @@ def plot_fold_accuracy(
         plt.close()
 
 
+def plot_fold_variation(
+    save_path: str,
+    fold_dict: Dict[str, List[str]],
+    data_dir: str,
+    group_labels: Optional[Dict[str, str]] = None,
+    ylim: Optional[List[float]] = None,
+    show_legend: bool = True,
+    plot: bool = False,
+):
+    """Plot the accuracy variation across cross-validation folds for several structures.
+
+    Each structure gets one x position with precision, recall, and F1-score shown as the mean
+    across its folds, with the standard deviation as error bar.
+
+    Args:
+        save_path: Path for saving figure.
+        fold_dict: Fold keys per structure. Each outer key selects the accuracy file
+            '<key>.json' in data_dir and its position on the x-axis. Each value lists the
+            fold entries in that file to average over.
+        data_dir: Directory containing the accuracy files produced by eval_baseline.py.
+        group_labels: X-axis label per structure. Defaults to FOLD_GROUP_LABELS.
+        ylim: Lower and upper y-axis limit.
+        show_legend: Plot legend.
+        plot: Whether to display the plot interactively.
+    """
+    if group_labels is None:
+        group_labels = FOLD_GROUP_LABELS
+
+    metrics_to_plot = ("precision", "recall", "f1-score")
+    stats = {}
+
+    for group, fold_keys in fold_dict.items():
+        json_path = os.path.join(data_dir, f"{group}.json")
+        with open(json_path, "r") as f:
+            metrics = json.load(f)
+
+        present = [key for key in fold_keys if key in metrics]
+        missing = [key for key in fold_keys if key not in metrics]
+        if not present:
+            raise ValueError(f"None of the fold keys {fold_keys} are present in {json_path}.")
+        if missing:
+            print(f"Warning: {group}: {', '.join(missing)} not found in {json_path}. "
+                  f"Averaging over {len(present)} of {len(fold_keys)} folds.")
+
+        stats[group] = {
+            metric: (
+                float(np.mean([metrics[key][metric] for key in present])),
+                float(np.std([metrics[key][metric] for key in present])),
+            )
+            for metric in metrics_to_plot
+        }
+        for metric in metrics_to_plot:
+            mean, std = stats[group][metric]
+            print(f"{group} {metric}: {mean:.3f} +- {std:.3f} (n={len(present)})")
+
+    main_label_size = 20
+    main_tick_size = 16
+    marker_size = 120
+    marker = "s"
+    capsize = 4
+    offset = 0.15
+
+    fig, ax = plt.subplots(figsize=(6, 5))
+
+    for num, group in enumerate(stats):
+        x_pos = num + 1
+        for metric, color, shift in zip(metrics_to_plot, (COLOR_P, COLOR_R, COLOR_F), (-offset, 0, offset)):
+            mean, std = stats[group][metric]
+            plt.errorbar([x_pos + shift], [mean], yerr=[std], fmt="none", color="black",
+                         capsize=capsize, zorder=1)
+            plt.scatter([x_pos + shift], [mean], color=color, marker=marker, s=marker_size, zorder=2)
+
+    x_pos = np.arange(1, len(stats) + 1)
+    plt.xlim(0.5, len(stats) + 0.5)
+    plt.xticks(x_pos, [group_labels.get(group, group) for group in stats], fontsize=main_tick_size)
+    plt.yticks(fontsize=main_tick_size)
+    plt.ylabel("Value", fontsize=main_label_size)
+    if ylim is None:
+        plt.ylim(0.5, 1.05)
+    else:
+        plt.ylim(ylim[0], ylim[1])
+    plt.grid(axis="y", linestyle="solid", alpha=0.5)
+
+    if show_legend:
+        color = [COLOR_P, COLOR_R, COLOR_F]
+        label = ["Precision", "Recall", "F1-score"]
+
+        handles = [get_flatline_handle(c) for c in color]
+        plt.legend(handles, label, loc=(0, 1), ncol=len(label), framealpha=1, frameon=False)
+
+    plt.tight_layout()
+    prism_cleanup_axes(ax)
+
+    if ".png" in save_path:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
+    else:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0)
+
+    if plot:
+        plt.show()
+    else:
+        plt.close()
+
+
 def main():
     parser = argparse.ArgumentParser(description="Generate plots for Supplementary Fig 2 of the cochlea paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.",
@@ -389,100 +539,49 @@ def main():
 
         supp_fig_02(
             save_path=os.path.join(
-                args.figure_dir, f"supp_fig_02_synapse_annot_AMD.{FILE_EXTENSION}"
+                args.figure_dir, f"supp_fig_02_fold_SGN_accuracy.{FILE_EXTENSION}"
             ),
-            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            segm="SGN", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
-                "v3_for_consensus_annotations_synapses_AMD",
-                "v3_05t_for_consensus_annotations_synapses_AMD",
-                "v5_for_consensus_annotations_synapses_AMD",
-                "v5_f1val_threshold_for_consensus_annotations_synapses_AMD",
-                "v5_train_threshold_for_consensus_annotations_synapses_AMD",
-                "v5_05t_for_consensus_annotations_synapses_AMD",
+                "distance_unet_f0",
+                "distance_unet_f1",
+                "distance_unet_f2",
+                "distance_unet_f3",
+                "distance_unet_f4",
             ],
         )
         supp_fig_02(
             save_path=os.path.join(
-                args.figure_dir,
-                f"supp_fig_02_synapse_annot_EK.{FILE_EXTENSION}"
+                args.figure_dir, f"supp_fig_02_fold_IHC_accuracy.{FILE_EXTENSION}"
             ),
-            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
+            segm="IHC", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
-                "v3_for_consensus_annotations_synapses_EK",
-                "v3_05t_for_consensus_annotations_synapses_EK",
-                "v5_for_consensus_annotations_synapses_EK",
-                "v5_f1val_threshold_for_consensus_annotations_synapses_EK",
-                "v5_train_threshold_for_consensus_annotations_synapses_EK",
-                "v5_05t_for_consensus_annotations_synapses_EK",
+                "distance_unet_v11-f0",
+                "distance_unet_v11-f1",
+                "distance_unet_v11-f2",
+                "distance_unet_v11-f3",
+                "distance_unet_v11-f4",
             ],
         )
         supp_fig_02(
             save_path=os.path.join(
-                args.figure_dir,
-                f"supp_fig_02_synapse_annot_LR.{FILE_EXTENSION}"
+                args.figure_dir, f"supp_fig_02_fold_synapses_accuracy.{FILE_EXTENSION}"
             ),
             segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
             key_list=[
-                "v3_for_consensus_annotations_synapses_LR",
-                "v3_05t_for_consensus_annotations_synapses_LR",
-                "v5_for_consensus_annotations_synapses_LR",
-                "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
-                "v5_train_threshold_for_consensus_annotations_synapses_LR",
-                "v5_05t_for_consensus_annotations_synapses_LR",
-            ],
-        )
-        supp_fig_02(
-            save_path=os.path.join(
-                args.figure_dir,
-                f"supp_fig_02_synapse_v3_old_annotators.{FILE_EXTENSION}"
-            ),
-            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
-            key_list=[
-                "v3_05t",
-                "v3_05t_for_consensus_annotations_synapses_AMD",
-                "v3_05t_for_consensus_annotations_synapses_EK",
-                "v3_05t_for_consensus_annotations_synapses_LR",
-            ],
-        )
-        supp_fig_02(
-            save_path=os.path.join(
-                args.figure_dir,
-                f"supp_fig_02_synapse_v5_optimal_annotators.{FILE_EXTENSION}"
-            ),
-            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
-            key_list=[
-                "v5_f1val_threshold",
-                "v5_f1val_threshold_for_consensus_annotations_synapses_AMD",
-                "v5_f1val_threshold_for_consensus_annotations_synapses_EK",
-                "v5_f1val_threshold_for_consensus_annotations_synapses_LR",
-            ],
-        )
-        supp_fig_02(
-            save_path=os.path.join(
-                args.figure_dir,
-                f"supp_fig_02_synapse_v5_threshold-on-whole-training-dataset_annotators.{FILE_EXTENSION}"
-            ),
-            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
-            key_list=[
-                "v5_train_threshold",
-                "v5_train_threshold_for_consensus_annotations_synapses_AMD",
-                "v5_train_threshold_for_consensus_annotations_synapses_EK",
-                "v5_train_threshold_for_consensus_annotations_synapses_LR",
+                "v5-f0",
+                "v5-f1",
+                "v5-f2",
+                "v5-f3",
+                "v5-f4",
             ],
         )
 
-        supp_fig_02(
-            save_path=os.path.join(
-                args.figure_dir,
-                f"supp_fig_02_synapse_v5_05t_annotators.{FILE_EXTENSION}"
-            ),
-            segm="synapses", data_dir=data_dir, show_legend=True, ylim=[0.5, 1.05],
-            key_list=[
-                "v5_05t",
-                "v5_05t_for_consensus_annotations_synapses_AMD",
-                "v5_05t_for_consensus_annotations_synapses_EK",
-                "v5_05t_for_consensus_annotations_synapses_LR",
-            ],
+        plot_fold_variation(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02_fold_variation.{FILE_EXTENSION}"),
+            fold_dict=FOLD_KEYS,
+            data_dir=data_dir,
+            plot=args.plot,
         )
 
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_ihc_3d_seg.{FILE_EXTENSION}"),
