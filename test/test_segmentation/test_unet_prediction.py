@@ -153,3 +153,140 @@ class TestDistanceWatershedRerun(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSelectChannel(unittest.TestCase):
+    """The wrapper must select the channel in the store, without changing the returned data."""
+
+    shape = (5, 16, 32, 32)
+
+    def _check(self, volume, reference):
+        from flamingo_tools.segmentation.unet_prediction import SelectChannel
+
+        for channel in range(self.shape[0]):
+            wrapper = SelectChannel(volume, channel)
+            self.assertEqual(wrapper.shape, self.shape[1:])
+            self.assertEqual(wrapper.ndim, 3)
+
+            expected = reference[channel]
+            indices = [
+                np.s_[:],
+                np.s_[:8, :16, :16],
+                np.s_[2:10, 4:20, 8:24],
+                np.s_[3],
+                np.s_[3, 5],
+                np.s_[3, 5, 7],
+                np.s_[:, 4, :],
+                np.s_[1:5, 6, 8:12],
+            ]
+            for index in indices:
+                self.assertTrue(
+                    np.array_equal(wrapper[index], expected[index]),
+                    msg=f"channel {channel}, index {index}",
+                )
+
+    def test_numpy(self):
+        data = np.random.rand(*self.shape).astype("float32")
+        self._check(data, data)
+
+    def test_zarr(self):
+        import zarr
+
+        data = np.random.rand(*self.shape).astype("float32")
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            path = os.path.join(tmp_dir, "pred.zarr")
+            f = zarr.open(path, mode="w")
+            f.create_array("prediction", data=data, chunks=(1, 8, 16, 16))
+            self._check(zarr.open(path, mode="r")["prediction"], data)
+
+    def test_reads_single_channel(self):
+        """The store must never see a request for more than the selected channel."""
+        from flamingo_tools.segmentation.unet_prediction import SelectChannel
+
+        data = np.random.rand(*self.shape).astype("float32")
+
+        class CountingVolume:
+            def __init__(self, volume):
+                self._volume = volume
+                self.requested_channels = []
+
+            def __getitem__(self, index):
+                self.requested_channels.append(index[0])
+                return self._volume[index]
+
+            @property
+            def shape(self):
+                return self._volume.shape
+
+            @property
+            def ndim(self):
+                return self._volume.ndim
+
+            @property
+            def chunks(self):
+                return (1, 8, 16, 16)
+
+        volume = CountingVolume(data)
+        wrapper = SelectChannel(volume, 2)
+        result = wrapper[:8, :16, :16]
+
+        self.assertTrue(np.array_equal(result, data[2, :8, :16, :16]))
+        self.assertEqual(volume.requested_channels, [2])
+
+
+class TestPredictionInstances(unittest.TestCase):
+    """Splitting the prediction across slurm array tasks must reproduce the single-job result."""
+
+    shape = (64, 128, 128)
+    block_shape = (32, 32, 32)
+    halo = (8, 8, 8)
+    prediction_instances = 4
+
+    def _create_input(self, tmp_dir):
+        model = UNet3d(in_channels=1, out_channels=3, initial_features=4, depth=2)
+        model_path = os.path.join(tmp_dir, "model.pt")
+        torch.save(model, model_path)
+
+        data_path = os.path.join(tmp_dir, "data.n5")
+        with z5py.File(data_path, "a") as f:
+            f.create_dataset("data", data=np.random.randint(0, 255, size=self.shape), chunks=(32, 32, 32))
+        return data_path, "data", model_path
+
+    def _predict(self, data_path, data_key, model_path, output_folder, prediction_instances):
+        from flamingo_tools.segmentation.unet_prediction import prediction_impl
+
+        # A fixed mean and std, so that the tasks cannot disagree on the normalization.
+        for task_id in range(prediction_instances):
+            prediction_impl(
+                data_path, data_key, output_folder, model_path, scale=None,
+                block_shape=self.block_shape, halo=self.halo,
+                prediction_instances=prediction_instances, slurm_task_id=task_id,
+                mean=127.0, std=73.0,
+            )
+        with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
+            return f["prediction"][:]
+
+    def test_split_matches_single_job(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+
+            single = self._predict(
+                data_path, data_key, model_path, os.path.join(tmp_dir, "single"), prediction_instances=1
+            )
+            split = self._predict(
+                data_path, data_key, model_path, os.path.join(tmp_dir, "split"),
+                prediction_instances=self.prediction_instances,
+            )
+
+            self.assertEqual(single.shape, (3,) + self.shape)
+            self.assertGreater(np.abs(single).sum(), 0)
+            self.assertTrue(np.array_equal(single, split))
+
+    def test_tasks_cover_all_blocks_exactly_once(self):
+        """Every block must be predicted by exactly one task."""
+        n_blocks = int(np.prod([sh // bs for sh, bs in zip(self.shape, self.block_shape)]))
+        rng = np.random.default_rng(seed=1234)
+        assignments = [x.tolist() for x in np.array_split(list(rng.permutation(n_blocks)), self.prediction_instances)]
+
+        covered = sorted(block_id for task in assignments for block_id in task)
+        self.assertEqual(covered, list(range(n_blocks)))

@@ -94,6 +94,22 @@ flamingo_tools.run_detection  --input_path "$INPUT_PATH" \
     --output_folder "$OUTPUT_FOLDER"
 ```
 
+The two mask keys select different resolutions of the same IHC segmentation: `--mask_input_key`
+(default `s4`) is the downscaled level that restricts the inference to the region around the IHCs,
+and `--mask_key` (default `s0`) is the full-resolution level used to match the detections.
+
+To read the CTBP2 data from a local file and the IHC segmentation from the S3 bucket, use
+`scripts/synapse_marker_detection/marker_detection.py`, which resolves both inputs independently:
+```bash
+python scripts/synapse_marker_detection/marker_detection.py \
+    --input "$INPUT_PATH" --input_key s0 \
+    --mask "$COCHLEA"/images/ome-zarr/IHC_v11.ome.zarr --s3_mask \
+    --mask_input_key s4 --mask_key s0 \
+    --output_folder "$OUTPUT_FOLDER" --model "$MODEL" --max_distance 8
+```
+Add `--s3_input` to read the image data from the bucket as well. This runs the prediction, the peak
+detection and the matching to the IHCs in one call; see `cluster_synapse_marker.sbatch`.
+
 #### Object measures
 The calculation of object measures requires a segmentation, e.g. SGN.
 
@@ -186,6 +202,31 @@ sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/process_IHC_template.s
 ```
 
 #### Synapses
+The synapse prediction is split up in the same way. The peak detection replaces the segmentation
+as the third step, and needs no GPU. Submit each step only after the previous one finished.
+The size of the array (`#SBATCH -a`) and `PREDICTION_INSTANCES` in
+`apply_synapse_template.sbatch` must match.
+
+```bash
+SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
+DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
+INPUT_KEY="setup2/timepoint0/s0"
+OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/synapses_v5"
+
+# --- Calculating mean and standard deviation ---
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
+
+# --- Applying CochleaNet ---
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
+
+# --- Detecting the synapse markers ---
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/detect_synapse_peaks_template.sbatch $OUTPUT_FOLDER
+```
+
+Pass an IHC segmentation as a fourth argument to the first step to restrict the prediction to the
+region around the IHCs. This skips the background blocks and is much faster.
+
+or for the full workflow without splitting up the prediction step
 ```bash
 SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
 DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_R/MAMD_N162R_PV_Vglut3_CTBP2_fused.n5"

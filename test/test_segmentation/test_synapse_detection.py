@@ -159,5 +159,246 @@ class TestDetectionBlockShape(unittest.TestCase):
         self.assertGreater(np.prod(_detection_block_shape(chunks)), np.prod(chunks))
 
 
+class TestVoxelSize(unittest.TestCase):
+    def test_normalize(self):
+        from flamingo_tools.segmentation.synapse_detection import _normalize_voxel_size
+
+        self.assertEqual(_normalize_voxel_size(0.38), (0.38, 0.38, 0.38))
+        self.assertEqual(_normalize_voxel_size("0.38"), (0.38, 0.38, 0.38))
+        self.assertEqual(_normalize_voxel_size([0.38]), (0.38, 0.38, 0.38))
+        self.assertEqual(_normalize_voxel_size((0.76, 0.76, 3.0)), (0.76, 0.76, 3.0))
+        self.assertEqual(_normalize_voxel_size("0.76,0.76,3.0"), (0.76, 0.76, 3.0))
+        self.assertEqual(_normalize_voxel_size("0.76 0.76 3.0"), (0.76, 0.76, 3.0))
+
+        with self.assertRaises(ValueError):
+            _normalize_voxel_size((0.38, 0.38))
+
+
+class TestSynapseSlurmWorkflow(unittest.TestCase):
+    """The three-stage slurm workflow must reproduce the single-job result."""
+
+    shape = (32, 64, 64)
+    prediction_instances = 3
+
+    def setUp(self):
+        self._task_id = os.environ.pop("SLURM_ARRAY_TASK_ID", None)
+
+    def tearDown(self):
+        os.environ.pop("SLURM_ARRAY_TASK_ID", None)
+        if self._task_id is not None:
+            os.environ["SLURM_ARRAY_TASK_ID"] = self._task_id
+
+    def _create_input(self, tmp_dir):
+        import torch
+        import z5py
+        from torch_em.model import UNet3d
+
+        model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
+        model_path = os.path.join(tmp_dir, "model.pt")
+        torch.save(model, model_path)
+
+        data_path = os.path.join(tmp_dir, "data.n5")
+        rng = np.random.default_rng(0)
+        with z5py.File(data_path, "a") as f:
+            f.create_dataset("data", data=rng.integers(0, 255, size=self.shape), chunks=(16, 16, 16))
+        return data_path, "data", model_path
+
+    def test_array_prediction_matches_single_job(self):
+        from elf.io import open_file
+        from flamingo_tools.segmentation.synapse_detection import (
+            run_prediction, run_synapse_prediction_preprocess_slurm, run_synapse_prediction_slurm,
+        )
+
+        block_shape, halo = (16, 16, 16), (4, 4, 4)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+
+            single_folder = os.path.join(tmp_dir, "single")
+            os.makedirs(single_folder)
+            run_prediction(
+                data_path, data_key, single_folder, model_path, block_shape=block_shape, halo=halo,
+            )
+
+            array_folder = os.path.join(tmp_dir, "array")
+            run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
+            self.assertTrue(os.path.isfile(os.path.join(array_folder, "mean_std.json")))
+
+            for task_id in range(self.prediction_instances):
+                os.environ["SLURM_ARRAY_TASK_ID"] = str(task_id)
+                run_synapse_prediction_slurm(
+                    data_path, array_folder, model_path, input_key=data_key,
+                    block_shape=block_shape, halo=halo,
+                    prediction_instances=self.prediction_instances,
+                )
+
+            with open_file(os.path.join(single_folder, "predictions.zarr"), "r") as f:
+                expected = f["prediction"][:]
+            with open_file(os.path.join(array_folder, "predictions.zarr"), "r") as f:
+                actual = f["prediction"][:]
+
+            self.assertEqual(expected.shape, (5,) + self.shape)
+            self.assertGreater(np.abs(actual).sum(), 0)
+            # Bit-identical: the tasks share the cached mean/std and cover disjoint blocks.
+            self.assertTrue(np.array_equal(expected, actual))
+
+    def test_requires_array_task_id(self):
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            with self.assertRaises(ValueError):
+                run_synapse_prediction_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
+                    prediction_instances=self.prediction_instances,
+                )
+
+    def test_requires_preprocessing(self):
+        """Without mean_std.json the tasks would normalize differently, so this must fail loudly."""
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            os.environ["SLURM_ARRAY_TASK_ID"] = "0"
+            with self.assertRaises(ValueError):
+                run_synapse_prediction_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
+                    prediction_instances=self.prediction_instances,
+                )
+
+    def test_rejects_task_id_beyond_instances(self):
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            os.environ["SLURM_ARRAY_TASK_ID"] = str(self.prediction_instances)
+            with self.assertRaises(ValueError):
+                run_synapse_prediction_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
+                    prediction_instances=self.prediction_instances,
+                )
+
+
+class TestMaskKeys(unittest.TestCase):
+    """The image data and the IHC segmentation must use independent keys."""
+
+    shape = (32, 64, 64)
+
+    def _create_input(self, tmp_dir):
+        import torch
+        import z5py
+        from torch_em.model import UNet3d
+
+        model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
+        model_path = os.path.join(tmp_dir, "model.pt")
+        torch.save(model, model_path)
+
+        # The image data deliberately uses an n5 key that does not exist in the mask,
+        # so reusing it for the mask would raise.
+        data_path = os.path.join(tmp_dir, "data.n5")
+        rng = np.random.default_rng(0)
+        with z5py.File(data_path, "a") as f:
+            f.create_dataset("setup2/timepoint0/s0", data=rng.integers(0, 255, size=self.shape), chunks=(16, 16, 16))
+        return data_path, "setup2/timepoint0/s0", model_path
+
+    def _create_mask(self, tmp_dir):
+        """An IHC segmentation with an s0 and a 4x downscaled s4 level."""
+        full = np.zeros(self.shape, dtype="uint16")
+        full[12:20, 24:40, 24:40] = 7
+        low = full[::4, ::4, ::4].copy()
+
+        path = os.path.join(tmp_dir, "ihc.zarr")
+        f = zarr.open(path, mode="w")
+        f.create_array("s0", data=full)
+        f.create_array("s4", data=low)
+        self.assertNotEqual(full.shape, low.shape)
+        return path
+
+    def test_marker_detection_uses_separate_keys(self):
+        from flamingo_tools.segmentation.synapse_detection import marker_detection
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            mask_path = self._create_mask(tmp_dir)
+            output_folder = os.path.join(tmp_dir, "out")
+
+            marker_detection(
+                input_path=data_path, input_key=data_key, mask_path=mask_path,
+                output_folder=output_folder, model_path=model_path,
+                mask_input_key="s4", mask_key="s0", max_distance=8.0,
+            )
+
+            # The mask is built from the downscaled level.
+            mask = zarr.open(os.path.join(output_folder, "mask.zarr"), mode="r")["mask"]
+            self.assertEqual(tuple(mask.shape), tuple(s // 4 for s in self.shape))
+
+            # The matching uses the full-resolution level.
+            filtered_path = os.path.join(output_folder, "synapse_detection_filtered.tsv")
+            self.assertTrue(os.path.exists(filtered_path))
+            filtered = pd.read_csv(filtered_path, sep="\t")
+            for column in ("matched_ihc", "distance_to_ihc"):
+                self.assertIn(column, filtered.columns)
+
+    def test_mask_key_defaults_do_not_reuse_input_key(self):
+        """Reusing input_key for the segmentation must not silently come back."""
+        import inspect
+        from flamingo_tools.segmentation.synapse_detection import marker_detection
+
+        params = inspect.signature(marker_detection).parameters
+        self.assertEqual(params["mask_input_key"].default, "s4")
+        self.assertEqual(params["mask_key"].default, "s0")
+
+
+class TestRunPredictionMask(unittest.TestCase):
+    """An optional IHC segmentation restricts the inference to the region around the IHCs."""
+
+    shape = (32, 64, 64)
+
+    def _create_input(self, tmp_dir):
+        import torch
+        import z5py
+        from torch_em.model import UNet3d
+
+        model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
+        model_path = os.path.join(tmp_dir, "model.pt")
+        torch.save(model, model_path)
+
+        data_path = os.path.join(tmp_dir, "data.n5")
+        rng = np.random.default_rng(0)
+        with z5py.File(data_path, "a") as f:
+            f.create_dataset("data", data=rng.integers(0, 255, size=self.shape), chunks=(16, 16, 16))
+        return data_path, "data", model_path
+
+    def _run(self, tmp_dir, name, mask_path, input_):
+        from elf.io import open_file
+        from flamingo_tools.segmentation.synapse_detection import run_prediction
+
+        data_path, data_key, model_path = input_
+        output_folder = os.path.join(tmp_dir, name)
+        run_prediction(
+            data_path, data_key, output_folder, model_path,
+            block_shape=(16, 16, 16), halo=(4, 4, 4), mask_path=mask_path, mask_input_key="s4",
+        )
+        with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
+            return output_folder, f["prediction"][:]
+
+    def test_mask_restricts_the_prediction(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            low = np.zeros(tuple(s // 4 for s in self.shape), dtype="uint16")
+            low[3:5, 6:10, 6:10] = 7
+            mask_path = os.path.join(tmp_dir, "ihc.zarr")
+            zarr.open(mask_path, mode="w").create_array("s4", data=low)
+
+            input_ = self._create_input(tmp_dir)
+            unmasked_folder, unmasked = self._run(tmp_dir, "unmasked", None, input_)
+            masked_folder, masked = self._run(tmp_dir, "masked", mask_path, input_)
+
+            self.assertFalse(os.path.exists(os.path.join(unmasked_folder, "mask.zarr")))
+            self.assertTrue(os.path.exists(os.path.join(masked_folder, "mask.zarr")))
+
+            # The masked run leaves the blocks outside the IHC region untouched.
+            self.assertGreater(np.abs(masked).sum(), 0)
+            self.assertLess((np.abs(masked) > 0).sum(), (np.abs(unmasked) > 0).sum())
+
+
 if __name__ == "__main__":
     unittest.main()

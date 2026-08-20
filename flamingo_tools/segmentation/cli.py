@@ -152,8 +152,14 @@ def run_detection():
         "synapses that are more distant than 'max_distance' will be removed from the result."
     )
     parser.add_argument(
-        "--mask_key", default="s4",
-        help="The key to the mask data. Refers to an internal data path, see '--input_key' ('-k') for details."
+        "--mask_input_key", default="s4",
+        help="The key to the downscaled mask data, used to restrict the inference to the region "
+        "around the segmented cells. Refers to an internal data path, see '--input_key' ('-k') for details."
+    )
+    parser.add_argument(
+        "--mask_key", default="s0",
+        help="The key to the mask data at full resolution, used to match the detections to the "
+        "segmented cells. Refers to an internal data path, see '--input_key' ('-k') for details."
     )
     parser.add_argument(
         "--max_distance", type=float, default=3.0,
@@ -172,6 +178,6 @@ def run_detection():
     marker_detection(
         input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
-        mask_path=args.mask_path, mask_input_key=args.mask_key,
+        mask_path=args.mask_path, mask_input_key=args.mask_input_key, mask_key=args.mask_key,
         max_distance=args.max_distance, voxel_size=args.voxel_size,
     )
