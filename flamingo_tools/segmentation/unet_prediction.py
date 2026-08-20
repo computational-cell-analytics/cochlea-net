@@ -25,9 +25,10 @@ from elf.wrapper import ThresholdWrapper, SimpleTransformationWrapper, SimpleTra
 from elf.wrapper.base import MultiTransformationWrapper
 from elf.wrapper.resized_volume import ResizedVolume
 from elf.io import open_file
+from elf.util import normalize_index, squeeze_singletons
 from skimage.filters import gaussian
 from torch_em.util import load_model
-from torch_em.util.prediction import predict_with_halo
+from torch_em.util.prediction import predict_with_halo_pipelined
 from tqdm import tqdm
 
 import flamingo_tools.s3_utils as s3_utils
@@ -56,6 +57,13 @@ class SelectChannel(SimpleTransformationWrapper):
         self.channel = channel
         super().__init__(volume, lambda x: x[self.channel], with_channels=True)
 
+    def __getitem__(self, key):
+        # Index the channel in the store instead of reading all channels and discarding
+        # all but one. The predictions are chunked per channel, so the base-class
+        # implementation decompresses one chunk per channel for every read.
+        index, to_squeeze = normalize_index(key, self.shape)
+        return squeeze_singletons(self._volume[(self.channel,) + index], to_squeeze)
+
     @property
     def shape(self):
         return self._volume.shape[1:]
@@ -67,6 +75,20 @@ class SelectChannel(SimpleTransformationWrapper):
     @property
     def ndim(self):
         return self._volume.ndim - 1
+
+
+def _available_cpus():
+    """Return the number of cores this process may use.
+
+    `multiprocessing.cpu_count` reports the cores of the whole node, which oversubscribes
+    a job on a shared slurm partition. Prefer the slurm allocation and the CPU affinity mask.
+    """
+    n_slurm = os.environ.get("SLURM_CPUS_PER_TASK")
+    if n_slurm is not None:
+        return int(n_slurm)
+    if hasattr(os, "sched_getaffinity"):
+        return len(os.sched_getaffinity(0))
+    return mp.cpu_count()
 
 
 def _get_device_and_tiling(block_shape, halo, input_):
@@ -98,10 +120,19 @@ def prediction_impl(
     slurm_task_id=0,
     mean=None,
     std=None,
-    mask=None
+    mask=None,
+    batch_size=1,
+    num_prefetch_workers=None,
 ):
     """@private
     """
+    # The prefetch workers hide the block loading behind the GPU forward pass, so they only
+    # help up to the number of cores the job actually has.
+    if num_prefetch_workers is None:
+        num_prefetch_workers = max(1, min(8, _available_cpus() - 1))
+    else:
+        num_prefetch_workers = int(num_prefetch_workers)
+    batch_size = int(batch_size)
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         if os.path.isdir(model_path):
@@ -146,6 +177,10 @@ def prediction_impl(
             input_, block_shape=tuple([2 * i for i in chunks]), n_threads=n_threads, verbose=True,
             mask=image_mask
         )
+    # Coerce to Python floats: a numpy scalar would make the normalization below run in
+    # float64 and round differently than the values read back from 'mean_std.json'. The
+    # single-job and the slurm-array workflow must produce the same prediction.
+    mean, std = float(mean), float(std)
     print("Mean and standard deviation computed for the full volume:")
     print(mean, std)
 
@@ -189,12 +224,13 @@ def prediction_impl(
 
     if output_folder is None:
         output = np.zeros(output_shape, dtype=np.float32)
-        predict_with_halo(
+        predict_with_halo_pipelined(
             input_, model,
             gpu_ids=gpu_ids, block_shape=block_shape, halo=halo,
             output=output, preprocess=preprocess, postprocess=postprocess,
             mask=image_mask,
             iter_list=slurm_iteration,
+            batch_size=batch_size, num_prefetch_workers=num_prefetch_workers,
         )
 
     else:
@@ -210,12 +246,15 @@ def prediction_impl(
                 dtype="float32",
             )
 
-            predict_with_halo(
+            predict_with_halo_pipelined(
                 input_, model,
                 gpu_ids=gpu_ids, block_shape=block_shape, halo=halo,
                 output=output, preprocess=preprocess, postprocess=postprocess,
                 mask=image_mask,
                 iter_list=slurm_iteration,
+                batch_size=batch_size, num_prefetch_workers=num_prefetch_workers,
+                # The chunks are aligned with block_shape, so each chunk has exactly one writer.
+                num_write_workers=2,
             )
 
     if output_folder is None:
@@ -573,10 +612,17 @@ def calc_mean_and_std(input_path: str, input_key: str, output_folder: str) -> No
     """
     json_file = os.path.join(output_folder, "mean_std.json")
     mask_path = os.path.join(output_folder, "mask.zarr")
-    image_mask = z5py.File(mask_path, "r")["mask"]
 
     input_ = read_image_data(input_path, input_key)
     chunks = getattr(input_, "chunks", (64, 64, 64))
+
+    # The mask is optional: prediction without masking has no mask.zarr in the output folder.
+    if os.path.exists(mask_path):
+        image_mask = z5py.File(mask_path, "r")["mask"]
+        if image_mask.shape != input_.shape:
+            image_mask = ResizedVolume(image_mask, input_.shape, order=0)
+    else:
+        image_mask = None
 
     # Compute the global mean and standard deviation.
     n_threads = min(16, mp.cpu_count())
@@ -604,6 +650,8 @@ def run_unet_prediction(
     distance_smoothing: float = 0.0,
     seg_class: Optional[str] = None,
     relative_threshold: float = 0.6,
+    batch_size: int = 1,
+    num_prefetch_workers: Optional[int] = None,
 ) -> None:
     """Run prediction and segmentation with a distance U-Net.
 
@@ -627,6 +675,9 @@ def run_unet_prediction(
         seg_class: Specifier for exclusion criterias for mask generation.
         relative_threshold: Passed to find_mask. Fraction of the estimated global signal level
             used as the block inclusion threshold (capped at the per-class absolute maximum).
+        batch_size: The number of blocks stacked into a single forward pass.
+        num_prefetch_workers: The number of threads that load blocks while the GPU predicts.
+            By default it is derived from the number of cores available to the job.
     """
     if output_folder is not None:
         os.makedirs(output_folder, exist_ok=True)
@@ -641,7 +692,8 @@ def run_unet_prediction(
 
     original_shape, prediction = prediction_impl(
         input_path=input_path, input_key=input_key, output_folder=output_folder, model_path=model_path, scale=scale,
-        block_shape=block_shape, halo=halo, mask=mask
+        block_shape=block_shape, halo=halo, mask=mask,
+        batch_size=batch_size, num_prefetch_workers=num_prefetch_workers,
     )
 
     if output_folder is None:
@@ -724,6 +776,8 @@ def run_unet_prediction_slurm(
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
     s3_credentials: Optional[str] = None,
+    batch_size: int = 1,
+    num_prefetch_workers: Optional[int] = None,
 ) -> None:
     """Run prediction of distance U-Net for data stored locally or on an S3 bucket.
 
@@ -741,6 +795,9 @@ def run_unet_prediction_slurm(
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
         s3_credentials: File path to credentials for S3 bucket.
+        batch_size: The number of blocks stacked into a single forward pass.
+        num_prefetch_workers: The number of threads that load blocks while the GPU predicts.
+            By default it is derived from the number of cores available to the job.
     """
     os.makedirs(output_folder, exist_ok=True)
     prediction_instances = int(prediction_instances)
@@ -776,6 +833,7 @@ def run_unet_prediction_slurm(
         input_path, input_key, output_folder, model_path, scale, block_shape, halo,
         prediction_instances=prediction_instances, slurm_task_id=slurm_task_id,
         mean=mean, std=std,
+        batch_size=batch_size, num_prefetch_workers=num_prefetch_workers,
     )
 
 

@@ -159,5 +159,124 @@ class TestDetectionBlockShape(unittest.TestCase):
         self.assertGreater(np.prod(_detection_block_shape(chunks)), np.prod(chunks))
 
 
+class TestVoxelSize(unittest.TestCase):
+    def test_normalize(self):
+        from flamingo_tools.segmentation.synapse_detection import _normalize_voxel_size
+
+        self.assertEqual(_normalize_voxel_size(0.38), (0.38, 0.38, 0.38))
+        self.assertEqual(_normalize_voxel_size("0.38"), (0.38, 0.38, 0.38))
+        self.assertEqual(_normalize_voxel_size([0.38]), (0.38, 0.38, 0.38))
+        self.assertEqual(_normalize_voxel_size((0.76, 0.76, 3.0)), (0.76, 0.76, 3.0))
+        self.assertEqual(_normalize_voxel_size("0.76,0.76,3.0"), (0.76, 0.76, 3.0))
+        self.assertEqual(_normalize_voxel_size("0.76 0.76 3.0"), (0.76, 0.76, 3.0))
+
+        with self.assertRaises(ValueError):
+            _normalize_voxel_size((0.38, 0.38))
+
+
+class TestSynapseSlurmWorkflow(unittest.TestCase):
+    """The three-stage slurm workflow must reproduce the single-job result."""
+
+    shape = (32, 64, 64)
+    prediction_instances = 3
+
+    def setUp(self):
+        self._task_id = os.environ.pop("SLURM_ARRAY_TASK_ID", None)
+
+    def tearDown(self):
+        os.environ.pop("SLURM_ARRAY_TASK_ID", None)
+        if self._task_id is not None:
+            os.environ["SLURM_ARRAY_TASK_ID"] = self._task_id
+
+    def _create_input(self, tmp_dir):
+        import torch
+        import z5py
+        from torch_em.model import UNet3d
+
+        model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
+        model_path = os.path.join(tmp_dir, "model.pt")
+        torch.save(model, model_path)
+
+        data_path = os.path.join(tmp_dir, "data.n5")
+        rng = np.random.default_rng(0)
+        with z5py.File(data_path, "a") as f:
+            f.create_dataset("data", data=rng.integers(0, 255, size=self.shape), chunks=(16, 16, 16))
+        return data_path, "data", model_path
+
+    def test_array_prediction_matches_single_job(self):
+        from elf.io import open_file
+        from flamingo_tools.segmentation.synapse_detection import (
+            run_prediction, run_synapse_prediction_preprocess_slurm, run_synapse_prediction_slurm,
+        )
+
+        block_shape, halo = (16, 16, 16), (4, 4, 4)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+
+            single_folder = os.path.join(tmp_dir, "single")
+            os.makedirs(single_folder)
+            run_prediction(
+                data_path, data_key, single_folder, model_path, block_shape=block_shape, halo=halo,
+            )
+
+            array_folder = os.path.join(tmp_dir, "array")
+            run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
+            self.assertTrue(os.path.isfile(os.path.join(array_folder, "mean_std.json")))
+
+            for task_id in range(self.prediction_instances):
+                os.environ["SLURM_ARRAY_TASK_ID"] = str(task_id)
+                run_synapse_prediction_slurm(
+                    data_path, array_folder, model_path, input_key=data_key,
+                    block_shape=block_shape, halo=halo,
+                    prediction_instances=self.prediction_instances,
+                )
+
+            with open_file(os.path.join(single_folder, "predictions.zarr"), "r") as f:
+                expected = f["prediction"][:]
+            with open_file(os.path.join(array_folder, "predictions.zarr"), "r") as f:
+                actual = f["prediction"][:]
+
+            self.assertEqual(expected.shape, (5,) + self.shape)
+            self.assertGreater(np.abs(actual).sum(), 0)
+            # Bit-identical: the tasks share the cached mean/std and cover disjoint blocks.
+            self.assertTrue(np.array_equal(expected, actual))
+
+    def test_requires_array_task_id(self):
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            with self.assertRaises(ValueError):
+                run_synapse_prediction_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
+                    prediction_instances=self.prediction_instances,
+                )
+
+    def test_requires_preprocessing(self):
+        """Without mean_std.json the tasks would normalize differently, so this must fail loudly."""
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            os.environ["SLURM_ARRAY_TASK_ID"] = "0"
+            with self.assertRaises(ValueError):
+                run_synapse_prediction_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
+                    prediction_instances=self.prediction_instances,
+                )
+
+    def test_rejects_task_id_beyond_instances(self):
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key, model_path = self._create_input(tmp_dir)
+            os.environ["SLURM_ARRAY_TASK_ID"] = str(self.prediction_instances)
+            with self.assertRaises(ValueError):
+                run_synapse_prediction_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
+                    prediction_instances=self.prediction_instances,
+                )
+
+
 if __name__ == "__main__":
     unittest.main()
