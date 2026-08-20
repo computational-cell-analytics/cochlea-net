@@ -197,12 +197,12 @@ def fig_mwfls_synapses(
         plot: Show interactive plot.
     """
     idisco_data = get_tonotopic_data(
-        cochleae_dict=COCHLEAE_DICT,
+        cochleae=COHORT_DICT["iDISCO"],
         source_name=f"IHC_{idisco_syn_version}",
         synapse_dir=SYNAPSE_DIR,
     )
     mwfls_data = get_tonotopic_data(
-        cochleae_dict=MWFLS_COCHLEAE_DICT,
+        cochleae=COHORT_DICT["MWfLS"],
         source_name=f"IHC_{mwfls_syn_version}",
         synapse_dir=SYNAPSE_DIR,
     )

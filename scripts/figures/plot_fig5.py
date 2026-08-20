@@ -9,10 +9,10 @@ from plot_fig2 import _load_ribbon_synapse_counts
 from plot_fig4 import group_lr
 from plot_sgn_density_profile import FCHRIMSON_GERBIL, WT_GERBIL, get_sgn_length_data
 from util import (
-    COCHLEA_DICT,
     VALUE_DICT,
     animal_colors,
     cochlea_label,
+    cochleae_for,
     literature_reference_values_gerbil,
     png_dpi,
     prism_cleanup_axes,
@@ -34,7 +34,7 @@ GERBIL_COHORT_DICT = {
     "f-Chrimson": FCHRIMSON_GERBIL,
 }
 
-FCHRIMSON_COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in GERBIL_COHORT_DICT["f-Chrimson"]}
+FCHRIMSON_COCHLEAE_DICT = cochleae_for(GERBIL_COHORT_DICT["f-Chrimson"], "SGN", "SGN_v2")
 
 
 def _wt_counts(structure: str, source_name: str) -> list:

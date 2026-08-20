@@ -18,6 +18,7 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import (
     COCHLEA_DICT,
+    cochlea_components,
     get_line_marker_handle,
     density_by_fraction_bins,
     density_by_sliding_window,
@@ -170,7 +171,7 @@ def get_sgn_length_data(
 
         # The tonotopic mapping sets the length fraction of instances outside of the mapped
         # components to 0. Without this filter they pile up in the first bin at the apex.
-        table = table[table.component_labels.isin(COCHLEA_DICT[cochlea]["component"])]
+        table = table[table.component_labels.isin(cochlea_components(cochlea, "SGN", source_name))]
 
         try:
             length_col = length_column(table)

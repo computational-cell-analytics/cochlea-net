@@ -17,6 +17,7 @@ from matplotlib import cm, colors
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
 from util import frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
+from util import COHORT_DICT, cochleae_for
 from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle, get_flatline_handle
 from flamingo_tools.postprocessing.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
@@ -59,13 +60,9 @@ LEGEND_LABEL = {
 
 }
 
-# The cochlea for the ChReef analysis.
-COCHLEAE_DICT = {
-    "M_LR_000226_L": {"alias": "M_01L", "component": [1, 3], "color": "#9C5027"},
-    "M_LR_000226_R": {"alias": "M_01R", "component": [1], "color": "#279C52"},
-    "M_LR_000227_L": {"alias": "M_02L", "component": [1], "color": "#67279C"},
-    "M_LR_000227_R": {"alias": "M_02R", "component": [1], "color": "#27339C"},
-}
+# The iDISCO reference cochleae, for the alias and color of a plotted cochlea. The component
+# lists of get_tonotopic_data come from util.COCHLEA_DICT for the requested IHC version.
+COCHLEAE_DICT = cochleae_for(COHORT_DICT["iDISCO"], "IHC", "IHC_v11")
 
 GROUPINGS = {
     "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
@@ -127,7 +124,7 @@ def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficie
 
 
 def get_tonotopic_data(
-    cochleae_dict: dict = COCHLEAE_DICT,
+    cochleae: Optional[List[str]] = None,
     source_name: str = "IHC_v11",
     synapse_dir: str = SYNAPSE_DIR,
     cache_path: str = None,
@@ -135,9 +132,8 @@ def get_tonotopic_data(
     """Load per-cochlea tonotopic data from S3 and local synapse tables.
 
     Args:
-        cochleae_dict: Dict mapping cochlea name to metadata including a "component" key
-            with the list of component labels to keep. Defaults to the module-level
-            COCHLEAE_DICT (iDISCO cochleae).
+        cochleae: Names of the cochleae to load. Defaults to the iDISCO cochleae. The component
+            labels to keep are read from util.COCHLEA_DICT for source_name.
         source_name: IHC segmentation source name used as the S3 key (e.g. "IHC_v4c", "IHC_v9").
         synapse_dir: Root directory containing the ihc_counts_<version> subdirectories.
             Defaults to the module-level SYNAPSE_DIR.
@@ -152,7 +148,8 @@ def get_tonotopic_data(
         cache_path = f"./tonotopic_data_{source_name}.pkl"
 
     ihc_version = source_name.split("_")[1]
-    cochleae = list(cochleae_dict.keys())
+    cochleae = COHORT_DICT["iDISCO"] if cochleae is None else list(cochleae)
+    components = cochleae_for(cochleae, "IHC", source_name)
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
@@ -172,11 +169,7 @@ def get_tonotopic_data(
         table_content = s3.open(os.path.join(BUCKET_NAME, cochlea, rel_path, "default.tsv"), mode="rb")
         table = pd.read_csv(table_content, sep="\t")
 
-        # May need to be adjusted for some cochleae.
-        if "126_R" in cochlea:
-            component_labels = [1]
-        else:
-            component_labels = cochleae_dict[cochlea]["component"]
+        component_labels = components[cochlea]["component"]
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         ihc_dir = f"ihc_counts_{ihc_version}"

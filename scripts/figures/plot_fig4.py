@@ -13,13 +13,13 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from util import frequency_mapping, prism_style, prism_cleanup_axes
 from util import export_legend, custom_formatter_1, get_marker_handle, get_trendline_handle
 from util import animal_colors, cochlea_label
-from util import COCHLEA_DICT, COLOR_LEFT, COLOR_RIGHT, VALUE_DICT
+from util import COLOR_LEFT, COLOR_RIGHT, VALUE_DICT, cochleae_for
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements2"  # noqa
 
-# The cochlea for the CHReef analysis. The metadata lives in util.COCHLEA_DICT.
+# The cochleae for the ChReef analysis. The metadata lives in util.COCHLEA_DICT.
 COCHLEAE = [
     "M_LR_000143_L",
     "M_LR_000144_L",
@@ -37,7 +37,7 @@ COCHLEAE = [
     "G_EK_000049_R",
 ]
 
-COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in COCHLEAE}
+COCHLEAE_DICT = cochleae_for(COCHLEAE, "SGN", "SGN_v2")
 
 REFERENCE_COCHLEAE = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
 
@@ -50,7 +50,7 @@ OTOF_COCHLEAE = [
     "M_AMD_OTOF28_R",
 ]
 
-OTOF_COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in OTOF_COCHLEAE}
+OTOF_COCHLEAE_DICT = cochleae_for(OTOF_COCHLEAE, "IHC", "IHC_v11")
 
 FILE_EXTENSION = "png"
 png_dpi = 300
@@ -225,7 +225,7 @@ def plot_legend_fig04(
         save_path: File path to save legend.
         use_alias: Use alias.
         alignment: Alignment of legend.
-        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+        cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
             Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
     """
     cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
@@ -319,7 +319,7 @@ def fig_04c(
         save_path: File path to save legend.
         plot: Plot figure.
         use_alias: Use alias.
-        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+        cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
             Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
         count_label: Y-axis label.
         xtick_labels: Labels for the left (treated) and right (untreated) x positions.
@@ -435,7 +435,7 @@ def fig_04d(
         intensity: Use intensity instead of expression efficiency.
         gerbil: Use gerbil data instead of mouse data.
         use_alias: Use alias.
-        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+        cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
             Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
         xtick_labels: Labels for the left (treated) and right (untreated) x positions.
         ylim: Lower and upper y-axis limit. Defaults to the gerbil/mouse ChReef bounds.
@@ -604,7 +604,7 @@ def fig_04e(
         use_alias: Use alias.
         trendlines: Use trendline of averages.
         trendline_std: Use standard deviation for upper and lower trendlines.
-        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+        cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
             Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
     """
     prism_style()

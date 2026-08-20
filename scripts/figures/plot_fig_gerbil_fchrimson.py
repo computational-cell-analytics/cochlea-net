@@ -14,11 +14,11 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from plot_fig4 import group_lr, plot_legend_fig04_trendline
 from util import (
-    COCHLEA_DICT,
     COLOR_LEFT,
     COLOR_RIGHT,
     animal_colors,
     cochlea_label,
+    cochleae_for,
     custom_formatter_1,
     export_legend,
     frequency_mapping,
@@ -33,8 +33,8 @@ TABLE_FILENAME = "GFP_SGN-v2.tsv"
 DENSITY_FILENAME = "SGN_density_2d.json"
 DENSITY_FILENAME_EXTENDED = "SGN_density_2d_extended.json"
 
-SGN_CACHE_PATH = "./gerbil_chreef_sgn_data.pkl"
-DENSITY_CACHE_PATH = "./gerbil_chreef_density_data.pkl"
+SGN_CACHE_PATH = "./gerbil_fchrimson_sgn_data.pkl"
+DENSITY_CACHE_PATH = "./gerbil_fchrimson_density_data.pkl"
 
 # Fraction range along Rosenthal's canal for each cochlear region. A density entry is assigned to
 # a region by its reference_fraction, not by its key in the density JSON, so that a region can
@@ -49,7 +49,7 @@ POSITION_DICT = {
 POSITIONS = list(POSITION_DICT)
 POSITION_LABELS = {"apex": "Apex", "mid": "Mid", "base": "Base"}
 
-# The gerbil cochleae for the ChReef analysis. The metadata lives in util.COCHLEA_DICT.
+# The gerbil cochleae for the f-Chrimson analysis. The metadata lives in util.COCHLEA_DICT.
 COCHLEAE = [
     "G_EK_000049_L",
     "G_EK_000049_R",
@@ -61,11 +61,19 @@ COCHLEAE = [
     "G_EK_000076_R",
 ]
 
-COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in COCHLEAE}
+COCHLEAE_DICT = cochleae_for(COCHLEAE, "SGN", SOURCE_NAME)
+
+# Untreated gerbil cochleae, plotted as the SGN density reference of panel C. Same grouping as
+# WT_GERBIL in plot_sgn_density_profile.py.
+WT_COCHLEAE = [
+    "G_EK_000233_L",
+    "G_LR_000301_R",
+    "G_LR_000302_R",
+]
 
 FILE_EXTENSION = "png"
 
-COLOR_REFERENCE = "#DB7B00"
+COLOR_UNTREATED = "#DB7B00"
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
@@ -116,7 +124,7 @@ def group_density_by_region(cochlea_density: dict) -> Dict[str, List[dict]]:
     return {region: sorted(entries, key=lambda e: e["reference_fraction"]) for region, entries in regions.items()}
 
 
-def get_gerbil_chreef_data(force_download: bool = False) -> Dict[str, pd.DataFrame]:
+def get_gerbil_fchrimson_data(force_download: bool = False) -> Dict[str, pd.DataFrame]:
     """Create (pickled) dictionary of gerbil cochleae used for the optogenetic therapy figure.
 
     Args:
@@ -130,7 +138,7 @@ def get_gerbil_chreef_data(force_download: bool = False) -> Dict[str, pd.DataFra
             return pickle.load(f)
 
     s3 = create_s3_target()
-    chreef_data = {}
+    fchrimson_data = {}
     for cochlea, meta in COCHLEAE_DICT.items():
         print("Processing cochlea:", cochlea)
         content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
@@ -153,18 +161,20 @@ def get_gerbil_chreef_data(force_download: bool = False) -> Dict[str, pd.DataFra
             # efficiency downstream.
             values = values.assign(marker_labels=2)
 
-        chreef_data[cochlea] = values
+        fchrimson_data[cochlea] = values
 
     with open(SGN_CACHE_PATH, "wb") as f:
-        pickle.dump(chreef_data, f)
-    return chreef_data
+        pickle.dump(fchrimson_data, f)
+    return fchrimson_data
 
 
 def get_gerbil_density_data(force_download: bool = False) -> Dict[str, dict]:
     """Create (pickled) dictionary of the SGN density data for the gerbil cochleae.
 
-    The extended density file is preferred, because it holds several positions per cochlear
-    region. Cochleae without it fall back to the preset file with one position per region.
+    Both the f-Chrimson and the untreated cochleae are loaded, so that panel C and its reference
+    band come from one cache. The extended density file is preferred, because it holds several
+    positions per cochlear region. Cochleae without it fall back to the preset file with one
+    position per region.
 
     Args:
         force_download: Ignore the cached pickle and fetch the density files from S3 again.
@@ -172,13 +182,17 @@ def get_gerbil_density_data(force_download: bool = False) -> Dict[str, dict]:
     Returns:
         Mapping of cochlea name to its parsed density dict, keyed by position.
     """
+    cochleae = list(COCHLEAE) + list(WT_COCHLEAE)
     if not force_download and os.path.exists(DENSITY_CACHE_PATH):
         with open(DENSITY_CACHE_PATH, "rb") as f:
-            return pickle.load(f)
+            cached = pickle.load(f)
+        # A cache written for a smaller cohort would raise a KeyError downstream instead.
+        if all(cochlea in cached for cochlea in cochleae):
+            return cached
 
     s3 = create_s3_target()
     density_data = {}
-    for cochlea in COCHLEAE_DICT:
+    for cochlea in cochleae:
         content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
         info = json.loads(content.read())
         source = info["sources"][SOURCE_NAME]["segmentation"]
@@ -199,22 +213,22 @@ def get_gerbil_density_data(force_download: bool = False) -> Dict[str, dict]:
 
 
 def plot_legend_gerbil(
-    chreef_data: dict,
+    fchrimson_data: dict,
     save_path: str,
     use_alias: bool = True,
     alignment: str = "horizontal",
 ):
-    """Plot common legend for the gerbil ChReef figure panels.
+    """Plot common legend for the gerbil f-Chrimson figure panels.
 
     Args:
-        chreef_data: Data of ChReef gerbil cochleae.
+        fchrimson_data: Data of f-Chrimson gerbil cochleae.
         save_path: File path to save legend.
         use_alias: Use alias.
         alignment: Alignment of legend.
     """
     colors_by_animal = animal_colors(COCHLEAE_DICT, use_alias)
 
-    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in chreef_data.keys()]
+    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in fchrimson_data.keys()]
     alias, _, _ = group_lr(alias, [0] * len(alias))
 
     colors = []
@@ -252,6 +266,33 @@ def _density_value(entry: dict) -> float:
     return density * 1e6  # stored as cells/um^2 -> cells/mm^2
 
 
+def untreated_reference_values(density_data: dict) -> Dict[str, List[float]]:
+    """Get the mean SGN density per cochlear region for every untreated cochlea, in cells/mm^2.
+
+    Averaging the positions of a region per cochlea first gives one value per animal, so that the
+    reference band reflects the spread between animals and not the spread between the positions
+    inside one cochlea.
+
+    Args:
+        density_data: Parsed SGN density data of the untreated gerbil cochleae.
+
+    Returns:
+        Mapping of region name to the per-cochlea mean densities of that region.
+    """
+    regions = {name: group_density_by_region(entries) for name, entries in density_data.items()}
+
+    reference_values = {}
+    for position in POSITIONS:
+        means = []
+        for name in density_data:
+            values = np.asarray([_density_value(entry) for entry in regions[name][position]], dtype=float)
+            values = values[np.isfinite(values)]
+            if values.size:
+                means.append(float(np.mean(values)))
+        reference_values[position] = means
+    return reference_values
+
+
 def fig_c_gerbil(
     density_data: dict,
     save_path: str,
@@ -266,16 +307,16 @@ def fig_c_gerbil(
     the fraction ranges of POSITION_DICT.
 
     Args:
-        density_data: Parsed SGN density data of ChReef gerbil cochleae.
+        density_data: Parsed SGN density data of f-Chrimson gerbil cochleae.
         save_path: File path to save the figure.
         plot: Plot figure.
         use_alias: Use alias.
         show_std: Draw the standard deviation of the density positions of a region as error bars.
             Only regions with more than one position get an error bar.
-        reference_values: Optional per-position list of healthy/untreated SGN density values
-            [cells/mm^2]. A 95% CI band (mean +/- 1.96 * std) is drawn for any position present
-            with a non-empty list; positions absent from the dict, or mapped to an empty list,
-            are drawn without a band.
+        reference_values: Optional per-position list of untreated SGN density values
+            [cells/mm^2], as returned by untreated_reference_values. A 95% CI band
+            (mean +/- 1.96 * std) is drawn for any position present with a non-empty list;
+            positions absent from the dict, or mapped to an empty list, are drawn without a band.
     """
     prism_style()
 
@@ -289,13 +330,14 @@ def fig_c_gerbil(
     main_label_size = 20
     sub_label_size = 16
     main_tick_size = 16
-    fontsize_reference = 14
+    fontsize_untreated = 16
 
     offset = 0.08
     group_spacing = 2.5
     col_width = 1.0
 
     group_x_centers = []
+    bands = []
     for g, position in enumerate(POSITIONS):
         x_left = g * group_spacing + 1
         x_right = x_left + col_width
@@ -338,11 +380,17 @@ def fig_c_gerbil(
             mean, std = ref_arr.mean(), ref_arr.std()
             lower, upper = mean - 1.96 * std, mean + 1.96 * std
             xmin_ref, xmax_ref = x_left - 0.5, x_right + 0.5
-            ax.hlines([lower, upper], xmin_ref, xmax_ref, colors=[COLOR_REFERENCE, COLOR_REFERENCE], zorder=-1)
+            # The band is drawn here so that the y-axis autoscaling includes it. Its label
+            # follows below, once the final y limits are known.
+            ax.hlines([lower, upper], xmin_ref, xmax_ref, colors=[COLOR_UNTREATED] * 2, zorder=-1)
             ax.fill_between([xmin_ref, xmax_ref], lower, upper,
-                            color=COLOR_REFERENCE, alpha=0.05, interpolate=True)
-            ax.text((xmin_ref + xmax_ref) / 2, upper + (upper - lower) * 0.05, "reference\n95% CI",
-                    color=COLOR_REFERENCE, fontsize=fontsize_reference, ha="center")
+                            color=COLOR_UNTREATED, alpha=0.05, interpolate=True)
+            tops = np.asarray(means, dtype=float)
+            if show_std:
+                errors = np.asarray(stds, dtype=float)
+                tops = tops + np.where(np.isfinite(errors), errors, 0.0)
+            region_top = float(np.nanmax(tops)) if np.isfinite(tops).any() else -np.inf
+            bands.append((xmin_ref, xmax_ref, upper, region_top))
 
     xticks = [x for _, x_left, x_right in group_x_centers for x in (x_left, x_right)]
     xticklabels = ["Injected", "Non-\nInjected"] * len(POSITIONS)
@@ -361,10 +409,22 @@ def fig_c_gerbil(
 
     ymin, ymax = ax.get_ylim()
     yrange = ymax - ymin
-    ax.set_ylim(ymin - 0.15 * yrange, ymax)
+    ax.set_ylim(ymin - 0.15 * yrange, ymax + (0.1 * yrange if bands else 0.0))
     for position, x_left, x_right in group_x_centers:
         ax.text((x_left + x_right) / 2, ymin - 0.05 * yrange, POSITION_LABELS[position],
                 ha="center", va="top", fontsize=main_label_size, fontweight="bold")
+
+    # One label for all bands, because every band shows the same quantity and repeating the label
+    # per region would only add clutter. It goes above the highest band that has no data point
+    # over it, so that it never sits on a marker. If every region has a point above its band, the
+    # label is lifted over the data of the highest band instead.
+    if bands:
+        clear = [band for band in bands if band[3] <= band[2]]
+        xmin_ref, xmax_ref, upper, region_top = max(clear or bands, key=lambda band: band[2])
+        ylim0, ylim1 = ax.get_ylim()
+        ax.text((xmin_ref + xmax_ref) / 2, max(upper, region_top) + (ylim1 - ylim0) / 40,
+                "untreated cochleae\n95% CI",
+                color=COLOR_UNTREATED, fontsize=fontsize_untreated, ha="center")
 
     plt.tight_layout()
     prism_cleanup_axes(ax)
@@ -401,7 +461,7 @@ def _efficiency_ylim(values, margin: float = 0.05):
 
 
 def fig_d_gerbil(
-    chreef_data: dict,
+    fchrimson_data: dict,
     save_path: str,
     plot: bool = False,
     use_alias: bool = True,
@@ -409,17 +469,17 @@ def fig_d_gerbil(
     """Expression efficiency per gerbil cochlea, Injected vs Non-Injected.
 
     Args:
-        chreef_data: Data of ChReef gerbil cochleae.
+        fchrimson_data: Data of f-Chrimson gerbil cochleae.
         save_path: File path to save the figure.
         plot: Plot figure.
         use_alias: Use alias.
     """
     prism_style()
     colors_by_animal = animal_colors(COCHLEAE_DICT, use_alias)
-    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in chreef_data.keys()]
+    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in fchrimson_data.keys()]
 
     values = []
-    for vals in chreef_data.values():
+    for vals in fchrimson_data.values():
         marker_labels = vals["marker_labels"].values
         n_pos = (marker_labels == 1).sum()
         n_neg = (marker_labels == 2).sum()
@@ -524,7 +584,7 @@ def _get_trendline_params(trend_dict, side):
 
 
 def fig_e_gerbil(
-    chreef_data: dict,
+    fchrimson_data: dict,
     save_path: str,
     plot: bool = False,
     use_alias: bool = True,
@@ -534,7 +594,7 @@ def fig_e_gerbil(
     """Expression efficiency per octave band for gerbil cochleae.
 
     Args:
-        chreef_data: Data of ChReef gerbil cochleae.
+        fchrimson_data: Data of f-Chrimson gerbil cochleae.
         save_path: File path to save the figure.
         plot: Plot figure.
         use_alias: Use alias.
@@ -544,7 +604,7 @@ def fig_e_gerbil(
     prism_style()
 
     result = {"cochlea": [], "octave_band": [], "value": []}
-    for name, values in chreef_data.items():
+    for name, values in fchrimson_data.items():
         alias = cochlea_label(name, COCHLEAE_DICT[name], use_alias)
 
         freq = values["frequency[kHz]"].values
@@ -682,10 +742,12 @@ def fig_e_gerbil(
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate plots for the gerbil ChReef figure of the cochlea paper.")
+    parser = argparse.ArgumentParser(
+        description="Generate plots for the gerbil f-Chrimson figure of the cochlea paper."
+    )
     parser.add_argument(
         "--figure_dir", "-f", type=str, help="Output directory for plots.",
-        default="./panels/fig_gerbil_chreef",
+        default="./panels/fig_gerbil_fchrimson",
     )
     parser.add_argument("--no_alias", action="store_true")
     parser.add_argument("--plot", action="store_true")
@@ -702,36 +764,38 @@ def main():
     use_alias = not args.no_alias
     os.makedirs(args.figure_dir, exist_ok=True)
 
-    chreef_data = get_gerbil_chreef_data(force_download=args.refresh_cache)
+    fchrimson_data = get_gerbil_fchrimson_data(force_download=args.refresh_cache)
     density_data = get_gerbil_density_data(force_download=args.refresh_cache)
+    fchrimson_density = {name: density_data[name] for name in COCHLEAE}
+    reference_values = untreated_reference_values({name: density_data[name] for name in WT_COCHLEAE})
 
     if not args.no_overlap_report:
         for cochlea, results in density_data.items():
             report_density_overlap(results, name=cochlea)
 
-    plot_legend_gerbil(chreef_data, save_path=os.path.join(args.figure_dir, f"fig_gerbil_legend.{FILE_EXTENSION}"))
+    plot_legend_gerbil(fchrimson_data, save_path=os.path.join(args.figure_dir, f"fig_gerbil_legend.{FILE_EXTENSION}"))
     plot_legend_fig04_trendline(
         save_path=os.path.join(args.figure_dir, f"fig_gerbil_legend_trendline.{FILE_EXTENSION}")
     )
 
-    # C: SGN density at apex/mid/base, Injected vs Non-Injected.
-    fig_c_gerbil(density_data,
+    # C: SGN density at apex/mid/base, Injected vs Non-Injected, against the untreated band.
+    fig_c_gerbil(fchrimson_density,
                  save_path=os.path.join(args.figure_dir, f"fig_c_gerbil_density.{FILE_EXTENSION}"),
-                 plot=args.plot, use_alias=use_alias)
-    fig_c_gerbil(density_data,
+                 plot=args.plot, use_alias=use_alias, reference_values=reference_values)
+    fig_c_gerbil(fchrimson_density,
                  save_path=os.path.join(args.figure_dir, f"fig_c_gerbil_density_std.{FILE_EXTENSION}"),
-                 plot=args.plot, use_alias=use_alias, show_std=True)
+                 plot=args.plot, use_alias=use_alias, show_std=True, reference_values=reference_values)
 
     # D: The expression efficiency per cochlea.
-    fig_d_gerbil(chreef_data,
+    fig_d_gerbil(fchrimson_data,
                  save_path=os.path.join(args.figure_dir, f"fig_d_gerbil_transduction.{FILE_EXTENSION}"),
                  plot=args.plot, use_alias=use_alias)
 
     # E: The expression efficiency per octave band.
-    fig_e_gerbil(chreef_data,
+    fig_e_gerbil(fchrimson_data,
                  save_path=os.path.join(args.figure_dir, f"fig_e_gerbil_transduction.{FILE_EXTENSION}"),
                  plot=args.plot, use_alias=use_alias, trendlines=True)
-    fig_e_gerbil(chreef_data,
+    fig_e_gerbil(fchrimson_data,
                  save_path=os.path.join(args.figure_dir, f"fig_e_gerbil_transduction_std.{FILE_EXTENSION}"),
                  plot=args.plot, use_alias=use_alias, trendlines=True, trendline_std=True)
 
