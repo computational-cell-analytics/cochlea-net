@@ -13,7 +13,8 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 # Short aliases for source names that differ between cochleae, mapped to
 # (source type, name prefix, preferred source names). A cochlea often holds several versions of a
 # segmentation, e.g. IHC_v4b and IHC_v11. The preferred names pin the version that is used for the
-# analysis; they are tried before the name prefix, which only resolves an unambiguous match.
+# analysis; they are tried first, before the alias name itself and before the name prefix, which
+# only resolves an unambiguous match.
 SOURCE_ALIASES = {
     "SGN": ("segmentation", "SGN", ("SGN_v2",)),
     "IHC": ("segmentation", "IHC", ("IHC_v11",)),
@@ -231,6 +232,12 @@ def resolve_source_name(sources: Dict[str, str], name: str, kind: Optional[str] 
     "sgn" or "SGN_v2". This resolves an exact name, a name with different capitalization, or one
     of the `SOURCE_ALIASES` keys. It never guesses between several candidates.
 
+    For an alias, a pinned version from `SOURCE_ALIASES` wins over a source that is literally
+    named like the alias, since a cochlea can hold a legacy source called e.g. "IHC" next to the
+    IHC_v11 that is used for the analysis. Such a legacy source usually lacks the columns that
+    are added by the post-processing (component_labels, length_fraction, ...), so the alias has
+    to mean the analysis version, not the source that happens to carry the alias as its name.
+
     Args:
         sources: Source names and types of the cochlea, see `source_types`.
         name: Source name, or an alias from `SOURCE_ALIASES` such as "SGN", "IHC" or "synapses".
@@ -243,22 +250,22 @@ def resolve_source_name(sources: Dict[str, str], name: str, kind: Optional[str] 
     def of_kind(candidates):
         return [candidate for candidate in candidates if kind is None or sources[candidate] == kind]
 
-    if name in sources:
-        if kind is not None and sources[name] != kind:
-            raise ValueError(f"Source '{name}' has the type '{sources[name]}', but '{kind}' is required.")
-        return name
-
     prefix, preferred = name, ()
     if name in SOURCE_ALIASES:
         alias_kind, prefix, preferred = SOURCE_ALIASES[name]
         kind = alias_kind if kind is None else kind
 
+        pinned = of_kind([source for source in preferred if source in sources])
+        if pinned:
+            return pinned[0]
+    elif name in sources:
+        if kind is not None and sources[name] != kind:
+            raise ValueError(f"Source '{name}' has the type '{sources[name]}', but '{kind}' is required.")
+        return name
+
     matches = of_kind([source for source in sources if source.lower() == name.lower()])
     if len(matches) != 1:
-        pinned = of_kind([source for source in preferred if source in sources])
-        matches = pinned[:1] if pinned else of_kind(
-            [source for source in sources if source.lower().startswith(prefix.lower())]
-        )
+        matches = of_kind([source for source in sources if source.lower().startswith(prefix.lower())])
 
     if len(matches) == 1:
         return matches[0]

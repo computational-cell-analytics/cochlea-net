@@ -106,5 +106,27 @@ class TestPrintTableInfo(unittest.TestCase):
         self.assertEqual(written, {"untouched": True})
 
 
+class TestFilterTable(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.analysis.seg_table_utils import filter_table
+        self.fn = filter_table
+        self.table = _make_table()
+
+    def test_filter_components(self):
+        filtered = self.fn(self.table, column_subset=[1])
+        self.assertEqual(list(filtered["label_id"]), [1, 2, 3])
+
+    def test_filter_several_components(self):
+        filtered = self.fn(self.table, column_subset=[1, 2])
+        self.assertEqual(list(filtered["label_id"]), [1, 2, 3, 4, 5])
+
+    def test_missing_column_raises(self):
+        # A table without component labeling must give a clear error instead of a bare KeyError.
+        table = self.table.drop(columns=["component_labels"])
+        with self.assertRaises(ValueError):
+            self.fn(table, column_subset=[1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -107,6 +107,11 @@ def filter_table(
 ) -> pd.DataFrame:
     """Filter a table based on a subset of column entries.
     """
+    if column not in df.columns:
+        raise ValueError(
+            f"Cannot filter by '{column}': the column is not in the table. "
+            f"Available columns: {list(df.columns)}"
+        )
     return df[df[column].isin(column_subset)]
 
 

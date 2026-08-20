@@ -279,6 +279,21 @@ class TestResolveSourceName(unittest.TestCase):
         sources = {"IHC_v9": "segmentation"}
         self.assertEqual(self.fn(sources, "IHC"), "IHC_v9")
 
+    def test_preferred_version_wins_over_the_alias_name(self):
+        # A cochlea can hold a legacy source that is literally named like the alias next to the
+        # version that is used for the analysis; the alias has to resolve to the latter.
+        sources = {"IHC": "segmentation", "IHC_v11": "segmentation"}
+        self.assertEqual(self.fn(sources, "IHC"), "IHC_v11")
+        self.assertEqual(self.fn(sources, "IHC", "segmentation"), "IHC_v11")
+
+    def test_alias_name_resolves_without_a_pinned_version(self):
+        sources = {"IHC": "segmentation", "IHC_v9": "segmentation"}
+        self.assertEqual(self.fn(sources, "IHC"), "IHC")
+
+    def test_exact_name_still_selects_the_legacy_source(self):
+        sources = {"IHC": "segmentation", "IHC_v11": "segmentation"}
+        self.assertEqual(self.fn(sources, "IHC_v11"), "IHC_v11")
+
 
 class TestSynapseSourceForIhc(unittest.TestCase):
 
