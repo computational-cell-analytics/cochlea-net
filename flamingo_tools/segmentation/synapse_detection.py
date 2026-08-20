@@ -340,12 +340,14 @@ def run_prediction(
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     threshold: float = 0.5,
     n_threads: Optional[int] = None,
+    mask_path: Optional[str] = None,
+    mask_input_key: str = "s4",
 ):
     """Run prediction for synapse detection.
 
     Args:
         input_path: Input path to image channel for synapse detection.
-        input_key: Input key for resolution of image channel and mask channel.
+        input_key: Input key for resolution of image channel.
         output_folder: Output folder for synapse segmentation and marker detection.
         model_path: Path to model for synapse detection.
         block_shape: The block-shape for running the prediction.
@@ -353,7 +355,15 @@ def run_prediction(
         voxel_size: The voxel size of the data in micrometer.
         threshold: Threshold for peak detection.
         n_threads: The number of threads for peak detection and flow correction.
+        mask_path: Path to an IHC segmentation used to restrict the prediction to the region
+            around the IHCs. By default the prediction runs on the full volume. The detections
+            are not matched to the IHCs here, see `marker_detection` for that.
+        mask_input_key: Key to the undersampled IHC segmentation used for the mask.
     """
+    voxel_size = _normalize_voxel_size(voxel_size)
+
+    if mask_path is not None:
+        build_ihc_mask(mask_path, output_folder, mask_input_key=mask_input_key)
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr.
     # The check only tests that the dataset exists, not that every block was written, so it
@@ -381,21 +391,29 @@ def marker_detection(
     mask_path: Optional[str],
     output_folder: str,
     model_path: str,
-    mask_input_key: Optional[str] = "s4",
+    mask_input_key: str = "s4",
+    mask_key: str = "s0",
     max_distance: float = 3,
     voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
+    threshold: float = 0.5,
 ):
     """Streamlined workflow for marker detection, mapping, and filtering.
 
+    The IHC segmentation is read twice, at two different resolutions: at `mask_input_key` to
+    build the mask that restricts the inference, and at `mask_key` to match the detections to
+    the IHCs. The image data and the segmentation therefore have independent keys.
+
     Args:
         input_path: Input path to image channel for synapse detection.
-        input_key: Input key for resolution of image channel and mask channel.
+        input_key: Input key for resolution of image channel.
         mask_path: Path to IHC segmentation used to mask input.
         output_folder: Output folder for synapse segmentation and marker detection.
         model_path: Path to model for synapse detection.
         mask_input_key: Key to undersampled IHC segmentation for masking input for synapse detection.
+        mask_key: Key to the IHC segmentation at full resolution, for matching the detections.
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
         voxel_size: The voxel size of the data in micrometer.
+        threshold: Threshold for peak detection.
     """
     voxel_size = _normalize_voxel_size(voxel_size)
 
@@ -418,23 +436,19 @@ def marker_detection(
         skip_prediction = True
 
     if not skip_prediction:
-        out_channels = _get_model_out_channels(model_path)
-        prediction_impl(
-            input_path, input_key, output_folder, model_path,
-            scale=None, apply_postprocessing=False, output_channels=out_channels,
-            block_shape=None, halo=None,
-        )
+        _predict_synapses(input_path, input_key, output_folder, model_path, block_shape=None, halo=None)
 
     detections = synapse_detection_from_prediction(
-        output_path, detection_path, prediction_key=prediction_key, voxel_size=voxel_size
+        output_path, detection_path, prediction_key=prediction_key,
+        voxel_size=voxel_size, threshold=threshold,
     )
 
     # 3.) Map the detections to IHC and filter them based on a distance criterion.
     # Use the function 'map_and_filter_detections' from above.
     if mask_path is not None:
-        input_ = read_image_data(mask_path, input_key)
+        segmentation = read_image_data(mask_path, mask_key)
         detections_filtered = map_and_filter_detections(
-            segmentation=input_,
+            segmentation=segmentation,
             detections=detections,
             max_distance=max_distance,
             voxel_size=voxel_size,
