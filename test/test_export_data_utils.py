@@ -227,5 +227,168 @@ class TestCropSuffix(unittest.TestCase):
         )
 
 
+class TestResolveSourceName(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.export_data_utils import resolve_source_name
+        self.fn = resolve_source_name
+        self.sources = {
+            "PV": "image",
+            "PV_resized": "image",
+            "VGlut3": "image",
+            "SGN_v2": "segmentation",
+            "IHC_v4c": "segmentation",
+            "synapse_v3_ihc_v4b": "spots",
+        }
+
+    def test_exact_name_wins_over_prefix(self):
+        self.assertEqual(self.fn(self.sources, "PV", "image"), "PV")
+
+    def test_alias_resolves_the_version(self):
+        self.assertEqual(self.fn(self.sources, "SGN"), "SGN_v2")
+        self.assertEqual(self.fn(self.sources, "IHC"), "IHC_v4c")
+        self.assertEqual(self.fn(self.sources, "synapses"), "synapse_v3_ihc_v4b")
+
+    def test_different_capitalization(self):
+        sources = {"sgn": "segmentation", "PV": "image"}
+        self.assertEqual(self.fn(sources, "SGN", "segmentation"), "sgn")
+
+    def test_alias_respects_the_kind(self):
+        sources = {"IHC_v4c": "segmentation", "IHC_annotations": "spots"}
+        self.assertEqual(self.fn(sources, "IHC"), "IHC_v4c")
+
+    def test_ambiguous_prefix_raises(self):
+        # Neither version is pinned in SOURCE_ALIASES, so the alias stays ambiguous.
+        sources = {"SGN_v8": "segmentation", "SGN_v9": "segmentation"}
+        with self.assertRaises(ValueError):
+            self.fn(sources, "SGN")
+
+    def test_wrong_kind_raises(self):
+        with self.assertRaises(ValueError):
+            self.fn(self.sources, "PV", "segmentation")
+
+    def test_unknown_name_raises(self):
+        with self.assertRaises(ValueError):
+            self.fn(self.sources, "Myo7a")
+
+    def test_preferred_version_resolves_ambiguity(self):
+        sources = {"IHC_v4c": "segmentation", "IHC_v11": "segmentation", "IHC_v2": "segmentation"}
+        self.assertEqual(self.fn(sources, "IHC"), "IHC_v11")
+
+    def test_unique_version_without_the_preferred_one(self):
+        sources = {"IHC_v9": "segmentation"}
+        self.assertEqual(self.fn(sources, "IHC"), "IHC_v9")
+
+
+class TestSynapseSourceForIhc(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.export_data_utils import synapse_source_for_ihc
+        self.fn = synapse_source_for_ihc
+        self.sources = {
+            "IHC_v4c": "segmentation",
+            "IHC_v9": "segmentation",
+            "IHC_v11": "segmentation",
+            "synapse_v3": "spots",
+            "synapse_v3_ihc_v4c": "spots",
+            "synapse_v3_ihc_v9": "spots",
+            "synapse_v5_ihc_v9": "spots",
+            "synapse_v3_ihc_v11": "spots",
+            "synapse_v5_ihc_v11": "spots",
+        }
+
+    def test_matched_source(self):
+        self.assertEqual(self.fn(self.sources, "IHC_v4c"), "synapse_v3_ihc_v4c")
+
+    def test_preferred_source_resolves_ambiguity(self):
+        self.assertEqual(self.fn(self.sources, "IHC_v11"), "synapse_v3_ihc_v11")
+
+    def test_several_matched_sources_raise(self):
+        # Neither candidate for IHC_v9 is pinned in SOURCE_ALIASES.
+        with self.assertRaises(ValueError):
+            self.fn(self.sources, "IHC_v9")
+
+    def test_no_matched_source_raises(self):
+        with self.assertRaises(ValueError):
+            self.fn(self.sources, "IHC_v9")
+
+    def test_name_without_version_raises(self):
+        with self.assertRaises(ValueError):
+            self.fn(self.sources, "IHC")
+
+
+class TestFindCropFiles(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        from flamingo_tools.export_data_utils import find_crop_files
+        self.fn = find_crop_files
+        self.tmp_dir = tempfile.TemporaryDirectory()
+        self.crop_center = [10.0, 20.0, 30.0]
+
+        self.files = {
+            "scale4": ["PV_crop_0010-0020-0030_axis-0_apex.tif", "SGN_v2_crop_0010-0020-0030_axis-0_apex.tif",
+                       "PV_crop_0040-0050-0060_axis-0_base.tif", "notes.txt"],
+            "scale4_dilation8": ["PV_crop_0010-0020-0030_axis-0_apex.tif"],
+            "scale2": ["PV_crop_0010-0020-0030_axis-0_apex.tif"],
+        }
+        for folder, names in self.files.items():
+            os.makedirs(os.path.join(self.tmp_dir.name, folder))
+            for name in names:
+                open(os.path.join(self.tmp_dir.name, folder, name), "w").close()
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def test_grouped_by_folder(self):
+        found = self.fn(self.tmp_dir.name, self.crop_center, axis=0, suffix="apex")
+
+        self.assertEqual(
+            [os.path.basename(folder) for folder in found], ["scale2", "scale4", "scale4_dilation8"]
+        )
+        self.assertEqual(
+            [os.path.basename(path) for path in found[os.path.join(self.tmp_dir.name, "scale4")]],
+            ["PV_crop_0010-0020-0030_axis-0_apex.tif", "SGN_v2_crop_0010-0020-0030_axis-0_apex.tif"],
+        )
+
+    def test_other_position_and_other_files_excluded(self):
+        found = self.fn(self.tmp_dir.name, self.crop_center, axis=0, suffix="apex")
+        names = [os.path.basename(path) for paths in found.values() for path in paths]
+
+        self.assertNotIn("PV_crop_0040-0050-0060_axis-0_base.tif", names)
+        self.assertNotIn("notes.txt", names)
+
+    def test_no_match_returns_empty(self):
+        self.assertEqual(self.fn(self.tmp_dir.name, [1.0, 2.0, 3.0], axis=0, suffix="apex"), {})
+
+
+class TestLayerKind(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.export_data_utils import layer_kind
+        self.fn = layer_kind
+        self.sources = {
+            "PV": "image",
+            "IHC_v4c": "segmentation",
+            "synapse_v3_ihc_v4c": "spots",
+        }
+
+    def test_image_source(self):
+        self.assertEqual(self.fn(self.sources, "PV_crop_0010-0020-0030_apex.tif"), "image")
+
+    def test_segmentation_source(self):
+        self.assertEqual(self.fn(self.sources, "IHC_v4c_crop_0010-0020-0030_apex.tif"), "labels")
+
+    def test_spots_source(self):
+        self.assertEqual(self.fn(self.sources, "synapse_v3_ihc_v4c_crop_0010-0020-0030_apex.tif"), "labels")
+
+    def test_derived_name_of_a_segmentation(self):
+        # The marker and subtypes exports append to the segmentation name.
+        self.assertEqual(self.fn(self.sources, "IHC_v4c_marker_positive_crop_0010-0020-0030_apex.tif"), "labels")
+
+    def test_unknown_name_falls_back_to_image(self):
+        self.assertEqual(self.fn(self.sources, "Myo7a_crop_0010-0020-0030_apex.tif"), "image")
+
+
 if __name__ == "__main__":
     unittest.main()

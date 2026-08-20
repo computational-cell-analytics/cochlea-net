@@ -119,6 +119,7 @@ def export_synapse_detections(
 
         # Create the output.
         output = np.zeros(shape, dtype="uint16")
+        radius = int(radius)
         mask = ball(radius).astype(bool)
 
         ids = syn_ids if use_syn_ids else ihc_ids
@@ -126,12 +127,17 @@ def export_synapse_detections(
         for coord, syn_id in tqdm(
             zip(coordinates, ids), total=len(coordinates), desc="Writing synapses to volume"
         ):
-            bb = tuple(slice(c - radius, c + radius + 1) for c in coord)
-            try:
-                output[bb][mask] = syn_id + id_offset
-            except IndexError:
-                print("Index error for", coord)
+            # The footprint is clipped to the volume, so that synapses close to the border and
+            # synapses in a 2D slice (where one axis is a single pixel) are written as well.
+            starts = [max(0, c - radius) for c in coord]
+            stops = [min(sh, c + radius + 1) for c, sh in zip(coord, shape)]
+            if any(sto <= sta for sta, sto in zip(starts, stops)):
                 continue
+            bb = tuple(slice(sta, sto) for sta, sto in zip(starts, stops))
+            footprint = tuple(
+                slice(sta - c + radius, sto - c + radius) for sta, sto, c in zip(starts, stops, coord)
+            )
+            output[bb][mask[footprint]] = syn_id + id_offset
 
         # Write the output.
         out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
