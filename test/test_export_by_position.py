@@ -302,6 +302,27 @@ class TestBuildGroupPasses(unittest.TestCase):
             self.mod.build_group_passes(SOURCES, {"reference": "SGN"})
 
 
+class TestGroupSourceKinds(unittest.TestCase):
+
+    def setUp(self):
+        import export_by_position
+        self.mod = export_by_position
+
+    def test_ihc_group(self):
+        self.assertEqual(self.mod.group_source_kinds(self.mod.EXPORT_GROUPS["ihc"]), {
+            "VGlut3": "image", "CTBP2": "image", "IHC": "segmentation", "synapses": "spots",
+        })
+
+    def test_group_without_synapses(self):
+        self.assertEqual(self.mod.group_source_kinds(self.mod.EXPORT_GROUPS["sgn"]), {
+            "PV": "image", "SGN": "segmentation",
+        })
+
+    def test_explicit_synapse_source(self):
+        group = {**self.mod.EXPORT_GROUPS["ihc"], "synapses": "synapse_v3_ihc_v4b"}
+        self.assertEqual(self.mod.group_source_kinds(group)["synapse_v3_ihc_v4b"], "spots")
+
+
 class TestRunGroups(unittest.TestCase):
 
     def setUp(self):
@@ -421,23 +442,50 @@ class TestRunGroups(unittest.TestCase):
         self.assertEqual(view_calls[0][2]["axis"], 0)
         self.assertEqual(view_calls[0][2]["label"], "sgn")
 
-    def test_view_only_does_not_export(self):
-        self.resolve_calls = []
+    def test_view_only_reads_the_output_folder_instead_of_s3(self):
         calls, view_calls = [], []
 
-        with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, lambda **kwargs: calls.append(kwargs)),
-        }), \
-                mock.patch.object(self.mod, "source_types", return_value=SOURCES), \
-                mock.patch.object(self.mod, "resolve_reference_positions", self._fake_positions), \
-                mock.patch.object(self.mod, "view_crops", lambda *args, **kwargs: view_calls.append(args[1])):
+        with tempfile.TemporaryDirectory() as output_folder:
+            crop_folder = os.path.join(output_folder, "sgn", "cochlea_x", "scale2")
+            os.makedirs(crop_folder)
+            for name in ("PV", "SGN_v2"):
+                open(os.path.join(crop_folder, f"{name}_crop_0010-0020-0030_axis-0_apex.tif"), "w").close()
+
+            def no_s3(*args, **kwargs):
+                raise AssertionError("view_only must not read anything from S3.")
+
+            with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
+                "lower_resolution": (self.mod._run_grid_export, lambda **kwargs: calls.append(kwargs)),
+            }), \
+                    mock.patch.object(self.mod, "source_types", no_s3), \
+                    mock.patch.object(self.mod, "resolve_reference_positions", no_s3), \
+                    mock.patch.object(self.mod, "view_crops", lambda *args, **kwargs: view_calls.append(args)):
+                self.mod.run_groups(
+                    "cochlea_x", {"sgn": self.mod.EXPORT_GROUPS["sgn"]}, scale=[2],
+                    output_folder=output_folder, axis=0, view_only=True,
+                )
+
+            self.assertEqual(calls, [])
+            self.assertEqual(len(view_calls), 1)
+            folder, resolved, _, sources = view_calls[0][1:5]
+            self.assertEqual(folder, os.path.join(output_folder, "sgn"))
+            # The crop center, the position label and the axis come from the file names.
+            self.assertEqual(resolved, [{"label": "apex", "crop_center": [10.0, 20.0, 30.0], "axis": 0}])
+            self.assertEqual(sources, {"PV": "image", "SGN_v2": "segmentation"})
+
+    def test_view_only_without_an_export(self):
+        view_calls = []
+
+        with tempfile.TemporaryDirectory() as output_folder, \
+                mock.patch.object(self.mod, "view_crops", lambda *args, **kwargs: view_calls.append(args)), \
+                redirect_stdout(io.StringIO()) as stdout:
             self.mod.run_groups(
-                "cochlea_x", {"sgn": self.mod.EXPORT_GROUPS["sgn"]}, scale=[2], output_folder="/tmp/out",
-                axis=0, view_only=True,
+                "cochlea_x", {"sgn": self.mod.EXPORT_GROUPS["sgn"]}, scale=[2],
+                output_folder=output_folder, axis=0, view_only=True,
             )
 
-        self.assertEqual(calls, [])
-        self.assertEqual(view_calls, ["/tmp/out/sgn"])
+        self.assertEqual(view_calls, [])
+        self.assertIn("No exported crop found", stdout.getvalue())
 
     def test_group_axis_is_used_for_the_view(self):
         self.resolve_calls = []
@@ -548,6 +596,22 @@ class TestViewCrops(unittest.TestCase):
 
         self.assertEqual(self.viewers, [])
         self.assertEqual(fake_napari.run.call_count, 0)
+
+    def test_position_axis_overrides_the_argument(self):
+        # A crop that was discovered on disk carries the axis of its file name.
+        self.resolved = [{"label": "apex", "crop_center": self.crop_center, "axis": 0}]
+        self._view_with_axis(None)
+
+        self.assertEqual(len(self.viewers), 1)
+        self.assertEqual(self.viewers[0].title, "cochlea_x | apex | scale4")
+
+    def _view_with_axis(self, axis):
+        self.viewers = []
+        fake_napari = mock.MagicMock()
+        fake_napari.Viewer.side_effect = lambda: self.viewers.append(mock.MagicMock()) or self.viewers[-1]
+
+        with mock.patch.dict(sys.modules, {"napari": fake_napari}):
+            self.mod.view_crops("cochlea_x", self.tmp_dir.name, self.resolved, [4], SOURCES, axis=axis)
 
     def test_dilation_folder_is_found(self):
         os.makedirs(os.path.join(self.tmp_dir.name, "cochlea_x", "scale4_dilation8"))

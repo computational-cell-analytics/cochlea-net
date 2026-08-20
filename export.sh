@@ -3,3 +3,4 @@ python scripts/export_data/export_by_position.py \
   --axis 0 \
   --groups ihc --channels PV VGlut3 CTBP2 \
   --roi_halo 512 512 24 \
+  --view_only

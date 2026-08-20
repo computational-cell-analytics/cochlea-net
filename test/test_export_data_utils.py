@@ -377,6 +377,96 @@ class TestFindCropFiles(unittest.TestCase):
         self.assertEqual(self.fn(self.tmp_dir.name, [1.0, 2.0, 3.0], axis=0, suffix="apex"), {})
 
 
+class TestParseCropFile(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.export_data_utils import parse_crop_file
+        self.fn = parse_crop_file
+
+    def test_full_name(self):
+        self.assertEqual(self.fn("IHC_v11_crop_0010-0020-0030_axis-0_apex.tif"), {
+            "source": "IHC_v11", "crop_center": [10.0, 20.0, 30.0], "axis": 0, "label": "apex",
+        })
+
+    def test_without_axis(self):
+        parsed = self.fn("PV_crop_0010-0020-0030_apex.tif")
+        self.assertIsNone(parsed["axis"])
+        self.assertEqual(parsed["label"], "apex")
+
+    def test_without_label(self):
+        parsed = self.fn("PV_crop_0010-0020-0030_axis-2.tif")
+        self.assertEqual(parsed["axis"], 2)
+        self.assertIsNone(parsed["label"])
+
+    def test_center_only(self):
+        parsed = self.fn("PV_crop_0010-0020-0030.tif")
+        self.assertEqual(parsed["crop_center"], [10.0, 20.0, 30.0])
+        self.assertIsNone(parsed["axis"])
+        self.assertIsNone(parsed["label"])
+
+    def test_without_crop_suffix(self):
+        self.assertIsNone(self.fn("PV.tif"))
+
+    def test_round_trip_with_crop_suffix(self):
+        from flamingo_tools.export_data_utils import crop_suffix
+        name = "IHC_v11_crop_0010-0020-0030_axis-0_apex.tif"
+        parsed = self.fn(name)
+        suffix = crop_suffix(parsed["crop_center"], parsed["axis"], parsed["label"])
+        self.assertEqual(f"{parsed['source']}{suffix}.tif", name)
+
+
+class TestDiscoverCrops(unittest.TestCase):
+
+    def setUp(self):
+        import tempfile
+        from flamingo_tools.export_data_utils import discover_crops, discover_source_types
+        self.discover_crops = discover_crops
+        self.discover_source_types = discover_source_types
+        self.tmp_dir = tempfile.TemporaryDirectory()
+
+        self.files = {
+            "scale4": ["PV_crop_0010-0020-0030_axis-0_apex.tif", "IHC_v11_crop_0010-0020-0030_axis-0_apex.tif",
+                       "synapse_v3_ihc_v11_crop_0010-0020-0030_axis-0_apex.tif",
+                       "PV_crop_0040-0050-0060_axis-0_base.tif", "notes.txt"],
+            "scale2": ["PV_crop_0010-0020-0030_axis-0_apex.tif"],
+        }
+        for folder, names in self.files.items():
+            os.makedirs(os.path.join(self.tmp_dir.name, folder))
+            for name in names:
+                open(os.path.join(self.tmp_dir.name, folder, name), "w").close()
+
+    def tearDown(self):
+        self.tmp_dir.cleanup()
+
+    def test_one_entry_per_crop(self):
+        crops = self.discover_crops(self.tmp_dir.name)
+
+        self.assertEqual(crops, [
+            {"label": "apex", "crop_center": [10.0, 20.0, 30.0], "axis": 0},
+            {"label": "base", "crop_center": [40.0, 50.0, 60.0], "axis": 0},
+        ])
+
+    def test_empty_folder(self):
+        self.assertEqual(self.discover_crops(os.path.join(self.tmp_dir.name, "nothing")), [])
+
+    def test_source_types_from_the_alias_prefixes(self):
+        self.assertEqual(self.discover_source_types(self.tmp_dir.name), {
+            "PV": "image", "IHC_v11": "segmentation", "synapse_v3_ihc_v11": "spots",
+        })
+
+    def test_declared_sources_win_over_the_prefixes(self):
+        # A source that the alias prefixes would type as a segmentation, but that was exported as a channel.
+        declared = {"IHC": "image", "PV": "image", "synapses": "spots"}
+        types = self.discover_source_types(self.tmp_dir.name, declared=declared)
+
+        self.assertEqual(types["IHC_v11"], "image")
+        self.assertEqual(types["synapse_v3_ihc_v11"], "spots")
+
+    def test_undeclared_source_falls_back_to_the_prefixes(self):
+        types = self.discover_source_types(self.tmp_dir.name, declared={"PV": "image"})
+        self.assertEqual(types["IHC_v11"], "segmentation")
+
+
 class TestLayerKind(unittest.TestCase):
 
     def setUp(self):

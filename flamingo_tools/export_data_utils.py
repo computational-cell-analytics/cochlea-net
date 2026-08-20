@@ -3,6 +3,7 @@
 
 import json
 import os
+import re
 from glob import glob
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
@@ -20,6 +21,12 @@ SOURCE_ALIASES = {
     "IHC": ("segmentation", "IHC", ("IHC_v11",)),
     "synapses": ("spots", "synapse", ("synapse_v3_ihc_v11",)),
 }
+
+# Names of exported crop files, i.e. the inverse of `export_output_path` / `crop_suffix`.
+CROP_FILE_PATTERN = re.compile(
+    r"^(?P<name>.+)_crop_(?P<x>\d+)-(?P<y>\d+)-(?P<z>\d+)"
+    r"(?:_axis-(?P<axis>[012]))?(?:_(?P<suffix>.+))?$"
+)
 
 # Physical size of one cell of the down-sampled cochlea filter volume, in µm.
 # 48 * 0.38 reproduces the down-sampling factor that was hard-coded for isotropic 0.38 µm data.
@@ -339,6 +346,96 @@ def find_crop_files(
     for path in sorted(glob(pattern, recursive=True)):
         grouped.setdefault(os.path.dirname(path), []).append(path)
     return {key: grouped[key] for key in sorted(grouped)}
+
+
+def parse_crop_file(file_name: str) -> Optional[dict]:
+    """Parse the name of an exported crop file back into its source name and crop parameters.
+
+    Args:
+        file_name: Name of the exported file, e.g. "IHC_v11_crop_0418-1277-0622_axis-0_apex.tif".
+
+    Returns:
+        Dict with the keys "source", "crop_center" ([x, y, z] in µm), "axis" and "label", or None
+        if the name does not hold a crop suffix. The crop center is the rounded value that
+        `crop_suffix` encoded, so it round-trips through `crop_suffix` and `find_crop_files`.
+    """
+    stem = file_name[:-len(".tif")] if file_name.endswith(".tif") else file_name
+    match = CROP_FILE_PATTERN.match(stem)
+    if match is None:
+        return None
+
+    axis = match.group("axis")
+    return {
+        "source": match.group("name"),
+        "crop_center": [float(match.group(coord)) for coord in ("x", "y", "z")],
+        "axis": None if axis is None else int(axis),
+        "label": match.group("suffix"),
+    }
+
+
+def _parse_crop_files(folder: str) -> List[dict]:
+    """Parse every exported crop file of a folder recursively, see `parse_crop_file`."""
+    parsed = []
+    for path in sorted(glob(os.path.join(folder, "**", "*.tif"), recursive=True)):
+        info = parse_crop_file(os.path.basename(path))
+        if info is not None:
+            parsed.append(info)
+    return parsed
+
+
+def discover_crops(folder: str) -> List[dict]:
+    """Find the crops that are already exported in a folder, from the file names alone.
+
+    Use this to view an export without reading the reference segmentation table from S3. The
+    position label and the crop axis are recovered as well, so the crops can be looked up with
+    `find_crop_files`. The order of the crops is the file name order, not the order of the
+    position dict that the export was run with.
+
+    Args:
+        folder: Folder to search, searched recursively.
+
+    Returns:
+        List of dicts with the keys "label", "crop_center" and "axis", one per crop.
+    """
+    crops = {}
+    for info in _parse_crop_files(folder):
+        crop = {key: info[key] for key in ("label", "crop_center", "axis")}
+        crops.setdefault((crop["label"], tuple(crop["crop_center"]), crop["axis"]), crop)
+    return list(crops.values())
+
+
+def discover_source_types(folder: str, declared: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """Determine the source types of the crops in a folder, without reading the dataset on S3.
+
+    `source_types` needs the MoBIE dataset.json of the cochlea. This derives the same mapping
+    from the exported file names instead, so that a finished export can be viewed offline. A
+    source is typed from `declared` where it matches, and otherwise from the `SOURCE_ALIASES`
+    prefixes, which name the segmentation and spots families. Any other source is an image.
+
+    Args:
+        folder: Folder with the exported crops, searched recursively.
+        declared: Optional {source name or alias: source type} that the export was run with,
+            e.g. {"VGlut3": "image", "IHC": "segmentation"}. A source matches a declared entry
+            by its full name or by the entry's name prefix, since the exported names hold the
+            resolved version, e.g. "IHC_v11" for the alias "IHC".
+
+    Returns:
+        Dict of {source name: source type}, as in `source_types`.
+    """
+    def matches(name, candidate):
+        prefix = SOURCE_ALIASES[candidate][1] if candidate in SOURCE_ALIASES else candidate
+        return name.lower() == candidate.lower() or name.lower().startswith(prefix.lower())
+
+    def type_of(name):
+        for candidate, kind in (declared or {}).items():
+            if matches(name, candidate):
+                return kind
+        for kind, prefix, _ in SOURCE_ALIASES.values():
+            if name.lower().startswith(prefix.lower()):
+                return kind
+        return "image"
+
+    return {info["source"]: type_of(info["source"]) for info in _parse_crop_files(folder)}
 
 
 def layer_kind(sources: Dict[str, str], file_name: str) -> str:

@@ -13,7 +13,8 @@ The script has two modes:
 Crop centers are resolved from a reference segmentation table (the same lookup that powers the
 flamingo_tools.table_info command) and are reused unchanged across every export pass that
 shares the reference, since crop centers are physical µm coordinates shared across all
-co-registered channels of a cochlea.
+co-registered channels of a cochlea. With `--view_only` the crop centers come from the exported
+file names instead, so a finished export can be reviewed without any S3 access.
 """
 import argparse
 import json
@@ -33,8 +34,8 @@ import export_synapse_detections
 
 from flamingo_tools.analysis.seg_table_utils import closest_row_to_value, filter_table
 from flamingo_tools.export_data_utils import (
-    crop_suffix, find_crop_files, layer_kind, normalize_voxel_size, resolve_source_name, source_types,
-    synapse_source_for_ihc,
+    crop_suffix, discover_crops, discover_source_types, find_crop_files, layer_kind, normalize_voxel_size,
+    resolve_source_name, source_types, synapse_source_for_ihc,
 )
 from flamingo_tools.s3_utils import BUCKET_NAME, SERVICE_ENDPOINT, get_s3_path
 
@@ -242,6 +243,22 @@ def build_group_passes(sources: Dict[str, str], group: dict) -> List[Tuple[str, 
     return passes
 
 
+def describe_position(entry: dict) -> str:
+    """Describe a crop position for a print or a napari window title.
+
+    Args:
+        entry: Resolved position, see `resolve_positions`, or a crop that was discovered on
+            disk, see `flamingo_tools.export_data_utils.discover_crops`, which has no column.
+
+    Returns:
+        The position label, with the column and value it was resolved from where they are known.
+    """
+    label = entry["label"] or "crop"
+    if entry.get("column") is None:
+        return label
+    return f"{label} ({entry['column']}={entry['value']})"
+
+
 def view_crops(
     cochlea: str,
     folder: str,
@@ -263,7 +280,8 @@ def view_crops(
         resolved_positions: Output of `resolve_positions`.
         scale: Scale level(s) to open.
         sources: Source names and types of the cochlea, used to tell images from labels.
-        axis: Axis that was used for the export, needed to find the files.
+        axis: Axis that was used for the export, needed to find the files. A position may
+            override it with its own "axis" entry.
         voxel_size: Voxel size of the data in micrometer as [x, y, z], used as the layer scale.
         label: Optional name of the export group, shown in the window title.
     """
@@ -273,8 +291,9 @@ def view_crops(
     title_prefix = cochlea if label is None else f"{cochlea} | {label}"
 
     for entry in resolved_positions:
-        suffix = crop_suffix(entry["crop_center"], axis, entry["label"])
-        crops = find_crop_files(os.path.join(folder, cochlea), entry["crop_center"], axis, entry["label"])
+        entry_axis = entry.get("axis", axis)
+        suffix = crop_suffix(entry["crop_center"], entry_axis, entry["label"])
+        crops = find_crop_files(os.path.join(folder, cochlea), entry["crop_center"], entry_axis, entry["label"])
 
         for s in scale:
             scale_folder = f"scale{s}"
@@ -284,7 +303,7 @@ def view_crops(
                 or os.path.basename(crop_folder).startswith(f"{scale_folder}_")
             }
             if not paths_per_folder:
-                print(f"No exported file for '{entry['label']}' at {scale_folder} in {folder}.")
+                print(f"No exported file for '{describe_position(entry)}' at {scale_folder} in {folder}.")
                 continue
 
             layer_scale_zyx = np.array(voxel_size[::-1]) * 2 ** s
@@ -312,11 +331,67 @@ def view_crops(
                         viewer.add_image(data, name=name, scale=layer_scale, blending="additive",
                                          colormap=next(colormaps))
 
-                viewer.title = (
-                    f"{title_prefix} | {entry['label']} ({entry['column']}={entry['value']}) | "
-                    f"{os.path.basename(crop_folder)}"
-                )
+                viewer.title = f"{title_prefix} | {describe_position(entry)} | {os.path.basename(crop_folder)}"
                 napari.run()
+
+
+def group_source_kinds(group: dict) -> Dict[str, str]:
+    """Map the source names of an export group to their MoBIE source types.
+
+    The names are not resolved against the cochlea, so an alias stays an alias. This types the
+    exported files of a group without reading the dataset on S3, see
+    `flamingo_tools.export_data_utils.discover_source_types`.
+
+    Args:
+        group: Export group definition, see EXPORT_GROUPS.
+
+    Returns:
+        Dict of {source name or alias: source type}.
+    """
+    kinds = {name: "image" for name in group.get("channels") or []}
+    kinds.update({name: "segmentation" for name in group.get("segmentations") or []})
+
+    synapses = group.get("synapses")
+    if synapses is not None:
+        kinds["synapses" if synapses == "auto" else synapses] = "spots"
+    return kinds
+
+
+def view_exported_crops(
+    cochlea: str,
+    folder: str,
+    scale: List[int],
+    declared_sources: Optional[Dict[str, str]] = None,
+    axis: Optional[int] = None,
+    voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+    label: Optional[str] = None,
+):
+    """Open the crops that are already exported in a folder, without reading anything from S3.
+
+    The crop centers, the position labels, the crop axis and the source types all come from the
+    exported file names, so a finished export can be reviewed offline.
+
+    Args:
+        cochlea: Cochlea name, i.e. the sub-folder the export functions wrote to.
+        folder: Output folder that was used for the export.
+        scale: Scale level(s) to open.
+        declared_sources: Optional {source name or alias: source type} of the export, used to
+            tell images from labels, see `flamingo_tools.export_data_utils.discover_source_types`.
+        axis: Axis that was used for the export. Only used for crops whose file name holds no axis.
+        voxel_size: Voxel size of the data in micrometer as [x, y, z], used as the layer scale.
+        label: Optional name of the export group, shown in the window title.
+    """
+    crop_folder = os.path.join(folder, cochlea)
+    crops = discover_crops(crop_folder)
+    if not crops:
+        print(f"No exported crop found in {crop_folder}.")
+        return
+
+    sources = discover_source_types(crop_folder, declared=declared_sources)
+    for entry in crops:
+        print(f"  Viewing '{describe_position(entry)}' at crop_center (x, y, z) [µm] = {entry['crop_center']}")
+
+    view_crops(cochlea, folder, crops, scale, sources, axis=axis, voxel_size=voxel_size, label=label)
 
 
 def run_exports(
@@ -417,15 +492,26 @@ def run_groups(
             `roi_halo`.
         dry_run: Only print the resolved sources, crop centers and export passes.
         view: Whether to open the crops of a group in napari once the group is exported.
-        view_only: Whether to only open the crops that are already exported, without exporting.
+        view_only: Whether to only open the crops that are already in the output folder, without
+            exporting. Nothing is read from S3 in this mode, see `view_exported_crops`.
     """
     if positions is None:
         positions = DEFAULT_POSITIONS
 
-    sources = source_types(cochlea)
+    sources = None if view_only else source_types(cochlea)
     position_cache = {}
 
     for name, group in groups.items():
+        group_folder = os.path.join(output_folder, name)
+        group_axis = axis if group.get("axis") is None else group["axis"]
+        group_voxel_size = voxel_size if group.get("voxel_size") is None else group["voxel_size"]
+
+        if view_only:
+            print(f"\nGroup '{name}'")
+            view_exported_crops(cochlea, group_folder, scale, declared_sources=group_source_kinds(group),
+                                axis=group_axis, voxel_size=group_voxel_size, label=name)
+            continue
+
         group_components = components if components is not None else group.get("components") or [1]
         reference = resolve_source_name(sources, group["reference"], "segmentation")
 
@@ -436,8 +522,6 @@ def run_groups(
             )
         resolved = position_cache[cache_key]
         passes = build_group_passes(sources, {**group, "components": group_components})
-        group_axis = axis if group.get("axis") is None else group["axis"]
-        group_voxel_size = voxel_size if group.get("voxel_size") is None else group["voxel_size"]
 
         if roi_halo is None and group_axis is None and group.get("roi_halo") is None:
             raise ValueError(f"Group '{name}' requires roi_halo or axis, either shared or in the group.")
@@ -446,11 +530,6 @@ def run_groups(
         if dry_run:
             for key, kwargs in passes:
                 print(f"  {key}: {kwargs}")
-        elif view_only:
-            for key, kwargs in passes:
-                print(f"  Viewing {describe_pass(key, kwargs)}")
-
-        if dry_run:
             for entry in resolved:
                 print(
                     f"  Position '{entry['label']}' ({entry['column']}={entry['value']}): "
@@ -458,22 +537,20 @@ def run_groups(
                 )
             continue
 
-        group_folder = os.path.join(output_folder, name)
-        if not view_only:
-            run_exports(
-                cochlea, resolved, [], scale, group_folder,
-                roi_halo=roi_halo, axis=axis, json_info=[{key: kwargs} for key, kwargs in passes],
-                voxel_size=voxel_size,
-            )
+        run_exports(
+            cochlea, resolved, [], scale, group_folder,
+            roi_halo=roi_halo, axis=axis, json_info=[{key: kwargs} for key, kwargs in passes],
+            voxel_size=voxel_size,
+        )
 
-        if view or view_only:
+        if view:
             view_crops(cochlea, group_folder, resolved, scale, sources,
                        axis=group_axis, voxel_size=group_voxel_size, label=name)
 
 
 def export_by_position(
     cochlea: str,
-    reference_seg: str,
+    reference_seg: Optional[str],
     scale: List[int],
     output_folder: str,
     export_functions: List[str] = ["lower_resolution"],
@@ -491,7 +568,7 @@ def export_by_position(
     Args:
         cochlea: Cochlea name on S3 bucket.
         reference_seg: Segmentation source name used to resolve crop centers, e.g. "SGN_v2",
-            or an alias such as "SGN" or "IHC".
+            or an alias such as "SGN" or "IHC". Not used with `view_only`.
         scale: Scale level(s) to export, applied to every selected export function.
         output_folder: Output folder, forwarded to every export function.
         export_functions: Keys into EXPORT_DISPATCH to run at every position. Default:
@@ -509,22 +586,27 @@ def export_by_position(
         voxel_size: Voxel size of the data in micrometer as [x, y, z]. Same override note as
             `roi_halo`.
         view: Whether to open the exported crops in napari.
-        view_only: Whether to only open the crops that are already exported, without exporting.
+        view_only: Whether to only open the crops that are already in the output folder, without
+            exporting. Nothing is read from S3 in this mode, see `view_exported_crops`. The
+            reference segmentation, the positions and the components are then not used.
     """
     if positions is None:
         positions = DEFAULT_POSITIONS
+
+    if view_only:
+        view_exported_crops(cochlea, output_folder, scale, axis=axis, voxel_size=voxel_size)
+        return
 
     sources = source_types(cochlea)
     reference_seg = resolve_source_name(sources, reference_seg, "segmentation")
     resolved = resolve_reference_positions(cochlea, reference_seg, positions, component_list)
 
-    if not view_only:
-        run_exports(
-            cochlea, resolved, export_functions, scale, output_folder,
-            roi_halo=roi_halo, axis=axis, json_info=json_info, voxel_size=voxel_size,
-        )
+    run_exports(
+        cochlea, resolved, export_functions, scale, output_folder,
+        roi_halo=roi_halo, axis=axis, json_info=json_info, voxel_size=voxel_size,
+    )
 
-    if view or view_only:
+    if view:
         view_crops(cochlea, output_folder, resolved, scale, sources, axis=axis, voxel_size=voxel_size)
 
 
@@ -621,7 +703,9 @@ def main():
                         help="Open the exported crops in napari, one crop after another. The crops of a group "
                         "open once the group is exported.")
     parser.add_argument("--view_only", action="store_true",
-                        help="Only open the crops that are already in the output folder, without exporting.")
+                        help="Only open the crops that are already in the output folder, without exporting. "
+                        "The crop centers, position labels and source types are taken from the exported file "
+                        "names, so this mode does not read anything from S3.")
     args = parser.parse_args()
 
     positions = DEFAULT_POSITIONS
@@ -651,7 +735,7 @@ def main():
         )
         return
 
-    if args.reference_seg is None:
+    if args.reference_seg is None and not args.view_only:
         parser.error("--reference_seg is required without --groups.")
     for name in ("channels", "segmentations", "synapses"):
         if getattr(args, name) is not None:
