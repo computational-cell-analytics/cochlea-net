@@ -200,6 +200,34 @@ def get_marker_handle(color, marker, edgecolors=None):
         return plt.plot([], [], marker=marker, markerfacecolor='none', markeredgecolor=edgecolors, ls="none")[0]
 
 
+def cochlea_label(cochlea_name, meta, use_alias=True):
+    """Get the plot label of a cochlea: its alias, or the shortened cochlea name."""
+    return meta["alias"] if use_alias else cochlea_name.replace("_", "").replace("0", "")
+
+
+def animal_colors(cochleae_dict, use_alias=True):
+    """Map every animal to the color that its left and right cochlea share.
+
+    The animal is the plot label without the side suffix, which is the grouping that
+    plot_fig4.group_lr returns. A cochlea without a color in the registry falls back to
+    prism_palette.
+
+    Args:
+        cochleae_dict: Mapping of cochlea name to its COCHLEA_DICT entry.
+        use_alias: Use the alias instead of the shortened cochlea name.
+
+    Returns:
+        Mapping of animal to color.
+    """
+    colors = {}
+    for name, meta in cochleae_dict.items():
+        animal = cochlea_label(name, meta, use_alias)[:-1]
+        if animal in colors:
+            continue
+        colors[animal] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
+    return colors
+
+
 def get_flatline_handle(color, linestyle="solid"):
     return Line2D([], [], lw=3, color=color, linestyle=linestyle)
 
@@ -479,6 +507,12 @@ COCHLEA_DICT = {
     "M_AMD_000126_R": {"alias": "M_03R", "component": [1], "color": "#1C1FE8"},
     "M_AMD_000127_L": {"alias": "M_04L", "component": [1], "color": "#1C60E9"},
     "M_AMD_000127_R": {"alias": "M_04R", "component": [1], "color": "#1CA0E8"},
+    # Mouse cochleae for the OTOF gene therapy. The components match the component_list used to
+    # generate each reproducibility/object_measures/MAMDOTOF*_IHC.json.
+    "M_AMD_OTOF27_L": {"alias": "M_30L", "component": [1], "color": "#9C5027"},
+    "M_AMD_OTOF27_R": {"alias": "M_30R", "component": [2, 4, 10], "color": "#9C5027"},
+    "M_AMD_OTOF28_L": {"alias": "M_31L", "component": [5, 9, 1, 3, 4, 14, 8, 15], "color": "#279C52"},
+    "M_AMD_OTOF28_R": {"alias": "M_31R", "component": [2, 1, 3, 4], "color": "#279C52"},
     # Mouse cochleae for the ChReef analysis.
     "M_LR_000143_L": {"alias": "M0L", "component": [1]},
     "M_LR_000144_L": {"alias": "M_05L", "component": [1], "color": "#9C5027"},

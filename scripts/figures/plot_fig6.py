@@ -18,7 +18,7 @@ png_dpi = 300
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/LaVision-OTOF"  # noqa
 
 # The cochlea for the CHReef analysis.
-COCHLEAE_DICT = {
+COCHLEAE_DICT_LaVision = {
     "LaVision-OTOF23R": {"alias": "LV_M_03", "component": [4, 18, 7], "color": "#9C5027"},
     "LaVision-OTOF25R": {"alias": "LV_M_04", "component": [1], "color": "#67279C"},
 }
@@ -28,8 +28,8 @@ def get_otof_data():
     s3 = create_s3_target()
     source_name = "IHC_LOWRES-v3"
 
-    cache_path = "./otof_data.pkl"
-    cochleae = [key for key in COCHLEAE_DICT.keys()]
+    cache_path = "./otof_data_LaVision.pkl"
+    cochleae = [key for key in COCHLEAE_DICT_LaVision.keys()]
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
@@ -50,7 +50,7 @@ def get_otof_data():
         print(table.columns)
 
         # May need to be adjusted for some cochleae.
-        component_labels = COCHLEAE_DICT[cochlea]["component"]
+        component_labels = COCHLEAE_DICT_LaVision[cochlea]["component"]
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         # The relevant values for analysis.
@@ -81,8 +81,8 @@ def plot_legend_fig06e(
     """Legend for OTOF cochleae.
     """
     color_dict = {}
-    for key in COCHLEAE_DICT.keys():
-        color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
+    for key in COCHLEAE_DICT_LaVision.keys():
+        color_dict[COCHLEAE_DICT_LaVision[key]["alias"]] = COCHLEAE_DICT_LaVision[key]["color"]
 
     marker = ["o" for _ in color_dict]
     label = list(color_dict.keys())
@@ -167,11 +167,11 @@ def fig_06e_octave(
     color_dict = {}
     for name, values in otof_data.items():
         if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
+            alias = COCHLEAE_DICT_LaVision[name]["alias"]
         else:
             alias = name.replace("_", "").replace("0", "")
 
-        color_dict[alias] = COCHLEAE_DICT[name]["color"]
+        color_dict[alias] = COCHLEAE_DICT_LaVision[name]["color"]
         if mapping == "default":
             freq = values["frequency[kHz]"].values
             bin_edges, bin_labels = None, None

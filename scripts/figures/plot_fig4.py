@@ -2,7 +2,7 @@ import argparse
 import json
 import os
 import pickle
-from typing import List
+from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
@@ -12,7 +12,8 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import frequency_mapping, prism_style, prism_cleanup_axes
 from util import export_legend, custom_formatter_1, get_marker_handle, get_trendline_handle
-from util import COCHLEA_DICT, COLOR_LEFT, COLOR_RIGHT
+from util import animal_colors, cochlea_label
+from util import COCHLEA_DICT, COLOR_LEFT, COLOR_RIGHT, VALUE_DICT
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
@@ -38,29 +39,18 @@ COCHLEAE = [
 
 COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in COCHLEAE}
 
-COLORS_ANIMAL = {
-    "M05": "#9C5027",
-    "M06": "#279C52",
-    "M07": "#67279C",
-    "M08": "#27339C",
-    "M09": "#9C276F"
-}
+REFERENCE_COCHLEAE = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
 
-COLORS_LEFT = {
-    "M05R": "#A600FF",
-    "M06R": "#8F00DB",
-    "M07R": "#7D1DB1",
-    "M08R": "#672D86",
-    "M09R": "#4C2E5C"
-}
+# The cochleae for the OTOF gene therapy. The metadata lives in util.COCHLEA_DICT.
+# The left cochlea is treated, the right one is the untreated control.
+OTOF_COCHLEAE = [
+    "M_AMD_OTOF27_L",
+    "M_AMD_OTOF27_R",
+    "M_AMD_OTOF28_L",
+    "M_AMD_OTOF28_R",
+]
 
-COLORS_RIGHT = {
-    "M05L": "#FF0063",
-    "M06L": "#DB0063",
-    "M07L": "#B11D60",
-    "M08L": "#862D55",
-    "M09L": "#5C2E43"
-}
+OTOF_COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in OTOF_COCHLEAE}
 
 FILE_EXTENSION = "png"
 png_dpi = 300
@@ -127,6 +117,65 @@ def get_chreef_data(
         return pickle.load(f)
 
 
+def get_reference_counts(
+    structure: str,
+    source_name: str,
+    cochleae: List[str] = REFERENCE_COCHLEAE,
+):
+    """Get reference counts for healthy cochleae from util.VALUE_DICT.
+
+    Args:
+        structure: Structure key in VALUE_DICT, e.g. "SGN" or "IHC".
+        source_name: Segmentation source key, e.g. "SGN_v2" or "IHC_v11".
+        cochleae: Reference cochleae to read counts for.
+
+    Returns:
+        One count per cochlea, in the given order.
+    """
+    return [VALUE_DICT[cochlea][structure][source_name]["count"] for cochlea in cochleae]
+
+
+def get_otof_data(
+    cache_path: str = "./otof_data.pkl",
+):
+    """Create (pickled) dictionary of IHC_v11 measurements for OTOF gene-therapy cochleae.
+    """
+    s3 = create_s3_target()
+    source_name = "IHC_v11"
+
+    if os.path.exists(cache_path):
+        with open(cache_path, "rb") as f:
+            return pickle.load(f)
+
+    otof_data = {}
+    for cochlea, meta in OTOF_COCHLEAE_DICT.items():
+        print("Processsing cochlea:", cochlea)
+        content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
+        info = json.loads(content.read())
+        sources = info["sources"]
+
+        source = sources[source_name]["segmentation"]
+        rel_path = source["tableData"]["tsv"]["relativePath"]
+        table_content = s3.open(os.path.join(BUCKET_NAME, cochlea, rel_path, "default.tsv"), mode="rb")
+        table = pd.read_csv(table_content, sep="\t")
+
+        component_labels = meta["component"]
+        print(cochlea, component_labels)
+        table = table[table.component_labels.isin(component_labels)]
+        try:
+            values = table[["label_id", "length[µm]", "frequency[kHz]", "marker_labels"]]
+        except KeyError:
+            print("Could not find the values for", cochlea, "it will be skipped.")
+            continue
+
+        otof_data[cochlea] = values
+
+    with open(cache_path, "wb") as f:
+        pickle.dump(otof_data, f)
+    with open(cache_path, "rb") as f:
+        return pickle.load(f)
+
+
 def group_lr(
     names_lr: List[str],
     values: List[float],
@@ -163,37 +212,37 @@ def group_lr(
 
 
 def plot_legend_fig04(
-    chreef_data: dict,
+    data: dict,
     save_path: str,
     use_alias: bool = True,
     alignment: str = "horizontal",
+    cochleae_dict: Optional[Dict] = None,
 ):
     """Plot common legend for Figures 4c, 4d, and 4e.
 
     Args:
-        chreef_data: Data of ChReef cochleae.
+        data: Data of the cochleae to show, mapping cochlea name to measurements.
         save_path: File path to save legend.
         use_alias: Use alias.
         alignment: Alignment of legend.
+        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+            Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
     """
-    if use_alias:
-        alias = [COCHLEAE_DICT[k]["alias"] for k in chreef_data.keys()]
-    else:
-        alias = [name.replace("_", "").replace("0", "") for name in chreef_data.keys()]
+    cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
+    colors_by_animal = animal_colors(cochleae_dict, use_alias)
 
-    sgns = [len(vals) for vals in chreef_data.values()]
-    alias, values_left, values_right = group_lr(alias, sgns)
+    alias = [cochlea_label(name, cochleae_dict[name], use_alias) for name in data.keys()]
+    alias, _, _ = group_lr(alias, [0] * len(alias))
 
     colors = []
     labels = []
     markers = []
-    ncol = 5
-    keys_animal = list(COLORS_ANIMAL.keys())
-    for num in range(len(COLORS_ANIMAL)):
-        colors.append(COLORS_ANIMAL[keys_animal[num]])
-        colors.append(COLORS_ANIMAL[keys_animal[num]])
-        labels.append(f"{alias[num]}L")
-        labels.append(f"{alias[num]}R")
+    ncol = len(alias)
+    for a in alias:
+        colors.append(colors_by_animal[a])
+        colors.append(colors_by_animal[a])
+        labels.append(f"{a}L")
+        labels.append(f"{a}R")
         markers.append(MARKER_LEFT)
         markers.append(MARKER_RIGHT)
     if alignment == "vertical":
@@ -201,8 +250,6 @@ def plot_legend_fig04(
         labels = labels[::2] + labels[1::2]
         markers = markers[::2] + markers[1::2]
         ncol = 2
-    else:
-        ncol = 5
 
     handles = [get_marker_handle(c, m) for (c, m) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
@@ -258,6 +305,12 @@ def fig_04c(
     save_path: str,
     plot: bool = False,
     use_alias: bool = True,
+    cochleae_dict: Optional[Dict] = None,
+    count_label: str = "SGN count per cochlea",
+    xtick_labels: Tuple[str, str] = ("Injected", "Non-\nInjected"),
+    ylim: Tuple[float, float] = (5000, 14000),
+    y_ticks: Optional[List[float]] = None,
+    reference_values: Optional[List[float]] = None,
 ):
     """Box plot showing the SGN counts of ChReef treated cochleae compared to healthy ones.
 
@@ -266,14 +319,20 @@ def fig_04c(
         save_path: File path to save legend.
         plot: Plot figure.
         use_alias: Use alias.
+        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+            Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
+        count_label: Y-axis label.
+        xtick_labels: Labels for the left (treated) and right (untreated) x positions.
+        ylim: Lower and upper y-axis limit.
+        y_ticks: Y-axis tick positions. Defaults to the ChReef SGN-count ticks.
+        reference_values: Reference counts for the "untreated cochleae 95% CI" band. Defaults to
+            the SGN_v2 counts of the healthy iDISCO cochleae in util.VALUE_DICT.
     """
     prism_style()
+    cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
+    colors_by_animal = animal_colors(cochleae_dict, use_alias)
 
-    # TODO have central function for alias for all plots?
-    if use_alias:
-        alias = [COCHLEAE_DICT[k]["alias"] for k in chreef_data.keys()]
-    else:
-        alias = [name.replace("_", "").replace("0", "") for name in chreef_data.keys()]
+    alias = [cochlea_label(name, cochleae_dict[name], use_alias) for name in chreef_data.keys()]
 
     sgns = [len(vals) for vals in chreef_data.values()]
 
@@ -290,7 +349,7 @@ def fig_04c(
     offset = 0.08
     x_left = 1
     x_right = 2
-    y_ticks = [i for i in range(6000, 13000, 2000)]
+    y_ticks = y_ticks if y_ticks is not None else list(range(6000, 13000, 2000))
 
     x_pos_inj = [x_left - len(values_left) // 2 * offset + offset * i for i in range(len(values_left))]
     x_pos_non = [x_right - len(values_right) // 2 * offset + offset * i for i in range(len(values_right))]
@@ -306,28 +365,28 @@ def fig_04c(
             zorder=0
         )
 
-    for num, key in enumerate(COLORS_ANIMAL.keys()):
-        plt.scatter(x_pos_inj[num], values_left[num], label=f"{alias[num]}",
-                    color=COLORS_ANIMAL[key], marker=MARKER_LEFT, s=80, zorder=1)
+    for num, a in enumerate(alias):
+        plt.scatter(x_pos_inj[num], values_left[num], label=a,
+                    color=colors_by_animal[a], marker=MARKER_LEFT, s=80, zorder=1)
         plt.scatter(x_pos_non[num], values_right[num],
-                    color=COLORS_ANIMAL[key], marker=MARKER_RIGHT, s=80, zorder=1)
+                    color=colors_by_animal[a], marker=MARKER_RIGHT, s=80, zorder=1)
 
     # Labels and formatting
-    plt.xticks([x_left, x_right], ["Injected", "Non-\nInjected"], fontsize=sub_label_size)
+    plt.xticks([x_left, x_right], list(xtick_labels), fontsize=sub_label_size)
     for label in plt.gca().get_xticklabels():
         label.set_verticalalignment('center')
     ax.tick_params(axis='x', which='major', pad=16)
     plt.yticks(y_ticks, fontsize=main_tick_size)
-    plt.ylabel("SGN count per cochlea", fontsize=main_label_size)
-    plt.ylim(5000, 14000)
+    plt.ylabel(count_label, fontsize=main_label_size)
+    plt.ylim(*ylim)
 
     xmin = 0.5
     xmax = 2.5
     plt.xlim(xmin, xmax)
 
-    sgn_values = [11153, 11398, 10333, 11820]
-    sgn_value = np.mean(sgn_values)
-    sgn_std = np.std(sgn_values)
+    reference_values = reference_values if reference_values is not None else get_reference_counts("SGN", "SGN_v2")
+    sgn_value = np.mean(reference_values)
+    sgn_std = np.std(reference_values)
 
     upper_y = sgn_value + 1.96 * sgn_std
     lower_y = sgn_value - 1.96 * sgn_std
@@ -335,7 +394,8 @@ def fig_04c(
     c_untreated = COLOR_UNTREATED
 
     plt.hlines([lower_y, upper_y], xmin, xmax, colors=[c_untreated for _ in range(2)], zorder=-1)
-    plt.text((xmin + xmax) / 2, upper_y + 200, "untreated cochleae\n95% CI",
+    text_offset = (ylim[1] - ylim[0]) / 40
+    plt.text((xmin + xmax) / 2, upper_y + text_offset, "untreated cochleae\n95% CI",
              color=c_untreated, fontsize=fontsize_untreated, ha="center")
     plt.fill_between([xmin, xmax], lower_y, upper_y, color=c_untreated, alpha=0.05, interpolate=True)
 
@@ -361,6 +421,10 @@ def fig_04d(
     intensity: bool = False,
     gerbil: bool = False,
     use_alias: bool = True,
+    cochleae_dict: Optional[Dict] = None,
+    xtick_labels: Tuple[str, str] = ("Injected", "Non-\nInjected"),
+    ylim: Optional[Tuple[float, float]] = None,
+    y_ticks: Optional[List[float]] = None,
 ):
     """Expression efficiency per cochlea.
 
@@ -371,12 +435,17 @@ def fig_04d(
         intensity: Use intensity instead of expression efficiency.
         gerbil: Use gerbil data instead of mouse data.
         use_alias: Use alias.
+        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+            Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
+        xtick_labels: Labels for the left (treated) and right (untreated) x positions.
+        ylim: Lower and upper y-axis limit. Defaults to the gerbil/mouse ChReef bounds.
+        y_ticks: Y-axis tick positions. Defaults to the gerbil/mouse ChReef ticks.
     """
     prism_style()
-    if use_alias:
-        alias = [COCHLEAE_DICT[k]["alias"] for k in chreef_data.keys()]
-    else:
-        alias = [name.replace("_", "").replace("0", "") for name in chreef_data.keys()]
+    cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
+    colors_by_animal = animal_colors(cochleae_dict, use_alias)
+
+    alias = [cochlea_label(name, cochleae_dict[name], use_alias) for name in chreef_data.keys()]
 
     values = []
     for vals in chreef_data.values():
@@ -411,11 +480,11 @@ def fig_04d(
     x_pos_inj = [x_left - len(values_left) // 2 * offset + offset * i for i in range(len(values_left))]
     x_pos_non = [x_right - len(values_right) // 2 * offset + offset * i for i in range(len(values_right))]
 
-    for num, key in enumerate(COLORS_ANIMAL.keys()):
-        plt.scatter(x_pos_inj[num], values_left[num], label=f"{alias[num]}",
-                    color=COLORS_ANIMAL[key], marker=MARKER_LEFT, s=80, zorder=1)
+    for num, a in enumerate(alias):
+        plt.scatter(x_pos_inj[num], values_left[num], label=a,
+                    color=colors_by_animal[a], marker=MARKER_LEFT, s=80, zorder=1)
         plt.scatter(x_pos_non[num], values_right[num],
-                    color=COLORS_ANIMAL[key], marker=MARKER_RIGHT, s=80, zorder=1)
+                    color=colors_by_animal[a], marker=MARKER_RIGHT, s=80, zorder=1)
 
     # lines between cochleae of same animal
     for num, (left, right) in enumerate(zip(values_left, values_right)):
@@ -429,7 +498,11 @@ def fig_04d(
         )
 
     if not intensity:
-        if gerbil:
+        if ylim is not None:
+            plt.ylim(*ylim)
+            if y_ticks is not None:
+                plt.yticks(y_ticks, fontsize=main_tick_size)
+        elif gerbil:
             plt.ylim(0.25, 0.65)
             plt.yticks(np.arange(0.3, 0.7, 0.1), fontsize=main_tick_size)
         else:
@@ -437,7 +510,7 @@ def fig_04d(
             plt.yticks(np.arange(0.7, 1, 0.1), fontsize=main_tick_size)
 
     # Labels and formatting
-    plt.xticks([x_left, x_right], ["Injected", "Non-\nInjected"], fontsize=sub_label_size)
+    plt.xticks([x_left, x_right], list(xtick_labels), fontsize=sub_label_size)
     for la in plt.gca().get_xticklabels():
         la.set_verticalalignment('center')
     ax.tick_params(axis='x', which='major', pad=16)
@@ -518,6 +591,7 @@ def fig_04e(
     use_alias: bool = True,
     trendlines: bool = False,
     trendline_std: bool = False,
+    cochleae_dict: Optional[Dict] = None,
 ):
     """Expression efficiency per octave band for cochleae.
 
@@ -530,8 +604,11 @@ def fig_04e(
         use_alias: Use alias.
         trendlines: Use trendline of averages.
         trendline_std: Use standard deviation for upper and lower trendlines.
+        cochleae_dict: Mapping of cochlea name to its util.COCHLEA_DICT entry.
+            Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
     """
     prism_style()
+    cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
 
     if gerbil:
         animal = "gerbil"
@@ -541,10 +618,7 @@ def fig_04e(
     result = {"cochlea": [], "octave_band": [], "value": []}
     aliases = []
     for name, values in chreef_data.items():
-        if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
+        alias = cochlea_label(name, cochleae_dict[name], use_alias)
 
         freq = values["frequency[kHz]"].values
         if intensity:
@@ -611,27 +685,14 @@ def fig_04e(
     cochleas = sorted({name_lr[:-1] for name_lr in result["cochlea"].unique()})
 
     if gerbil:
-        colors_l = [COLOR_LEFT for _ in range(5)]
-        colors_r = [COLOR_RIGHT for _ in range(5)]
-
+        color_map = {name_lr: COLOR_LEFT if name_lr.endswith("L") else COLOR_RIGHT
+                     for name_lr in result["cochlea"].unique()}
     else:
-        colors_l = [COLORS_ANIMAL[key] for key in COLORS_ANIMAL.keys()]
-        colors_r = [COLORS_ANIMAL[key] for key in COLORS_ANIMAL.keys()]
-
-    color_map = {}
-    count_l = 0
-    count_r = 0
-    for num, (name_lr, grp) in enumerate(result.groupby("cochlea")):
-        name, side = name_lr[:-1], name_lr[-1]
-        if side == "L":
-            color_map[name_lr] = colors_l[count_l]
-            count_l += 1
-        else:
-            color_map[name_lr] = colors_r[count_r]
-            count_r += 1
+        colors_by_animal = animal_colors(cochleae_dict, use_alias)
+        color_map = {name_lr: colors_by_animal[name_lr[:-1]] for name_lr in result["cochlea"].unique()}
 
     if len(cochleas) == 1:
-        color_map = {"L": colors_l[0], "R": colors_r[1]}
+        color_map = {"L": COLOR_LEFT, "R": COLOR_RIGHT}
 
     # Track which cochlea names we have already added to the legend
     legend_added = set()
@@ -887,6 +948,26 @@ def main():
     fig_04e(chreef_data,
             save_path=os.path.join(args.figure_dir, f"fig_04e_transduction_std.{FILE_EXTENSION}"),
             plot=args.plot, use_alias=use_alias, trendlines=True, trendline_std=True)
+
+    # OTOF gene therapy: IHC counts and expression efficiency, treated (L) vs. untreated (R).
+    otof_data = get_otof_data()
+    otof_reference_ihc = get_reference_counts("IHC", "IHC_v11")
+
+    fig_04c(otof_data,
+            save_path=os.path.join(args.figure_dir, f"fig_06e_otof_ihc.{FILE_EXTENSION}"),
+            plot=args.plot, use_alias=use_alias, cochleae_dict=OTOF_COCHLEAE_DICT,
+            count_label="IHC count per cochlea", xtick_labels=("Injected", "Non-Injected"),
+            ylim=(500, 750), y_ticks=list(range(500, 800, 50)),
+            reference_values=otof_reference_ihc)
+
+    fig_04d(otof_data,
+            save_path=os.path.join(args.figure_dir, f"fig_06e_otof_expression.{FILE_EXTENSION}"),
+            plot=args.plot, use_alias=use_alias, cochleae_dict=OTOF_COCHLEAE_DICT,
+            xtick_labels=("Injected", "Non-Injected"),
+            ylim=(-0.03, 0.4), y_ticks=[0.0, 0.1, 0.2, 0.3])
+
+    plot_legend_fig04(otof_data, cochleae_dict=OTOF_COCHLEAE_DICT,
+                      save_path=os.path.join(args.figure_dir, f"fig_06_otof_legend.{FILE_EXTENSION}"))
 
     # Figures for gerbil (Figure 5)
     chreef_data_gerbil = get_chreef_data(animal="gerbil")

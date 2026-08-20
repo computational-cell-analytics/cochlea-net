@@ -17,6 +17,8 @@ from util import (
     COCHLEA_DICT,
     COLOR_LEFT,
     COLOR_RIGHT,
+    animal_colors,
+    cochlea_label,
     custom_formatter_1,
     export_legend,
     frequency_mapping,
@@ -60,13 +62,6 @@ COCHLEAE = [
 ]
 
 COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in COCHLEAE}
-
-COLORS_ANIMAL = {
-    "G1": "#9C5027",
-    "G2": "#279C52",
-    "G3": "#67279C",
-    "G4": "#27339C",
-}
 
 FILE_EXTENSION = "png"
 
@@ -217,23 +212,19 @@ def plot_legend_gerbil(
         use_alias: Use alias.
         alignment: Alignment of legend.
     """
-    if use_alias:
-        alias = [COCHLEAE_DICT[k]["alias"] for k in chreef_data.keys()]
-    else:
-        alias = [name.replace("_", "").replace("0", "") for name in chreef_data.keys()]
+    colors_by_animal = animal_colors(COCHLEAE_DICT, use_alias)
 
-    sgns = [len(vals) for vals in chreef_data.values()]
-    alias, values_left, values_right = group_lr(alias, sgns)
+    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in chreef_data.keys()]
+    alias, _, _ = group_lr(alias, [0] * len(alias))
 
     colors = []
     labels = []
     markers = []
-    keys_animal = list(COLORS_ANIMAL.keys())
-    for num in range(len(COLORS_ANIMAL)):
-        colors.append(COLORS_ANIMAL[keys_animal[num]])
-        colors.append(COLORS_ANIMAL[keys_animal[num]])
-        labels.append(f"{alias[num]}L")
-        labels.append(f"{alias[num]}R")
+    for a in alias:
+        colors.append(colors_by_animal[a])
+        colors.append(colors_by_animal[a])
+        labels.append(f"{a}L")
+        labels.append(f"{a}R")
         markers.append(MARKER_LEFT)
         markers.append(MARKER_RIGHT)
 
@@ -243,7 +234,7 @@ def plot_legend_gerbil(
         markers = markers[::2] + markers[1::2]
         ncol = 2
     else:
-        ncol = len(COLORS_ANIMAL)
+        ncol = len(alias)
 
     handles = [get_marker_handle(c, m) for (c, m) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
@@ -288,10 +279,8 @@ def fig_c_gerbil(
     """
     prism_style()
 
-    if use_alias:
-        alias = [COCHLEAE_DICT[k]["alias"] for k in density_data.keys()]
-    else:
-        alias = [name.replace("_", "").replace("0", "") for name in density_data.keys()]
+    colors_by_animal = animal_colors(COCHLEAE_DICT, use_alias)
+    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in density_data.keys()]
 
     regions = {name: group_density_by_region(entries) for name, entries in density_data.items()}
 
@@ -319,7 +308,7 @@ def fig_c_gerbil(
             means.append(float(np.mean(vals)) if vals.size else np.nan)
             stds.append(float(np.std(vals)) if vals.size > 1 else np.nan)
 
-        _, values_left, values_right = group_lr(alias, means)
+        animals, values_left, values_right = group_lr(alias, means)
         _, stds_left, stds_right = group_lr(alias, stds)
 
         x_pos_inj = [x_left - len(values_left) // 2 * offset + offset * i for i in range(len(values_left))]
@@ -328,10 +317,10 @@ def fig_c_gerbil(
         for left, right, xi, xn in zip(values_left, values_right, x_pos_inj, x_pos_non):
             ax.plot([xi, xn], [left, right], linestyle="solid", color="grey", alpha=0.4, zorder=0)
 
-        for num, key in enumerate(COLORS_ANIMAL.keys()):
-            ax.scatter(x_pos_inj[num], values_left[num], color=COLORS_ANIMAL[key],
+        for num, animal in enumerate(animals):
+            ax.scatter(x_pos_inj[num], values_left[num], color=colors_by_animal[animal],
                        marker=MARKER_LEFT, s=80, zorder=1)
-            ax.scatter(x_pos_non[num], values_right[num], color=COLORS_ANIMAL[key],
+            ax.scatter(x_pos_non[num], values_right[num], color=colors_by_animal[animal],
                        marker=MARKER_RIGHT, s=80, zorder=1)
 
             if show_std:
@@ -341,7 +330,7 @@ def fig_c_gerbil(
                                           (x_pos_non[num], values_right[num], stds_right[num])):
                     if np.isfinite(err):
                         ax.errorbar([x_val], [y_val], yerr=[err], fmt="none",
-                                    color=COLORS_ANIMAL[key], zorder=1)
+                                    color=colors_by_animal[animal], zorder=1)
 
         ref = (reference_values or {}).get(position)
         if ref:
@@ -426,10 +415,8 @@ def fig_d_gerbil(
         use_alias: Use alias.
     """
     prism_style()
-    if use_alias:
-        alias = [COCHLEAE_DICT[k]["alias"] for k in chreef_data.keys()]
-    else:
-        alias = [name.replace("_", "").replace("0", "") for name in chreef_data.keys()]
+    colors_by_animal = animal_colors(COCHLEAE_DICT, use_alias)
+    alias = [cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in chreef_data.keys()]
 
     values = []
     for vals in chreef_data.values():
@@ -453,11 +440,11 @@ def fig_d_gerbil(
     x_pos_inj = [x_left - len(values_left) // 2 * offset + offset * i for i in range(len(values_left))]
     x_pos_non = [x_right - len(values_right) // 2 * offset + offset * i for i in range(len(values_right))]
 
-    for num, key in enumerate(COLORS_ANIMAL.keys()):
-        ax.scatter(x_pos_inj[num], values_left[num], label=f"{alias[num]}",
-                   color=COLORS_ANIMAL[key], marker=MARKER_LEFT, s=80, zorder=1)
+    for num, animal in enumerate(alias):
+        ax.scatter(x_pos_inj[num], values_left[num], label=animal,
+                   color=colors_by_animal[animal], marker=MARKER_LEFT, s=80, zorder=1)
         ax.scatter(x_pos_non[num], values_right[num],
-                   color=COLORS_ANIMAL[key], marker=MARKER_RIGHT, s=80, zorder=1)
+                   color=colors_by_animal[animal], marker=MARKER_RIGHT, s=80, zorder=1)
 
     for left, right, xi, xn in zip(values_left, values_right, x_pos_inj, x_pos_non):
         ax.plot([xi, xn], [left, right], linestyle="solid", color="grey", alpha=0.4, zorder=0)
@@ -558,7 +545,7 @@ def fig_e_gerbil(
 
     result = {"cochlea": [], "octave_band": [], "value": []}
     for name, values in chreef_data.items():
-        alias = COCHLEAE_DICT[name]["alias"] if use_alias else name.replace("_", "").replace("0", "")
+        alias = cochlea_label(name, COCHLEAE_DICT[name], use_alias)
 
         freq = values["frequency[kHz]"].values
         marker_labels = values["marker_labels"].values
