@@ -142,7 +142,7 @@ def fig_02c(
     plt.yticks(fontsize=main_tick_size)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_2))
     plt.ylabel("Value", fontsize=main_label_size)
-    plt.ylim(0.6, 1)
+    plt.ylim(0.75, 1)
     # plt.legend(loc="lower right", fontsize=legendsize)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
