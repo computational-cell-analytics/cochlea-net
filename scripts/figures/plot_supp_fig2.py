@@ -23,9 +23,9 @@ PLOT_METADATA = {
     "SGN": {
         "stardist": {"label": "Stardist", "marker": "*"},
         "micro-sam": {"label": "µSAM", "marker": "D"},
-        "micro-sam_finetuned": {"label": "µSAM finetuned", "marker": "D"},
+        "micro-sam_finetuned": {"label": "µSAM ft", "marker": "D"},
         "cellpose3": {"label": "Cellpose 3", "marker": "v"},
-        "cellpose3_finetuned": {"label": "Cellpose 3 finetuned", "marker": "v"},
+        "cellpose3_finetuned": {"label": "Cellpose 3 ft", "marker": "v"},
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "spiner2D": {"label": "Spiner", "marker": "o"},
         "distance_unet": {"label": "CochleaNet", "marker": "s"},
@@ -37,9 +37,9 @@ PLOT_METADATA = {
     },
     "IHC": {
         "micro-sam": {"label": "µSAM", "marker": "D"},
-        "micro-sam_finetuned": {"label": "µSAM finetuned", "marker": "D"},
+        "micro-sam_finetuned": {"label": "µSAM ft", "marker": "D"},
         "cellpose3": {"label": "Cellpose 3", "marker": "v"},
-        "cellpose3_finetuned": {"label": "Cellpose 3 finetuned", "marker": "v"},
+        "cellpose3_finetuned": {"label": "Cellpose 3 ft", "marker": "v"},
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "distance_unet_v11": {"label": "CochleaNet", "marker": "s"},
         "distance_unet_v11-f0": {"label": "Fold 1", "marker": "s"},

@@ -100,7 +100,7 @@ def fig_02c(
     ihc_annotator = _read_scores(data_dir, "consensus_IHC.json", annotator_keyword)
 
     # synapses
-    syn_unet = _read_scores(data_dir, "synapses.json", "v5")
+    syn_unet = _read_scores(data_dir, "synapses.json", "v3")
     syn_annotator = _read_scores(data_dir, "consensus_synapses.json", annotator_keyword)
 
     setting = ["SGN", "IHC", "Synapse"]
@@ -142,7 +142,7 @@ def fig_02c(
     plt.yticks(fontsize=main_tick_size)
     ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_2))
     plt.ylabel("Value", fontsize=main_label_size)
-    plt.ylim(0.75, 1)
+    plt.ylim(0.69, 1)
     # plt.legend(loc="lower right", fontsize=legendsize)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
