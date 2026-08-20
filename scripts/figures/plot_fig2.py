@@ -92,7 +92,7 @@ def fig_02c(
     prism_style()
 
     # SGN
-    sgn_unet = _read_scores(data_dir, "SGN.json", "distance_unet")
+    sgn_unet = _read_scores(data_dir, "SGN_3D.json", "v2")
     sgn_annotator = _read_scores(data_dir, "consensus_SGN.json", annotator_keyword)
 
     # IHC
@@ -314,7 +314,7 @@ def main():
     )
     parser.add_argument(
         "--data_dir", "-d", type=str, default=_default_data_dir,
-        help="Directory containing the model accuracy files (SGN.json, IHC.json, IHC_3D.json, "
+        help="Directory containing the model accuracy files (SGN_3D.json, IHC.json, IHC_3D.json, "
              "synapses.json) and the annotator accuracy files (consensus_SGN.json, consensus_IHC.json, "
              f"consensus_synapses.json). Defaults to {_default_data_dir}.",
     )
