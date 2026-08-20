@@ -120,6 +120,42 @@ VALUE_DICT = {
             },
         },
     },
+    "G_EK_000233_L": {
+        "IHC": {
+            "IHC_v11": {
+                "count": 1018, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 18541, "version": "SGN_v2",
+            },
+        },
+    },
+    "G_LR_000301_R": {
+        "IHC": {
+            "IHC_v11": {
+                "count": 975, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 21801, "version": "SGN_v2",
+            },
+        },
+    },
+    "G_LR_000302_R": {
+        "IHC": {
+            "IHC_v11": {
+                "count": 935, "version": "IHC_v9",
+            },
+        },
+        "SGN": {
+            "SGN_v2": {
+                "count": 23717, "version": "SGN_v2",
+            },
+        },
+    },
 }
 
 
