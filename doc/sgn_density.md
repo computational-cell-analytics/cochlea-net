@@ -43,6 +43,13 @@ specifying the image channels, the relevant segmentation channel, and the compon
 - `--min_overlap_fraction` signifies the limit for the fraction of an SGN instance which is inside the crop used for density estimation. If the fraction is lower than this value, the SGN is omitted from the calculation. In the examples, SGNs which have less than 20% of their entire volume inside the crop will be excluded from the calculation
 - `--json_output` is a JSON dictionary which contains crop centers and ROI halos which can be used as input for `flamingo_tools.extract_block` as the `--json_info` argument to crop the subvolumes
 - `--positions` can be used to evaluate the SGN density at specific length fractions of Rosenthal's canal, default values are apex (0.15), mid (0.5) and base (0.85)
+- `--run_length_tolerance` limits how far along Rosenthal's canal an instance may sit from the requested position, as a fraction of the total run length. Default 0.1
+- the slice is restricted to one turn of Rosenthal's canal by default. A slice can cut two turns where the canal runs oblique to the slice axis. The convex hull then spans both turns and the blank space between them, which makes the density collapse. The instances are therefore clustered, and only the cluster whose run length matches the requested position is kept
+    - `--no_cluster_filter` turns this off and measures every instance in the slice
+    - `--max_edge_distance` is the maximum distance in µm between two instances of one cluster. Default 40.0
+    - `--min_cluster_size` is the minimum number of instances a cluster needs to be selectable. Smaller clusters are treated as fragments. Default 10
+- `--min_overlap_volume` is the volume equivalent of `--min_overlap_fraction`, given in µm³
+- `--crop_output` and `--img_path` extract the image crops of every density position directly, instead of writing a block-extraction JSON for `flamingo_tools.extract_block`
 - additional parameters are explained in the function documentation (`flamingo_tools.sgn_density -h`)
 
 

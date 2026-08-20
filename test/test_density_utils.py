@@ -1,4 +1,5 @@
 import unittest
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -110,6 +111,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "area", "density", "mode", "axis",
             "bb_min", "bb_max", "bb_center", "label_ids", "label_removed",
             "min_overlap_fraction", "min_overlap_volume", "hull_vertices",
+            "component_list", "n_clusters", "cluster_removed",
         }
         self.assertEqual(set(result.keys()), expected)
         self.assertNotIn("volume", result)
@@ -122,6 +124,7 @@ class TestSgnDensityAtPosition(unittest.TestCase):
             "volume", "density", "mode", "axis",
             "bb_min", "bb_max", "bb_center", "label_ids", "label_removed",
             "min_overlap_fraction", "min_overlap_volume", "hull_vertices",
+            "component_list", "n_clusters", "cluster_removed",
         }
         self.assertEqual(set(result.keys()), expected)
         self.assertNotIn("area", result)
@@ -450,6 +453,98 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
             segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
         )
         self.assertEqual(result["n_sgns"], 20)
+
+
+class TestClusterFilter(unittest.TestCase):
+    """The slice must measure one turn of the Rosenthal's canal, not the gap between two."""
+
+    def setUp(self):
+        from flamingo_tools.analysis.density_utils import sgn_density_at_position
+        self.fn = sgn_density_at_position
+
+    @staticmethod
+    def _two_turns(x_offset=500.0, n_second=20, frac_center=0.5):
+        """One population at the reference fraction plus a second turn inside the same slice.
+
+        The second population sits `x_offset` away in x, so it forms its own spatial cluster, and
+        slightly further along the canal, so the run length identifies which one was asked for.
+        """
+        near = _make_table(n=20, z_center=50.0, frac_center=frac_center, frac_spread=0.005)
+        far = _make_table(n=n_second, z_center=50.0, frac_center=frac_center + 0.05, frac_spread=0.005)
+        far["label_id"] += 100
+        for column in ("anchor_x", "bb_min_x", "bb_max_x"):
+            far[column] += x_offset
+        return pd.concat([near, far], ignore_index=True)
+
+    def test_keeps_only_the_requested_turn(self):
+        table = self._two_turns()
+        result = self.fn(table, reference_position=0.5, slice_thickness=40.0)
+        self.assertEqual(result["n_clusters"], 2)
+        self.assertEqual(result["n_sgns"], 20)
+        self.assertTrue(all(i <= 20 for i in result["label_ids"]))
+        self.assertEqual(sorted(result["cluster_removed"]), sorted(range(101, 121)))
+
+    def test_disabled_keeps_both_turns(self):
+        table = self._two_turns()
+        filtered = self.fn(table, reference_position=0.5, slice_thickness=40.0)
+        unfiltered = self.fn(table, reference_position=0.5, slice_thickness=40.0, cluster_filter=False)
+        self.assertEqual(unfiltered["n_sgns"], 40)
+        self.assertEqual(unfiltered["cluster_removed"], [])
+        # No clustering ran, so the result must not claim a single turn was verified.
+        self.assertIsNone(unfiltered["n_clusters"])
+        # The hull of both turns spans the blank space between them, so the area is far larger.
+        self.assertGreater(unfiltered["area"], 5 * filtered["area"])
+        self.assertLess(unfiltered["density"], filtered["density"])
+
+    def test_single_cluster_is_untouched(self):
+        table = _make_table(n=20, z_center=50.0, frac_center=0.5, frac_spread=0.005)
+        filtered = self.fn(table, reference_position=0.5, slice_thickness=40.0)
+        unfiltered = self.fn(table, reference_position=0.5, slice_thickness=40.0, cluster_filter=False)
+        self.assertEqual(filtered["n_clusters"], 1)
+        self.assertEqual(filtered["n_sgns"], unfiltered["n_sgns"])
+        self.assertEqual(filtered["area"], unfiltered["area"])
+
+    def test_single_instance_keeps_bbox_fallback(self):
+        table = _make_table(n=20, z_center=50.0, frac_center=0.5, frac_spread=0.005).iloc[[0]]
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            result = self.fn(table, reference_position=0.5, slice_thickness=1.0)
+        self.assertEqual(result["n_sgns"], 1)
+        self.assertIsNone(result["hull_vertices"])
+
+    def test_falls_back_to_largest_cluster(self):
+        # Both clusters are below min_cluster_size, so the position must still report a density.
+        table = self._two_turns(n_second=20)
+        result = self.fn(table, reference_position=0.5, slice_thickness=40.0, min_cluster_size=100)
+        self.assertEqual(result["n_clusters"], 2)
+        self.assertEqual(result["n_sgns"], 20)
+        self.assertGreater(result["density"], 0)
+
+    def test_selects_by_run_length_not_by_size(self):
+        # The far turn is the larger cluster, but the near one matches the requested fraction.
+        near = _make_table(n=20, z_center=50.0, frac_center=0.5, frac_spread=0.005)
+        far_a = _make_table(n=20, z_center=50.0, frac_center=0.58, frac_spread=0.005)
+        far_b = _make_table(n=20, z_center=50.0, frac_center=0.58, frac_spread=0.005)
+        far_a["label_id"] += 100
+        far_b["label_id"] += 200
+        for column in ("anchor_x", "bb_min_x", "bb_max_x"):
+            far_a[column] += 500.0
+            far_b[column] += 510.0
+        table = pd.concat([near, far_a, far_b], ignore_index=True)
+        result = self.fn(table, reference_position=0.5, slice_thickness=40.0, run_length_tolerance=0.2)
+        self.assertEqual(result["n_sgns"], 20)
+        self.assertTrue(all(i <= 20 for i in result["label_ids"]))
+
+    def test_max_edge_distance_merges_the_turns(self):
+        table = self._two_turns(x_offset=30.0)
+        result = self.fn(table, reference_position=0.5, slice_thickness=40.0, max_edge_distance=40.0)
+        self.assertEqual(result["n_clusters"], 1)
+        self.assertEqual(result["n_sgns"], 40)
+
+    def test_component_list_is_recorded(self):
+        table = _make_table(n=20, frac_center=0.5, frac_spread=0.005, component_label=3)
+        result = self.fn(table, reference_position=0.5, component_list=[3])
+        self.assertEqual(result["component_list"], [3])
 
 
 class TestHullToMask(unittest.TestCase):
