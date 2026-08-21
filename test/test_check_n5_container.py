@@ -89,6 +89,19 @@ class TestCheckN5Container(unittest.TestCase):
         problems, output = self._check(key="setup1/timepoint0/s0")
         self.assertTrue(any("does not exist" in p for p in problems), msg=output)
 
+    def test_node_keys_use_forward_slashes(self):
+        """Container keys are '/'-separated on every platform, unlike filesystem paths."""
+        keys = {rel for rel, _, _, _ in self.script.walk_nodes(self.path)}
+        self.assertEqual(keys, {"/", "setup0", "setup0/timepoint0", self.key})
+
+    def test_backslash_key_is_accepted(self):
+        problems, output = self._check(key=self.key.replace("/", "\\"))
+        self.assertEqual(problems, [], msg=output)
+
+    def test_node_dir_of_root_is_the_container(self):
+        """A root key must not resolve to the filesystem root."""
+        self.assertEqual(self.script._node_dir(self.path, "/"), self.path)
+
     def test_unreadable_chunk(self):
         with open(self._chunk_files()[0], "wb") as f:
             f.write(b"not a valid n5 chunk")
