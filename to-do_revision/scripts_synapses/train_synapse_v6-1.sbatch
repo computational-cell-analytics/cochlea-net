@@ -25,5 +25,5 @@ shopt -s extglob
 
 export SCRIPT_DIR=/user/pape41/u12086/Work/my_projects/flamingo-tools/scripts/synapse_marker_detection
 
-python $SCRIPT_DIR/train_synapse_detection.py -v v3 -m v3-1 --random_state 42
+python $SCRIPT_DIR/train_synapse_detection.py -v v6 -m v6-1 --random_state 42
 

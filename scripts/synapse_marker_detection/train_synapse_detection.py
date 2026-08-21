@@ -13,13 +13,14 @@ from flamingo_tools.synapse_detection.detection_dataset import (
     MinPointSampler,
 )
 
-sys.path.append("/home/pape/Work/my_projects/czii-protein-challenge")
+sys.path.append("/user/pape41/u12086/Work/my_projects/czii-protein-challenge")
 sys.path.append("/user/schilling40/u15000/czii-protein-challenge/detection")
 
 from utils.training.training import supervised_training  # noqa
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 ROOT_SYNAPSE_DATA = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data")
+SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networks/synapses"
 
 
 def train(
@@ -110,7 +111,7 @@ def train(
         upper_bound=None,
         test_paths=test_paths,
         test_label_paths=test_label_paths,
-        # save_root="",
+        save_root=SAVE_ROOT,
         dataset_class=DetectionDataset,
         n_samples_train=3200,
         n_samples_val=160,
