@@ -1,9 +1,12 @@
+from typing import Dict, List, Sequence, Tuple
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
 from matplotlib.lines import Line2D
+from matplotlib.transforms import Bbox
 
 # Directory with synapse measurement tables
 SYNAPSE_DIR_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/synapses"
@@ -177,11 +180,21 @@ def custom_formatter(precision=1):
     return mticker.FuncFormatter(_format)
 
 
-def export_legend(legend, filename="legend.png"):
+def export_legend(legend, filename="legend.png", extra_artists=None):
+    """Save a legend as its own image file.
+
+    Args:
+        legend: Legend to save. Its axes are turned off, so the host figure holds only the legend.
+        filename: Output path.
+        extra_artists: Artists drawn beside the legend, e.g. a box around a group of entries.
+            They are included in the saved crop, which would otherwise cut them off.
+    """
     legend.axes.axis("off")
     fig = legend.figure
     fig.canvas.draw()
-    bbox = legend.get_window_extent().transformed(fig.dpi_scale_trans.inverted())
+    boxes = [legend.get_window_extent()]
+    boxes += [artist.get_window_extent() for artist in extra_artists or []]
+    bbox = Bbox.union(boxes).transformed(fig.dpi_scale_trans.inverted())
     fig.savefig(filename, bbox_inches=bbox, dpi=png_dpi)
 
 
@@ -241,6 +254,33 @@ def cochlea_colors(cochleae_dict, names=None, use_alias=True):
         label = cochlea_label(name, meta, use_alias)
         colors[label] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
     return colors
+
+
+def iteration_statistics(
+    metrics: Dict[str, dict],
+    keys: Sequence[str],
+    metric_names: Sequence[str] = ("precision", "recall", "f1-score"),
+) -> Tuple[Dict[str, Tuple[float, float]], List[str]]:
+    """Average a metric over several training iterations of the same network.
+
+    Args:
+        metrics: Accuracy entries of one accuracy JSON file, keyed by network iteration.
+        keys: Iteration entries to average. Keys that are absent from metrics are skipped.
+        metric_names: Metrics to average. A metric is skipped for an entry that stores None.
+
+    Returns:
+        The mean and the population standard deviation per metric, and the keys found in metrics.
+    """
+    present = [key for key in keys if key in metrics]
+    if not present:
+        return {}, present
+
+    stats = {}
+    for metric in metric_names:
+        values = [metrics[key][metric] for key in present if metrics[key].get(metric) is not None]
+        if values:
+            stats[metric] = (float(np.mean(values)), float(np.std(values)))
+    return stats, present
 
 
 def get_flatline_handle(color, linestyle="solid"):
@@ -521,6 +561,9 @@ COHORT_DICT = {
             "G_EK_000049_L", "G_EK_000049_R", "G_EK_000071_L", "G_EK_000071_R",
             "G_EK_000074_L", "G_EK_000074_R", "G_EK_000076_L", "G_EK_000076_R",
         ],
+        # G_EK_000049 received the injection postnatally, the other three animals as adults.
+        # The two groups are not comparable, so a figure can plot and average them apart.
+        "postnatal": ["G_EK_000049_L", "G_EK_000049_R"],
     },
     "wt_gerbil": {
         "label": "WT gerbil", "animal": "gerbil", "color": COLOR_UNTREATED,
@@ -541,6 +584,20 @@ def cohort_cochleae(cohort):
     if cohort not in COHORT_DICT:
         raise KeyError(f"Unknown cohort {cohort}, expected one of {list(COHORT_DICT)}.")
     return COHORT_DICT[cohort]["cochleae"]
+
+
+def cohort_postnatal(cohort):
+    """Get the cochleae of one cohort that were injected postnatally.
+
+    Args:
+        cohort: Key in COHORT_DICT.
+
+    Returns:
+        List of cochlea names, empty if the cohort holds no postnatal injection.
+    """
+    if cohort not in COHORT_DICT:
+        raise KeyError(f"Unknown cohort {cohort}, expected one of {list(COHORT_DICT)}.")
+    return COHORT_DICT[cohort].get("postnatal", [])
 
 
 # Central registry of the cochleae used by the figure scripts. A component list belongs to one

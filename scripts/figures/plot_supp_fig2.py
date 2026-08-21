@@ -6,7 +6,7 @@ from typing import Dict, List, Optional
 import numpy as np
 import matplotlib.pyplot as plt
 
-from util import get_flatline_handle
+from util import get_flatline_handle, iteration_statistics
 from util import prism_cleanup_axes, export_legend
 
 png_dpi = 300
@@ -190,12 +190,10 @@ def supp_fig_02(
         for key, fold_keys in fold_groups.items():
             if not fold_keys:
                 continue
-            fs = {}
-            for metric in ("precision", "recall", "f1-score"):
-                vals = [metrics[k][metric] for k in fold_keys]
-                fs[metric] = (float(np.mean(vals)), float(np.std(vals)))
-            rt_vals = [metrics[k]["runtime"] for k in fold_keys if metrics[k]["runtime"] is not None]
-            fs["runtime"] = (float(np.mean(rt_vals)), float(np.std(rt_vals))) if rt_vals else (None, None)
+            fs, _ = iteration_statistics(
+                metrics, fold_keys, metric_names=("precision", "recall", "f1-score", "runtime")
+            )
+            fs.setdefault("runtime", (None, None))
             fold_stats[key] = fs
 
     segm_dict = {}
@@ -433,21 +431,14 @@ def plot_fold_variation(
         with open(json_path, "r") as f:
             metrics = json.load(f)
 
-        present = [key for key in fold_keys if key in metrics]
-        missing = [key for key in fold_keys if key not in metrics]
+        stats[group], present = iteration_statistics(metrics, fold_keys, metric_names=metrics_to_plot)
         if not present:
             raise ValueError(f"None of the fold keys {fold_keys} are present in {json_path}.")
+        missing = [key for key in fold_keys if key not in present]
         if missing:
             print(f"Warning: {group}: {', '.join(missing)} not found in {json_path}. "
                   f"Averaging over {len(present)} of {len(fold_keys)} folds.")
 
-        stats[group] = {
-            metric: (
-                float(np.mean([metrics[key][metric] for key in present])),
-                float(np.std([metrics[key][metric] for key in present])),
-            )
-            for metric in metrics_to_plot
-        }
         for metric in metrics_to_plot:
             mean, std = stats[group][metric]
             print(f"{group} {metric}: {mean:.3f} +- {std:.3f} (n={len(present)})")

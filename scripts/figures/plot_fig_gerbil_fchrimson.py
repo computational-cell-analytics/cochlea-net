@@ -13,12 +13,14 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from plot_fig4 import group_lr, plot_legend_fig04_trendline
 from util import (
+    COCHLEA_DICT,
     COLOR_LEFT,
     COLOR_RIGHT,
     animal_colors,
     cochlea_label,
     cochleae_for,
     cohort_cochleae,
+    cohort_postnatal,
     COLOR_UNTREATED,
     custom_formatter,
     export_legend,
@@ -54,6 +56,11 @@ POSITION_LABELS = {"apex": "Apex", "mid": "Mid", "base": "Base"}
 COCHLEAE = cohort_cochleae("fchrimson_gerbil")
 
 COCHLEAE_DICT = cochleae_for(COCHLEAE, "SGN", SOURCE_NAME)
+
+# G_EK_000049 received the injection postnatally, the other three animals as adults. The two
+# groups are not comparable, so panel E can plot them apart and average only the adults.
+POSTNATAL_COCHLEAE = cohort_postnatal("fchrimson_gerbil")
+ADULT_COCHLEAE = [name for name in COCHLEAE if name not in POSTNATAL_COCHLEAE]
 
 # Untreated gerbil cochleae, plotted as the SGN density reference of panel C.
 WT_COCHLEAE = cohort_cochleae("wt_gerbil")
@@ -239,6 +246,32 @@ def plot_legend_gerbil(
     handles = [get_marker_handle(c, m) for (c, m) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
 
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
+
+
+def plot_legend_fig05e_gerbil(
+    save_path: str,
+    color: Optional[List[str]] = None,
+    label: Optional[List[str]] = None,
+    marker: Optional[List[str]] = None,
+):
+    """Plot the legend of a figure 5e panel that shows a single cochlea pair.
+
+    Args:
+        save_path: File path to save legend.
+        color: One color per entry. Defaults to the injected and non-injected side colors.
+        label: One label per entry. Defaults to the aliases of the postnatal cochleae.
+        marker: One marker per entry. Defaults to the injected and non-injected markers.
+    """
+    color = [COLOR_LEFT, COLOR_RIGHT] if color is None else color
+    if label is None:
+        label = [COCHLEA_DICT[name]["alias"] for name in POSTNATAL_COCHLEAE]
+    marker = [MARKER_LEFT, MARKER_RIGHT] if marker is None else marker
+
+    handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
+    legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
     export_legend(legend, save_path)
     legend.remove()
     plt.close()
@@ -569,26 +602,17 @@ def _get_trendline_params(trend_dict, side):
     return x_values, y_values_center, y_values_upper, y_values_lower
 
 
-def fig_e_gerbil(
-    fchrimson_data: dict,
-    save_path: str,
-    plot: bool = False,
-    use_alias: bool = True,
-    trendlines: bool = False,
-    trendline_std: bool = False,
-):
-    """Expression efficiency per octave band for gerbil cochleae.
+def _efficiency_by_band(fchrimson_data: dict, use_alias: bool = True) -> pd.DataFrame:
+    """Expression efficiency per octave band, one row per cochlea and band.
 
     Args:
         fchrimson_data: Data of f-Chrimson gerbil cochleae.
-        save_path: File path to save the figure.
-        plot: Plot figure.
         use_alias: Use alias.
-        trendlines: Use trendline of averages.
-        trendline_std: Use standard deviation for upper and lower trendlines.
-    """
-    prism_style()
 
+    Returns:
+        Table with the columns cochlea, octave_band, value and x_pos, where x_pos is the index
+        of the octave band.
+    """
     result = {"cochlea": [], "octave_band": [], "value": []}
     for name, values in fchrimson_data.items():
         alias = cochlea_label(name, COCHLEAE_DICT[name], use_alias)
@@ -605,6 +629,138 @@ def fig_e_gerbil(
     bin_labels = pd.unique(result["octave_band"])
     band_to_x = {band: i for i, band in enumerate(bin_labels)}
     result["x_pos"] = result["octave_band"].map(band_to_x)
+    return result
+
+
+def _band_x_positions(result: pd.DataFrame, offset_map: dict, offset: float) -> pd.Series:
+    """Assign the x position of every point, jittered inside the column of its side.
+
+    The positions are derived from every cochlea of the cohort, not only from the plotted ones,
+    so a trendline of cochleae that are left out still spans the column they would occupy.
+
+    Args:
+        result: Table as returned by _efficiency_by_band.
+        offset_map: X offset of the injected and the non-injected column.
+        offset: X distance between two cochleae inside one column.
+
+    Returns:
+        The x position per row of result.
+    """
+    aliases = sorted(result["cochlea"].unique())
+    n_animals = len({alias[:-1] for alias in aliases})
+
+    x_positions = pd.Series(index=result.index, dtype=float)
+    for num, alias in enumerate(aliases):
+        rows = result["cochlea"] == alias
+        column = offset_map[alias[-1]] - n_animals / 2 * offset + offset * num
+        x_positions[rows] = result.loc[rows, "x_pos"] + column
+    return x_positions
+
+
+def _trend_dict(result: pd.DataFrame, aliases: List[str]) -> dict:
+    """Collect the per-cochlea curves that a trendline averages over."""
+    trend_dict = {}
+    for alias in sorted(aliases):
+        grp = result[result["cochlea"] == alias].sort_values("x")
+        trend_dict[alias] = {
+            "x_sorted": grp["x"].to_numpy(),
+            "y_sorted": grp["value"].to_numpy(),
+            "side": alias[-1],
+        }
+    return trend_dict
+
+
+def _draw_band_trendline(
+    ax,
+    trend_dict: dict,
+    side: str,
+    color: str,
+    x_bounds: tuple,
+    linestyle: str = "dashed",
+    alpha: float = 0.6,
+    zorder: int = 2,
+    show_std: bool = False,
+    linewidth: int = 3,
+) -> List[float]:
+    """Draw the mean of one side as a step line over the octave bands.
+
+    Args:
+        ax: Axes to draw on.
+        trend_dict: Per-cochlea curves, as returned by _trend_dict.
+        side: 'L' for the injected or 'R' for the non-injected cochleae.
+        color: Line color.
+        x_bounds: X values the line is extended to, so that it spans the full axis.
+        linestyle: Line style.
+        alpha: Line alpha.
+        zorder: Draw order.
+        show_std: Draw the standard deviation as two bounds and a filled band.
+        linewidth: Line width.
+
+    Returns:
+        The drawn y values, to include in the y-axis limits.
+    """
+    x_sorted, y_center, y_upper, y_lower = _get_trendline_params(trend_dict, side)
+    min_x, max_x = x_bounds
+    x_sorted.insert(0, min_x)
+    x_sorted.append(max_x)
+    y_center.insert(0, y_center[0])
+    y_center.append(y_center[-1])
+
+    ax.plot(x_sorted, y_center, linestyle=linestyle, color=color, alpha=alpha,
+            linewidth=linewidth, zorder=zorder)
+
+    drawn = list(y_center)
+    if show_std:
+        for y_bound in (y_lower, y_upper):
+            y_bound.insert(0, y_bound[0])
+            y_bound.append(y_bound[-1])
+            ax.plot(x_sorted, y_bound, linestyle="solid", color=color, alpha=0.08, zorder=0)
+        ax.fill_between(x_sorted, y_lower, y_upper, color=color, alpha=0.05, interpolate=True)
+        drawn += y_lower + y_upper
+    return drawn
+
+
+def fig_05e(
+    fchrimson_data: dict,
+    save_path: str,
+    plot: bool = False,
+    use_alias: bool = True,
+    trendlines: bool = False,
+    trendline_std: bool = False,
+    cochleae: Optional[List[str]] = None,
+    color_by_side: bool = False,
+    adult_trendline: bool = False,
+):
+    """Expression efficiency per octave band for gerbil cochleae.
+
+    Args:
+        fchrimson_data: Data of f-Chrimson gerbil cochleae. Every cochlea is read, so that the
+            adult trendline stays available when only a subset is plotted.
+        save_path: File path to save the figure.
+        plot: Plot figure.
+        use_alias: Use alias.
+        trendlines: Draw the injected and the non-injected mean of the plotted cochleae.
+        trendline_std: Add the standard deviation to every drawn trendline.
+        cochleae: Cochleae to plot. Defaults to every cochlea in fchrimson_data.
+        color_by_side: Color the points by side instead of per animal. Use it when the plot holds
+            a single pair, where the animal color carries no information.
+        adult_trendline: Draw the mean of the adult injected cochleae as a dashed reference. The
+            postnatal animal is left out of that mean, because it is not comparable to them.
+    """
+    prism_style()
+
+    cochleae = list(fchrimson_data) if cochleae is None else cochleae
+
+    result = _efficiency_by_band(fchrimson_data, use_alias)
+    bin_labels = pd.unique(result["octave_band"])
+
+    offset_map = {"L": -0.2, "R": 0.2}
+    offset = 0.018
+    result["x"] = _band_x_positions(result, offset_map, offset)
+
+    plotted = sorted(cochlea_label(name, COCHLEAE_DICT[name], use_alias) for name in cochleae)
+    adult_injected = [cochlea_label(name, COCHLEAE_DICT[name], use_alias)
+                      for name in ADULT_COCHLEAE if name.endswith("_L")]
 
     fig, ax = plt.subplots(figsize=(8, 5))
 
@@ -613,87 +769,47 @@ def fig_e_gerbil(
     yaxis_tick_size = 16
     label_size = 20
     band_label_offset_y = 0.08
-    ylim_min, ylim_max, ytick_min, ytick_max = _efficiency_ylim(result["value"].tolist())
 
-    offset_map = {"L": -0.2, "R": 0.2}
-    cochleas = sorted({name_lr[:-1] for name_lr in result["cochlea"].unique()})
+    if color_by_side:
+        color_map = {alias: COLOR_LEFT if alias.endswith("L") else COLOR_RIGHT for alias in plotted}
+    else:
+        colors_by_animal = animal_colors(COCHLEAE_DICT, use_alias)
+        color_map = {alias: colors_by_animal[alias[:-1]] for alias in plotted}
 
-    color_map = {}
-    for name_lr in sorted(result["cochlea"].unique()):
-        color_map[name_lr] = COLOR_LEFT if name_lr[-1] == "L" else COLOR_RIGHT
-
-    legend_added = set()
-    offset = 0.018
-    trend_dict = {}
-
-    for num, (name_lr, grp) in enumerate(result.groupby("cochlea")):
-        name, side = name_lr[:-1], name_lr[-1]
-        color = color_map[name_lr]
-
-        x_positions = grp["x_pos"] + offset_map[side] - len(cochleas) / 2 * offset + offset * num
+    for alias in plotted:
+        grp = result[result["cochlea"] == alias]
         ax.scatter(
-            x_positions,
+            grp["x"],
             grp["value"],
-            label=name if name not in legend_added else None,
             s=60,
             alpha=0.8,
-            marker=MARKER_LEFT if side == "L" else MARKER_RIGHT,
-            color=color,
+            marker=MARKER_LEFT if alias.endswith("L") else MARKER_RIGHT,
+            color=color_map[alias],
             zorder=1,
         )
-        legend_added.add(name)
 
-        if trendlines:
-            sorted_idx = np.argsort(x_positions)
-            x_sorted = np.array(x_positions)[sorted_idx]
-            y_sorted = np.array(grp["value"])[sorted_idx]
-            trend_dict[name_lr] = {"x_sorted": x_sorted, "y_sorted": y_sorted, "side": side}
+    # The y limits have to cover every drawn trendline as well. A reference line averaged over
+    # cochleae that are not plotted can otherwise fall outside the axis.
+    axis_values = result[result["cochlea"].isin(plotted)]["value"].tolist()
 
     xlim_left, xlim_right = ax.get_xlim()
+    x_bounds = (result["x"].min(), result["x"].max())
 
     if trendlines:
-        trendline_width = 3
+        trend_dict = _trend_dict(result, plotted)
+        axis_values += _draw_band_trendline(
+            ax, trend_dict, "L", COLOR_LEFT, x_bounds,
+            linestyle="dashed", alpha=0.6, zorder=2, show_std=trendline_std)
+        axis_values += _draw_band_trendline(
+            ax, trend_dict, "R", COLOR_RIGHT, x_bounds,
+            linestyle="dotted", alpha=0.7, zorder=0, show_std=trendline_std)
 
-        x_sorted_r, _, _, _ = _get_trendline_params(trend_dict, "R")
-        x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "L")
-        min_x = min(min(x_sorted_r), min(x_sorted))
-        max_x = max(max(x_sorted_r), max(x_sorted))
-        x_sorted.insert(0, min_x)
-        x_sorted.append(max_x)
-        y_sorted.insert(0, y_sorted[0])
-        y_sorted.append(y_sorted[-1])
+    if adult_trendline:
+        axis_values += _draw_band_trendline(
+            ax, _trend_dict(result, adult_injected), "L", COLOR_LEFT, x_bounds,
+            linestyle="dashed", alpha=0.6, zorder=2, show_std=trendline_std)
 
-        ax.plot(x_sorted, y_sorted, linestyle="dashed", color=COLOR_LEFT, alpha=0.6,
-                linewidth=trendline_width, zorder=2)
-
-        if trendline_std:
-            y_sorted_lower.insert(0, y_sorted_lower[0])
-            y_sorted_lower.append(y_sorted_lower[-1])
-            y_sorted_upper.insert(0, y_sorted_upper[0])
-            y_sorted_upper.append(y_sorted_upper[-1])
-            ax.plot(x_sorted, y_sorted_upper, linestyle="solid", color=COLOR_LEFT, alpha=0.08, zorder=0)
-            ax.plot(x_sorted, y_sorted_lower, linestyle="solid", color=COLOR_LEFT, alpha=0.08, zorder=0)
-            ax.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
-                            color=COLOR_LEFT, alpha=0.05, interpolate=True)
-
-        x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "R")
-        x_sorted.insert(0, min_x)
-        x_sorted.append(max_x)
-        y_sorted.insert(0, y_sorted[0])
-        y_sorted.append(y_sorted[-1])
-
-        ax.plot(x_sorted, y_sorted, linestyle="dotted", color=COLOR_RIGHT, alpha=0.7,
-                linewidth=trendline_width, zorder=0)
-
-        if trendline_std:
-            y_sorted_lower.insert(0, y_sorted_lower[0])
-            y_sorted_lower.append(y_sorted_lower[-1])
-            y_sorted_upper.insert(0, y_sorted_upper[0])
-            y_sorted_upper.append(y_sorted_upper[-1])
-            ax.plot(x_sorted, y_sorted_upper, linestyle="solid", color=COLOR_RIGHT, alpha=0.08, zorder=0)
-            ax.plot(x_sorted, y_sorted_lower, linestyle="solid", color=COLOR_RIGHT, alpha=0.08, zorder=0)
-            ax.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
-                            color=COLOR_RIGHT, alpha=0.05, interpolate=True)
+    ylim_min, ylim_max, ytick_min, ytick_max = _efficiency_ylim(axis_values)
 
     plt.xlim(xlim_left, xlim_right)
     main_ticks = range(len(bin_labels))
@@ -777,13 +893,22 @@ def main():
                  save_path=os.path.join(args.figure_dir, f"fig_d_gerbil_transduction.{FILE_EXTENSION}"),
                  plot=args.plot, use_alias=use_alias)
 
-    # E: The expression efficiency per octave band.
-    fig_e_gerbil(fchrimson_data,
-                 save_path=os.path.join(args.figure_dir, f"fig_e_gerbil_transduction.{FILE_EXTENSION}"),
-                 plot=args.plot, use_alias=use_alias, trendlines=True)
-    fig_e_gerbil(fchrimson_data,
-                 save_path=os.path.join(args.figure_dir, f"fig_e_gerbil_transduction_std.{FILE_EXTENSION}"),
-                 plot=args.plot, use_alias=use_alias, trendlines=True, trendline_std=True)
+    # E: The expression efficiency per octave band, every cochlea against the adult injected mean.
+    fig_05e(fchrimson_data,
+            save_path=os.path.join(args.figure_dir, f"fig_05e_gerbil_transduction_all.{FILE_EXTENSION}"),
+            plot=args.plot, use_alias=use_alias, adult_trendline=True)
+    fig_05e(fchrimson_data,
+            save_path=os.path.join(args.figure_dir, f"fig_05e_gerbil_transduction_std.{FILE_EXTENSION}"),
+            plot=args.plot, use_alias=use_alias, adult_trendline=True, trendline_std=True)
+
+    # The postnatal pair on its own, against the same adult injected mean.
+    fig_05e(fchrimson_data,
+            save_path=os.path.join(args.figure_dir, f"fig_05e_gerbil_transduction_postnatal.{FILE_EXTENSION}"),
+            plot=args.plot, use_alias=use_alias, cochleae=POSTNATAL_COCHLEAE,
+            color_by_side=True, adult_trendline=True)
+    plot_legend_fig05e_gerbil(
+        save_path=os.path.join(args.figure_dir, f"fig_05e_gerbil_legend_postnatal.{FILE_EXTENSION}"),
+    )
 
 
 if __name__ == "__main__":

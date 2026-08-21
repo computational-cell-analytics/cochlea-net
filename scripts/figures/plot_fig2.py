@@ -1,13 +1,14 @@
 import argparse
 import json
 import os
+from typing import List, Optional
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
 from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT, VALUE_DICT
-from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter
+from util import iteration_statistics, prism_style, prism_cleanup_axes, export_legend, custom_formatter
 
 png_dpi = 300
 FILE_EXTENSION = "png"
@@ -19,6 +20,33 @@ COLOR_T = "#279C52"
 
 COLOR_MEASUREMENT = "#9C7427"
 COLOR_LITERATURE = "#27339C"
+
+# Per structure of panel 2c: the x-axis label, the annotator and network accuracy files, and the
+# network iteration entries. Key order determines the left-to-right order on the x-axis. The first
+# iteration entry is the base version (variant 0); the others are repeat trainings of the same
+# network on the same training and validation data.
+PANEL_02C_DICT = {
+    "SGN_v2": {
+        "label": "SGN",
+        "accuracy_file": "SGN_3D.json",
+        "consensus_file": "consensus_SGN.json",
+        "iterations": ["v2", "v2-1", "v2-2", "v2-3", "v2-4"],
+    },
+    "IHC_v11": {
+        "label": "IHC",
+        "accuracy_file": "IHC_3D.json",
+        "consensus_file": "consensus_IHC.json",
+        "iterations": ["v11", "v11-1", "v11-2", "v11-3", "v11-4"],
+    },
+    "synapses_v3": {
+        "label": "Synapse",
+        "accuracy_file": "synapses.json",
+        "consensus_file": "consensus_synapses.json",
+        "iterations": ["v3", "v3-1", "v3-2", "v3-3", "v3-4"],
+    },
+}
+
+METRICS = ("precision", "recall", "f1-score")
 
 
 def plot_legend_fig02c(
@@ -58,6 +86,36 @@ def plot_legend_fig02c(
         raise ValueError("Choose either 'shapes' or 'colors' as plot_mode.")
 
 
+def _read_metrics(data_dir: str, file_name: str) -> dict:
+    """Read one accuracy JSON file.
+
+    Args:
+        data_dir: Directory containing the accuracy JSON files.
+        file_name: Name of the accuracy JSON file.
+
+    Returns:
+        The accuracy entries of the file, keyed by network version or annotator scenario.
+    """
+    with open(os.path.join(data_dir, file_name), "r") as f:
+        return json.load(f)
+
+
+def _select_scores(metrics: dict, key: str, source: str) -> list:
+    """Select the precision, recall, and F1-score of one entry of an accuracy file.
+
+    Args:
+        metrics: Accuracy entries of one accuracy JSON file.
+        key: Entry to select, e.g. a network version or an annotator scenario.
+        source: Name of the accuracy file, for the error message.
+
+    Returns:
+        The precision, recall, and F1-score of the entry.
+    """
+    if key not in metrics:
+        raise KeyError(f"{source} has no entry '{key}'. Available entries: {sorted(metrics)}.")
+    return [metrics[key][metric] for metric in METRICS]
+
+
 def _read_scores(data_dir: str, file_name: str, key: str) -> list:
     """Read the precision, recall, and F1-score of one entry from an accuracy JSON file.
 
@@ -69,14 +127,44 @@ def _read_scores(data_dir: str, file_name: str, key: str) -> list:
     Returns:
         The precision, recall, and F1-score of the entry.
     """
-    json_file = os.path.join(data_dir, file_name)
-    with open(json_file, "r") as f:
-        param_dicts = json.load(f)
-    if key not in param_dicts:
-        raise KeyError(f"{json_file} has no entry '{key}'. Available entries: {sorted(param_dicts)}.")
+    return _select_scores(_read_metrics(data_dir, file_name), key, os.path.join(data_dir, file_name))
 
-    scores = param_dicts[key]
-    return [scores["precision"], scores["recall"], scores["f1-score"]]
+
+def _read_network_scores(data_dir: str, entry: dict, show_variation: bool) -> tuple:
+    """Read the network scores of one structure of panel 2c.
+
+    Args:
+        data_dir: Directory containing the accuracy JSON files.
+        entry: Entry of PANEL_02C_DICT for the structure.
+        show_variation: Average over the network iterations instead of reading the base version.
+
+    Returns:
+        The precision, recall, and F1-score, and their standard deviation over the network
+        iterations. The standard deviation is None if fewer than two iterations are available.
+    """
+    file_name = entry["accuracy_file"]
+    iterations = entry["iterations"]
+    metrics = _read_metrics(data_dir, file_name)
+
+    if not show_variation:
+        return _select_scores(metrics, iterations[0], os.path.join(data_dir, file_name)), None
+
+    stats, present = iteration_statistics(metrics, iterations, metric_names=METRICS)
+    # A metric is absent from stats if every available iteration stores None for it.
+    if len(present) < 2 or any(metric not in stats for metric in METRICS):
+        print(f"{file_name}: only {present} of the iterations {iterations} are available. "
+              f"Plotting '{iterations[0]}' without variation.")
+        return _select_scores(metrics, iterations[0], os.path.join(data_dir, file_name)), None
+
+    missing = [key for key in iterations if key not in present]
+    if missing:
+        print(f"Warning: {file_name}: {', '.join(missing)} not found. "
+              f"Averaging over {len(present)} of {len(iterations)} iterations.")
+    for metric in METRICS:
+        mean, std = stats[metric]
+        print(f"{file_name} {metric}: {mean:.3f} +- {std:.3f} (n={len(present)})")
+
+    return [stats[metric][0] for metric in METRICS], [stats[metric][1] for metric in METRICS]
 
 
 def fig_02c(
@@ -84,30 +172,35 @@ def fig_02c(
     data_dir: str,
     plot: bool = False,
     annotator_keyword: str = "all",
+    show_variation: bool = False,
+    ylim: Optional[List[float]] = None,
 ):
     """Scatter plot showing the precision, recall, and F1-score of SGN (distance U-Net, manual),
     IHC (distance U-Net, manual), and synapse detection (U-Net).
+
+    Args:
+        save_path: Path for saving the figure.
+        data_dir: Directory containing the accuracy JSON files.
+        plot: Whether to display the plot interactively.
+        annotator_keyword: Entry of the annotator accuracy files. Either 'all' or 'pairwise'.
+        show_variation: Plot the automatic value as the mean over the network iterations of
+            PANEL_02C_DICT, with the standard deviation as error bar. A structure with fewer than
+            two iterations in its accuracy file keeps the value of its base version.
+        ylim: Lower and upper y-axis limit.
     """
     prism_style()
 
-    # SGN
-    sgn_unet = _read_scores(data_dir, "SGN_3D.json", "v2")
-    sgn_annotator = _read_scores(data_dir, "consensus_SGN.json", annotator_keyword)
+    setting = [entry["label"] for entry in PANEL_02C_DICT.values()]
 
-    # IHC
-    ihc_unet = _read_scores(data_dir, "IHC_3D.json", "v11")
-    ihc_annotator = _read_scores(data_dir, "consensus_IHC.json", annotator_keyword)
-
-    # synapses
-    syn_unet = _read_scores(data_dir, "synapses.json", "v3")
-    syn_annotator = _read_scores(data_dir, "consensus_synapses.json", annotator_keyword)
-
-    setting = ["SGN", "IHC", "Synapse"]
-
-    # This is the version with IHC v4c segmentation:
-    # 4th version of the network with optimized segmentation params and split of falsely merged IHCs
-    manual = [sgn_annotator, ihc_annotator, syn_annotator]
-    automatic = [sgn_unet, ihc_unet, syn_unet]
+    manual = [
+        _read_scores(data_dir, entry["consensus_file"], annotator_keyword)
+        for entry in PANEL_02C_DICT.values()
+    ]
+    network_scores = [
+        _read_network_scores(data_dir, entry, show_variation) for entry in PANEL_02C_DICT.values()
+    ]
+    automatic = [scores for scores, _ in network_scores]
+    automatic_std = [std for _, std in network_scores]
 
     precision_manual = [i[0] for i in manual]
     recall_manual = [i[1] for i in manual]
@@ -127,6 +220,14 @@ def fig_02c(
 
     main_label_size = 20
     main_tick_size = 16
+    capsize = 4
+
+    for x_pos, scores, stds in zip(x_automatic, automatic, automatic_std):
+        if stds is None:
+            continue
+        for score, std, shift in zip(scores, stds, (-offset, 0, offset)):
+            plt.errorbar([x_pos + shift], [score], yerr=[std], fmt="none", color="black",
+                         capsize=capsize, zorder=1)
 
     plt.scatter(x_manual - offset, precision_manual, label="Precision manual", color=COLOR_P, marker="o", s=80)
     plt.scatter(x_manual, recall_manual, label="Recall manual", color=COLOR_R, marker="o", s=80)
@@ -141,7 +242,10 @@ def fig_02c(
     plt.yticks(fontsize=main_tick_size)
     ax.yaxis.set_major_formatter(custom_formatter(2))
     plt.ylabel("Value", fontsize=main_label_size)
-    plt.ylim(0.69, 1)
+    if ylim is None:
+        plt.ylim(0.69, 1)
+    else:
+        plt.ylim(ylim[0], ylim[1])
     # plt.legend(loc="lower right", fontsize=legendsize)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
@@ -313,7 +417,7 @@ def main():
     )
     parser.add_argument(
         "--data_dir", "-d", type=str, default=_default_data_dir,
-        help="Directory containing the model accuracy files (SGN_3D.json, IHC.json, IHC_3D.json, "
+        help="Directory containing the model accuracy files (SGN_3D.json, IHC_3D.json, "
              "synapses.json) and the annotator accuracy files (consensus_SGN.json, consensus_IHC.json, "
              f"consensus_synapses.json). Defaults to {_default_data_dir}.",
     )
@@ -329,6 +433,14 @@ def main():
     fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c_{annotator_keyword}.{FILE_EXTENSION}"),
             data_dir=args.data_dir, plot=args.plot,
             annotator_keyword=annotator_keyword,)
+
+    # The same panels, with the automatic value averaged over the network training iterations.
+    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c_variation.{FILE_EXTENSION}"),
+            data_dir=args.data_dir, plot=args.plot, show_variation=True)
+
+    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c_{annotator_keyword}_variation.{FILE_EXTENSION}"),
+            data_dir=args.data_dir, plot=args.plot,
+            annotator_keyword=annotator_keyword, show_variation=True)
 
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_shapes.{FILE_EXTENSION}"), plot_mode="shapes")
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_colors.{FILE_EXTENSION}"), plot_mode="colors")

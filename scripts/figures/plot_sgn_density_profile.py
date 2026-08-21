@@ -9,11 +9,13 @@ import argparse
 import json
 import os
 import pickle
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Rectangle
+from matplotlib.transforms import Bbox
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import (
@@ -23,6 +25,8 @@ from util import (
     cochlea_components,
     cochlea_label,
     cohort_cochleae,
+    cohort_postnatal,
+    export_legend,
     get_line_marker_handle,
     density_by_fraction_bins,
     density_by_sliding_window,
@@ -204,6 +208,172 @@ def _density_profile(values: pd.DataFrame, mode: str, n_bins: int, window: float
     else:
         raise ValueError(f"Unrecognized mode: {mode}. Choose either 'bins' or 'sliding'.")
     return fraction, density, total_length
+
+
+def _legend_entries(color_dict, marker_dict, mode, sides=(), cohort_colors=None, reference_styles=()):
+    """Build the handles and labels of a density profile legend.
+
+    Args:
+        color_dict: Mapping of alias to color, as returned by cochlea_colors.
+        marker_dict: Mapping of alias to marker.
+        mode: Density calculation, either 'bins' or 'sliding'. Mode 'sliding' draws a line per
+            cochlea rather than markers, so its handles are lines.
+        sides: Sides that got a trendline, as keys of SIDE_TRENDLINES.
+        cohort_colors: Mapping of cohort name to trendline color, for one trendline per cohort.
+            Ignored when sides is given, matching how the figure picks between the two.
+        reference_styles: Style dicts of the drawn references, each with a color, linestyle,
+            marker and label.
+
+    Returns:
+        Tuple of the handle list and the label list, in legend order.
+    """
+    labels = list(marker_dict)
+    if mode == "sliding":
+        handles = [get_flatline_handle(color_dict[key]) for key in labels]
+    else:
+        handles = [get_marker_handle(color_dict[key], marker_dict[key]) for key in labels]
+
+    if sides:
+        for side in sides:
+            style = SIDE_TRENDLINES[side]
+            handles.append(get_flatline_handle(style["color"], linestyle=style["linestyle"]))
+            labels.append(style["label"])
+    elif cohort_colors:
+        for cohort_name, trendline_color in cohort_colors.items():
+            handles.append(get_flatline_handle(trendline_color, linestyle="dashed"))
+            labels.append(cohort_name)
+
+    for style in reference_styles:
+        handles.append(get_line_marker_handle(
+            style["color"], linestyle=style["linestyle"], marker=style["marker"]))
+        labels.append(style["label"])
+
+    return handles, labels
+
+
+def _box_legend_entries(legend, labels, box_label, position="top", pad=4.0, label_pad=3.0):
+    """Draw a labelled box around a group of legend entries.
+
+    The box is laid out from the drawn text positions, so the entries have to be neighbours in
+    the legend for the box to enclose only them. With the column-major fill of matplotlib, the
+    first entries of the label list share the first column.
+
+    Args:
+        legend: Legend that holds the entries.
+        labels: Labels of the entries to enclose.
+        box_label: Text drawn next to the box.
+        position: Draw box_label either at the 'top' or at the 'bottom' of the box.
+        pad: Padding between the entries and the box, in points.
+        label_pad: Padding between the box and box_label, in points.
+
+    Returns:
+        List of the added artists, to pass to export_legend as extra_artists.
+    """
+    if position not in ("top", "bottom"):
+        raise ValueError(f"Unrecognized position: {position}. Choose either 'top' or 'bottom'.")
+
+    fig = legend.figure
+    fig.canvas.draw()
+
+    texts = [text for text in legend.get_texts() if text.get_text() in labels]
+    if not texts:
+        return []
+
+    # The handle is drawn left of its label, so the box has to reach past it.
+    scale = fig.dpi / 72
+    handle_width = (legend.handlelength + legend.handletextpad) * texts[0].get_fontsize() * scale
+    extent = Bbox.union([text.get_window_extent() for text in texts])
+    extent = Bbox.from_extents(
+        extent.x0 - handle_width - pad * scale, extent.y0 - pad * scale,
+        extent.x1 + pad * scale, extent.y1 + pad * scale,
+    )
+
+    (x0, y0), (x1, y1) = fig.transFigure.inverted().transform(
+        [[extent.x0, extent.y0], [extent.x1, extent.y1]])
+    rect = Rectangle((x0, y0), x1 - x0, y1 - y0, transform=fig.transFigure,
+                     facecolor="none", edgecolor="black", linewidth=1.5)
+    fig.add_artist(rect)
+
+    offset = label_pad * scale / fig.bbox.height
+    if position == "top":
+        text = fig.text((x0 + x1) / 2, y1 + offset, box_label, ha="center", va="bottom",
+                        fontsize=texts[0].get_fontsize())
+    else:
+        text = fig.text((x0 + x1) / 2, y0 - offset, box_label, ha="center", va="top",
+                        fontsize=texts[0].get_fontsize())
+
+    return [rect, text]
+
+
+def plot_legend_sgn_density(
+    length_data: dict,
+    save_path: str,
+    cochleae_dict: dict,
+    mode: str = "bins",
+    use_alias: bool = True,
+    trendline_by_side: bool = False,
+    trendline_colors: Optional[dict] = None,
+    reference: bool = False,
+    reference_style: Optional[dict] = None,
+    boxed: Sequence[str] = (),
+    box_label: str = "postnatal",
+    box_label_position: str = "top",
+    ncol: Optional[int] = None,
+):
+    """Save the legend of a density profile figure as its own image.
+
+    The entries come from the same metadata as the figure, so the two cannot drift apart. Pass the
+    same mode, trendline and reference arguments that the figure was drawn with.
+
+    Args:
+        length_data: Mapping of cochlea name to its table, as passed to fig_sgn_density_profile.
+        save_path: Save path for the legend.
+        cochleae_dict: Per-cochlea plot metadata, as built by build_plot_metadata.
+        mode: Density calculation of the figure. Either 'bins' or 'sliding'.
+        use_alias: Use cochleae aliases.
+        trendline_by_side: The figure draws one trendline per side.
+        trendline_colors: Mapping of cohort name to trendline color, for one trendline per cohort.
+        reference: The figure draws a reference trendline.
+        reference_style: Overrides for REFERENCE_STYLE, which the reference entry is drawn with.
+        boxed: Cochleae to enclose in a labelled box. They have to be neighbours in the legend.
+        box_label: Label of that box.
+        box_label_position: Draw the box label either at the 'top' or at the 'bottom'.
+        ncol: Number of legend columns. Defaults to the layout that the figure uses.
+    """
+    prism_style()
+
+    color_dict = cochlea_colors(cochleae_dict, length_data, use_alias)
+    marker_dict = {
+        cochlea_label(name, cochleae_dict[name], use_alias): cochleae_dict[name].get("marker", "o")
+        for name in length_data
+    }
+
+    sides = ()
+    if trendline_by_side:
+        present = {cochleae_dict[name]["side"] for name in length_data}
+        sides = [side for side in SIDE_TRENDLINES if side in present]
+
+    reference_styles = [{**REFERENCE_STYLE, **(reference_style or {})}] if reference else []
+
+    handles, labels = _legend_entries(
+        color_dict, marker_dict, mode, sides=sides,
+        cohort_colors=trendline_colors, reference_styles=reference_styles,
+    )
+    if ncol is None:
+        ncol = min((len(handles) + 1) // 2, 7)
+
+    legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
+
+    boxed_labels = [cochlea_label(name, cochleae_dict[name], use_alias)
+                    for name in boxed if name in cochleae_dict]
+    extra_artists = []
+    if boxed_labels:
+        extra_artists = _box_legend_entries(
+            legend, boxed_labels, box_label, position=box_label_position)
+
+    export_legend(legend, save_path, extra_artists=extra_artists)
+    legend.remove()
+    plt.close()
 
 
 def fig_sgn_density_profile(
@@ -432,29 +602,14 @@ def fig_sgn_density_profile(
     plt.tight_layout()
 
     if show_legend:
-        label = list(marker_dict.keys())
-        if mode == "sliding":
-            handles = [get_flatline_handle(color_dict[key]) for key in label]
-        else:
-            handles = [get_marker_handle(color_dict[key], marker_dict[key]) for key in label]
-
-        if trendline and trendline_by_side:
-            for side in sides_drawn:
-                style = SIDE_TRENDLINES[side]
-                handles.append(get_flatline_handle(style["color"], linestyle=style["linestyle"]))
-                label.append(style["label"])
-        elif trendline and trendline_colors:
-            for cohort_name, trendline_color in trendline_colors.items():
-                handles.append(get_flatline_handle(trendline_color, linestyle="dashed"))
-                label.append(cohort_name)
-
-        for style in reference_styles:
-            handles.append(get_line_marker_handle(
-                style["color"], linestyle=style["linestyle"], marker=style["marker"]))
-            label.append(style["label"])
-
+        handles, labels = _legend_entries(
+            color_dict, marker_dict, mode,
+            sides=sides_drawn if trendline and trendline_by_side else (),
+            cohort_colors=trendline_colors if trendline else None,
+            reference_styles=reference_styles,
+        )
         fig.subplots_adjust(bottom=legend_height / (5 + legend_height))
-        fig.legend(handles, label, loc="lower center", ncol=n_col, framealpha=1, frameon=False)
+        fig.legend(handles, labels, loc="lower center", ncol=n_col, framealpha=1, frameon=False)
 
     if save_path.endswith(".png"):
         plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi)
@@ -528,6 +683,11 @@ def main():
         animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
     )
+    plot_legend_sgn_density(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_legend.{FILE_EXTENSION}"),
+        cochleae_dict=metadata[cohort], mode=mode, use_alias=use_alias,
+    )
 
     # wild type gerbil
     cohort = "wt_gerbil"
@@ -541,6 +701,11 @@ def main():
         trendline=True, trendline_std=False, top_axis=True,
         animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
+    )
+    plot_legend_sgn_density(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_legend.{FILE_EXTENSION}"),
+        cochleae_dict=metadata[cohort], mode=mode, use_alias=use_alias,
     )
 
     # ChReef mouse with bins
@@ -557,6 +722,12 @@ def main():
         animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
     )
+    plot_legend_sgn_density(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_legend.{FILE_EXTENSION}"),
+        cochleae_dict=metadata[cohort], mode=mode, use_alias=use_alias,
+        trendline_by_side=True, reference=True,
+    )
 
     # f-Chrimson gerbil
     cohort = "fchrimson_gerbil"
@@ -571,6 +742,13 @@ def main():
         reference_trendline=wt_gerbil_trend,
         animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
+    )
+    plot_legend_sgn_density(
+        length_data[cohort],
+        save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_legend.{FILE_EXTENSION}"),
+        cochleae_dict=metadata[cohort], mode=mode, use_alias=use_alias,
+        trendline_by_side=True, reference=True,
+        boxed=cohort_postnatal(cohort), box_label="postnatal",
     )
 
 
