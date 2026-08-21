@@ -14,23 +14,23 @@ VAL_DIR_SGN = os.path.join(COCHLEA_DIR, "predictions/val_sgn")
 MODEL_DICT_SGN = {
     "distance_unet_f0": {
         "version": "SGN_v2", "fold": 0,
-        "path": os.path.join(MODEL_DIR_SGN, "v2_cochlea_distance_unet_SGN_supervised_2025-05-27"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2_cochlea_distance_unet_SGN_supervised"),
     },
     "distance_unet_f1": {
         "version": "SGN_v2", "fold": 1,
-        "path": os.path.join(MODEL_DIR_SGN, "v2-1_cochlea_distance_unet_SGN_supervised_2026-05-04"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-1_cochlea_distance_unet_SGN_supervised"),
     },
     "distance_unet_f2": {
         "version": "SGN_v2", "fold": 2,
-        "path": os.path.join(MODEL_DIR_SGN, "v2-2_cochlea_distance_unet_SGN_supervised_2026-05-05"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-2_cochlea_distance_unet_SGN_supervised"),
     },
     "distance_unet_f3": {
         "version": "SGN_v2", "fold": 3,
-        "path": os.path.join(MODEL_DIR_SGN, "v2-3_cochlea_distance_unet_SGN_supervised_2026-05-07"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-3_cochlea_distance_unet_SGN_supervised"),
     },
     "distance_unet_f4": {
         "version": "SGN_v2", "fold": 4,
-        "path": os.path.join(MODEL_DIR_SGN, "v2-4_cochlea_distance_unet_SGN_supervised_2026-05-07"),
+        "path": os.path.join(MODEL_DIR_SGN, "v2-4_cochlea_distance_unet_SGN_supervised"),
     },
 }
 

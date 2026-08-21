@@ -20,6 +20,26 @@ SYNAPSE_DICT = {
         "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
+    "v3-1": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-1"),
+        "ref_root": CONSENSUS_REF_ROOT,
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
+    "v3-2": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-2"),
+        "ref_root": CONSENSUS_REF_ROOT,
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
+    "v3-3": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-3"),
+        "ref_root": CONSENSUS_REF_ROOT,
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
+    "v3-4": {
+        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-4"),
+        "ref_root": CONSENSUS_REF_ROOT,
+        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
+    },
     "v4": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
         "ref_root": CONSENSUS_REF_ROOT,
