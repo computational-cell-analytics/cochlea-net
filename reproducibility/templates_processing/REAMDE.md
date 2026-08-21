@@ -33,3 +33,11 @@ To run the detection as a single job instead, without splitting up the predictio
 After this, run the following to add detections to MoBIE and upload to S3:
 - templates_transfer/mobie_spots_template.sbatch
 - templates_transfer/sync_mobie.py
+
+## Model training
+
+To train a ribbon synapse detection model run:
+- train_synapse_template.sbatch
+
+The template trains the heatmap only, which reproduces synapse_detection_v3. Pass `--use_flow` to
+also train the 4 stereographic flow channels, as for synapse_detection_v5.
