@@ -86,6 +86,22 @@ def read_tif(file_path: str) -> Union[np.ndarray, np.memmap]:
     return x
 
 
+def _check_array(node, input_path, input_key):
+    """Fail with the cause instead of an AttributeError deeper in the pipeline.
+
+    A dataset directory without valid metadata ('attributes.json' for n5) reads as a group.
+    This is the signature of an incomplete copy of the container.
+    """
+    if hasattr(node, "shape"):
+        return node
+    children = sorted(node.keys()) if hasattr(node, "keys") else []
+    raise ValueError(
+        f"The key '{input_key}' in {input_path} is a group, not an array. It contains {children}. "
+        "An n5 dataset without a valid 'attributes.json' reads as a group. "
+        "Check the container with scripts/check_n5_container.py."
+    )
+
+
 def read_image_data(
     input_path: Union[str, Store],
     input_key: Optional[str],
@@ -110,13 +126,13 @@ def read_image_data(
     if from_s3:
         assert input_key is not None
         s3_store, fs = get_s3_path(input_path, bucket_name, service_endpoint, credential_file)
-        return zarr.open(s3_store, mode="r")[input_key]
+        return _check_array(zarr.open(s3_store, mode="r")[input_key], input_path, input_key)
 
     if input_key is None:
         input_ = read_tif(input_path)
     elif isinstance(input_path, str):
-        input_ = open_file(input_path, "r")[input_key]
+        input_ = _check_array(open_file(input_path, "r")[input_key], input_path, input_key)
     else:
         f = zarr.open(input_path, mode="r")
-        input_ = f[input_key]
+        input_ = _check_array(f[input_key], input_path, input_key)
     return input_

@@ -97,6 +97,11 @@ def _get_device_and_tiling(block_shape, halo, input_):
         block_shape = (128, 128, 128) if have_cuda else getattr(input_, "chunks", (64, 64, 64))
     if halo is None:
         halo = (16, 32, 32)
+    # Clip to the volume. A block larger than the input makes the halo dominate the forward
+    # pass: a (64, 128, 128) volume with a (64, 256, 256) block is padded to 96 x 384 x 384.
+    # The clip only depends on the input shape, so all slurm array tasks get the same grid.
+    block_shape = tuple(min(bs, sh) for bs, sh in zip(block_shape, input_.shape))
+    halo = tuple(min(ha, bs // 2) for ha, bs in zip(halo, block_shape))
     if have_cuda:
         print("Predict with GPU")
         gpu_ids = [0]

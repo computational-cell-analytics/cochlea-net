@@ -32,7 +32,9 @@ _HEATMAP_FLOW_SIGMA = 1
 _DETECTION_BLOCK_VOXELS = 32_000_000
 
 # The prediction block grid determines how blocks are split across slurm array tasks.
-# Both the single-job and the parallel entry point must use the same values.
+# Both the single-job and the parallel entry point must use the same values. The block is
+# tuned for the A100 and needs ~19 GB, so it applies to GPU runs only. The prediction array
+# always runs on a GPU, so its tasks agree on the grid.
 _PREDICTION_BLOCK_SHAPE = (64, 256, 256)
 _PREDICTION_HALO = (16, 64, 64)
 
@@ -318,11 +320,18 @@ def _predict_synapses(
     prediction_instances=1, slurm_task_id=0, mean=None, std=None,
 ):
     """Run the U-Net inference stage of synapse detection."""
+    # Without a GPU, leave the tiling to '_get_device_and_tiling', which derives it from the
+    # chunks of the input. The production block would need ~19 GB of host memory per block.
+    have_cuda = torch.cuda.is_available()
+    if block_shape is None and have_cuda:
+        block_shape = _PREDICTION_BLOCK_SHAPE
+    if halo is None and have_cuda:
+        halo = _PREDICTION_HALO
     prediction_impl(
         input_path, input_key, output_folder, model_path,
         scale=None,
-        block_shape=_PREDICTION_BLOCK_SHAPE if block_shape is None else block_shape,
-        halo=_PREDICTION_HALO if halo is None else halo,
+        block_shape=block_shape,
+        halo=halo,
         apply_postprocessing=False,
         output_channels=_get_model_out_channels(model_path),
         prediction_instances=prediction_instances, slurm_task_id=slurm_task_id,

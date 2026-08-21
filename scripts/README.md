@@ -56,3 +56,15 @@ to downsample the input by a factor of 2. Note that the segmentation result will
 In addition, the script `postprocess_seg.py` can be used to filter out false positive nucleus segmentations from regions in the segmentation with a low density of segmented nuclei.
 
 You can use the script `to_tif.py` to convert the zarr object to a tif volume for easier viewing (won't work for large volumes!).
+
+
+## Troubleshooting an n5 input
+
+If a prediction fails with `'Group' object has no attribute 'shape'`, the key points to a
+directory without valid array metadata. This happens when a container was copied incompletely.
+Check the container with:
+```
+python check_n5_container.py /path/to/volume.n5 -k setup0/timepoint0/s0
+```
+The script reports the structure, the chunk files that are truncated or absent, and whether the
+installed readers can open the format at all. It exits non-zero when it finds a problem.
