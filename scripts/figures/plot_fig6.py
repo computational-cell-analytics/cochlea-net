@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
-from util import prism_cleanup_axes, prism_style, get_marker_handle
+from util import prism_cleanup_axes, prism_style, get_marker_handle, cochlea_label
 from util import frequency_mapping, export_legend
 
 FILE_EXTENSION = "png"
@@ -17,7 +17,7 @@ png_dpi = 300
 
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/LaVision-OTOF"  # noqa
 
-# The cochlea for the CHReef analysis.
+# The LaVision OTOF cochleae. These are not in util.COCHLEA_DICT.
 COCHLEAE_DICT_LaVision = {
     "LaVision-OTOF23R": {"alias": "LV_M_03", "component": [4, 18, 7], "color": "#9C5027"},
     "LaVision-OTOF25R": {"alias": "LV_M_04", "component": [1], "color": "#67279C"},
@@ -166,11 +166,7 @@ def fig_06e_octave(
     expression_eff_dic = {}
     color_dict = {}
     for name, values in otof_data.items():
-        if use_alias:
-            alias = COCHLEAE_DICT_LaVision[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
+        alias = cochlea_label(name, COCHLEAE_DICT_LaVision[name], use_alias)
         color_dict[alias] = COCHLEAE_DICT_LaVision[name]["color"]
         if mapping == "default":
             freq = values["frequency[kHz]"].values

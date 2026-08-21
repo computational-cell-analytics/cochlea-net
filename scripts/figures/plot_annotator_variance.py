@@ -16,7 +16,8 @@ import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-from util import export_legend, get_flatline_handle, get_marker_handle, prism_cleanup_axes, prism_palette, prism_style
+from util import (cochlea_label, export_legend, get_flatline_handle, get_marker_handle, prism_cleanup_axes,
+                  prism_palette, prism_style)
 from plot_fig4 import COCHLEAE_DICT
 
 FILE_EXTENSION = "png"
@@ -57,9 +58,9 @@ def _class_names(scenario: dict) -> List[str]:
 
 
 def _cochlea_label(cochlea: str, use_alias: bool) -> str:
-    if use_alias and cochlea in COCHLEAE_DICT:
-        return COCHLEAE_DICT[cochlea]["alias"]
-    return cochlea.replace("_", "").replace("0", "")
+    # An unregistered cochlea has no alias, so it always falls back to the shortened name.
+    use_alias = use_alias and cochlea in COCHLEAE_DICT
+    return cochlea_label(cochlea, COCHLEAE_DICT.get(cochlea, {}), use_alias)
 
 
 def load_variance_records(

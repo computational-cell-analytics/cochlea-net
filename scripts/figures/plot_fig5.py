@@ -13,7 +13,7 @@ from util import (
     animal_colors,
     cochlea_label,
     cochleae_for,
-    literature_reference_values_gerbil,
+    literature_reference_values,
     png_dpi,
     prism_cleanup_axes,
     prism_style,
@@ -132,7 +132,7 @@ def fig_05c(
     xmin = 0.5
     xmax = 1.5
     ax[0].set_xlim(xmin, xmax)
-    lower_y, upper_y = literature_reference_values_gerbil("SGN")
+    lower_y, upper_y = literature_reference_values("SGN", animal="gerbil")
     ax[0].hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
     ax[0].text(1, upper_y - 2000, "literature", color=COLOR_LITERATURE, fontsize=main_tick_size, ha="center")
     ax[0].fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)
@@ -153,7 +153,7 @@ def fig_05c(
     xmin = 0.5
     xmax = 1.5
     ax[1].set_xlim(xmin, xmax)
-    lower_y, upper_y = literature_reference_values_gerbil("IHC")
+    lower_y, upper_y = literature_reference_values("IHC", animal="gerbil")
     ax[1].hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
     ax[1].fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)
 
@@ -179,7 +179,7 @@ def fig_05c(
     # set range of literature values
     xmin = 0.5
     xmax = 1.5
-    lower_y, upper_y = literature_reference_values_gerbil("synapse")
+    lower_y, upper_y = literature_reference_values("synapse", animal="gerbil")
     ax[2].set_xlim(xmin, xmax)
     ax[2].hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
     ax[2].fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)

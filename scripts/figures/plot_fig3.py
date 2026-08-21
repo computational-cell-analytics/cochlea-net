@@ -17,7 +17,7 @@ from matplotlib import cm, colors
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
 from util import frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
-from util import COHORT_DICT, cochleae_for
+from util import COHORT_DICT, cochlea_label, cochleae_for
 from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle, get_flatline_handle
 from flamingo_tools.postprocessing.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
@@ -460,11 +460,7 @@ def supp_fig_03a_meyer(
     cochleae_length = []
     _meta = cohort_dict if cohort_dict is not None else COCHLEAE_DICT
     for name, values in tonotopic_data.items():
-        if use_alias:
-            alias = _meta[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
+        alias = cochlea_label(name, _meta[name], use_alias)
         color_dict[alias] = _meta[name]["color"]
         marker_dict[alias] = _meta[name].get("marker", "o")
         if "cohort" in _meta[name]:
@@ -760,11 +756,7 @@ def fig_03c_octave(
     result = {"cochlea": [], "octave_band": [], "value": []}
     color_dict = {}
     for name, values in tonotopic_data.items():
-        if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
+        alias = cochlea_label(name, COCHLEAE_DICT[name], use_alias)
         color_dict[alias] = COCHLEAE_DICT[name]["color"]
         freq = values["frequency[kHz]"].values
         syn_count = values["syn_per_IHC"].values

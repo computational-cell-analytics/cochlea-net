@@ -66,13 +66,13 @@ def sgn_density_at_position(
                             or a custom float in [0, 1].
         slice_thickness: Total slice thickness in µm (default 10 µm).
         run_length_tolerance: Max abs difference in length_fraction allowed for inclusion.
+            Instances outside this window are excluded to filter out other cochlear turns
+            passing through the same z-range.
         cluster_filter: Keep only the instances of the cluster that belongs to the requested
             position, so that a slice cutting two turns of Rosenthal's canal does not measure the
             blank space between them.
         max_edge_distance: Maximum distance between two instances of one cluster in µm.
         min_cluster_size: Minimum number of instances a cluster needs to be selectable.
-                              Instances outside this window are excluded to filter out
-                              other cochlear turns passing through the same z-range.
         component_list: Component label(s) of the main RC component (default 1).
         axis: Volume axis perpendicular to the slice plane ('x', 'y', or 'z'; default 'z').
         length_fraction_column: Column name for the run-length fraction (default 'length_fraction').
@@ -130,9 +130,14 @@ def sgn_density_at_position(
     if mode not in ("2d", "3d"):
         raise ValueError(f"mode must be '2d' or '3d', got '{mode}'")
 
-    # Validate required columns.
+    use_overlap_filter = (
+        segmentation is not None and (min_overlap_fraction is not None or min_overlap_volume is not None)
+    )
+
+    # Validate required columns. Only the overlap filter reads 'n_pixels'.
     required_cols = (
-        ["label_id", "component_labels", "n_pixels", length_fraction_column] +
+        ["label_id", "component_labels", length_fraction_column] +
+        (["n_pixels"] if use_overlap_filter else []) +
         [f"anchor_{a}" for a in ("x", "y", "z")] +
         [f"bb_min_{a}" for a in ("x", "y", "z")] +
         [f"bb_max_{a}" for a in ("x", "y", "z")]
@@ -181,7 +186,7 @@ def sgn_density_at_position(
 
     filtered_labels = []
     # Optional: filter by actual voxel overlap with the slice sub-volume.
-    if segmentation is not None and (min_overlap_fraction is not None or min_overlap_volume is not None):
+    if use_overlap_filter:
         in_slice, filtered_out = _filter_by_segmentation_overlap(
             in_slice, segmentation, slice_min, slice_max,
             axis, voxel_size, min_overlap_fraction=min_overlap_fraction,
@@ -262,7 +267,7 @@ def sgn_density_at_position(
     }
 
 
-def _spatial_clusters(coords: np.ndarray, max_edge_distance: float) -> np.ndarray:
+def _spatial_clusters(coords: np.ndarray, max_edge_distance: float) -> Tuple[np.ndarray, int]:
     """Label the single-linkage clusters of a point cloud.
 
     Two instances join the same cluster when they are closer than `max_edge_distance`, so the
@@ -279,6 +284,7 @@ def _spatial_clusters(coords: np.ndarray, max_edge_distance: float) -> np.ndarra
 
     Returns:
         Cluster index per instance, shape (n,).
+        Number of clusters.
     """
     n = len(coords)
     pairs = cKDTree(coords).query_pairs(max_edge_distance, output_type="ndarray")
@@ -288,8 +294,8 @@ def _spatial_clusters(coords: np.ndarray, max_edge_distance: float) -> np.ndarra
         graph = coo_matrix(
             (np.ones(len(pairs)), (pairs[:, 0], pairs[:, 1])), shape=(n, n)
         )
-    _, labels = connected_components(graph, directed=False)
-    return labels
+    n_clusters, labels = connected_components(graph, directed=False)
+    return labels, n_clusters
 
 
 def _select_cluster(
@@ -320,14 +326,13 @@ def _select_cluster(
         Boolean mask of the instances to keep, shape (n,).
         Number of clusters found.
     """
-    labels = _spatial_clusters(coords, max_edge_distance)
-    sizes = np.bincount(labels)
-    n_clusters = len(sizes)
+    labels, n_clusters = _spatial_clusters(coords, max_edge_distance)
 
     # A single cluster holds no blank space to cut, whatever its size.
     if n_clusters < 2:
         return np.ones(len(coords), dtype=bool), n_clusters
 
+    sizes = np.bincount(labels)
     selectable = np.flatnonzero(sizes >= min_cluster_size)
     if selectable.size == 0:
         # Every cluster is small. Dropping the position would lose a real measurement, so keep
@@ -857,10 +862,8 @@ def _build_block_extraction_dict(
 
         # These describe the measurement, not the halo, so an explicit roi_halo must not drop
         # them. hull_vertices in particular is the input of hull_to_mask.
-        for key in ("label_ids", "label_removed", "cluster_removed", "hull_vertices"):
+        for key in ("label_ids", "label_removed", "cluster_removed", "hull_vertices", "component_list"):
             entry[key] = pos_result.get(key)
-        if "component_list" in pos_result:
-            entry["component_list"] = pos_result["component_list"]
 
         result_list.append(entry)
 
@@ -989,12 +992,12 @@ def calc_sgn_density(
                    floats in [0, 1]. Default: apex mid base
         slice_thickness: Total thickness of the horizontal slice in µm. Default: 10.0
         run_length_tolerance: Maximum allowed length_fraction difference to include an SGN instance.
+            Reduces contamination from other cochlear turns. Default: 0.1
         cluster_filter: Keep only the instances of the cluster that belongs to the requested
             position, so that a slice cutting two turns of Rosenthal's canal does not measure the
             blank space between them.
         max_edge_distance: Maximum distance between two instances of one cluster in µm.
         min_cluster_size: Minimum number of instances a cluster needs to be selectable.
-                              Reduces contamination from other cochlear turns. Default: 0.1
         component_list: Component label(s) of the main Rosenthal's Canal component. When omitted,
                         falls back to the 'component_list' entry of 'json_input' if present,
                         otherwise to [1].

@@ -455,6 +455,29 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
         self.assertEqual(result["n_sgns"], 20)
 
 
+class TestNPixelsRequirement(unittest.TestCase):
+    """'n_pixels' is read by the segmentation overlap filter only."""
+
+    def setUp(self):
+        from flamingo_tools.analysis.density_utils import sgn_density_at_position
+        self.fn = sgn_density_at_position
+        self.table = _make_table().drop(columns=["n_pixels"])
+
+    def test_plain_density_does_not_need_n_pixels(self):
+        result = self.fn(self.table, reference_position="mid", slice_thickness=40.0)
+        self.assertEqual(result["n_sgns"], 20)
+
+    def test_overlap_filter_needs_n_pixels(self):
+        voxel_size = (1.0, 1.0, 1.0)
+        seg = _make_seg_array(self.table, (120, 100, 80), voxel_size)
+        with self.assertRaises(ValueError) as ctx:
+            self.fn(
+                self.table, reference_position="mid", slice_thickness=40.0,
+                segmentation=seg, voxel_size=voxel_size, min_overlap_fraction=0.5,
+            )
+        self.assertIn("n_pixels", str(ctx.exception))
+
+
 class TestClusterFilter(unittest.TestCase):
     """The slice must measure one turn of the Rosenthal's canal, not the gap between two."""
 

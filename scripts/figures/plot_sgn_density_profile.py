@@ -19,6 +19,7 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from util import (
     COCHLEA_DICT,
     cochlea_components,
+    cochlea_label,
     get_line_marker_handle,
     density_by_fraction_bins,
     density_by_sliding_window,
@@ -317,7 +318,7 @@ def fig_sgn_density_profile(
     cochleae_length = []
     for name, values in length_data.items():
         meta = cochleae_dict[name]
-        alias = meta["alias"] if use_alias else name.replace("_", "").replace("0", "")
+        alias = cochlea_label(name, meta, use_alias)
 
         color_dict[alias] = meta["color"]
         marker_dict[alias] = meta.get("marker", "o")

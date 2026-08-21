@@ -331,23 +331,6 @@ def frequency_mapping(
     return value_by_band
 
 
-def sliding_runlength_sum(run_length, values, width):
-    assert len(run_length) == len(values)
-    # Create data frame and sort it.
-    df = pd.DataFrame({"run_length": run_length, "value": values})
-    df = df.sort_values("run_length").reset_index(drop=True).copy()
-
-    x = df["run_length"].to_numpy()
-    y = df["value"].to_numpy()
-
-    cumsum = np.cumsum(y)
-    start_idx = np.searchsorted(x, x - width, side="left")
-    window_sum = cumsum - np.concatenate(([0], cumsum[:-1]))[start_idx]
-    assert len(window_sum) == len(x)
-
-    return x, window_sum
-
-
 def average_by_fraction(length_fraction, syn_count, n_bins=10):
     """Average syn_per_IHC within equally spaced fractional bins."""
     # Define bins and labels
@@ -446,30 +429,31 @@ def density_by_sliding_window(length_fraction, total_length, window=0.05, n_poin
     return positions, (upper - lower) / (window * total_length)
 
 
-# For mouse
-def literature_reference_values(structure):
-    if structure == "SGN":
-        lower_bound, upper_bound = 9141, 11736
-    elif structure == "IHC":
-        lower_bound, upper_bound = 656, 681
-    elif structure == "synapse":
-        lower_bound, upper_bound = 9.1, 20.7
-    else:
-        raise ValueError
-    return lower_bound, upper_bound
+# Reference intervals from the literature, per species and structure. SGN and IHC are instance
+# counts per cochlea, synapse is the number of synapses per IHC.
+_LITERATURE_REFERENCE_VALUES = {
+    "mouse": {"SGN": (9141, 11736), "IHC": (656, 681), "synapse": (9.1, 20.7)},
+    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1081), "synapse": (15.8, 25.6)},
+}
 
 
-# For gerbil
-def literature_reference_values_gerbil(structure):
-    if structure == "SGN":
-        lower_bound, upper_bound = 22933, 26267
-    elif structure == "IHC":
-        lower_bound, upper_bound = 1081, 1081
-    elif structure == "synapse":
-        lower_bound, upper_bound = 15.8, 25.6
-    else:
-        raise ValueError
-    return lower_bound, upper_bound
+def literature_reference_values(structure, animal="mouse"):
+    """Get the reference interval of one structure from the literature.
+
+    Args:
+        structure: "SGN", "IHC" or "synapse".
+        animal: "mouse" or "gerbil".
+
+    Returns:
+        Lower bound of the interval.
+        Upper bound of the interval.
+    """
+    if animal not in _LITERATURE_REFERENCE_VALUES:
+        raise ValueError(f"animal must be one of {list(_LITERATURE_REFERENCE_VALUES)}, got '{animal}'.")
+    values = _LITERATURE_REFERENCE_VALUES[animal]
+    if structure not in values:
+        raise ValueError(f"structure must be one of {list(values)}, got '{structure}'.")
+    return values[structure]
 
 
 COHORT_DICT = {
@@ -609,6 +593,7 @@ def cochleae_for(cochlea_names, structure, version):
 
     The view holds the keys the figure scripts read from a metadata mapping, so a consumer keeps
     using meta["component"], meta["alias"] and meta["color"] without knowing about the nesting.
+    A consumer may add its own keys to an entry, so every entry is a fresh dict.
 
     Args:
         cochlea_names: Iterable of keys in COCHLEA_DICT.
@@ -621,32 +606,14 @@ def cochleae_for(cochlea_names, structure, version):
     view = {}
     for name in cochlea_names:
         entry = COCHLEA_DICT[name]
-        meta = {"alias": entry["alias"], "structure": structure, "version": version,
-                "component": cochlea_components(name, structure, version)}
+        meta = {"alias": entry["alias"], "component": cochlea_components(name, structure, version)}
         if "color" in entry:
             meta["color"] = entry["color"]
         view[name] = meta
     return view
 
 
-MWFLS_COCHLEAE = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]
-
 # The only consumer, plot_mwfls.py, uses these for the IHC_v9 tonotopic data.
-MWFLS_COCHLEAE_DICT = cochleae_for(MWFLS_COCHLEAE, "IHC", "IHC_v9")
+MWFLS_COCHLEAE_DICT = cochleae_for(COHORT_DICT["MWfLS"], "IHC", "IHC_v9")
 
 OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}
-
-
-def to_alias(cochlea_name):
-    name_short = cochlea_name.replace("_", "").replace("0", "")
-    name_to_alias = {
-        "MLR226L": "M_01L",
-        "MLR226R": "M_01R",
-        "MLR227L": "M_02L",
-        "MLR227R": "M_02R",
-        "MAMD126L": "M_03L",
-        "MAMD126R": "M_03R",
-        "MAMD127L": "M_04L",
-        "MAMD127R": "M_04R",
-    }
-    return name_to_alias[name_short]
