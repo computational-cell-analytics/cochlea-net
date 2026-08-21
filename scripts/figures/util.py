@@ -1,3 +1,5 @@
+from typing import Dict, List, Sequence, Tuple
+
 import matplotlib.pyplot as plt
 import matplotlib.ticker as mticker
 import numpy as np
@@ -252,6 +254,33 @@ def cochlea_colors(cochleae_dict, names=None, use_alias=True):
         label = cochlea_label(name, meta, use_alias)
         colors[label] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
     return colors
+
+
+def iteration_statistics(
+    metrics: Dict[str, dict],
+    keys: Sequence[str],
+    metric_names: Sequence[str] = ("precision", "recall", "f1-score"),
+) -> Tuple[Dict[str, Tuple[float, float]], List[str]]:
+    """Average a metric over several training iterations of the same network.
+
+    Args:
+        metrics: Accuracy entries of one accuracy JSON file, keyed by network iteration.
+        keys: Iteration entries to average. Keys that are absent from metrics are skipped.
+        metric_names: Metrics to average. A metric is skipped for an entry that stores None.
+
+    Returns:
+        The mean and the population standard deviation per metric, and the keys found in metrics.
+    """
+    present = [key for key in keys if key in metrics]
+    if not present:
+        return {}, present
+
+    stats = {}
+    for metric in metric_names:
+        values = [metrics[key][metric] for key in present if metrics[key].get(metric) is not None]
+        if values:
+            stats[metric] = (float(np.mean(values)), float(np.std(values)))
+    return stats, present
 
 
 def get_flatline_handle(color, linestyle="solid"):
