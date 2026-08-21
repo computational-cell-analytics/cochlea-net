@@ -5,10 +5,9 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 
 from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT, VALUE_DICT
-from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter_2
+from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter
 
 png_dpi = 300
 FILE_EXTENSION = "png"
@@ -140,7 +139,7 @@ def fig_02c(
     # Labels and formatting
     plt.xticks([1, 2, 3], setting, fontsize=main_label_size)
     plt.yticks(fontsize=main_tick_size)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_2))
+    ax.yaxis.set_major_formatter(custom_formatter(2))
     plt.ylabel("Value", fontsize=main_label_size)
     plt.ylim(0.69, 1)
     # plt.legend(loc="lower right", fontsize=legendsize)

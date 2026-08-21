@@ -5,57 +5,36 @@ import pickle
 from typing import Dict, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import frequency_mapping, prism_style, prism_cleanup_axes
-from util import export_legend, custom_formatter_1, get_marker_handle, get_trendline_handle
+from util import export_legend, custom_formatter, get_marker_handle, get_trendline_handle
 from util import animal_colors, cochlea_label
-from util import COLOR_LEFT, COLOR_RIGHT, VALUE_DICT, cochleae_for
+from util import COLOR_LEFT, COLOR_RIGHT, COLOR_UNTREATED, VALUE_DICT, cochleae_for, cohort_cochleae
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements2"  # noqa
 
-# The cochleae for the ChReef analysis. The metadata lives in util.COCHLEA_DICT.
-COCHLEAE = [
-    "M_LR_000143_L",
-    "M_LR_000144_L",
-    "M_LR_000145_L",
-    "M_LR_000153_L",
-    "M_LR_000155_L",
-    "M_LR_000189_L",
-    "M_LR_000143_R",
-    "M_LR_000144_R",
-    "M_LR_000145_R",
-    "M_LR_000153_R",
-    "M_LR_000155_R",
-    "M_LR_000189_R",
-    "G_EK_000049_L",
-    "G_EK_000049_R",
-]
+# The ChReef cohort, plus the two G_EK_000049 gerbils that are plotted alongside it.
+# The metadata lives in util.COCHLEA_DICT.
+COCHLEAE = cohort_cochleae("chreef_mouse") + ["G_EK_000049_L", "G_EK_000049_R"]
 
 COCHLEAE_DICT = cochleae_for(COCHLEAE, "SGN", "SGN_v2")
 
-REFERENCE_COCHLEAE = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
+REFERENCE_COCHLEAE = cohort_cochleae("idisco")
 
 # The cochleae for the OTOF gene therapy. The metadata lives in util.COCHLEA_DICT.
 # The left cochlea is treated, the right one is the untreated control.
-OTOF_COCHLEAE = [
-    "M_AMD_OTOF27_L",
-    "M_AMD_OTOF27_R",
-    "M_AMD_OTOF28_L",
-    "M_AMD_OTOF28_R",
-]
+OTOF_COCHLEAE = cohort_cochleae("otof_mouse")
 
 OTOF_COCHLEAE_DICT = cochleae_for(OTOF_COCHLEAE, "IHC", "IHC_v11")
 
 FILE_EXTENSION = "png"
 png_dpi = 300
 
-COLOR_UNTREATED = "#DB7B00"
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
@@ -515,7 +494,7 @@ def fig_04d(
         la.set_verticalalignment('center')
     ax.tick_params(axis='x', which='major', pad=16)
     plt.ylabel(label, fontsize=main_label_size)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
+    ax.yaxis.set_major_formatter(custom_formatter(1))
 
     xmin = 0.5
     xmax = 2.5
@@ -869,7 +848,7 @@ def fig_04e(
     plt.xlim(xlim_left, xlim_right)
     # Create combined tick positions & labels
     main_ticks = range(len(bin_labels))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
+    ax.yaxis.set_major_formatter(custom_formatter(1))
     plt.yticks(np.arange(ymin, ymax, 0.1), fontsize=yaxis_tick_size)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 

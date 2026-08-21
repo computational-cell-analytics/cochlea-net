@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
-from util import prism_cleanup_axes, prism_style, get_marker_handle, cochlea_label
+from util import prism_cleanup_axes, prism_style, get_marker_handle, cochlea_colors, cochlea_label
 from util import frequency_mapping, export_legend
 
 FILE_EXTENSION = "png"
@@ -80,9 +80,7 @@ def plot_legend_fig06e(
 ):
     """Legend for OTOF cochleae.
     """
-    color_dict = {}
-    for key in COCHLEAE_DICT_LaVision.keys():
-        color_dict[COCHLEAE_DICT_LaVision[key]["alias"]] = COCHLEAE_DICT_LaVision[key]["color"]
+    color_dict = cochlea_colors(COCHLEAE_DICT_LaVision)
 
     marker = ["o" for _ in color_dict]
     label = list(color_dict.keys())
@@ -164,10 +162,9 @@ def fig_06e_octave(
 
     result = {"cochlea": [], "octave_band": [], "value": []}
     expression_eff_dic = {}
-    color_dict = {}
+    color_dict = cochlea_colors(COCHLEAE_DICT_LaVision, otof_data, use_alias)
     for name, values in otof_data.items():
         alias = cochlea_label(name, COCHLEAE_DICT_LaVision[name], use_alias)
-        color_dict[alias] = COCHLEAE_DICT_LaVision[name]["color"]
         if mapping == "default":
             freq = values["frequency[kHz]"].values
             bin_edges, bin_labels = None, None

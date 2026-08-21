@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
@@ -150,23 +151,30 @@ prism_palette = [
 COLOR_LEFT = "#8E00DB"
 COLOR_RIGHT = "#DB0063"
 
-
-def custom_formatter_1(x, pos):
-    if np.isclose(x, 1.0):
-        return '1'  # no decimal
-    elif np.isclose(x, 0.0):
-        return '0'  # no decimal
-    else:
-        return f"{x:.1f}"
+# Color of the untreated reference, drawn as a band or a pair of bounds.
+COLOR_UNTREATED = "#DB7B00"
 
 
-def custom_formatter_2(x, pos):
-    if np.isclose(x, 1.0):
-        return '1'  # no decimal
-    elif np.isclose(x, 0.0):
-        return '0'  # no decimal
-    else:
-        return f"{x:.2f}"
+def custom_formatter(precision=1):
+    """Get a tick formatter that prints 0 and 1 without decimals.
+
+    The bounds are returned as literals rather than formatted with '.0f', because matplotlib
+    passes a tiny negative value for the zero tick, which would render as '-0'.
+
+    Args:
+        precision: Number of decimals for every other tick.
+
+    Returns:
+        Tick formatter to pass to Axis.set_major_formatter.
+    """
+    def _format(x, pos):
+        if np.isclose(x, 1.0):
+            return "1"
+        if np.isclose(x, 0.0):
+            return "0"
+        return f"{x:.{precision}f}"
+
+    return mticker.FuncFormatter(_format)
 
 
 def export_legend(legend, filename="legend.png"):
@@ -211,6 +219,27 @@ def animal_colors(cochleae_dict, use_alias=True):
         if animal in colors:
             continue
         colors[animal] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
+    return colors
+
+
+def cochlea_colors(cochleae_dict, names=None, use_alias=True):
+    """Map every cochlea to the color to plot it with.
+
+    A cochlea without a color in the registry falls back to prism_palette, like animal_colors.
+
+    Args:
+        cochleae_dict: Mapping of cochlea name to its metadata.
+        names: Cochleae to include, in the order they should appear. Defaults to all of them.
+        use_alias: Use the alias instead of the shortened cochlea name.
+
+    Returns:
+        Mapping of plot label to color.
+    """
+    colors = {}
+    for name in (cochleae_dict if names is None else names):
+        meta = cochleae_dict[name]
+        label = cochlea_label(name, meta, use_alias)
+        colors[label] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
     return colors
 
 
@@ -456,10 +485,63 @@ def literature_reference_values(structure, animal="mouse"):
     return values[structure]
 
 
+# Central registry of the cochlea cohorts. "cochleae" is the member list, "label" the text shown
+# on a plot, and "animal" selects the Greenwood parameters and the octave bands. The keys are the
+# --cohort values of plot_sgn_density_profile.py. Read the member list through cohort_cochleae();
+# "label" and "animal" are single level, so indexing them directly is fine. "color" is optional,
+# because not every cohort is drawn as one group.
 COHORT_DICT = {
-    "iDISCO": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
-    "MWfLS": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
+    "idisco": {
+        "label": "iDISCO", "animal": "mouse", "color": "#10CC17",
+        "cochleae": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
+    },
+    "mwfls": {
+        "label": "MWfLS", "animal": "mouse", "color": "#3F69FF",
+        "cochleae": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
+    },
+    # M_LR_000143 is the pilot animal. It has no color in COCHLEA_DICT, so a figure that colors
+    # per cochlea rather than per animal leaves it out.
+    "chreef_mouse": {
+        "label": "ChReef mouse", "animal": "mouse", "color": "#DB0063",
+        "cochleae": [
+            "M_LR_000143_L", "M_LR_000144_L", "M_LR_000145_L",
+            "M_LR_000153_L", "M_LR_000155_L", "M_LR_000189_L",
+            "M_LR_000143_R", "M_LR_000144_R", "M_LR_000145_R",
+            "M_LR_000153_R", "M_LR_000155_R", "M_LR_000189_R",
+        ],
+    },
+    # These have no SGN segmentation, so they carry no density profile.
+    "otof_mouse": {
+        "label": "OTOF mouse", "animal": "mouse",
+        "cochleae": ["M_AMD_OTOF27_L", "M_AMD_OTOF27_R", "M_AMD_OTOF28_L", "M_AMD_OTOF28_R"],
+    },
+    "fchrimson_gerbil": {
+        "label": "f-Chrimson gerbil", "animal": "gerbil", "color": "#8E00DB",
+        "cochleae": [
+            "G_EK_000049_L", "G_EK_000049_R", "G_EK_000071_L", "G_EK_000071_R",
+            "G_EK_000074_L", "G_EK_000074_R", "G_EK_000076_L", "G_EK_000076_R",
+        ],
+    },
+    "wt_gerbil": {
+        "label": "WT gerbil", "animal": "gerbil", "color": COLOR_UNTREATED,
+        "cochleae": ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"],
+    },
 }
+
+
+def cohort_cochleae(cohort):
+    """Get the cochleae of one cohort.
+
+    Args:
+        cohort: Key in COHORT_DICT.
+
+    Returns:
+        List of cochlea names.
+    """
+    if cohort not in COHORT_DICT:
+        raise KeyError(f"Unknown cohort {cohort}, expected one of {list(COHORT_DICT)}.")
+    return COHORT_DICT[cohort]["cochleae"]
+
 
 # Central registry of the cochleae used by the figure scripts. A component list belongs to one
 # segmentation of one cochlea, so it is nested per structure ("SGN" / "IHC") and per segmentation
@@ -614,6 +696,6 @@ def cochleae_for(cochlea_names, structure, version):
 
 
 # The only consumer, plot_mwfls.py, uses these for the IHC_v9 tonotopic data.
-MWFLS_COCHLEAE_DICT = cochleae_for(COHORT_DICT["MWfLS"], "IHC", "IHC_v9")
+MWFLS_COCHLEAE_DICT = cochleae_for(cohort_cochleae("mwfls"), "IHC", "IHC_v9")
 
 OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}

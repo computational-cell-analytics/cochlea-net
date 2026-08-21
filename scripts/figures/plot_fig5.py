@@ -7,12 +7,14 @@ import matplotlib.pyplot as plt
 
 from plot_fig2 import _load_ribbon_synapse_counts
 from plot_fig4 import group_lr
-from plot_sgn_density_profile import FCHRIMSON_GERBIL, WT_GERBIL, get_sgn_length_data
+from plot_sgn_density_profile import get_sgn_length_data
 from util import (
     VALUE_DICT,
     animal_colors,
     cochlea_label,
     cochleae_for,
+    cohort_cochleae,
+    COLOR_UNTREATED,
     literature_reference_values,
     png_dpi,
     prism_cleanup_axes,
@@ -25,13 +27,12 @@ MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 COLOR_MEASUREMENT = "#9C7427"
 COLOR_LITERATURE = "#27339C"
-COLOR_UNTREATED = "#DB7B00"
 
-# Gerbil cohorts of figure 5. The cochlea lists are the canonical ones of plot_sgn_density_profile,
-# the counts are documented in util.VALUE_DICT.
+# Gerbil cohorts of figure 5. The cochlea lists come from util.COHORT_DICT, the counts are
+# documented in util.VALUE_DICT.
 GERBIL_COHORT_DICT = {
-    "wild_type": WT_GERBIL,
-    "f-Chrimson": FCHRIMSON_GERBIL,
+    "wild_type": cohort_cochleae("wt_gerbil"),
+    "f-Chrimson": cohort_cochleae("fchrimson_gerbil"),
 }
 
 FCHRIMSON_COCHLEAE_DICT = cochleae_for(GERBIL_COHORT_DICT["f-Chrimson"], "SGN", "SGN_v2")

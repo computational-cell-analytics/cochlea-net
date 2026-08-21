@@ -6,7 +6,6 @@ import pickle
 from typing import Dict, List, Optional
 
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 from flamingo_tools.analysis.density_utils import report_density_overlap
@@ -19,7 +18,9 @@ from util import (
     animal_colors,
     cochlea_label,
     cochleae_for,
-    custom_formatter_1,
+    cohort_cochleae,
+    COLOR_UNTREATED,
+    custom_formatter,
     export_legend,
     frequency_mapping,
     get_marker_handle,
@@ -50,30 +51,15 @@ POSITIONS = list(POSITION_DICT)
 POSITION_LABELS = {"apex": "Apex", "mid": "Mid", "base": "Base"}
 
 # The gerbil cochleae for the f-Chrimson analysis. The metadata lives in util.COCHLEA_DICT.
-COCHLEAE = [
-    "G_EK_000049_L",
-    "G_EK_000049_R",
-    "G_EK_000071_L",
-    "G_EK_000071_R",
-    "G_EK_000074_L",
-    "G_EK_000074_R",
-    "G_EK_000076_L",
-    "G_EK_000076_R",
-]
+COCHLEAE = cohort_cochleae("fchrimson_gerbil")
 
 COCHLEAE_DICT = cochleae_for(COCHLEAE, "SGN", SOURCE_NAME)
 
-# Untreated gerbil cochleae, plotted as the SGN density reference of panel C. Same grouping as
-# WT_GERBIL in plot_sgn_density_profile.py.
-WT_COCHLEAE = [
-    "G_EK_000233_L",
-    "G_LR_000301_R",
-    "G_LR_000302_R",
-]
+# Untreated gerbil cochleae, plotted as the SGN density reference of panel C.
+WT_COCHLEAE = cohort_cochleae("wt_gerbil")
 
 FILE_EXTENSION = "png"
 
-COLOR_UNTREATED = "#DB7B00"
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
@@ -518,7 +504,7 @@ def fig_d_gerbil(
         label.set_verticalalignment("center")
     ax.tick_params(axis="x", which="major", pad=16)
     plt.ylabel("Expression efficiency", fontsize=main_label_size)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
+    ax.yaxis.set_major_formatter(custom_formatter(1))
 
     xmin = 0.5
     xmax = 2.5
@@ -711,7 +697,7 @@ def fig_e_gerbil(
 
     plt.xlim(xlim_left, xlim_right)
     main_ticks = range(len(bin_labels))
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
+    ax.yaxis.set_major_formatter(custom_formatter(1))
     ax.set_ylim(ylim_min, ylim_max)
     plt.yticks(np.arange(ytick_min, ytick_max + 1e-9, 0.1), fontsize=yaxis_tick_size)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)

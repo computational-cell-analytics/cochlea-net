@@ -18,8 +18,11 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
 from util import (
     COCHLEA_DICT,
+    COHORT_DICT,
+    cochlea_colors,
     cochlea_components,
     cochlea_label,
+    cohort_cochleae,
     get_line_marker_handle,
     density_by_fraction_bins,
     density_by_sliding_window,
@@ -35,11 +38,9 @@ from util import (
 SOURCE_NAME = "SGN_v2"
 FILE_EXTENSION = "png"
 
-# Default selection of cochleae per cohort. The metadata lives in util.COCHLEA_DICT.
-IDISCO = ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"]
-
-MWFLS = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]
-
+# The cochleae of every cohort come from util.COHORT_DICT. chreef_mouse is the exception: the
+# density x-axis needs the left and right cochlea of an animal next to each other, and the
+# M_LR_000143 pilot is left out because it has no color in COCHLEA_DICT.
 CHREEF_MOUSE = [
     "M_LR_000144_L",
     "M_LR_000144_R",
@@ -53,48 +54,14 @@ CHREEF_MOUSE = [
     "M_LR_000189_R",
 ]
 
-FCHRIMSON_GERBIL = [
-    "G_EK_000049_L",
-    "G_EK_000049_R",
-    "G_EK_000071_L",
-    "G_EK_000071_R",
-    "G_EK_000074_L",
-    "G_EK_000074_R",
-    "G_EK_000076_L",
-    "G_EK_000076_R",
-]
-
-WT_GERBIL = [
-    "G_EK_000233_L",
-    "G_LR_000301_R",
-    "G_LR_000302_R",
-]
-
+# The cohorts this script can plot. otof_mouse is absent: those cochleae have no SGN segmentation.
 COHORTS = {
-    "idisco": IDISCO,
-    "mwfls": MWFLS,
+    "idisco": cohort_cochleae("idisco"),
+    "mwfls": cohort_cochleae("mwfls"),
     "chreef_mouse": CHREEF_MOUSE,
-    "fchrimson_gerbil": FCHRIMSON_GERBIL,
-    "wt_gerbil": WT_GERBIL,
+    "fchrimson_gerbil": cohort_cochleae("fchrimson_gerbil"),
+    "wt_gerbil": cohort_cochleae("wt_gerbil"),
 }
-
-COHORT_LABELS = {
-    "idisco": "iDISCO",
-    "mwfls": "MWfLS",
-    "chreef_mouse": "ChReef mouse",
-    "fchrimson_gerbil": "f-Chrimson gerbil",
-    "wt_gerbil": "WT gerbil",
-}
-
-COHORT_COLORS = {
-    "idisco": "#10CC17",
-    "mwfls": "#3F69FF",
-    "chreef_mouse": "#DB0063",
-    "fchrimson_gerbil": "#8E00DB",
-}
-
-# Everything that is not listed here is a mouse.
-COHORT_ANIMALS = {"fchrimson_gerbil": "gerbil", "wt_gerbil": "gerbil"}
 
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
@@ -311,7 +278,7 @@ def fig_sgn_density_profile(
     prism_style()
 
     result = {"cochlea": [], "fraction": [], "density": [], "outlier": []}
-    color_dict = {}
+    color_dict = cochlea_colors(cochleae_dict, length_data, use_alias)
     marker_dict = {}
     alias_to_cohort = {}
     alias_to_side = {}
@@ -319,8 +286,6 @@ def fig_sgn_density_profile(
     for name, values in length_data.items():
         meta = cochleae_dict[name]
         alias = cochlea_label(name, meta, use_alias)
-
-        color_dict[alias] = meta["color"]
         marker_dict[alias] = meta.get("marker", "o")
         if "cohort" in meta:
             alias_to_cohort[alias] = meta["cohort"]
@@ -544,7 +509,7 @@ def main():
             print(f"Cohort {cohort} has no cochlea with run length columns, it will be skipped.")
             continue
         length_data[cohort] = data
-        metadata[cohort] = build_plot_metadata(COHORTS[cohort], cohort=COHORT_LABELS[cohort])
+        metadata[cohort] = build_plot_metadata(COHORTS[cohort], cohort=COHORT_DICT[cohort]["label"])
 
     cohorts = [cohort for cohort in args.cohort if cohort in length_data]
     if not cohorts:
@@ -560,7 +525,7 @@ def main():
         mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
         cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
         trendline=True, trendline_std=True, mask_outlier=True, top_axis=True,
-        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
     )
 
@@ -574,7 +539,7 @@ def main():
         mode=mode, n_bins=n_bins, window=args.window, n_points=args.n_points,
         cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
         trendline=True, trendline_std=False, top_axis=True,
-        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
     )
 
@@ -589,7 +554,7 @@ def main():
         cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
         trendline=True, trendline_std=False, trendline_by_side=True, top_axis=True,
         reference_trendline=idisco_trend,
-        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
     )
 
@@ -604,7 +569,7 @@ def main():
         cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
         trendline=True, trendline_std=False, trendline_by_side=True, top_axis=True,
         reference_trendline=wt_gerbil_trend,
-        animal=COHORT_ANIMALS.get(cohort, "mouse"),
+        animal=COHORT_DICT[cohort]["animal"],
         show_legend=True, length_info=False,
     )
 
@@ -617,7 +582,7 @@ def main():
 #                mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
 #                cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
 #                trendline=True, trendline_std=True, top_axis=True,
-#                animal=COHORT_ANIMALS.get(cohort, "mouse"),
+#                animal=COHORT_DICT[cohort]["animal"],
 #                show_legend=True, length_info=True,
 #            )
 
@@ -631,7 +596,7 @@ def main():
 #            mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
 #            cochleae_dict=combined_meta, use_alias=use_alias, plot=args.plot,
 #            trendline=True, trendline_std=True,
-#            trendline_colors={COHORT_LABELS[c]: COHORT_COLORS[c] for c in cohorts},
+#            trendline_colors={COHORT_DICT[c]["label"]: COHORT_DICT[c]["color"] for c in cohorts},
 #            show_legend=True,
 #        )
 
