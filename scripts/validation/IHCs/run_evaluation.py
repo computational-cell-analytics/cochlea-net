@@ -1,10 +1,12 @@
-import json
+import argparse
 import os
 from glob import glob
 
 import pandas as pd
+from flamingo_tools.json_util import update_json
 from flamingo_tools.validation import (
-    fetch_data_for_evaluation, _parse_annotation_path, compute_scores_for_annotated_slice
+    _parse_annotation_path, compute_scores_for_annotated_slice, compute_scores_from_counts,
+    fetch_data_for_evaluation,
 )
 
 ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/AnnotatedImageCrops/F1ValidationIHCs"
@@ -79,52 +81,30 @@ def run_evaluation(root, annotation_folders, output_file, cache_folder, segmenta
             results["fn"].append(scores["fn"])
 
     table = pd.DataFrame(results)
-
-    tp = table.tp.sum()
-    fp = table.fp.sum()
-    fn = table.fn.sum()
-
-    precision = tp / (tp + fp)
-    recall = tp / (tp + fn)
-    f1_score = 2 * precision * recall / (precision + recall)
+    scores = compute_scores_from_counts(int(table.tp.sum()), int(table.fp.sum()), int(table.fn.sum()))
 
     print("All results:")
     print(table)
     print("Evaluation:")
-    print("Precision:", precision)
-    print("Recall:", recall)
-    print("F1-Score:", f1_score)
+    print("Precision:", scores["precision"])
+    print("Recall:", scores["recall"])
+    print("F1-Score:", scores["f1-score"])
 
-    if output_file is not None and segmentation_name is not None:
+    if output_file is not None:
         version_key = "_".join(segmentation_name.split("_")[1:])
-        data = {}
-        if os.path.isfile(output_file):
-            with open(output_file, "r") as f:
-                data = json.load(f)
-
-        data[version_key] = {
+        update_json({version_key: {
             "crops": table["name"].tolist(),
-            "tp": [int(v) for v in table["tp"].tolist()],
-            "fp": [int(v) for v in table["fp"].tolist()],
-            "fn": [int(v) for v in table["fn"].tolist()],
-            "precision": round(float(precision), 3),
-            "recall": round(float(recall), 3),
-            "f1-score": round(float(f1_score), 3),
-        }
-
-        out_dir = os.path.dirname(output_file)
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
-        with open(output_file, "w") as f:
-            json.dump(data, f, indent="\t", separators=(",", ": "))
-        print(f"Saved results to {output_file}")
+            "tp": [int(v) for v in table["tp"]],
+            "fp": [int(v) for v in table["fp"]],
+            "fn": [int(v) for v in table["fn"]],
+            **scores,
+        }}, output_file)
 
 
 def main():
-    import argparse
     parser = argparse.ArgumentParser()
     parser.add_argument("-i", "--input", default=ROOT)
-    parser.add_argument("--folders", default=ANNOTATION_FOLDERS)
+    parser.add_argument("--folders", default=ANNOTATION_FOLDERS, nargs="+")
     parser.add_argument("-o", "--output_dir", type=str, default=None,
                         help="Optional directory to save accuracy JSON file (IHC_3D.json).")
     parser.add_argument("--segmentation_name", default="IHC_v4c")

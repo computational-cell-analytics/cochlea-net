@@ -20,11 +20,6 @@ SYNAPSE_DICT = {
         "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },
-    "v3_05t": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3_05t"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
     "v4": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
         "ref_root": CONSENSUS_REF_ROOT,
@@ -52,11 +47,6 @@ SYNAPSE_DICT = {
     },
     "v5-f4": {
         "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5-f4"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5_05t": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5_05t"),
         "ref_root": CONSENSUS_REF_ROOT,
         "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
     },

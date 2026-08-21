@@ -1,4 +1,5 @@
 import matplotlib.pyplot as plt
+import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
@@ -9,115 +10,101 @@ SYNAPSE_DIR_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightshee
 # SYNAPSE_DIR_ROOT = "./synapses"
 png_dpi = 300
 
+# Documented instance counts per cochlea, structure and segmentation version. The component
+# lists that produced these counts live in COCHLEA_DICT.
 VALUE_DICT = {
     # iDISCO
     "M_LR_000226_L": {
         "IHC": {
-            "IHC_v4c": {
-                "count": 712, "version": "IHC_v4c",
-            },
-            "IHC_v11": {
-                "count": 687, "component_list": [1, 3], "version": "IHC_v11",
-            },
+            "IHC_v4c": {"count": 712},
+            "IHC_v11": {"count": 687},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 11153, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 11153},
         },
     },
     "M_LR_000226_R": {
         "IHC": {
-            "IHC_v4c": {
-                "count": 710, "version": "IHC_v4c",
-            },
-            "IHC_v11": {
-                "count": 648, "version": "IHC_v11",
-            },
+            "IHC_v4c": {"count": 710},
+            "IHC_v11": {"count": 648},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 11398, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 11398},
         },
     },
     "M_LR_000227_L": {
         "IHC": {
-            "IHC_v4c": {
-                "count": 721, "version": "IHC_v4c",
-            },
-            "IHC_v11": {
-                "count": 617, "version": "IHC_v11",
-            },
+            "IHC_v4c": {"count": 721},
+            "IHC_v11": {"count": 617},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 10333, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 10333},
         },
     },
     "M_LR_000227_R": {
         "IHC": {
-            "IHC_v4c": {
-                "count": 675, "version": "IHC_v4c",
-            },
-            "IHC_v11": {
-                "count": 640, "version": "IHC_v11",
-            },
+            "IHC_v4c": {"count": 675},
+            "IHC_v11": {"count": 640},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 11820, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 11820},
         },
     },
     # PELCOfHC2longnoDCM
     "M_AMD_000126_L": {
         "IHC": {
-            "IHC_v9": {
-                "count": 665, "version": "IHC_v9",
-            },
+            "IHC_v9": {"count": 665},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 11360, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 11360},
         },
     },
     "M_AMD_000126_R": {
         "IHC": {
-            "IHC_v9": {
-                "count": 669, "version": "IHC_v9",
-            },
+            "IHC_v9": {"count": 669},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 10751, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 10751},
         },
     },
     "M_AMD_000127_L": {
         "IHC": {
-            "IHC_v9": {
-                "count": 617, "version": "IHC_v9",
-            },
+            "IHC_v9": {"count": 617},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 1665, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 1665},
         },
     },
     "M_AMD_000127_R": {
         "IHC": {
-            "IHC_v9": {
-                "count": 647, "version": "IHC_v9",
-            },
+            "IHC_v9": {"count": 647},
         },
         "SGN": {
-            "SGN_v2": {
-                "count": 7860, "version": "SGN_v2",
-            },
+            "SGN_v2": {"count": 7860},
+        },
+    },
+    "G_EK_000233_L": {
+        "IHC": {
+            "IHC_v11": {"count": 1018},
+        },
+        "SGN": {
+            "SGN_v2": {"count": 18541},
+        },
+    },
+    "G_LR_000301_R": {
+        "IHC": {
+            "IHC_v11": {"count": 975},
+        },
+        "SGN": {
+            "SGN_v2": {"count": 21801},
+        },
+    },
+    "G_LR_000302_R": {
+        "IHC": {
+            "IHC_v11": {"count": 935},
+        },
+        "SGN": {
+            "SGN_v2": {"count": 23717},
         },
     },
 }
@@ -164,23 +151,30 @@ prism_palette = [
 COLOR_LEFT = "#8E00DB"
 COLOR_RIGHT = "#DB0063"
 
-
-def custom_formatter_1(x, pos):
-    if np.isclose(x, 1.0):
-        return '1'  # no decimal
-    elif np.isclose(x, 0.0):
-        return '0'  # no decimal
-    else:
-        return f"{x:.1f}"
+# Color of the untreated reference, drawn as a band or a pair of bounds.
+COLOR_UNTREATED = "#DB7B00"
 
 
-def custom_formatter_2(x, pos):
-    if np.isclose(x, 1.0):
-        return '1'  # no decimal
-    elif np.isclose(x, 0.0):
-        return '0'  # no decimal
-    else:
-        return f"{x:.2f}"
+def custom_formatter(precision=1):
+    """Get a tick formatter that prints 0 and 1 without decimals.
+
+    The bounds are returned as literals rather than formatted with '.0f', because matplotlib
+    passes a tiny negative value for the zero tick, which would render as '-0'.
+
+    Args:
+        precision: Number of decimals for every other tick.
+
+    Returns:
+        Tick formatter to pass to Axis.set_major_formatter.
+    """
+    def _format(x, pos):
+        if np.isclose(x, 1.0):
+            return "1"
+        if np.isclose(x, 0.0):
+            return "0"
+        return f"{x:.{precision}f}"
+
+    return mticker.FuncFormatter(_format)
 
 
 def export_legend(legend, filename="legend.png"):
@@ -198,6 +192,55 @@ def get_marker_handle(color, marker, edgecolors=None):
         return plt.plot([], [], marker=marker, color=color, ls="none")[0]
     else:
         return plt.plot([], [], marker=marker, markerfacecolor='none', markeredgecolor=edgecolors, ls="none")[0]
+
+
+def cochlea_label(cochlea_name, meta, use_alias=True):
+    """Get the plot label of a cochlea: its alias, or the shortened cochlea name."""
+    return meta["alias"] if use_alias else cochlea_name.replace("_", "").replace("0", "")
+
+
+def animal_colors(cochleae_dict, use_alias=True):
+    """Map every animal to the color that its left and right cochlea share.
+
+    The animal is the plot label without the side suffix, which is the grouping that
+    plot_fig4.group_lr returns. A cochlea without a color in the registry falls back to
+    prism_palette.
+
+    Args:
+        cochleae_dict: Mapping of cochlea name to its COCHLEA_DICT entry.
+        use_alias: Use the alias instead of the shortened cochlea name.
+
+    Returns:
+        Mapping of animal to color.
+    """
+    colors = {}
+    for name, meta in cochleae_dict.items():
+        animal = cochlea_label(name, meta, use_alias)[:-1]
+        if animal in colors:
+            continue
+        colors[animal] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
+    return colors
+
+
+def cochlea_colors(cochleae_dict, names=None, use_alias=True):
+    """Map every cochlea to the color to plot it with.
+
+    A cochlea without a color in the registry falls back to prism_palette, like animal_colors.
+
+    Args:
+        cochleae_dict: Mapping of cochlea name to its metadata.
+        names: Cochleae to include, in the order they should appear. Defaults to all of them.
+        use_alias: Use the alias instead of the shortened cochlea name.
+
+    Returns:
+        Mapping of plot label to color.
+    """
+    colors = {}
+    for name in (cochleae_dict if names is None else names):
+        meta = cochleae_dict[name]
+        label = cochlea_label(name, meta, use_alias)
+        colors[label] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
+    return colors
 
 
 def get_flatline_handle(color, linestyle="solid"):
@@ -317,23 +360,6 @@ def frequency_mapping(
     return value_by_band
 
 
-def sliding_runlength_sum(run_length, values, width):
-    assert len(run_length) == len(values)
-    # Create data frame and sort it.
-    df = pd.DataFrame({"run_length": run_length, "value": values})
-    df = df.sort_values("run_length").reset_index(drop=True).copy()
-
-    x = df["run_length"].to_numpy()
-    y = df["value"].to_numpy()
-
-    cumsum = np.cumsum(y)
-    start_idx = np.searchsorted(x, x - width, side="left")
-    window_sum = cumsum - np.concatenate(([0], cumsum[:-1]))[start_idx]
-    assert len(window_sum) == len(x)
-
-    return x, window_sum
-
-
 def average_by_fraction(length_fraction, syn_count, n_bins=10):
     """Average syn_per_IHC within equally spaced fractional bins."""
     # Define bins and labels
@@ -432,99 +458,244 @@ def density_by_sliding_window(length_fraction, total_length, window=0.05, n_poin
     return positions, (upper - lower) / (window * total_length)
 
 
-# For mouse
-def literature_reference_values(structure):
-    if structure == "SGN":
-        lower_bound, upper_bound = 9141, 11736
-    elif structure == "IHC":
-        lower_bound, upper_bound = 656, 681
-    elif structure == "synapse":
-        lower_bound, upper_bound = 9.1, 20.7
-    else:
-        raise ValueError
-    return lower_bound, upper_bound
-
-
-# For gerbil
-def literature_reference_values_gerbil(structure):
-    if structure == "SGN":
-        lower_bound, upper_bound = 22933, 26267
-    elif structure == "IHC":
-        lower_bound, upper_bound = 1081, 1081
-    elif structure == "synapse":
-        lower_bound, upper_bound = 15.8, 25.6
-    else:
-        raise ValueError
-    return lower_bound, upper_bound
-
-
-COHORT_DICT = {
-    "iDISCO": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
-    "MWfLS": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
+# Reference intervals from the literature, per species and structure. SGN and IHC are instance
+# counts per cochlea, synapse is the number of synapses per IHC.
+_LITERATURE_REFERENCE_VALUES = {
+    "mouse": {"SGN": (9141, 11736), "IHC": (656, 681), "synapse": (9.1, 20.7)},
+    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1081), "synapse": (15.8, 25.6)},
 }
 
-# Central registry of the cochleae used by the figure scripts. "component" holds the Rosenthal's
-# canal component label(s) to keep when filtering a segmentation table. "color" is optional,
-# because some scripts color by animal instead of by cochlea.
-# TODO: plot_fig3.py and plot_fig6.py still define their own COCHLEAE_DICT. Deriving them from
-# this registry also touches plot_mwfls.py, which imports COCHLEAE_DICT from plot_fig3.
+
+def literature_reference_values(structure, animal="mouse"):
+    """Get the reference interval of one structure from the literature.
+
+    Args:
+        structure: "SGN", "IHC" or "synapse".
+        animal: "mouse" or "gerbil".
+
+    Returns:
+        Lower bound of the interval.
+        Upper bound of the interval.
+    """
+    if animal not in _LITERATURE_REFERENCE_VALUES:
+        raise ValueError(f"animal must be one of {list(_LITERATURE_REFERENCE_VALUES)}, got '{animal}'.")
+    values = _LITERATURE_REFERENCE_VALUES[animal]
+    if structure not in values:
+        raise ValueError(f"structure must be one of {list(values)}, got '{structure}'.")
+    return values[structure]
+
+
+# Central registry of the cochlea cohorts. "cochleae" is the member list, "label" the text shown
+# on a plot, and "animal" selects the Greenwood parameters and the octave bands. The keys are the
+# --cohort values of plot_sgn_density_profile.py. Read the member list through cohort_cochleae();
+# "label" and "animal" are single level, so indexing them directly is fine. "color" is optional,
+# because not every cohort is drawn as one group.
+COHORT_DICT = {
+    "idisco": {
+        "label": "iDISCO", "animal": "mouse", "color": "#10CC17",
+        "cochleae": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
+    },
+    "mwfls": {
+        "label": "MWfLS", "animal": "mouse", "color": "#3F69FF",
+        "cochleae": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
+    },
+    # M_LR_000143 is the pilot animal. It has no color in COCHLEA_DICT, so a figure that colors
+    # per cochlea rather than per animal leaves it out.
+    "chreef_mouse": {
+        "label": "ChReef mouse", "animal": "mouse", "color": "#DB0063",
+        "cochleae": [
+            "M_LR_000143_L", "M_LR_000144_L", "M_LR_000145_L",
+            "M_LR_000153_L", "M_LR_000155_L", "M_LR_000189_L",
+            "M_LR_000143_R", "M_LR_000144_R", "M_LR_000145_R",
+            "M_LR_000153_R", "M_LR_000155_R", "M_LR_000189_R",
+        ],
+    },
+    # These have no SGN segmentation, so they carry no density profile.
+    "otof_mouse": {
+        "label": "OTOF mouse", "animal": "mouse",
+        "cochleae": ["M_AMD_OTOF27_L", "M_AMD_OTOF27_R", "M_AMD_OTOF28_L", "M_AMD_OTOF28_R"],
+    },
+    "fchrimson_gerbil": {
+        "label": "f-Chrimson gerbil", "animal": "gerbil", "color": "#8E00DB",
+        "cochleae": [
+            "G_EK_000049_L", "G_EK_000049_R", "G_EK_000071_L", "G_EK_000071_R",
+            "G_EK_000074_L", "G_EK_000074_R", "G_EK_000076_L", "G_EK_000076_R",
+        ],
+    },
+    "wt_gerbil": {
+        "label": "WT gerbil", "animal": "gerbil", "color": COLOR_UNTREATED,
+        "cochleae": ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"],
+    },
+}
+
+
+def cohort_cochleae(cohort):
+    """Get the cochleae of one cohort.
+
+    Args:
+        cohort: Key in COHORT_DICT.
+
+    Returns:
+        List of cochlea names.
+    """
+    if cohort not in COHORT_DICT:
+        raise KeyError(f"Unknown cohort {cohort}, expected one of {list(COHORT_DICT)}.")
+    return COHORT_DICT[cohort]["cochleae"]
+
+
+# Central registry of the cochleae used by the figure scripts. A component list belongs to one
+# segmentation of one cochlea, so it is nested per structure ("SGN" / "IHC") and per segmentation
+# version, mirroring VALUE_DICT. "alias" and "color" are structure independent. Read the registry
+# through cochlea_components() or cochleae_for(), never by indexing the nested dicts directly.
+# Only the (structure, version) pairs that a figure script needs are listed, so an unintended
+# lookup raises instead of filtering on a guessed component list.
+# TODO: plot_fig6.py still defines its own COCHLEAE_DICT_LaVision. Its LaVision cochleae are not
+# in this registry, and plot_lavision.py holds a third, conflicting component list for them.
 COCHLEA_DICT = {
-    # iDISCO reference cochleae.
-    "M_LR_000226_L": {"alias": "M_01L", "component": [1], "color": "#9C5027"},
-    "M_LR_000226_R": {"alias": "M_01R", "component": [1], "color": "#279C52"},
-    "M_LR_000227_L": {"alias": "M_02L", "component": [1], "color": "#67279C"},
-    "M_LR_000227_R": {"alias": "M_02R", "component": [1], "color": "#27339C"},
+    # iDISCO reference cochleae. The IHC component lists were validated on IHC_v11. IHC_v4c
+    # reuses them, which is what plot_mwfls.py already did through the old plot_fig3 registry.
+    "M_LR_000226_L": {
+        "alias": "M_01L", "color": "#9C5027",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v11": {"component": [1, 3]}, "IHC_v4c": {"component": [1, 3]}},
+    },
+    "M_LR_000226_R": {
+        "alias": "M_01R", "color": "#279C52",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v11": {"component": [1]}, "IHC_v4c": {"component": [1]}},
+    },
+    "M_LR_000227_L": {
+        "alias": "M_02L", "color": "#67279C",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v11": {"component": [1]}, "IHC_v4c": {"component": [1]}},
+    },
+    "M_LR_000227_R": {
+        "alias": "M_02R", "color": "#27339C",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v11": {"component": [1]}, "IHC_v4c": {"component": [1]}},
+    },
     # MWfLS cochleae.
-    "M_AMD_000126_L": {"alias": "M_03L", "component": [1], "color": "#5B1CE8"},
-    "M_AMD_000126_R": {"alias": "M_03R", "component": [1], "color": "#1C1FE8"},
-    "M_AMD_000127_L": {"alias": "M_04L", "component": [1], "color": "#1C60E9"},
-    "M_AMD_000127_R": {"alias": "M_04R", "component": [1], "color": "#1CA0E8"},
+    "M_AMD_000126_L": {
+        "alias": "M_03L", "color": "#5B1CE8",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}},
+    },
+    "M_AMD_000126_R": {
+        "alias": "M_03R", "color": "#1C1FE8",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}},
+    },
+    "M_AMD_000127_L": {
+        "alias": "M_04L", "color": "#1C60E9",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}},
+    },
+    "M_AMD_000127_R": {
+        "alias": "M_04R", "color": "#1CA0E8",
+        "SGN": {"SGN_v2": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}},
+    },
+    # Mouse cochleae for the OTOF gene therapy. These have no SGN segmentation. The components
+    # match the component_list used to generate each
+    # reproducibility/object_measures/MAMDOTOF*_IHC.json.
+    "M_AMD_OTOF27_L": {
+        "alias": "M_30L", "color": "#9C5027",
+        "IHC": {"IHC_v11": {"component": [1]}},
+    },
+    "M_AMD_OTOF27_R": {
+        "alias": "M_30R", "color": "#9C5027",
+        "IHC": {"IHC_v11": {"component": [2, 4, 10]}},
+    },
+    "M_AMD_OTOF28_L": {
+        "alias": "M_31L", "color": "#279C52",
+        "IHC": {"IHC_v11": {"component": [5, 9, 1, 3, 4, 14, 8, 15]}},
+    },
+    "M_AMD_OTOF28_R": {
+        "alias": "M_31R", "color": "#279C52",
+        "IHC": {"IHC_v11": {"component": [2, 1, 3, 4]}},
+    },
     # Mouse cochleae for the ChReef analysis.
-    "M_LR_000143_L": {"alias": "M0L", "component": [1]},
-    "M_LR_000144_L": {"alias": "M_05L", "component": [1], "color": "#9C5027"},
-    "M_LR_000145_L": {"alias": "M_06L", "component": [1], "color": "#279C52"},
-    "M_LR_000153_L": {"alias": "M_07L", "component": [1, 2, 3], "color": "#67279C"},
-    "M_LR_000155_L": {"alias": "M_08L", "component": [1], "color": "#27339C"},
-    "M_LR_000189_L": {"alias": "M_09L", "component": [1], "color": "#9C276F"},
-    "M_LR_000143_R": {"alias": "M0R", "component": [1]},
-    "M_LR_000144_R": {"alias": "M_05R", "component": [1], "color": "#9C5027"},
-    "M_LR_000145_R": {"alias": "M_06R", "component": [1], "color": "#279C52"},
-    "M_LR_000153_R": {"alias": "M_07R", "component": [1], "color": "#67279C"},
-    "M_LR_000155_R": {"alias": "M_08R", "component": [1], "color": "#27339C"},
-    "M_LR_000189_R": {"alias": "M_09R", "component": [1], "color": "#9C276F"},
+    "M_LR_000143_L": {"alias": "M0L", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000144_L": {"alias": "M_05L", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000145_L": {"alias": "M_06L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000153_L": {"alias": "M_07L", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1, 2, 3]}}},
+    "M_LR_000155_L": {"alias": "M_08L", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000189_L": {"alias": "M_09L", "color": "#9C276F", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000143_R": {"alias": "M0R", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000144_R": {"alias": "M_05R", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000145_R": {"alias": "M_06R", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000153_R": {"alias": "M_07R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000155_R": {"alias": "M_08R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "M_LR_000189_R": {"alias": "M_09R", "color": "#9C276F", "SGN": {"SGN_v2": {"component": [1]}}},
     # Gerbil cochleae for the f-Chrimson analysis. The components match the component_list used to
     # generate each SGN_density_2d.json.
-    "G_EK_000049_L": {"alias": "G_1L", "component": [1, 3, 4, 5], "color": "#9C5027"},
-    "G_EK_000071_L": {"alias": "G_2L", "component": [1], "color": "#279C52"},
-    "G_EK_000074_L": {"alias": "G_3L", "component": [1], "color": "#67279C"},
-    "G_EK_000076_L": {"alias": "G_4L", "component": [1, 2, 3], "color": "#27339C"},
-    "G_EK_000049_R": {"alias": "G_1R", "component": [1, 2], "color": "#9C5027"},
-    "G_EK_000071_R": {"alias": "G_2R", "component": [1], "color": "#279C52"},
-    "G_EK_000074_R": {"alias": "G_3R", "component": [1], "color": "#67279C"},
-    "G_EK_000076_R": {"alias": "G_4R", "component": [1], "color": "#27339C"},
-    # Gerbil wild type cochleae
-    "G_EK_000233_L": {"alias": "G_5L", "component": [1], "color": "#279C52"},
-    "G_LR_000301_R": {"alias": "G_6R", "component": [1], "color": "#67279C"},
-    "G_LR_000302_R": {"alias": "G_7R", "component": [1], "color": "#27339C"},
+    "G_EK_000049_L": {"alias": "G_1L", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1, 3, 4, 5]}}},
+    "G_EK_000071_L": {"alias": "G_2L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000074_L": {"alias": "G_3L", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000076_L": {"alias": "G_4L", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1, 2, 3]}}},
+    "G_EK_000049_R": {"alias": "G_1R", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1, 2]}}},
+    "G_EK_000071_R": {"alias": "G_2R", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000074_R": {"alias": "G_3R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000076_R": {"alias": "G_4R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1]}}},
+    # Untreated gerbil cochleae. G_LR_000302_R keeps component 3, which holds 234 of its 23717
+    # SGNs; the SGN_density_2d_extended.json on S3 was recalculated with [1, 3].
+    "G_EK_000233_L": {"alias": "G_5L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_LR_000301_R": {"alias": "G_6R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_LR_000302_R": {"alias": "G_7R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1, 3]}}},
 }
 
-MWFLS_COCHLEAE = ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"]
 
-MWFLS_COCHLEAE_DICT = {name: COCHLEA_DICT[name] for name in MWFLS_COCHLEAE}
+def cochlea_components(cochlea_name, structure, version):
+    """Get the component labels to keep for one segmentation of one cochlea.
+
+    A component list is only valid for the labeling run it was derived from, so the version is
+    required and never defaulted.
+
+    Args:
+        cochlea_name: Key in COCHLEA_DICT.
+        structure: "SGN" or "IHC".
+        version: Segmentation version, e.g. "SGN_v2" or "IHC_v11".
+
+    Returns:
+        List of component labels.
+    """
+    entry = COCHLEA_DICT[cochlea_name]
+    if structure not in entry:
+        raise KeyError(f"Cochlea {cochlea_name} has no {structure} segmentation in COCHLEA_DICT.")
+    if version not in entry[structure]:
+        raise KeyError(
+            f"Cochlea {cochlea_name} has no {structure} component list for {version}, "
+            f"only for {sorted(entry[structure])}."
+        )
+    return entry[structure][version]["component"]
+
+
+def cochleae_for(cochlea_names, structure, version):
+    """Get a flat per-cochlea view of COCHLEA_DICT for one segmentation.
+
+    The view holds the keys the figure scripts read from a metadata mapping, so a consumer keeps
+    using meta["component"], meta["alias"] and meta["color"] without knowing about the nesting.
+    A consumer may add its own keys to an entry, so every entry is a fresh dict.
+
+    Args:
+        cochlea_names: Iterable of keys in COCHLEA_DICT.
+        structure: "SGN" or "IHC".
+        version: Segmentation version, e.g. "SGN_v2" or "IHC_v11".
+
+    Returns:
+        Mapping of cochlea name to a flat metadata dict.
+    """
+    view = {}
+    for name in cochlea_names:
+        entry = COCHLEA_DICT[name]
+        meta = {"alias": entry["alias"], "component": cochlea_components(name, structure, version)}
+        if "color" in entry:
+            meta["color"] = entry["color"]
+        view[name] = meta
+    return view
+
+
+# The only consumer, plot_mwfls.py, uses these for the IHC_v9 tonotopic data.
+MWFLS_COCHLEAE_DICT = cochleae_for(cohort_cochleae("mwfls"), "IHC", "IHC_v9")
 
 OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}
-
-
-def to_alias(cochlea_name):
-    name_short = cochlea_name.replace("_", "").replace("0", "")
-    name_to_alias = {
-        "MLR226L": "M_01L",
-        "MLR226R": "M_01R",
-        "MLR227L": "M_02L",
-        "MLR227R": "M_02R",
-        "MAMD126L": "M_03L",
-        "MAMD126R": "M_03R",
-        "MAMD127L": "M_04L",
-        "MAMD127R": "M_04R",
-    }
-    return name_to_alias[name_short]

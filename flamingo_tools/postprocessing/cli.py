@@ -399,6 +399,21 @@ def sgn_density():
         "Reduces contamination from other cochlear turns. Default: 0.1",
     )
     parser.add_argument(
+        "--no_cluster_filter", action="store_true",
+        help="Do not restrict the slice to one turn of the Rosenthal's canal. By default the "
+        "instances are clustered and only the cluster belonging to the requested position is "
+        "kept, so that a slice cutting two turns does not measure the blank space between them.",
+    )
+    parser.add_argument(
+        "--max_edge_distance", type=float, default=40.0,
+        help="Maximum distance in µm between two SGN instances of one cluster. Default: 40.0",
+    )
+    parser.add_argument(
+        "--min_cluster_size", type=int, default=10,
+        help="Minimum number of SGN instances a cluster needs to be selectable. Smaller clusters "
+        "are treated as fragments. Default: 10",
+    )
+    parser.add_argument(
         "-c", "--component_label", type=int, nargs="+", default=None,
         help="Component label(s) of the main Rosenthal's Canal component. When omitted, falls "
         "back to the 'component_list' entry of --json_input if present, otherwise to 1.",
@@ -494,6 +509,9 @@ def sgn_density():
         positions=args.positions,
         slice_thickness=args.slice_thickness,
         run_length_tolerance=args.run_length_tolerance,
+        cluster_filter=not args.no_cluster_filter,
+        max_edge_distance=args.max_edge_distance,
+        min_cluster_size=args.min_cluster_size,
         component_list=args.component_label,
         axis=args.axis,
         length_fraction_column=args.length_fraction_column,

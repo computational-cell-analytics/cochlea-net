@@ -9,14 +9,14 @@ from glob import glob
 
 import matplotlib
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 import zarr
 from matplotlib import cm, colors
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, get_s3_path
-from util import frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter_1, average_by_fraction
+from util import frequency_mapping, SYNAPSE_DIR_ROOT, custom_formatter, average_by_fraction
+from util import cochlea_colors, cochlea_components, cochlea_label, cochleae_for, cohort_cochleae
 from util import prism_style, prism_cleanup_axes, export_legend, get_marker_handle, get_flatline_handle
 from flamingo_tools.postprocessing.sgn_subtype_utils import stain_to_type, COCHLEAE, ALIAS
 
@@ -59,13 +59,9 @@ LEGEND_LABEL = {
 
 }
 
-# The cochlea for the CHReef analysis.
-COCHLEAE_DICT = {
-    "M_LR_000226_L": {"alias": "M_01L", "component": [1], "color": "#9C5027"},
-    "M_LR_000226_R": {"alias": "M_01R", "component": [1], "color": "#279C52"},
-    "M_LR_000227_L": {"alias": "M_02L", "component": [1], "color": "#67279C"},
-    "M_LR_000227_R": {"alias": "M_02R", "component": [1], "color": "#27339C"},
-}
+# The iDISCO reference cochleae, for the alias and color of a plotted cochlea. The component
+# lists of get_tonotopic_data come from util.COCHLEA_DICT for the requested IHC version.
+COCHLEAE_DICT = cochleae_for(cohort_cochleae("idisco"), "IHC", "IHC_v11")
 
 GROUPINGS = {
     "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
@@ -127,17 +123,16 @@ def frequency_mapping2(frequencies, values, animal="mouse", transduction_efficie
 
 
 def get_tonotopic_data(
-    cochleae_dict: dict = COCHLEAE_DICT,
-    source_name: str = "IHC_v4c",
+    cochleae: Optional[List[str]] = None,
+    source_name: str = "IHC_v11",
     synapse_dir: str = SYNAPSE_DIR,
     cache_path: str = None,
 ):
     """Load per-cochlea tonotopic data from S3 and local synapse tables.
 
     Args:
-        cochleae_dict: Dict mapping cochlea name to metadata including a "component" key
-            with the list of component labels to keep. Defaults to the module-level
-            COCHLEAE_DICT (iDISCO cochleae).
+        cochleae: Names of the cochleae to load. Defaults to the iDISCO cochleae. The component
+            labels to keep are read from util.COCHLEA_DICT for source_name.
         source_name: IHC segmentation source name used as the S3 key (e.g. "IHC_v4c", "IHC_v9").
         synapse_dir: Root directory containing the ihc_counts_<version> subdirectories.
             Defaults to the module-level SYNAPSE_DIR.
@@ -152,7 +147,7 @@ def get_tonotopic_data(
         cache_path = f"./tonotopic_data_{source_name}.pkl"
 
     ihc_version = source_name.split("_")[1]
-    cochleae = list(cochleae_dict.keys())
+    cochleae = cohort_cochleae("idisco") if cochleae is None else list(cochleae)
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
@@ -172,11 +167,7 @@ def get_tonotopic_data(
         table_content = s3.open(os.path.join(BUCKET_NAME, cochlea, rel_path, "default.tsv"), mode="rb")
         table = pd.read_csv(table_content, sep="\t")
 
-        # May need to be adjusted for some cochleae.
-        if "126_R" in cochlea:
-            component_labels = [1]
-        else:
-            component_labels = cochleae_dict[cochlea]["component"]
+        component_labels = cochlea_components(cochlea, "IHC", source_name)
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         ihc_dir = f"ihc_counts_{ihc_version}"
@@ -411,6 +402,7 @@ def supp_fig_03a_meyer(
     trendline_colors: dict = None,
     show_legend: bool = False,
     length_info: bool = False,
+    ihc_version: str = "ihc_counts_v11",
 ):
     """Plot Supplementary Figure 3a.
 
@@ -439,7 +431,6 @@ def supp_fig_03a_meyer(
     else:
         alpha = 1
 
-    ihc_version = "ihc_counts_v4c"
     if trendline_std:
         line_alphas = {
             "center": 0.6,
@@ -461,18 +452,13 @@ def supp_fig_03a_meyer(
     assert len(tables) == 4, len(tables)
 
     result = {"cochlea": [], "runlength": [], "value": []}
-    color_dict = {}
     marker_dict = {}
     alias_to_cohort = {}
     cochleae_length = []
     _meta = cohort_dict if cohort_dict is not None else COCHLEAE_DICT
+    color_dict = cochlea_colors(_meta, tonotopic_data, use_alias)
     for name, values in tonotopic_data.items():
-        if use_alias:
-            alias = _meta[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
-        color_dict[alias] = _meta[name]["color"]
+        alias = cochlea_label(name, _meta[name], use_alias)
         marker_dict[alias] = _meta[name].get("marker", "o")
         if "cohort" in _meta[name]:
             alias_to_cohort[alias] = _meta[name]["cohort"]
@@ -644,9 +630,7 @@ def plot_legend_fig03c(
         save_path: File path for figure.
         ncol: Number of columns for legend.
     """
-    color_dict = {}
-    for key in COCHLEAE_DICT.keys():
-        color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
+    color_dict = cochlea_colors(COCHLEAE_DICT)
 
     marker = ["o" for _ in color_dict]
     label = list(color_dict.keys())
@@ -671,9 +655,7 @@ def plot_legend_supp_fig03a(
         save_path: File path for figure.
         ncol: Number of columns for legend.
     """
-    color_dict = {}
-    for key in COCHLEAE_DICT.keys():
-        color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
+    color_dict = cochlea_colors(COCHLEAE_DICT)
 
     marker = ["o" for _ in color_dict]
     label = list(color_dict.keys())
@@ -759,23 +741,15 @@ def fig_03c_octave(
         plot: Plot figure.
         trendline: Visualize trendline of averages.
     """
-    ihc_version = "ihc_counts_v4c"
     prism_style()
-    tables = glob(os.path.join(SYNAPSE_DIR_ROOT, ihc_version, "ihc_count_M_LR*.tsv"))
-    assert len(tables) == 4, len(tables)
     main_label_size = 28
     main_tick_size = 20
     xtick_size = 16
 
     result = {"cochlea": [], "octave_band": [], "value": []}
-    color_dict = {}
+    color_dict = cochlea_colors(COCHLEAE_DICT, tonotopic_data, use_alias)
     for name, values in tonotopic_data.items():
-        if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
-        color_dict[alias] = COCHLEAE_DICT[name]["color"]
+        alias = cochlea_label(name, COCHLEAE_DICT[name], use_alias)
         freq = values["frequency[kHz]"].values
         syn_count = values["syn_per_IHC"].values
         octave_binned = frequency_mapping(freq, syn_count, animal="mouse")
@@ -958,7 +932,7 @@ def plot_average_tonotopic_mapping(
     ax.tick_params(axis='y', labelsize=main_tick_size)
     ax.set_xlabel("Octave band [kHz]", fontsize=main_label_size)
     ax.set_ylabel("Fraction", fontsize=main_label_size)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_1))
+    ax.yaxis.set_major_formatter(custom_formatter(1))
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     # Cochleae as title
@@ -1243,19 +1217,21 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
-    tonotopic_data = get_tonotopic_data()
+    tonotopic_data = get_tonotopic_data(source_name="IHC_v11")
 
     # Panel A: Tonotopic mapping of SGNs and IHCs (rendering in napari + heatmap)
     cmap = "plasma"
     if args.napari:
         fig_01a()
 
-    fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
-            plot=args.plot, plot_napari=args.napari, cmap=cmap, dark_mode=True)
+    if os.path.isdir(INPUT_ROOT):
+        fig_03a(save_path=os.path.join(args.figure_dir, f"fig_03a_cmap_{cmap}.{FILE_EXTENSION}"),
+                plot=args.plot, plot_napari=args.napari, cmap=cmap, dark_mode=True)
 
     supp_fig_03a_meyer(tonotopic_data=tonotopic_data,
                        save_path=os.path.join(args.figure_dir, f"supp_fig_03a_meyer_trend.{FILE_EXTENSION}"),
-                       plot=args.plot, n_bins=25, top_axis=True, trendline=True)
+                       plot=args.plot, n_bins=25, top_axis=True, trendline=True,
+                       ihc_version="ihc_counts_v11")
     plot_legend_supp_fig03a(save_path=os.path.join(args.figure_dir, f"supp_fig_03a_meyer_lgnd3.{FILE_EXTENSION}"),
                             ncol=3)
 
@@ -1263,6 +1239,7 @@ def main():
     fig_03c_octave(tonotopic_data=tonotopic_data,
                    save_path=os.path.join(args.figure_dir, f"fig_03c_octave.{FILE_EXTENSION}"),
                    plot=args.plot, trendline=True)
+
     plot_legend_fig03c(save_path=os.path.join(args.figure_dir, f"fig_03c_legend.{FILE_EXTENSION}"), ncol=1)
 
     grouping = "Type Ia;Type Ib;Type Ic;Type II"

@@ -33,7 +33,7 @@
 	},
 	{	
 		"synapse": {
-			"synapse_name": "synapse_v5_ihc_v11",
+			"synapse_name": "synapse_v3_ihc_v11",
 			"reference_ihcs": "IHC_v11",
 			"id_offset": 1,
 			"roi_halo": [1200, 1200, 10]

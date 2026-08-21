@@ -1,0 +1,63 @@
+{
+	"v2": {
+		"crops": [
+			"MAMD58L_PV_z1625_mid_full",
+			"MAMD58L_PV_z1983_apex_full",
+			"MAMD58L_PV_z771_base_full",
+			"MLR169R_PV_z1913_base_full_rescaled",
+			"MLR169R_PV_z2594_mid_full_rescaled",
+			"MLR169R_PV_z3420_allturns_full",
+			"MLR226L_PV_z1807_full",
+			"MLR226L_PV_z2580_full",
+			"MLR227L_PV_z1861_full",
+			"MLR227L_PV_z2669_full",
+			"MLR227R_PV_z1455_full",
+			"MLR227R_PV_z1837_full"
+		],
+		"tp": [
+			92,
+			220,
+			170,
+			147,
+			36,
+			365,
+			142,
+			155,
+			205,
+			178,
+			264,
+			284
+		],
+		"fp": [
+			13,
+			58,
+			30,
+			11,
+			3,
+			58,
+			14,
+			16,
+			20,
+			14,
+			26,
+			25
+		],
+		"fn": [
+			13,
+			70,
+			9,
+			25,
+			6,
+			45,
+			16,
+			35,
+			36,
+			34,
+			7,
+			11
+		],
+		"precision": 0.887,
+		"recall": 0.88,
+		"f1-score": 0.884
+	}
+}

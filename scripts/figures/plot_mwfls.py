@@ -12,7 +12,7 @@ from util import (
     literature_reference_values,
     prism_style, prism_cleanup_axes,
     ax_prism_boxplot,
-    VALUE_DICT, COHORT_DICT,
+    VALUE_DICT, COHORT_DICT, cohort_cochleae,
     MWFLS_COCHLEAE_DICT, OUTLIER_DICT
 )
 from plot_fig2 import _load_ribbon_synapse_counts
@@ -22,13 +22,9 @@ png_dpi = 300
 FILE_EXTENSION = "png"
 
 COLOR_LITERATURE = "#9C2E53"
-COHORT_COLORS = {
-    "iDISCO": "#10CC17",
-    "MWfLS": "#3F69FF",
-}
 COHORT_MARKERS = {
-    "iDISCO": "o",
-    "MWfLS": "s",
+    "idisco": "o",
+    "mwfls": "s",
 }
 
 
@@ -56,8 +52,8 @@ def fig_cohort_boxplot(
     main_tick_size = 16
     sub_label_size = 16
 
-    cohorts = ["iDISCO", "MWfLS"]
-    syn_versions = {"iDISCO": idisco_syn_version, "MWfLS": mwfls_syn_version}
+    cohorts = ["idisco", "mwfls"]
+    syn_versions = {"idisco": idisco_syn_version, "mwfls": mwfls_syn_version}
 
     # Collect SGN / IHC counts per cohort.
     sgn_by_cohort = {}
@@ -66,19 +62,19 @@ def fig_cohort_boxplot(
     for cohort in cohorts:
         sgn_outlier[cohort] = [
             VALUE_DICT[name]["SGN"][sgn_version]["count"]
-            for name in COHORT_DICT[cohort] if
+            for name in cohort_cochleae(cohort) if
             name in OUTLIER_DICT["SGN"] and
             remove_outliers
         ]
         sgn_by_cohort[cohort] = [
             VALUE_DICT[name]["SGN"][sgn_version]["count"]
-            for name in COHORT_DICT[cohort] if
+            for name in cohort_cochleae(cohort) if
             name not in OUTLIER_DICT["SGN"] or
             not remove_outliers
         ]
         ihc_by_cohort[cohort] = [
             VALUE_DICT[name]["IHC"][f"IHC_{syn_versions[cohort]}"]["count"]
-            for name in COHORT_DICT[cohort]
+            for name in cohort_cochleae(cohort)
         ]
 
     # Collect synapse counts per cohort.
@@ -86,7 +82,7 @@ def fig_cohort_boxplot(
     for cohort in cohorts:
         syn_by_cohort[cohort] = _load_ribbon_synapse_counts(
             ihc_version=syn_versions[cohort],
-            cochleae=COHORT_DICT[cohort],
+            cochleae=cohort_cochleae(cohort),
         )
 
     fig, axes = plt.subplots(1, 3, figsize=(12, 4.5))
@@ -100,7 +96,7 @@ def fig_cohort_boxplot(
         if title is None:
             title = structure
         for pos, cohort in zip(x_positions, cohorts):
-            ax_prism_boxplot(ax, data_by_cohort[cohort], positions=[pos], color=COHORT_COLORS[cohort])
+            ax_prism_boxplot(ax, data_by_cohort[cohort], positions=[pos], color=COHORT_DICT[cohort]["color"])
         if outlier is not None:
             for pos, cohort in zip(x_positions, cohorts):
                 ax.scatter(
@@ -124,7 +120,7 @@ def fig_cohort_boxplot(
                     color=COLOR_LITERATURE, fontsize=main_label_size, ha="center")
 
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(cohorts, fontsize=sub_label_size)
+        ax.set_xticklabels([COHORT_DICT[c]["label"] for c in cohorts], fontsize=sub_label_size)
         ax.tick_params(axis="x", which="major", pad=8)
         ax.set_yticks(y_ticks)
         ax.set_yticklabels(y_ticks, rotation=0, fontsize=main_tick_size)
@@ -197,12 +193,12 @@ def fig_mwfls_synapses(
         plot: Show interactive plot.
     """
     idisco_data = get_tonotopic_data(
-        cochleae_dict=COCHLEAE_DICT,
+        cochleae=cohort_cochleae("idisco"),
         source_name=f"IHC_{idisco_syn_version}",
         synapse_dir=SYNAPSE_DIR,
     )
     mwfls_data = get_tonotopic_data(
-        cochleae_dict=MWFLS_COCHLEAE_DICT,
+        cochleae=cohort_cochleae("mwfls"),
         source_name=f"IHC_{mwfls_syn_version}",
         synapse_dir=SYNAPSE_DIR,
     )
@@ -214,18 +210,20 @@ def fig_mwfls_synapses(
         "#A6CC10",
     ]
 
+    cohorts = ["idisco", "mwfls"]
+
     # Build a unified cohort_dict consumed by the generalized supp_fig_03a_meyer.
     merged_cohort_dict = {}
-    for num, name in enumerate(COHORT_DICT["iDISCO"]):
+    for num, name in enumerate(cohort_cochleae("idisco")):
         entry = dict(COCHLEAE_DICT[name])
         entry["color"] = MEYER_COLORS[num % len(MEYER_COLORS)]
-        entry["marker"] = COHORT_MARKERS["iDISCO"]
-        entry["cohort"] = "iDISCO"
+        entry["marker"] = COHORT_MARKERS["idisco"]
+        entry["cohort"] = COHORT_DICT["idisco"]["label"]
         merged_cohort_dict[name] = entry
-    for name in COHORT_DICT["MWfLS"]:
+    for name in cohort_cochleae("mwfls"):
         entry = dict(MWFLS_COCHLEAE_DICT[name])
-        entry["marker"] = COHORT_MARKERS["MWfLS"]
-        entry["cohort"] = "MWfLS"
+        entry["marker"] = COHORT_MARKERS["mwfls"]
+        entry["cohort"] = COHORT_DICT["mwfls"]["label"]
         merged_cohort_dict[name] = entry
 
     tonotopic_data = {**idisco_data, **mwfls_data}
@@ -234,7 +232,7 @@ def fig_mwfls_synapses(
         tonotopic_data=tonotopic_data,
         save_path=save_path,
         cohort_dict=merged_cohort_dict,
-        trendline_colors=COHORT_COLORS,
+        trendline_colors={COHORT_DICT[c]["label"]: COHORT_DICT[c]["color"] for c in cohorts},
         use_alias=True,
         plot=plot,
         n_bins=n_bins,
@@ -298,7 +296,7 @@ def plot_intensity(save_path, plot=False):
     ihc_idisco = [get_median_intensity(c, mode="IHC") for c in idisco]
     ihc_mwfls = [get_median_intensity(c, mode="IHC") for c in mwfls]
 
-    cohorts = ["iDISCO", "MWfLS"]
+    cohorts = ["idisco", "mwfls"]
     sgn_by_cohort = {"iDISCO": sgn_idisco, "MWfLS": sgn_mwfls}
     ihc_by_cohort = {"iDISCO": ihc_idisco, "MWfLS": ihc_mwfls}
 
@@ -313,7 +311,7 @@ def plot_intensity(save_path, plot=False):
         if title is None:
             title = structure
         for pos, cohort in zip(x_positions, cohorts):
-            ax_prism_boxplot(ax, data_by_cohort[cohort], positions=[pos], color=COHORT_COLORS[cohort])
+            ax_prism_boxplot(ax, data_by_cohort[cohort], positions=[pos], color=COHORT_DICT[cohort]["color"])
         if outlier is not None:
             for pos, cohort in zip(x_positions, cohorts):
                 ax.scatter(
@@ -330,7 +328,7 @@ def plot_intensity(save_path, plot=False):
         ax.set_xlim(xmin, xmax)
 
         ax.set_xticks(x_positions)
-        ax.set_xticklabels(cohorts, fontsize=sub_label_size)
+        ax.set_xticklabels([COHORT_DICT[c]["label"] for c in cohorts], fontsize=sub_label_size)
         ax.tick_params(axis="x", which="major", pad=8)
         ax.set_yticks(y_ticks)
         ax.set_yticklabels(y_ticks, rotation=0, fontsize=main_tick_size)

@@ -23,9 +23,9 @@ PLOT_METADATA = {
     "SGN": {
         "stardist": {"label": "Stardist", "marker": "*"},
         "micro-sam": {"label": "µSAM", "marker": "D"},
-        "micro-sam_finetuned": {"label": "µSAM finetuned", "marker": "D"},
+        "micro-sam_finetuned": {"label": "µSAM ft", "marker": "D"},
         "cellpose3": {"label": "Cellpose 3", "marker": "v"},
-        "cellpose3_finetuned": {"label": "Cellpose 3 finetuned", "marker": "v"},
+        "cellpose3_finetuned": {"label": "Cellpose 3 ft", "marker": "v"},
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "spiner2D": {"label": "Spiner", "marker": "o"},
         "distance_unet": {"label": "CochleaNet", "marker": "s"},
@@ -37,9 +37,9 @@ PLOT_METADATA = {
     },
     "IHC": {
         "micro-sam": {"label": "µSAM", "marker": "D"},
-        "micro-sam_finetuned": {"label": "µSAM finetuned", "marker": "D"},
+        "micro-sam_finetuned": {"label": "µSAM ft", "marker": "D"},
         "cellpose3": {"label": "Cellpose 3", "marker": "v"},
-        "cellpose3_finetuned": {"label": "Cellpose 3 finetuned", "marker": "v"},
+        "cellpose3_finetuned": {"label": "Cellpose 3 ft", "marker": "v"},
         "cellpose-sam": {"label": "Cellpose-SAM", "marker": "^"},
         "distance_unet_v11": {"label": "CochleaNet", "marker": "s"},
         "distance_unet_v11-f0": {"label": "Fold 1", "marker": "s"},
@@ -117,6 +117,12 @@ FOLD_KEYS = {
 # X-axis labels for the combined fold-variation panel.
 FOLD_GROUP_LABELS = {"SGN": "SGN", "IHC": "IHC", "synapses": "Synapses"}
 
+# Reference key -> its cross-validation fold keys, for supp_fig_02's ref_dict argument.
+REF_DICT = {
+    "SGN": {"distance_unet": FOLD_KEYS["SGN"]},
+    "IHC": {"distance_unet_v11": FOLD_KEYS["IHC"]},
+}
+
 
 def plot_legend_supp_fig02(save_path):
     """Plot common legend for figure 2c.
@@ -143,6 +149,7 @@ def supp_fig_02(
     mode: str = "precision",
     data_dir: Optional[str] = None,
     use_folds: bool = False,
+    ref_dict: Optional[Dict[str, List[str]]] = None,
     show_legend: bool = False,
     ylim: Optional[List[float]] = None,
 ):
@@ -159,6 +166,11 @@ def supp_fig_02(
         use_folds: If True, replace the direct distance_unet value with the mean and standard
             deviation computed across all cross-validation fold variants (keys matching
             '<base>_f<digit>') found in the JSON. Applies to any key that has fold variants.
+        ref_dict: Map from a reference key to the list of variation keys to average over, e.g.
+            {"distance_unet": ["distance_unet_f0", ..., "distance_unet_f4"]}. When given, it
+            enables the fold-variation display on its own, without also setting use_folds, and
+            takes precedence over the automatic '<base>_f<digit>' detection for any key it
+            covers.
         show_legend: Plot legend.
     """
     json_path = os.path.join(data_dir, f"{segm}.json")
@@ -167,9 +179,15 @@ def supp_fig_02(
 
     # Pre-compute fold mean ± std for any key that has fold variants in the JSON.
     fold_stats = {}
-    if use_folds:
-        for key in PLOT_METADATA[segm]:
-            fold_keys = [k for k in metrics if k.startswith(f"{key}_f") and k[len(key) + 2:].isdigit()]
+    if use_folds or ref_dict is not None:
+        if ref_dict is not None:
+            fold_groups = {key: [k for k in variants if k in metrics] for key, variants in ref_dict.items()}
+        else:
+            fold_groups = {
+                key: [k for k in metrics if k.startswith(f"{key}_f") and k[len(key) + 2:].isdigit()]
+                for key in PLOT_METADATA[segm]
+            }
+        for key, fold_keys in fold_groups.items():
             if not fold_keys:
                 continue
             fs = {}
@@ -214,7 +232,7 @@ def supp_fig_02(
             marker = value_dict[segm][key]["marker"]
             x_pos = num + 1
 
-            if use_folds and key in fold_stats:
+            if key in fold_stats:
                 precision, precision_std = fold_stats[key]["precision"]
                 recall, recall_std = fold_stats[key]["recall"]
                 f1score, f1score_std = fold_stats[key]["f1-score"]
@@ -255,7 +273,7 @@ def supp_fig_02(
 
         x_pos = 1
         for num, key in enumerate(list(value_dict[segm].keys())):
-            if use_folds and key in fold_stats:
+            if key in fold_stats:
                 runtime, runtime_std = fold_stats[key]["runtime"]
             else:
                 runtime = value_dict[segm][key]["runtime"]
@@ -510,14 +528,64 @@ def main():
     # Supplementary Figure 2: Comparing other methods in terms of segmentation accuracy and runtime
     plot_legend_supp_fig02(save_path=os.path.join(args.figure_dir, f"supp_fig_02_legend_colors.{FILE_EXTENSION}"))
     if data_dir is not None:
-        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"),
-                    segm="SGN", data_dir=data_dir, use_folds=args.use_folds)
-        supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"),
-                    segm="IHC", data_dir=data_dir, use_folds=args.use_folds)
+        supp_fig_02(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy.{FILE_EXTENSION}"),
+            segm="SGN", data_dir=data_dir, use_folds=args.use_folds,
+            key_list=[
+                "stardist",
+                "micro-sam",
+                "micro-sam_finetuned",
+                "cellpose3",
+                "cellpose3_finetuned",
+                "cellpose-sam",
+                "spiner2D",
+                "distance_unet",
+            ],
+        )
+        supp_fig_02(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy.{FILE_EXTENSION}"),
+            segm="IHC", data_dir=data_dir, use_folds=args.use_folds,
+            key_list=[
+                "micro-sam",
+                "micro-sam_finetuned",
+                "cellpose3",
+                "cellpose3_finetuned",
+                "cellpose-sam",
+                "distance_unet_v11",
+            ],
+        )
+        supp_fig_02(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_accuracy_variation.{FILE_EXTENSION}"),
+            segm="SGN", data_dir=data_dir, use_folds=args.use_folds, ref_dict=REF_DICT["SGN"],
+            key_list=[
+                "stardist",
+                "micro-sam",
+                "micro-sam_finetuned",
+                "cellpose3",
+                "cellpose3_finetuned",
+                "cellpose-sam",
+                "spiner2D",
+                "distance_unet",
+            ],
+        )
+        supp_fig_02(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_accuracy_variation.{FILE_EXTENSION}"),
+            segm="IHC", data_dir=data_dir, use_folds=args.use_folds, ref_dict=REF_DICT["IHC"],
+            key_list=[
+                "micro-sam",
+                "micro-sam_finetuned",
+                "cellpose3",
+                "cellpose3_finetuned",
+                "cellpose-sam",
+                "distance_unet_v11",
+            ],
+        )
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02a_sgn_time.{FILE_EXTENSION}"),
-                    segm="SGN", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
+                    segm="SGN", mode="runtime", data_dir=data_dir, use_folds=args.use_folds,
+                    key_list=["stardist", "micro-sam", "cellpose3", "cellpose-sam", "spiner2D", "distance_unet"])
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_02b_ihc_time.{FILE_EXTENSION}"),
-                    segm="IHC", mode="runtime", data_dir=data_dir, use_folds=args.use_folds)
+                    segm="IHC", mode="runtime", data_dir=data_dir, use_folds=args.use_folds,
+                    key_list=["micro-sam", "cellpose3", "cellpose-sam", "distance_unet_v11"])
 
         supp_fig_02(save_path=os.path.join(args.figure_dir, f"supp_fig_ihc_accuracy.{FILE_EXTENSION}"),
                     segm="IHC_3D", show_legend=True, data_dir=data_dir, use_folds=args.use_folds,

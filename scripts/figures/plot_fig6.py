@@ -9,7 +9,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
-from util import prism_cleanup_axes, prism_style, get_marker_handle
+from util import prism_cleanup_axes, prism_style, get_marker_handle, cochlea_colors, cochlea_label
 from util import frequency_mapping, export_legend
 
 FILE_EXTENSION = "png"
@@ -17,8 +17,8 @@ png_dpi = 300
 
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/LaVision-OTOF"  # noqa
 
-# The cochlea for the CHReef analysis.
-COCHLEAE_DICT = {
+# The LaVision OTOF cochleae. These are not in util.COCHLEA_DICT.
+COCHLEAE_DICT_LaVision = {
     "LaVision-OTOF23R": {"alias": "LV_M_03", "component": [4, 18, 7], "color": "#9C5027"},
     "LaVision-OTOF25R": {"alias": "LV_M_04", "component": [1], "color": "#67279C"},
 }
@@ -28,8 +28,8 @@ def get_otof_data():
     s3 = create_s3_target()
     source_name = "IHC_LOWRES-v3"
 
-    cache_path = "./otof_data.pkl"
-    cochleae = [key for key in COCHLEAE_DICT.keys()]
+    cache_path = "./otof_data_LaVision.pkl"
+    cochleae = [key for key in COCHLEAE_DICT_LaVision.keys()]
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
@@ -50,7 +50,7 @@ def get_otof_data():
         print(table.columns)
 
         # May need to be adjusted for some cochleae.
-        component_labels = COCHLEAE_DICT[cochlea]["component"]
+        component_labels = COCHLEAE_DICT_LaVision[cochlea]["component"]
         print(cochlea, component_labels)
         table = table[table.component_labels.isin(component_labels)]
         # The relevant values for analysis.
@@ -80,9 +80,7 @@ def plot_legend_fig06e(
 ):
     """Legend for OTOF cochleae.
     """
-    color_dict = {}
-    for key in COCHLEAE_DICT.keys():
-        color_dict[COCHLEAE_DICT[key]["alias"]] = COCHLEAE_DICT[key]["color"]
+    color_dict = cochlea_colors(COCHLEAE_DICT_LaVision)
 
     marker = ["o" for _ in color_dict]
     label = list(color_dict.keys())
@@ -164,14 +162,9 @@ def fig_06e_octave(
 
     result = {"cochlea": [], "octave_band": [], "value": []}
     expression_eff_dic = {}
-    color_dict = {}
+    color_dict = cochlea_colors(COCHLEAE_DICT_LaVision, otof_data, use_alias)
     for name, values in otof_data.items():
-        if use_alias:
-            alias = COCHLEAE_DICT[name]["alias"]
-        else:
-            alias = name.replace("_", "").replace("0", "")
-
-        color_dict[alias] = COCHLEAE_DICT[name]["color"]
+        alias = cochlea_label(name, COCHLEAE_DICT_LaVision[name], use_alias)
         if mapping == "default":
             freq = values["frequency[kHz]"].values
             bin_edges, bin_labels = None, None

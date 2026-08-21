@@ -5,10 +5,9 @@ import os
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-import matplotlib.ticker as mticker
 
 from util import literature_reference_values, get_marker_handle, get_flatline_handle, SYNAPSE_DIR_ROOT, VALUE_DICT
-from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter_2
+from util import prism_style, prism_cleanup_axes, export_legend, custom_formatter
 
 png_dpi = 300
 FILE_EXTENSION = "png"
@@ -92,7 +91,7 @@ def fig_02c(
     prism_style()
 
     # SGN
-    sgn_unet = _read_scores(data_dir, "SGN.json", "distance_unet")
+    sgn_unet = _read_scores(data_dir, "SGN_3D.json", "v2")
     sgn_annotator = _read_scores(data_dir, "consensus_SGN.json", annotator_keyword)
 
     # IHC
@@ -100,7 +99,7 @@ def fig_02c(
     ihc_annotator = _read_scores(data_dir, "consensus_IHC.json", annotator_keyword)
 
     # synapses
-    syn_unet = _read_scores(data_dir, "synapses.json", "v5")
+    syn_unet = _read_scores(data_dir, "synapses.json", "v3")
     syn_annotator = _read_scores(data_dir, "consensus_synapses.json", annotator_keyword)
 
     setting = ["SGN", "IHC", "Synapse"]
@@ -140,9 +139,9 @@ def fig_02c(
     # Labels and formatting
     plt.xticks([1, 2, 3], setting, fontsize=main_label_size)
     plt.yticks(fontsize=main_tick_size)
-    ax.yaxis.set_major_formatter(mticker.FuncFormatter(custom_formatter_2))
+    ax.yaxis.set_major_formatter(custom_formatter(2))
     plt.ylabel("Value", fontsize=main_label_size)
-    plt.ylim(0.6, 1)
+    plt.ylim(0.69, 1)
     # plt.legend(loc="lower right", fontsize=legendsize)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
@@ -314,7 +313,7 @@ def main():
     )
     parser.add_argument(
         "--data_dir", "-d", type=str, default=_default_data_dir,
-        help="Directory containing the model accuracy files (SGN.json, IHC.json, IHC_3D.json, "
+        help="Directory containing the model accuracy files (SGN_3D.json, IHC.json, IHC_3D.json, "
              "synapses.json) and the annotator accuracy files (consensus_SGN.json, consensus_IHC.json, "
              f"consensus_synapses.json). Defaults to {_default_data_dir}.",
     )

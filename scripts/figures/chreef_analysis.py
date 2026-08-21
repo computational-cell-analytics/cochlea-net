@@ -11,22 +11,11 @@ import pandas as pd
 
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
+from util import cohort_cochleae
+
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements"  # noqa
-# The cochlea for the CHReef analysis.
-COCHLEAE = [
-    "M_LR_000143_L",
-    "M_LR_000144_L",
-    "M_LR_000145_L",
-    "M_LR_000153_L",
-    "M_LR_000155_L",
-    "M_LR_000189_L",
-    "M_LR_000143_R",
-    "M_LR_000144_R",
-    "M_LR_000145_R",
-    "M_LR_000153_R",
-    "M_LR_000155_R",
-    "M_LR_000189_R",
-]
+# The cochleae for the ChReef analysis.
+COCHLEAE = cohort_cochleae("chreef_mouse")
 
 
 def download_data():
