@@ -12,15 +12,14 @@ from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 from util import frequency_mapping, prism_style, prism_cleanup_axes
 from util import export_legend, custom_formatter, get_marker_handle, get_trendline_handle
 from util import animal_colors, cochlea_label
-from util import COLOR_LEFT, COLOR_RIGHT, COLOR_UNTREATED, VALUE_DICT, cochleae_for, cohort_cochleae
+from util import COLOR_UNTREATED, VALUE_DICT, cochleae_for, cohort_cochleae
 
 # from statsmodels.nonparametric.smoothers_lowess import lowess
 
 INTENSITY_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet/tables/measurements2"  # noqa
 
-# The ChReef cohort, plus the two G_EK_000049 gerbils that are plotted alongside it.
-# The metadata lives in util.COCHLEA_DICT.
-COCHLEAE = cohort_cochleae("chreef_mouse") + ["G_EK_000049_L", "G_EK_000049_R"]
+# The ChReef cohort. The metadata lives in util.COCHLEA_DICT.
+COCHLEAE = cohort_cochleae("chreef_mouse")
 
 COCHLEAE_DICT = cochleae_for(COCHLEAE, "SGN", "SGN_v2")
 
@@ -39,20 +38,14 @@ MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
 
-def get_chreef_data(
-    animal: str = "mouse",
-):
-    """Create (pickled) dictionary for mouse or gerbil cochleae used for optogenetic therapy.
+def get_chreef_data():
+    """Create (pickled) dictionary for the mouse cochleae used for optogenetic therapy.
     """
     s3 = create_s3_target()
     source_name = "SGN_v2"
 
-    if animal == "mouse":
-        cache_path = "./chreef_data.pkl"
-        cochleae = [key for key in COCHLEAE_DICT.keys() if "M_" in key]
-    else:
-        cache_path = "./chreef_data_gerbil.pkl"
-        cochleae = [key for key in COCHLEAE_DICT.keys() if "G_" in key]
+    cache_path = "./chreef_data.pkl"
+    cochleae = list(COCHLEAE_DICT)
 
     if os.path.exists(cache_path):
         with open(cache_path, "rb") as f:
@@ -259,26 +252,6 @@ def plot_legend_fig04_trendline(
     plt.close()
 
 
-def plot_legend_fig05e_gerbil(
-    save_path: str,
-):
-    """Plot common legend for figure 5e gerbil.
-
-    Args:
-        save_path: Path for output.
-    """
-    # Shapes
-    color = [COLOR_LEFT, COLOR_RIGHT]
-    marker = ["o", "^"]
-    label = ["G1L", "G1R"]
-
-    handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
-    legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
-    export_legend(legend, save_path)
-    legend.remove()
-    plt.close()
-
-
 def fig_04c(
     chreef_data: dict,
     save_path: str,
@@ -398,7 +371,6 @@ def fig_04d(
     save_path: str,
     plot: bool = False,
     intensity: bool = False,
-    gerbil: bool = False,
     use_alias: bool = True,
     cochleae_dict: Optional[Dict] = None,
     xtick_labels: Tuple[str, str] = ("Injected", "Non-\nInjected"),
@@ -412,13 +384,12 @@ def fig_04d(
         save_path: File path to save legend.
         plot: Plot figure.
         intensity: Use intensity instead of expression efficiency.
-        gerbil: Use gerbil data instead of mouse data.
         use_alias: Use alias.
         cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
             Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
         xtick_labels: Labels for the left (treated) and right (untreated) x positions.
-        ylim: Lower and upper y-axis limit. Defaults to the gerbil/mouse ChReef bounds.
-        y_ticks: Y-axis tick positions. Defaults to the gerbil/mouse ChReef ticks.
+        ylim: Lower and upper y-axis limit. Defaults to the mouse ChReef bounds.
+        y_ticks: Y-axis tick positions. Defaults to the mouse ChReef ticks.
     """
     prism_style()
     cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
@@ -481,9 +452,6 @@ def fig_04d(
             plt.ylim(*ylim)
             if y_ticks is not None:
                 plt.yticks(y_ticks, fontsize=main_tick_size)
-        elif gerbil:
-            plt.ylim(0.25, 0.65)
-            plt.yticks(np.arange(0.3, 0.7, 0.1), fontsize=main_tick_size)
         else:
             plt.ylim(0.65, 1.05)
             plt.yticks(np.arange(0.7, 1, 0.1), fontsize=main_tick_size)
@@ -566,10 +534,11 @@ def fig_04e(
     save_path: str,
     plot: bool = False,
     intensity: bool = False,
-    gerbil: bool = False,
     use_alias: bool = True,
     trendlines: bool = False,
     trendline_std: bool = False,
+    color_trend_l: str = "gray",
+    color_trend_r: str = "gray",
     cochleae_dict: Optional[Dict] = None,
 ):
     """Expression efficiency per octave band for cochleae.
@@ -579,58 +548,32 @@ def fig_04e(
         save_path: File path to save legend.
         plot: Plot figure.
         intensity: Use intensity instead of expression efficiency.
-        gerbil: Use gerbil data instead of mouse data.
         use_alias: Use alias.
         trendlines: Use trendline of averages.
         trendline_std: Use standard deviation for upper and lower trendlines.
+        color_trend_l: Color of the injected (left) trendline.
+        color_trend_r: Color of the non-injected (right) trendline.
         cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
             Defaults to the module-level COCHLEAE_DICT (ChReef cochleae).
     """
     prism_style()
     cochleae_dict = cochleae_dict if cochleae_dict is not None else COCHLEAE_DICT
 
-    if gerbil:
-        animal = "gerbil"
-    else:
-        animal = "mouse"
-
     result = {"cochlea": [], "octave_band": [], "value": []}
-    aliases = []
     for name, values in chreef_data.items():
         alias = cochlea_label(name, cochleae_dict[name], use_alias)
 
         freq = values["frequency[kHz]"].values
         if intensity:
             intensity_values = values["median"].values
-            octave_binned = frequency_mapping(freq, intensity_values, animal=animal)
+            octave_binned = frequency_mapping(freq, intensity_values, animal="mouse")
         else:
             marker_labels = values["marker_labels"].values
-            octave_binned = frequency_mapping(freq, marker_labels, animal=animal, transduction_efficiency=True)
+            octave_binned = frequency_mapping(freq, marker_labels, animal="mouse", transduction_efficiency=True)
 
         result["cochlea"].extend([alias] * len(octave_binned))
         result["octave_band"].extend(octave_binned.axes[0].values.tolist())
         result["value"].extend(octave_binned.values.tolist())
-        aliases.append(alias)
-
-    if gerbil:
-        values = []
-        for vals in chreef_data.values():
-            if intensity:
-                intensities = vals["median"].values
-                values.append(intensities.mean())
-            else:
-                # marker labels
-                # 0: unlabeled - no median intensity in object_measures table
-                # 1: positive
-                # 2: negative
-                marker_labels = vals["marker_labels"].values
-                n_pos = (marker_labels == 1).sum()
-                n_neg = (marker_labels == 2).sum()
-                eff = float(n_pos) / (n_pos + n_neg)
-                values.append(eff)
-        alias, values_left, values_right = group_lr(aliases, values)
-        print(f"Average expression efficiency left: {round(values_left[0], 4)}")
-        print(f"Average expression efficiency right: {round(values_right[0], 4)}")
 
     result = pd.DataFrame(result)
     bin_labels = pd.unique(result["octave_band"])
@@ -646,16 +589,12 @@ def fig_04e(
 
     if intensity:
         band_label_offset_y = 0.09
+        # Intensity is not a fraction, so the automatic ticks are kept.
+        y_ticks = None
     else:
         band_label_offset_y = 0.08
-        if gerbil:
-            ymin = 0.1
-            ymax = 0.81
-            ax.set_ylim(0.05, 0.95)
-        else:
-            ymin = 0.5
-            ymax = 1.01
-            ax.set_ylim(0.45, 1.05)
+        ax.set_ylim(0.45, 1.05)
+        y_ticks = np.arange(0.5, 1.01, 0.1)
 
     # Offsets within each octave band
     offset_map = {"L": -0.2, "R": 0.2}
@@ -663,15 +602,8 @@ def fig_04e(
     # Assign a color to each cochlea (ignoring side)
     cochleas = sorted({name_lr[:-1] for name_lr in result["cochlea"].unique()})
 
-    if gerbil:
-        color_map = {name_lr: COLOR_LEFT if name_lr.endswith("L") else COLOR_RIGHT
-                     for name_lr in result["cochlea"].unique()}
-    else:
-        colors_by_animal = animal_colors(cochleae_dict, use_alias)
-        color_map = {name_lr: colors_by_animal[name_lr[:-1]] for name_lr in result["cochlea"].unique()}
-
-    if len(cochleas) == 1:
-        color_map = {"L": COLOR_LEFT, "R": COLOR_RIGHT}
+    colors_by_animal = animal_colors(cochleae_dict, use_alias)
+    color_map = {name_lr: colors_by_animal[name_lr[:-1]] for name_lr in result["cochlea"].unique()}
 
     # Track which cochlea names we have already added to the legend
     legend_added = set()
@@ -681,18 +613,13 @@ def fig_04e(
 
     for num, (name_lr, grp) in enumerate(result.groupby("cochlea")):
         name, side = name_lr[:-1], name_lr[-1]
-        if len(cochleas) == 1:
-            label_name = name_lr
-            color = color_map[side]
-        else:
-            label_name = name
-            color = color_map[name_lr]
+        color = color_map[name_lr]
 
         x_positions = grp["x_pos"] + offset_map[side] - len(cochleas) / 2 * offset + offset * num
         ax.scatter(
             x_positions,
             grp["value"],
-            label=label_name if label_name not in legend_added else None,
+            label=name if name not in legend_added else None,
             s=60,
             alpha=0.8,
             marker=MARKER_LEFT if side == "L" else MARKER_RIGHT,
@@ -715,141 +642,74 @@ def fig_04e(
     xlim_left, xlim_right = ax.get_xlim()
     if trendlines:
         trendline_width = 3
-        if not gerbil:
-            x_sorted_r, _, _, _ = _get_trendline_params(trend_dict, "R")
-            x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "L")
-            min_x = min([min(x_sorted_r), min(x_sorted)])
-            max_x = max([max(x_sorted_r), max(x_sorted)])
-            x_sorted.insert(0, min_x)
-            x_sorted.append(max_x)
-            y_sorted.insert(0, y_sorted[0])
-            y_sorted.append(y_sorted[-1])
+        # Trendline Injected (Left)
+        x_sorted_r, _, _, _ = _get_trendline_params(trend_dict, "R")
+        x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "L")
+        min_x = min([min(x_sorted_r), min(x_sorted)])
+        max_x = max([max(x_sorted_r), max(x_sorted)])
+        x_sorted.insert(0, min_x)
+        x_sorted.append(max_x)
+        y_sorted.insert(0, y_sorted[0])
+        y_sorted.append(y_sorted[-1])
 
-            if gerbil:
-                color_trend_l = COLOR_LEFT
-                color_trend_r = COLOR_RIGHT
-            else:
-                color_trend_l = "gray"
-                color_trend_r = "gray"
+        # central line
+        ax.plot(
+            x_sorted,
+            y_sorted,
+            linestyle="dashed",
+            color=color_trend_l,
+            alpha=0.6,
+            linewidth=trendline_width,
+            zorder=2,
+        )
 
-            # central line
-            trend_l, = ax.plot(
-                x_sorted,
-                y_sorted,
-                linestyle="dashed",
-                color=color_trend_l,
-                alpha=0.6,
-                linewidth=trendline_width,
-                zorder=2,
-            )
+        if trendline_std:
+            y_sorted_lower.insert(0, y_sorted_lower[0])
+            y_sorted_lower.append(y_sorted_lower[-1])
+            y_sorted_upper.insert(0, y_sorted_upper[0])
+            y_sorted_upper.append(y_sorted_upper[-1])
+            # upper and lower standard deviation
+            ax.plot(x_sorted, y_sorted_upper, linestyle="solid", color=color_trend_l, alpha=0.08, zorder=0)
+            ax.plot(x_sorted, y_sorted_lower, linestyle="solid", color=color_trend_l, alpha=0.08, zorder=0)
+            plt.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
+                             color=color_trend_l, alpha=0.05, interpolate=True)
 
-            if trendline_std:
-                y_sorted_lower.insert(0, y_sorted_lower[0])
-                y_sorted_lower.append(y_sorted_lower[-1])
-                y_sorted_upper.insert(0, y_sorted_upper[0])
-                y_sorted_upper.append(y_sorted_upper[-1])
-                # upper and lower standard deviation
-                trend_l_upper, = ax.plot(
-                    x_sorted,
-                    y_sorted_upper,
-                    linestyle="solid",
-                    color=color_trend_l,
-                    alpha=0.08,
-                    zorder=0
-                )
-                trend_l_lower, = ax.plot(
-                    x_sorted,
-                    y_sorted_lower,
-                    linestyle="solid",
-                    color=color_trend_l,
-                    alpha=0.08,
-                    zorder=0
-                )
-                plt.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
-                                 color=COLOR_LEFT, alpha=0.05, interpolate=True)
+        # Trendline Non-Injected (Right)
+        x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "R")
+        x_sorted.insert(0, min_x)
+        x_sorted.append(max_x)
+        y_sorted.insert(0, y_sorted[0])
+        y_sorted.append(y_sorted[-1])
+        # central line
+        ax.plot(
+            x_sorted,
+            y_sorted,
+            linestyle="dotted",
+            color=color_trend_r,
+            alpha=0.7,
+            linewidth=trendline_width,
+            zorder=0
+        )
 
-            # Trendline Non-Injected (Right)
-            x_sorted, y_sorted, y_sorted_upper, y_sorted_lower = _get_trendline_params(trend_dict, "R")
-            x_sorted.insert(0, min_x)
-            x_sorted.append(max_x)
-            y_sorted.insert(0, y_sorted[0])
-            y_sorted.append(y_sorted[-1])
-            # central line
-            trend_r, = ax.plot(
-                x_sorted,
-                y_sorted,
-                linestyle="dotted",
-                color=color_trend_r,
-                alpha=0.7,
-                linewidth=trendline_width,
-                zorder=0
-            )
-
-            if trendline_std:
-                y_sorted_lower.insert(0, y_sorted_lower[0])
-                y_sorted_lower.append(y_sorted_lower[-1])
-                y_sorted_upper.insert(0, y_sorted_upper[0])
-                y_sorted_upper.append(y_sorted_upper[-1])
-                # upper and lower standard deviation
-                trend_r_upper, = ax.plot(
-                    x_sorted,
-                    y_sorted_upper,
-                    linestyle="solid",
-                    color=color_trend_r,
-                    alpha=0.08,
-                    zorder=0
-                )
-                trend_r_lower, = ax.plot(
-                    x_sorted,
-                    y_sorted_lower,
-                    linestyle="solid",
-                    color=color_trend_r,
-                    alpha=0.08,
-                    zorder=0
-                )
-                plt.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
-                                 color=COLOR_RIGHT, alpha=0.05, interpolate=True)
-
-        else:
-            x_sorted = [trend_dict[k]["x_sorted"] for k in trend_dict.keys() if trend_dict[k]["side"] == "L"][0]
-            y_left = [values_left[0], values_left[0]]
-            y_right = [values_right[0], values_right[0]]
-            if gerbil:
-                color_trend_l = COLOR_LEFT
-                color_trend_r = COLOR_RIGHT
-            else:
-                color_trend_l = "gray"
-                color_trend_r = "gray"
-
-            trend_l, = ax.plot(
-                [xlim_left, xlim_right],
-                y_left,
-                linestyle="dotted",
-                color=color_trend_l,
-                alpha=0.7,
-                zorder=0
-            )
-            x_offset = 0.5
-            y_offset = 0.01
-            ax.text(xlim_left + x_offset, y_left[0] + y_offset, "mean",
-                    color=color_trend_l, fontsize=tick_label_size, ha="center")
-            ax.text(xlim_left + x_offset, y_right[0] + y_offset, "mean",
-                    color=color_trend_r, fontsize=tick_label_size, ha="center")
-            x_sorted = [trend_dict[k]["x_sorted"] for k in trend_dict.keys() if trend_dict[k]["side"] == "R"][0]
-            trend_r, = ax.plot(
-                [xlim_left, xlim_right],
-                y_right,
-                linestyle="dashed",
-                color=color_trend_r,
-                alpha=0.7,
-                zorder=0
-            )
+        if trendline_std:
+            y_sorted_lower.insert(0, y_sorted_lower[0])
+            y_sorted_lower.append(y_sorted_lower[-1])
+            y_sorted_upper.insert(0, y_sorted_upper[0])
+            y_sorted_upper.append(y_sorted_upper[-1])
+            # upper and lower standard deviation
+            ax.plot(x_sorted, y_sorted_upper, linestyle="solid", color=color_trend_r, alpha=0.08, zorder=0)
+            ax.plot(x_sorted, y_sorted_lower, linestyle="solid", color=color_trend_r, alpha=0.08, zorder=0)
+            plt.fill_between(x_sorted, y_sorted_lower, y_sorted_upper,
+                             color=color_trend_r, alpha=0.05, interpolate=True)
 
     plt.xlim(xlim_left, xlim_right)
     # Create combined tick positions & labels
     main_ticks = range(len(bin_labels))
     ax.yaxis.set_major_formatter(custom_formatter(1))
-    plt.yticks(np.arange(ymin, ymax, 0.1), fontsize=yaxis_tick_size)
+    if y_ticks is None:
+        ax.tick_params(axis="y", labelsize=yaxis_tick_size)
+    else:
+        plt.yticks(y_ticks, fontsize=yaxis_tick_size)
     plt.grid(axis="y", linestyle="solid", alpha=0.5)
 
     # add a final tick for label '>64k'
@@ -947,14 +807,6 @@ def main():
 
     plot_legend_fig04(otof_data, cochleae_dict=OTOF_COCHLEAE_DICT,
                       save_path=os.path.join(args.figure_dir, f"fig_06_otof_legend.{FILE_EXTENSION}"))
-
-    # Figures for gerbil (Figure 5)
-    chreef_data_gerbil = get_chreef_data(animal="gerbil")
-    fig_04e(chreef_data_gerbil,
-            save_path=os.path.join(args.figure_dir, f"fig_05e_gerbil_transduction.{FILE_EXTENSION}"),
-            plot=args.plot, gerbil=True, use_alias=use_alias, trendlines=True)
-
-    plot_legend_fig05e_gerbil(save_path=os.path.join(args.figure_dir, f"fig_05e_gerbil_legend.{FILE_EXTENSION}"))
 
 
 if __name__ == "__main__":
