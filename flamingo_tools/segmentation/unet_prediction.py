@@ -91,6 +91,34 @@ def _available_cpus():
     return mp.cpu_count()
 
 
+# Slurm sets these when the job holds a GPU allocation.
+_SLURM_GPU_ENV_VARS = ("SLURM_JOB_GPUS", "SLURM_STEP_GPUS", "SLURM_GPUS_ON_NODE")
+
+
+def _require_gpu_if_allocated():
+    """Fail if the job holds a GPU allocation that torch cannot see.
+
+    CPU inference is ~50x slower than an A100 and does not finish inside a realistic time
+    limit, so a silent fallback wastes the whole allocation. Set FLAMINGO_ALLOW_CPU=1 to run
+    on the CPU inside a GPU allocation on purpose.
+    """
+    if torch.cuda.is_available() or os.environ.get("FLAMINGO_ALLOW_CPU"):
+        return
+    allocation = {var: os.environ[var] for var in _SLURM_GPU_ENV_VARS if os.environ.get(var)}
+    if not allocation:
+        return
+    details = ", ".join(f"{var}={value!r}" for var, value in allocation.items())
+    raise RuntimeError(
+        f"The job on {os.environ.get('SLURMD_NODENAME')!r} holds a GPU allocation ({details}) "
+        f"but torch cannot see a device: CUDA_VISIBLE_DEVICES="
+        f"{os.environ.get('CUDA_VISIBLE_DEVICES')!r}, device_count="
+        f"{torch.cuda.device_count()}, torch={torch.__version__}, "
+        f"cuda_build={torch.version.cuda}. CPU inference is ~50x slower and will not finish "
+        "inside the time limit. Requeue on another node, or set FLAMINGO_ALLOW_CPU=1 to run "
+        "on the CPU anyway."
+    )
+
+
 def _get_device_and_tiling(block_shape, halo, input_):
     have_cuda = torch.cuda.is_available()
     if block_shape is None:
@@ -102,12 +130,7 @@ def _get_device_and_tiling(block_shape, halo, input_):
     # The clip only depends on the input shape, so all slurm array tasks get the same grid.
     block_shape = tuple(min(bs, sh) for bs, sh in zip(block_shape, input_.shape))
     halo = tuple(min(ha, bs // 2) for ha, bs in zip(halo, block_shape))
-    if have_cuda:
-        print("Predict with GPU")
-        gpu_ids = [0]
-    else:
-        print("Predict with CPU")
-        gpu_ids = ["cpu"]
+    gpu_ids = [0] if have_cuda else ["cpu"]
     return gpu_ids, block_shape, halo
 
 
@@ -131,6 +154,7 @@ def prediction_impl(
 ):
     """@private
     """
+    _require_gpu_if_allocated()
     # The prefetch workers hide the block loading behind the GPU forward pass, so they only
     # help up to the number of cores the job actually has.
     if num_prefetch_workers is None:
@@ -219,6 +243,9 @@ def prediction_impl(
 
     blocking = Blocking([0] * ndim, shape, block_shape)
     n_blocks = blocking.number_of_blocks
+    device = "CPU" if gpu_ids == ["cpu"] else "GPU"
+    print(f"Predict with {device}: shape {tuple(shape)}, block_shape {block_shape}, "
+          f"halo {halo}, {n_blocks} blocks")
     if prediction_instances != 1:
         # shuffle indexes with fixed seed to balance out segmentation blocks for slurm workers
         rng = np.random.default_rng(seed=1234)
