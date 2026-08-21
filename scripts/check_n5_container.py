@@ -37,6 +37,23 @@ IMPLICIT_GROUP, NO_METADATA, EMPTY_DIR = (
 )
 
 
+def _normalize_key(key):
+    """Normalize a container key. Keys use '/' on every platform, so accept either
+    separator. The root node is keyed as '/'."""
+    parts = [p for p in key.replace("\\", "/").split("/") if p not in ("", ".")]
+    return "/".join(parts) or "/"
+
+
+def _node_dir(container, key):
+    """Return the directory of a node. The key is '/'-separated, the path is not."""
+    return container if key == "/" else os.path.join(container, *key.split("/"))
+
+
+def _container_extension(path):
+    """Return the lowercase extension. The reader is picked by it, so it must be exact."""
+    return os.path.splitext(os.path.normpath(path))[1].lower()
+
+
 def _load_json(path):
     """Return (content, error). The content is None if the file is absent or unreadable."""
     if not os.path.isfile(path):
@@ -95,7 +112,7 @@ def walk_nodes(root):
             # whose metadata is gone. Report the parent instead of walking the chunk grid.
             if name.isdigit() and kind == NO_METADATA:
                 continue
-            stack.append((os.path.join(rel, name), os.path.join(path, name)))
+            stack.append((f"{rel}/{name}" if rel else name, os.path.join(path, name)))
 
 
 def chunk_report(dataset_dir, dimensions, block_size, max_report):
@@ -166,7 +183,7 @@ def report_environment(path):
         except ImportError as e:
             print(f"  {name} is not importable ({e})")
 
-    extension = os.path.splitext(path.rstrip("/"))[1].lower()
+    extension = _container_extension(path)
     try:
         from elf.io.extensions import FILE_CONSTRUCTORS
     except ImportError:
@@ -220,7 +237,7 @@ def check_container(path, key=None, max_report=20, with_read=True, with_chunks=T
 
     # The reader is picked by the file extension, so a container in the other format is
     # unreadable even though its metadata is intact.
-    extension = os.path.splitext(path.rstrip("/"))[1].lower()
+    extension = _container_extension(path)
     kinds = {kind for kind, _ in nodes.values()}
     is_zarr, is_n5 = kinds & {ZARR_ARRAY, ZARR_GROUP}, kinds & {DATASET, GROUP}
     if extension == ".n5" and is_zarr and not is_n5:
@@ -234,8 +251,8 @@ def check_container(path, key=None, max_report=20, with_read=True, with_chunks=T
             "Rename the container to '.n5' or convert it to zarr."
         )
 
-    if key is not None:
-        key_rel = key.strip("/")
+    key_rel = None if key is None else _normalize_key(key)
+    if key_rel is not None:
         if key_rel not in nodes:
             problems.append(f"the key '{key}' does not exist in the container")
         elif nodes[key_rel][0] not in (DATASET, ZARR_ARRAY):
@@ -246,8 +263,8 @@ def check_container(path, key=None, max_report=20, with_read=True, with_chunks=T
             )
 
     datasets = [rel for rel, (kind, _) in nodes.items() if kind == DATASET]
-    if key is not None and key.strip("/") in datasets:
-        datasets = [key.strip("/")]
+    if key_rel in datasets:
+        datasets = [key_rel]
 
     if with_chunks and datasets:
         print("\nChunks:")
@@ -256,8 +273,8 @@ def check_container(path, key=None, max_report=20, with_read=True, with_chunks=T
             if not meta.get("blockSize"):
                 problems.append(f"{rel}: '{N5_ATTRS}' has no blockSize")
                 continue
-            report = chunk_report(os.path.join(path, rel), meta["dimensions"], meta["blockSize"],
-                                  max_report)
+            report = chunk_report(_node_dir(path, rel), meta["dimensions"],
+                                  meta["blockSize"], max_report)
             missing = report["expected"] - report["present"]
             print(f"  {rel}: {report['present']}/{report['expected']} chunk files "
                   f"(grid {tuple(report['grid'])}), {len(report['truncated'])} truncated")

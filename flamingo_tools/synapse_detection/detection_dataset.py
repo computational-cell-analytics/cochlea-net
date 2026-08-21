@@ -43,59 +43,74 @@ class MinPointSampler:
         return np.random.rand() > self.p_reject
 
 
-def load_labels(label_path, shape, bb):
-    """Load point labels from a CSV file, optionally restricted to a bounding box."""
-    points = pd.read_csv(label_path)
-    assert len(points.columns) == len(shape)
-    z_coords, y_coords, x_coords = points["axis-0"].values, points["axis-1"].values, points["axis-2"].values
+class CsvHeatmapTransform:
+    """Label transform for CSV point annotations that produces a Gaussian heatmap.
 
-    if bb is not None:
-        (z_min, z_max), (y_min, y_max), (x_min, x_max) = [(s.start, s.stop) for s in bb]
-        z_coords -= z_min
-        y_coords -= y_min
-        x_coords -= x_min
-        mask = np.logical_and.reduce([
-            np.logical_and(z_coords >= 0, z_coords < (z_max - z_min)),
-            np.logical_and(y_coords >= 0, y_coords < (y_max - y_min)),
-            np.logical_and(x_coords >= 0, x_coords < (x_max - x_min)),
-        ])
-        z_coords, y_coords, x_coords = z_coords[mask], y_coords[mask], x_coords[mask]
-        shape = (z_max - z_min, y_max - y_min, x_max - x_min)
-
-    n_points = len(z_coords)
-    coords = tuple(
-        np.clip(np.round(coord).astype("int"), 0, coord_max - 1) for coord, coord_max in zip(
-            (z_coords, y_coords, x_coords), shape
-        )
-    )
-    return coords, n_points
-
-
-def process_labels(coords, shape, sigma, eps, bb=None):
-    """Create a normalized Gaussian heatmap from point coordinates."""
-    if bb:
-        (z_min, z_max), (y_min, y_max), (x_min, x_max) = [(s.start, s.stop) for s in bb]
-        shape = (z_max - z_min, y_max - y_min, x_max - x_min)
-
-    labels = np.zeros(shape, dtype="float32")
-    labels[coords] = 1
-    labels = gaussian(labels, sigma)
-    labels /= (labels.max() + 1e-7)
-    labels *= 4
-    return labels
-
-
-class CsvHeatmapFlowTransform:
-    """Label transform for CSV point annotations that matches the HeatmapFlowTransform interface.
-
-    The upstream czii-protein-challenge HeatmapFlowTransform reads JSON annotation files.
-    This class reads the CSV files used by the local synapse training data and produces
-    the same 5-channel output (1 Gaussian heatmap + 4 stereographic flow channels).
+    The class matches the `(label_path, shape, bb_labels, bb_for_loading)` loader interface of the
+    upstream czii-protein-challenge `HeatmapTransform`, but reads the Napari CSV files used by the
+    local synapse training data. The single output channel is the target of the v3 model.
 
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
     """
+
+    # Context that DetectionDataset must load around each patch. Only the flow needs any.
+    halo = 0
+
+    def __init__(self, sigma: float, eps: float = 1e-8):
+        self.sigma = sigma
+        self.eps = eps
+
+    @staticmethod
+    def _local_points(label_path, bb):
+        """Load the CSV points inside `bb` and return them in patch-local coordinates."""
+        local_shape = tuple(s.stop - s.start for s in bb)
+        points_df = pd.read_csv(label_path)
+        points = np.stack([
+            points_df["axis-0"].values, points_df["axis-1"].values, points_df["axis-2"].values,
+        ], axis=1).astype(np.float32)
+
+        offset = np.array([s.start for s in bb], dtype=np.float32)
+        mask = np.all(
+            (points >= offset) & (points < np.array([s.stop for s in bb], dtype=np.float32)), axis=1
+        )
+        return points[mask] - offset, local_shape
+
+    def _heatmap(self, local_points, local_shape):
+        heatmap = np.zeros(local_shape, dtype=np.float32)
+        if len(local_points) > 0:
+            coords = tuple(
+                np.clip(np.round(coord).astype(int), 0, size - 1)
+                for coord, size in zip(local_points.T, local_shape)
+            )
+            heatmap[coords] = 1
+            heatmap = gaussian(heatmap, self.sigma)
+            heatmap /= (heatmap.max() + self.eps)
+            heatmap *= 4
+        return heatmap
+
+    def __call__(self, label_path, shape, bb_labels, bb_for_loading):
+        # Strip a leading channel slice if present (bb_for_loading may have one).
+        bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
+        local_points, local_shape = self._local_points(label_path, bb)
+        return self._heatmap(local_points, local_shape)[np.newaxis]
+
+
+class CsvHeatmapFlowTransform(CsvHeatmapTransform):
+    """Label transform for CSV point annotations that adds stereographic flow channels.
+
+    The upstream czii-protein-challenge `HeatmapFlowTransform` reads JSON annotation files.
+    This class reads the CSV files used by the local synapse training data and produces the same
+    5-channel output (1 Gaussian heatmap + 4 stereographic flow channels).
+
+    Args:
+        sigma: Gaussian standard deviation (in voxels) for the heatmap.
+        eps: Small constant added when normalizing the heatmap.
+    """
+
+    # The flow needs points beyond the patch border to be correct close to the border.
+    halo = 10
 
     def __init__(self, sigma: float, eps: float = 1e-8):
         if not _spotiflow_available:
@@ -103,52 +118,18 @@ class CsvHeatmapFlowTransform:
                 "spotiflow is required for flow computation. "
                 "Install it with: pip install spotiflow"
             )
-        self.sigma = sigma
-        self.eps = eps
+        super().__init__(sigma, eps)
 
     def __call__(self, label_path, shape, bb_labels, bb_for_loading):
-        # Strip a leading channel slice if present (bb_labels may have one).
         bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
-        local_shape = tuple(s.stop - s.start for s in bb)
-        z_min, y_min, x_min = bb[0].start, bb[1].start, bb[2].start
-        z_max, y_max, x_max = bb[0].stop, bb[1].stop, bb[2].stop
+        local_points, local_shape = self._local_points(label_path, bb)
 
-        # Load all point coordinates from the CSV once.
-        points_df = pd.read_csv(label_path)
-        z_abs = points_df["axis-0"].values.astype(np.float32)
-        y_abs = points_df["axis-1"].values.astype(np.float32)
-        x_abs = points_df["axis-2"].values.astype(np.float32)
-
-        # Filter to the bounding box and convert to local coordinates.
-        mask = (
-            (z_abs >= z_min) & (z_abs < z_max) &
-            (y_abs >= y_min) & (y_abs < y_max) &
-            (x_abs >= x_min) & (x_abs < x_max)
-        )
-        local_z = z_abs[mask] - z_min
-        local_y = y_abs[mask] - y_min
-        local_x = x_abs[mask] - x_min
-        n_points = int(mask.sum())
-
-        # Gaussian heatmap (1 channel).
-        heatmap = np.zeros(local_shape, dtype=np.float32)
-        if n_points > 0:
-            coords = tuple(
-                np.clip(np.round(c).astype(int), 0, s - 1)
-                for c, s in zip([local_z, local_y, local_x], local_shape)
-            )
-            heatmap[coords] = 1
-            heatmap = gaussian(heatmap, self.sigma)
-            heatmap /= (heatmap.max() + self.eps)
-            heatmap *= 4
-
-        # Stereographic flow (4 channels).
-        if n_points == 0:
+        heatmap = self._heatmap(local_points, local_shape)
+        if len(local_points) == 0:
             flow = np.zeros((4, *local_shape), dtype=np.float32)
         else:
-            local_points = np.stack([local_z, local_y, local_x], axis=1)  # (N, 3)
-            flow = points_to_flow3d(local_points, local_shape)  # returns (Z', Y', X', 4) channels last
-            flow = np.asarray(flow, dtype=np.float32).transpose((3, 0, 1, 2))  # → (4, Z', Y', X')
+            flow = points_to_flow3d(local_points, local_shape)  # returns (Z', Y', X', 4)
+            flow = np.asarray(flow, dtype=np.float32).transpose((3, 0, 1, 2))  # -> (4, Z', Y', X')
 
         return np.concatenate([heatmap[np.newaxis], flow], axis=0).astype(np.float32)
 
@@ -193,6 +174,10 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.patch_shape = patch_shape
 
         self.raw_transform = raw_transform
+        # The upstream loader always supplies a label transform. Fall back to the plain heatmap
+        # target when the dataset is constructed directly.
+        if label_transform is None:
+            label_transform = CsvHeatmapTransform(sigma, eps)
         self.label_transform = label_transform
         self.label_transform2 = label_transform2
         self.transform = transform
@@ -201,14 +186,13 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.dtype = dtype
         self.label_dtype = label_dtype
 
-        self.eps = eps
-        self.sigma = sigma
+        # Accepted because the upstream loader always passes them; the label transform owns them.
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
-        # Buffer added around each sampled patch before calling the label transform,
-        # so that HeatmapFlowTransform has context to compute flow near patch edges.
-        self.halo = 10
+        # Buffer added around each sampled patch before calling the label transform. The label
+        # transform declares how much context it needs; only the flow computation needs any.
+        self.halo = getattr(label_transform, "halo", 10)
 
         f = zarr.open(self.raw_path, mode="r")
         full_shape = f[self.raw_key].shape
@@ -273,20 +257,15 @@ class DetectionDataset(torch.utils.data.Dataset):
         else:
             raw_patch = raw_patch[slices_crop]
 
-        # Generate labels.
-        if self.label_transform is not None:
-            # label_transform is the label loader (e.g. HeatmapFlowTransform from the upstream
-            # czii-protein-challenge repo). It receives the path and bounding box and returns
-            # a (C, Z, Y, X) array covering bb_for_loading; we then crop the halo back out.
-            labels = self.label_transform(self.label_path, self.shape, bb_for_loading, bb_for_loading)
-            if labels.ndim == 4:
-                labels = labels[(slice(None),) + slices_crop]
-            else:
-                labels = labels[slices_crop]
+        # The label transform is the label loader (e.g. HeatmapFlowTransform from the upstream
+        # czii-protein-challenge repo). It receives the path and bounding box and returns an array
+        # covering bb_for_loading; we then crop the halo back out. The upstream transforms return
+        # (Z, Y, X) for a plain heatmap and (C, Z, Y, X) with flow.
+        labels = self.label_transform(self.label_path, self.shape, bb_for_loading, bb_for_loading)
+        if labels.ndim == 4:
+            labels = labels[(slice(None),) + slices_crop]
         else:
-            # Fallback: load CSV point coordinates and build a single-channel Gaussian heatmap.
-            coords, _ = load_labels(self.label_path, self.shape, bb)
-            labels = process_labels(coords, self.shape, self.sigma, self.eps, bb=bb)
+            labels = labels[slices_crop]
 
         return raw_patch, labels
 
