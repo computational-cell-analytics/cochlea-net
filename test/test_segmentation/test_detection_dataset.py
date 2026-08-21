@@ -6,14 +6,13 @@ from unittest import mock
 import numpy as np
 import pandas as pd
 import zarr
+from skimage.filters import gaussian
 
 from flamingo_tools.synapse_detection.detection_dataset import (
     CsvHeatmapFlowTransform,
     CsvHeatmapTransform,
     DetectionDataset,
     MinPointSampler,
-    load_labels,
-    process_labels,
 )
 
 try:
@@ -21,6 +20,30 @@ try:
     _HAVE_SPOTIFLOW = True
 except ImportError:
     _HAVE_SPOTIFLOW = False
+
+
+def _v3_reference_heatmap(label_path, bb, sigma):
+    """Reimplementation of the v3 label creation, which CsvHeatmapTransform must reproduce."""
+    shape = tuple(s.stop - s.start for s in bb)
+    points = pd.read_csv(label_path)
+    coords = [points[f"axis-{axis}"].to_numpy(copy=True) for axis in range(3)]
+    for coord, bb_axis in zip(coords, bb):
+        coord -= bb_axis.start
+
+    mask = np.logical_and.reduce([
+        np.logical_and(coord >= 0, coord < size) for coord, size in zip(coords, shape)
+    ])
+    coords = tuple(
+        np.clip(np.round(coord[mask]).astype("int"), 0, size - 1)
+        for coord, size in zip(coords, shape)
+    )
+
+    labels = np.zeros(shape, dtype="float32")
+    labels[coords] = 1
+    labels = gaussian(labels, sigma)
+    labels /= (labels.max() + 1e-7)
+    labels *= 4
+    return labels, int(mask.sum())
 
 
 class TestDetectionDataset(unittest.TestCase):
@@ -58,7 +81,7 @@ class TestDetectionDataset(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             _, label_path = self._create_data(tmp_dir)
 
-            # process_labels normalizes with a hard-coded 1e-7, so use the same eps here.
+            # The v3 code normalized with a hard-coded 1e-7, so use the same eps here.
             labels = CsvHeatmapTransform(sigma=1, eps=1e-7)(label_path, self.shape, self.bb, self.bb)
 
             self.assertEqual(labels.shape, (1, *self.patch_shape))
@@ -67,9 +90,8 @@ class TestDetectionDataset(unittest.TestCase):
             self.assertGreaterEqual(float(labels.min()), 0.0)
 
             # The transform must reproduce the label creation path of the v3 training.
-            coords, n_points = load_labels(label_path, self.shape, self.bb)
+            expected, n_points = _v3_reference_heatmap(label_path, self.bb, sigma=1)
             self.assertGreater(n_points, 1)
-            expected = process_labels(coords, self.shape, sigma=1, eps=1e-7, bb=self.bb)
             self.assertTrue(np.allclose(labels[0], expected, atol=1e-6))
 
     def test_heatmap_transform_without_points(self):
@@ -93,6 +115,21 @@ class TestDetectionDataset(unittest.TestCase):
                 raw, labels = ds[index]
                 self.assertEqual(tuple(raw.shape), (1, *self.patch_shape))
                 self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
+
+    def test_dataset_default_label_transform(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            ds = DetectionDataset(
+                raw_path=raw_path, raw_key="raw", label_path=label_path,
+                patch_shape=self.patch_shape, sigma=1, n_samples=1,
+            )
+
+            self.assertIs(type(ds.label_transform), CsvHeatmapTransform)
+            self.assertEqual(ds.halo, 0)
+
+            raw, labels = ds[0]
+            self.assertEqual(tuple(raw.shape), (1, *self.patch_shape))
+            self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
 
     def test_dataset_halo_from_label_transform(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

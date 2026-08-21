@@ -43,51 +43,6 @@ class MinPointSampler:
         return np.random.rand() > self.p_reject
 
 
-def load_labels(label_path, shape, bb):
-    """Load point labels from a CSV file, optionally restricted to a bounding box."""
-    points = pd.read_csv(label_path)
-    assert len(points.columns) == len(shape)
-    # The coordinates are shifted in place below, so they must not alias the dataframe memory.
-    z_coords = points["axis-0"].to_numpy(copy=True)
-    y_coords = points["axis-1"].to_numpy(copy=True)
-    x_coords = points["axis-2"].to_numpy(copy=True)
-
-    if bb is not None:
-        (z_min, z_max), (y_min, y_max), (x_min, x_max) = [(s.start, s.stop) for s in bb]
-        z_coords -= z_min
-        y_coords -= y_min
-        x_coords -= x_min
-        mask = np.logical_and.reduce([
-            np.logical_and(z_coords >= 0, z_coords < (z_max - z_min)),
-            np.logical_and(y_coords >= 0, y_coords < (y_max - y_min)),
-            np.logical_and(x_coords >= 0, x_coords < (x_max - x_min)),
-        ])
-        z_coords, y_coords, x_coords = z_coords[mask], y_coords[mask], x_coords[mask]
-        shape = (z_max - z_min, y_max - y_min, x_max - x_min)
-
-    n_points = len(z_coords)
-    coords = tuple(
-        np.clip(np.round(coord).astype("int"), 0, coord_max - 1) for coord, coord_max in zip(
-            (z_coords, y_coords, x_coords), shape
-        )
-    )
-    return coords, n_points
-
-
-def process_labels(coords, shape, sigma, eps, bb=None):
-    """Create a normalized Gaussian heatmap from point coordinates."""
-    if bb:
-        (z_min, z_max), (y_min, y_max), (x_min, x_max) = [(s.start, s.stop) for s in bb]
-        shape = (z_max - z_min, y_max - y_min, x_max - x_min)
-
-    labels = np.zeros(shape, dtype="float32")
-    labels[coords] = 1
-    labels = gaussian(labels, sigma)
-    labels /= (labels.max() + 1e-7)
-    labels *= 4
-    return labels
-
-
 class CsvHeatmapTransform:
     """Label transform for CSV point annotations that produces a Gaussian heatmap.
 
@@ -219,6 +174,10 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.patch_shape = patch_shape
 
         self.raw_transform = raw_transform
+        # The upstream loader always supplies a label transform. Fall back to the plain heatmap
+        # target when the dataset is constructed directly.
+        if label_transform is None:
+            label_transform = CsvHeatmapTransform(sigma, eps)
         self.label_transform = label_transform
         self.label_transform2 = label_transform2
         self.transform = transform
@@ -227,8 +186,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.dtype = dtype
         self.label_dtype = label_dtype
 
-        self.eps = eps
-        self.sigma = sigma
+        # Accepted because the upstream loader always passes them; the label transform owns them.
         self.lower_bound = lower_bound
         self.upper_bound = upper_bound
 
@@ -299,20 +257,15 @@ class DetectionDataset(torch.utils.data.Dataset):
         else:
             raw_patch = raw_patch[slices_crop]
 
-        # Generate labels.
-        if self.label_transform is not None:
-            # label_transform is the label loader (e.g. HeatmapFlowTransform from the upstream
-            # czii-protein-challenge repo). It receives the path and bounding box and returns
-            # a (C, Z, Y, X) array covering bb_for_loading; we then crop the halo back out.
-            labels = self.label_transform(self.label_path, self.shape, bb_for_loading, bb_for_loading)
-            if labels.ndim == 4:
-                labels = labels[(slice(None),) + slices_crop]
-            else:
-                labels = labels[slices_crop]
+        # The label transform is the label loader (e.g. HeatmapFlowTransform from the upstream
+        # czii-protein-challenge repo). It receives the path and bounding box and returns an array
+        # covering bb_for_loading; we then crop the halo back out. The upstream transforms return
+        # (Z, Y, X) for a plain heatmap and (C, Z, Y, X) with flow.
+        labels = self.label_transform(self.label_path, self.shape, bb_for_loading, bb_for_loading)
+        if labels.ndim == 4:
+            labels = labels[(slice(None),) + slices_crop]
         else:
-            # Fallback: load CSV point coordinates and build a single-channel Gaussian heatmap.
-            coords, _ = load_labels(self.label_path, self.shape, bb)
-            labels = process_labels(coords, self.shape, self.sigma, self.eps, bb=bb)
+            labels = labels[slices_crop]
 
         return raw_patch, labels
 
