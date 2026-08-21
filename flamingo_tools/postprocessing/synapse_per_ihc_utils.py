@@ -6,7 +6,7 @@ SYNAPSE_DICT = {
     "M_LR_000227_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11"},
     "G_EK_000233_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11"},
     "G_LR_000233_R": {"synapse_table_name": "synapse_v3_ihc_v6", "ihc_table_name": "IHC_v6"},
-    "G_LR_000301_R": {"synapse_table_name": "synapse_v5_ihc_v11", "ihc_table_name": "IHC_v11",
+    "G_LR_000301_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                       "component_list": [4, 3, 11, 1, 5, 2]},
     "G_LR_000302_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                       "component_list": [3, 1, 2]},
