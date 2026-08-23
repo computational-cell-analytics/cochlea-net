@@ -70,12 +70,38 @@ predictions_complete() {
 	return 0
 }
 
+# Validate every argument before submitting anything. Checking inside the submission loop meant a
+# typo in the third cochlea aborted after the first two chains were already queued, leaving a
+# half-submitted state to untangle.
+for COCHLEA in "$@"; do
+	known=0
+	for candidate in "${COCHLEAE[@]}"; do
+		[[ "$COCHLEA" == "$candidate" ]] && known=1
+	done
+	if [[ "$known" -eq 0 ]]; then
+		echo "Unknown cochlea: '$COCHLEA'. Expected one of:" >&2
+		printf '  %s\n' "${COCHLEAE[@]}" >&2
+		exit 1
+	fi
+
+	COCHLEA_FOLDER=$(cochlea_folder "$COCHLEA")
+	if [[ ! -f "$COCHLEA_FOLDER/shard_manifest.json" ]]; then
+		echo "$COCHLEA is not staged: no $COCHLEA_FOLDER/shard_manifest.json." >&2
+		echo "Run the staging job for it first." >&2
+		exit 1
+	fi
+	for version in "${VERSIONS[@]}"; do
+		folder=$(version_folder "$COCHLEA" "$version")
+		if [[ ! -d "$folder/predictions.zarr" ]]; then
+			echo "$COCHLEA SGN_v2-$version has no prediction array at $folder." >&2
+			echo "Re-run the staging job for it; it creates them." >&2
+			exit 1
+		fi
+	done
+done
+
 for COCHLEA in "$@"; do
 	COCHLEA_FOLDER=$(cochlea_folder "$COCHLEA")
-	require_paths "$COCHLEA_FOLDER/shard_manifest.json"
-	for version in "${VERSIONS[@]}"; do
-		require_paths "$(version_folder "$COCHLEA" "$version")/predictions.zarr"
-	done
 
 	echo "=== $COCHLEA ==="
 	prediction_jobs=()
