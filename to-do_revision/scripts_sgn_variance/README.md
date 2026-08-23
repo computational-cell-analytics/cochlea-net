@@ -96,6 +96,14 @@ bash remove_vast_outputs.sh --delete
 into the sharded layout with `bioimage_py.copy` instead of recomputing them, and verifies whole
 shards against the originals before anything may be deleted.
 
+To reclaim the 1.3 TB those originals occupy without waiting for the whole experiment, use
+`remove_converted_source.sh` (dry run by default). It removes only `predictions.zarr` on vast, keeps
+`mask.zarr` and `mean_std.json`, and refuses unless every expected shard is present and a sample of
+whole shards is bit-for-bit equal to the original. `--n_samples` raises the sample size; each sample
+reads about 1.6 GB from either side. The safer order is to run the watershed first and check the
+object count against the reference, which is an independent end-to-end confirmation, and only then
+delete.
+
 ## Two constraints that are easy to get wrong
 
 - **The evaluation must not be an array job.** `json_util.update_json` reads `SGN_3D.json`, updates
@@ -153,5 +161,6 @@ Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 | `common.sh` | Paths, cochlea and version lists, expected block counts. Sourced by every sbatch. |
 | `check_results.py` | Sanity-checks the four accuracy entries in `SGN_3D.json`. |
 | `submit_all.sh` | Submits the per-cochlea chain with dependencies. |
-| `cleanup_predictions.sh` | Deletes `predictions.zarr` once the tables are complete and plausible. |
-| `remove_vast_outputs.sh` | Removes the old vast outputs, behind four gates. |
+| `cleanup_predictions.sh` | Deletes `predictions.zarr` in the workspace once the tables are complete and plausible. |
+| `remove_converted_source.sh` | Deletes the unsharded `predictions.zarr` on vast for a converted cochlea, after verifying the conversion. |
+| `remove_vast_outputs.sh` | Removes the old vast output folders entirely, behind four gates. |

@@ -8,7 +8,12 @@
 #SBATCH --mem=64G
 
 # Check that predicting one shard at a time reproduces a whole-volume run exactly. Usage:
-#   sbatch 2026-08-23_sbatch_selftest_SGN-v2-variance.sbatch [cochlea] [version]
+#   sbatch 2026-08-23_sbatch_selftest_SGN-v2-variance.sbatch [cochlea] [version] [shard ...]
+#
+# Without explicit shard ids the shard with the most in-mask blocks is used. Worth also passing an
+# edge shard, whose extent is clipped at the volume boundary so that some of its blocks are partial
+# and their halos are reflect-padded -- that is the geometry most likely to differ between a
+# per-shard and a whole-volume run.
 #
 # Run this once, after staging and before the first apply job: it is the evidence that the sharded
 # per-shard prediction is numerically the same thing as the unsharded whole-volume prediction the
@@ -22,6 +27,8 @@ set -euo pipefail
 
 COCHLEA=${1:-M_LR_000226_L}
 VERSION=${2:-1}
+shift 2 2>/dev/null || true
+SHARDS=("$@")
 
 COCHLEA_FOLDER=$(cochlea_folder "$COCHLEA")
 require_paths "$COCHLEA_FOLDER/shard_manifest.json" "$(raw_path "$COCHLEA")" \
@@ -29,7 +36,17 @@ require_paths "$COCHLEA_FOLDER/shard_manifest.json" "$(raw_path "$COCHLEA")" \
 
 echo "Cochlea: $COCHLEA, version: $VERSION"
 
-python -m sgn_variance selftest \
-	--input "$(raw_path "$COCHLEA")" --input_key s0 \
-	--cochlea_folder "$COCHLEA_FOLDER" \
-	--model "$(model_path "$VERSION")"
+if [[ ${#SHARDS[@]} -eq 0 ]]; then
+	SHARDS=("")
+fi
+
+for shard in "${SHARDS[@]}"; do
+	shard_args=()
+	[[ -n "$shard" ]] && shard_args=(--shard_id "$shard")
+	echo "--- shard ${shard:-<fullest>} ---"
+	python -m sgn_variance selftest \
+		--input "$(raw_path "$COCHLEA")" --input_key s0 \
+		--cochlea_folder "$COCHLEA_FOLDER" \
+		--model "$(model_path "$VERSION")" \
+		${shard_args[@]+"${shard_args[@]}"}
+done

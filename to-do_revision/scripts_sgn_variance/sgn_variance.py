@@ -586,7 +586,11 @@ def cmd_verify(args) -> None:
         print(f"{found - len(expected_shards)} unexpected extra shard files. This looks like a "
               "prediction left over from a different mask; delete predictions.zarr and re-run.")
 
-    if args.reference is not None:
+    # The value comparison reads whole shards from both arrays, so do not start it when the
+    # prediction is already known to be incomplete.
+    if args.reference is not None and not ok:
+        print("Skipping the comparison against the reference: the prediction is incomplete.")
+    elif args.reference is not None:
         rng = np.random.default_rng(args.seed)
         target = open_prediction(args.output_folder, shape, mode="r")
         source = zarr.open_array(os.path.join(args.reference, PREDICTION_KEY), mode="r")
