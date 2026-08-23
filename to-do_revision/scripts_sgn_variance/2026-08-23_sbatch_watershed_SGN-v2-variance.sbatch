@@ -1,11 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=ws-SGNv2var
-#SBATCH --time=12:00:00
+#SBATCH --time=03:00:00
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=256G
 #SBATCH --array=0-3
+# The gerbil watershed took 53 min on a 676 GB prediction; these are 192-326 GB and the
+# first run is on a sub-hour pace. Four tasks run concurrently and contend for lustre
+# bandwidth, so this keeps ~4x headroom rather than cutting to 2 h.
 
 # Seeded watershed for the four seed variants of one cochlea. Usage:
 #   sbatch 2026-08-23_sbatch_watershed_SGN-v2-variance.sbatch <cochlea>

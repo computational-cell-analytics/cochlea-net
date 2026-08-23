@@ -116,18 +116,24 @@ delete.
 
 ## Sizing
 
-Measured on the gerbil G301L run (a 676 GB prediction, roughly twice these):
+Keep the walltime requests tight. `standard96s:shared` is regularly saturated, and a job that asks
+for 12 h cannot be backfilled into the gaps a 2-3 h job fits into, so an over-generous limit costs
+real queue time on every submission.
 
-| stage | time | memory |
+| stage | limit | basis |
 |---|---|---|
-| mask + mean/std | 7 min | small |
-| apply | ~12 min per array task | 64 GB |
-| watershed | 53 min | 189 GB MaxRSS of 400 GB requested |
-| table + components | 13 min | 2.5 GB MaxRSS |
+| stage | 1 h | measured 1:25 and 2:23 |
+| convert | 4 h | measured 1:49 to 1:56 per version, two at a time |
+| apply | 2 h | not yet measured here; 20-30 min expected from the selftest's per-shard cost |
+| watershed | 3 h | gerbil 53 min at 676 GB; these are 192-326 GB, four tasks contend for lustre |
+| table | 1.5 h | gerbil 13 min at 2.5 GB MaxRSS over a larger volume |
+| evaluate | 2 h | not measured; 48 single-plane slice evaluations |
+| selftest | 30 min | measured 1:32 and 1:54 |
 
-The watershed here requests 256 GB: the gerbil figure was measured at 34,248 in-mask blocks and our
-largest cochlea has 16,327, so 90-120 GB is expected. Check `sacct -o MaxRSS` after the first
-cochlea and raise it to 400 GB if it comes close.
+Memory, from the gerbil run: apply 64 GB, watershed **189 GB MaxRSS** of 400 GB requested, table
+2.5 GB MaxRSS. The watershed here requests 256 GB, because that 189 GB was measured at 34,248
+in-mask blocks and our largest cochlea has 16,327, so 90-120 GB is expected. Check
+`sacct -o MaxRSS` after the first cochlea and adjust in whichever direction it points.
 
 Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 

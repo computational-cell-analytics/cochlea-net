@@ -1,12 +1,15 @@
 #!/bin/bash
 #SBATCH --job-name=apply-SGNv2var
-#SBATCH --time=06:00:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=grete:shared
 #SBATCH --account=nim00007
 #SBATCH --gpus=A100:1
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --array=0-9
+# Not measured yet in this configuration. The selftest predicts a shard in well under a
+# minute, and a task owns 31 (M_LR_000226_L) to 55 (M_LR_000169_R) shards, so 20-30 min is
+# expected. Revisit after the first real apply job.
 
 # Apply one SGN v2 seed variant to one cochlea. Usage:
 #   sbatch 2026-08-23_sbatch_apply_SGN-v2-variance.sbatch <cochlea> <version>

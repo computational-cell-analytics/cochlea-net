@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=convert-SGNv2var
-#SBATCH --time=12:00:00
+#SBATCH --time=04:00:00
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 #SBATCH --array=0-3%2
+# Measured 1:49 to 1:56 per version for the largest cochlea, two tasks at a time.
 
 # Convert the four existing M_LR_000169_R predictions from the unsharded layout on vast into the
 # sharded arrays in the workspace, preserving the values exactly. Throttled to two tasks at a time

@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=table-SGNv2var
-#SBATCH --time=04:00:00
+#SBATCH --time=01:30:00
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=64G
 #SBATCH --array=0-3
+# The gerbil table job took 13 min at 2.5 GB MaxRSS over a larger volume.
 
 # Segmentation table and connected components for the four seed variants of one cochlea. Usage:
 #   sbatch 2026-08-23_sbatch_table_SGN-v2-variance.sbatch <cochlea>

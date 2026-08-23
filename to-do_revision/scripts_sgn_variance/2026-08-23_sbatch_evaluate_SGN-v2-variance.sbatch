@@ -1,10 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=eval-SGNv2var
-#SBATCH --time=06:00:00
+#SBATCH --time=02:00:00
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
+# Not measured. 48 slice evaluations, each a single z-plane read plus the matching, so well
+# under an hour is expected.
 
 # Evaluate the four seed variants against the consensus annotations, reading everything from the
 # workspace. Run this once all 20 tables exist.

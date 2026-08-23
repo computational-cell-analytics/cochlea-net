@@ -1,11 +1,12 @@
 #!/bin/bash
 #SBATCH --job-name=stage-SGNv2var
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=32G
 #SBATCH --array=0-4
+# Measured 1:25 and 2:23; the mask copy is the slow part and it is a few thousand small files.
 
 # Stage the inputs of one cochlea into the workspace and prepare the sharded prediction arrays.
 #
