@@ -154,14 +154,26 @@ Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 - The watershed refuses to start unless the shard count matches the manifest.
 - `cleanup_predictions.sh` refuses to delete unless component 1 holds at least 1000 objects and at
   least 25% of them. Gate on the size of component 1, not on its share: see below.
+- **The F1 score is computed only over the objects inside the component.** Not over all
+  segmented objects. `run_evaluation.py` resolves the component list per cochlea and version and
+  passes it to `fetch_data_for_evaluation`, which zeroes every voxel whose label is not in that
+  component before the matching runs, then relabels what is left. For this experiment the list is
+  `[1]` for all five cochleae and all four versions, and the lookup defaults to `[1]` when an entry
+  is missing, so the filter can never be skipped by accident. Objects outside component 1 are
+  therefore neither true positives, false positives, nor false negatives -- they are not scored at
+  all. Verified on the three `M_LR_000169_R` slices for `SGN_v2-1`: filtering to component 1 drops
+  5 of 679 objects on those planes and moves F1 from 0.864 to 0.867, all of it through `fp`
+  (111 against 116); `tp` and `fn` are identical either way.
 - After the watershed, compare the size of **component 1**, not the total object count. On
   `M_LR_000169_R` the four seeds gave 11,186 / 11,383 / 11,235 / 11,265 objects in component 1
   against a reference `SGN_v2` of 10,973 -- within 2 to 4%, and agreeing with each other to 1.7%.
   Their totals, in contrast, ran from +9% to +42% of the reference, and the share in component 1
   from 72% to 92% against the reference's 98%. The seeds find the same helix and differ in how many
-  strays they produce away from it, which is exactly what the component step discards. Reference
-  component-1 counts have to be read off the S3 tables per cochlea; the local MoBIE copies carry no
-  `component_labels` column.
+  strays they produce away from it, which is exactly what the component step discards -- and, per
+  the point above, those strays are never scored. They are also spread through the whole 3D volume,
+  so only a handful of them intersect any given annotated plane; that is why a 42% difference in the
+  total object count moves the F1 of a slice by 0.003. Reference component-1 counts have to be read
+  off the S3 tables per cochlea; the local MoBIE copies carry no `component_labels` column.
 - `check_results.py` checks the accuracy: 12 crops per variant, `tp + fn` per crop identical to the
   reference (it is the annotation count, so it must match for any segmentation), and F1 within 0.03
   of the published 0.884. The completed IHC seed-variance experiment spread over about 0.01 F1.
