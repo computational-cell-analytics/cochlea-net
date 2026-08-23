@@ -17,9 +17,10 @@
 # comparable to the published v2 accuracy. distance_watershed_implementation takes its foreground
 # from channel 0 of the prediction and never reads mask.zarr.
 #
-# Memory: the gerbil watershed measured 189 GB MaxRSS at 34248 in-mask blocks, and the largest
-# cochlea here has 16327, so 90-120 GB is expected. Check `sacct -o MaxRSS` after the smoke test
-# and raise this to 400G (the value in reproducibility/templates_processing) if it comes close.
+# Memory: do not cut this without measuring. M_LR_000169_R peaked at 229 GiB, i.e. 89% of the
+# request, even though it has 16327 in-mask blocks against the gerbil's 34248 at 189 GB. The peak
+# therefore does not scale with the block count, so a smaller cochlea is not automatically cheaper.
+# Check `sacct -o MaxRSS` per cochlea and raise this if it gets closer than a few tens of GB.
 
 # sbatch runs a copy of this script from the slurm spool directory, so the path cannot be
 # derived from BASH_SOURCE.

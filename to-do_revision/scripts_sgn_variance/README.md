@@ -130,10 +130,11 @@ real queue time on every submission.
 | evaluate | 2 h | not measured; 48 single-plane slice evaluations |
 | selftest | 30 min | measured 1:32 and 1:54 |
 
-Memory, from the gerbil run: apply 64 GB, watershed **189 GB MaxRSS** of 400 GB requested, table
-2.5 GB MaxRSS. The watershed here requests 256 GB, because that 189 GB was measured at 34,248
-in-mask blocks and our largest cochlea has 16,327, so 90-120 GB is expected. Check
-`sacct -o MaxRSS` after the first cochlea and adjust in whichever direction it points.
+Memory: the watershed of `M_LR_000169_R` peaked at **229 GiB**, 89% of its 256 GiB request. Do not
+cut that request on the assumption that a smaller cochlea needs less: this cochlea has 16,327
+in-mask blocks and peaked higher than the gerbil's 189 GB at 34,248 blocks, so the peak does not
+track the block count. Measure per cochlea with `sacct -o MaxRSS` and raise the request if it gets
+within a few tens of GB. Apply needs 64 GB and the table job 2.5 GB, both from the gerbil run.
 
 Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 
