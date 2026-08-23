@@ -60,8 +60,12 @@ def fetch_data_for_evaluation(
     cochlea: Optional[str] = None,
     extra_data: Optional[str] = None,
     exclude_zero_synapse_count: bool = False,
+    segmentation_folder: Optional[str] = None,
 ) -> Tuple[np.ndarray, pd.DataFrame]:
-    """Fetch segmentation from S3 matching the annotation path for evaluation.
+    """Fetch the segmentation matching the annotation path for evaluation.
+
+    The segmentation is read from the S3 bucket by default, and from a local output folder of the
+    U-Net pipeline if `segmentation_folder` is given.
 
     Args:
         annotation_path: The path to the manual annotations.
@@ -74,11 +78,18 @@ def fetch_data_for_evaluation(
         extra_data: Extra data to fetch.
         exclude_zero_synapse_count: Exclude cells that have zero synapses mapped.
             This is relevant for the IHC evaluation.
+        segmentation_folder: Optional local folder holding 'segmentation.zarr' and
+            'default_components.tsv', as written by the U-Net pipeline and
+            'create_table_and_components.py'. If given, nothing is read from S3. The local
+            segmentation has the same shape as the raw volume the annotations refer to, so the
+            slice index is the same one used for the OME-Zarr on S3.
 
     Returns:
-        The segmentation downloaded from the S3 bucket.
+        The segmentation, downloaded from the S3 bucket or read from `segmentation_folder`.
         The annotations loaded from pandas and matching the segmentation.
     """
+    if segmentation_folder is not None and extra_data is not None:
+        raise ValueError("extra_data is only supported for the segmentation on S3.")
     # Load the annotations and normalize them for the given z-extent.
     annotations = pd.read_csv(annotation_path, sep=",")
     if "index" in annotations.columns:
@@ -98,25 +109,37 @@ def fetch_data_for_evaluation(
     else:
         _, slice_id = _parse_annotation_path(annotation_path)
 
-    # Open the S3 connection, get the path to the SGN segmentation in S3.
-    internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
-    s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
-
     # Compute the roi for the given z-extent.
     if z_extent == 0:
         roi = slice_id
     else:
         roi = slice(slice_id - z_extent, slice_id + z_extent)
 
-    # Download the segmentation for this slice and the given z-extent.
-    input_key = "s0"
-    f = zarr.open(s3_store, mode="r")
-    segmentation = f[input_key][roi]
+    if segmentation_folder is None:
+        # Open the S3 connection, get the path to the SGN segmentation in S3.
+        internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+        s3_store, fs = get_s3_path(
+            internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT
+        )
+        # Download the segmentation for this slice and the given z-extent.
+        f = zarr.open(s3_store, mode="r")
+        segmentation = f["s0"][roi]
+    else:
+        fs = None
+        f = zarr.open(os.path.join(segmentation_folder, "segmentation.zarr"), mode="r")
+        segmentation = f["segmentation"][roi]
+
+    def get_table():
+        if segmentation_folder is None:
+            return _get_table(fs, cochlea, seg_name)
+        # The local 'default.tsv' holds the MoBIE columns only; the component labels are written to
+        # a separate file by create_table_and_components.py.
+        return pd.read_csv(os.path.join(segmentation_folder, "default_components.tsv"), sep="\t")
 
     table = None
     if components_for_postprocessing is not None:
         # Filter the IDs so that only the ones part of 'components_for_postprocessing_remain'.
-        table = _get_table(fs, cochlea, seg_name)
+        table = get_table()
 
         # Then we get the ids for the components and us them to filter the segmentation.
         component_mask = np.isin(table.component_labels.values, components_for_postprocessing)
@@ -129,7 +152,7 @@ def fetch_data_for_evaluation(
 
     if exclude_zero_synapse_count:
         if table is None:
-            table = _get_table(fs, cochlea, seg_name)
+            table = get_table()
 
         keep_label_ids = table.label_id[table.syn_per_IHC > 0].astype("int64")
         filter_mask = ~np.isin(segmentation, keep_label_ids)
