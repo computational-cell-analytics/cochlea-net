@@ -53,10 +53,19 @@ if "component_labels" not in table.columns:
     raise SystemExit("default_components.tsv has no component_labels column")
 if len(table) < 1000:
     raise SystemExit(f"default_components.tsv has only {len(table)} rows")
+# Gate on the size of component 1, which is the helix and the only thing the evaluation uses, not
+# on its share of all objects. The four seed variants of M_LR_000169_R put 72% to 92% of their
+# objects in component 1 while agreeing on its size to within 2%: they differ in how many strays
+# they produce away from the helix, and those are exactly what the component step discards. A
+# fraction test would have rejected the 72% run. The 25% floor is only here to catch a spiral that
+# got shattered into many comparable pieces, which is a real failure mode.
+in_component_1 = int((table.component_labels == 1).sum())
 fraction = (table.component_labels == 1).mean()
-if fraction < 0.9:
+if in_component_1 < 1000:
+    raise SystemExit(f"only {in_component_1} objects in component 1")
+if fraction < 0.25:
     raise SystemExit(f"only {fraction:.1%} of the objects are in component 1")
-print(f"{len(table)} objects, {fraction:.1%} in component 1")
+print(f"{len(table)} objects, {in_component_1} in component 1 ({fraction:.1%})")
 PYEOF
 		then
 			echo "$label: NOT safe to delete (see above)." >&2

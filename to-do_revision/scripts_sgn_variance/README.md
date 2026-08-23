@@ -152,11 +152,16 @@ Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 - `sgn_variance.py selftest` — per-shard prediction is identical to a whole-volume run.
 - Staging fails unless the mask reproduces the block count in the table above.
 - The watershed refuses to start unless the shard count matches the manifest.
-- `cleanup_predictions.sh` refuses to delete unless the components table has at least 1000 rows and
-  at least 90% of the objects in component 1 (the gerbil reference is 99.4%).
-- After the watershed, `default.tsv` should hold about as many objects as the reference `SGN_v2`
-  segmentation of that cochlea: 10,599 / 11,170 / 11,330 / 10,416 / 13,868 in the order above.
-  A wildly different count is a broken prediction, not seed variance.
+- `cleanup_predictions.sh` refuses to delete unless component 1 holds at least 1000 objects and at
+  least 25% of them. Gate on the size of component 1, not on its share: see below.
+- After the watershed, compare the size of **component 1**, not the total object count. On
+  `M_LR_000169_R` the four seeds gave 11,186 / 11,383 / 11,235 / 11,265 objects in component 1
+  against a reference `SGN_v2` of 10,973 -- within 2 to 4%, and agreeing with each other to 1.7%.
+  Their totals, in contrast, ran from +9% to +42% of the reference, and the share in component 1
+  from 72% to 92% against the reference's 98%. The seeds find the same helix and differ in how many
+  strays they produce away from it, which is exactly what the component step discards. Reference
+  component-1 counts have to be read off the S3 tables per cochlea; the local MoBIE copies carry no
+  `component_labels` column.
 - `check_results.py` checks the accuracy: 12 crops per variant, `tp + fn` per crop identical to the
   reference (it is the annotation count, so it must match for any segmentation), and F1 within 0.03
   of the published 0.884. The completed IHC seed-variance experiment spread over about 0.01 F1.
