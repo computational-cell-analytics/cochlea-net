@@ -73,7 +73,8 @@ sbatch 2026-08-23_sbatch_stage_SGN-v2-variance.sbatch
 sbatch 2026-08-23_sbatch_selftest_SGN-v2-variance.sbatch M_LR_000226_L 1
 
 # 3. per cochlea: predict (or convert), watershed, table. Submits the chain with dependencies.
-bash submit_all.sh M_LR_000226_L
+#    --preemptible puts the prediction on a MIG slice, which is usually schedulable at once.
+bash submit_all.sh --preemptible M_LR_000226_L
 #    ... then, once the table jobs are done:
 sacct -j <watershed job id> --format=JobID,State,Elapsed,ReqMem,MaxRSS
 bash cleanup_predictions.sh M_LR_000226_L            # dry run, review
@@ -119,6 +120,20 @@ bash remove_converted_source.sh --delete               # vast, needs the convert
 bash cleanup_predictions.sh --delete M_LR_000169_R     # workspace, removes it
 ```
 
+## Where to run the prediction
+
+`grete:shared` is often fully allocated -- every A100 busy and most nodes draining -- and a
+prediction submitted there can sit for many hours. `grete:preemptible` has no whole A100s, only MIG
+slices, but the model is small enough that this barely matters: measured on `M_LR_000226_L`,
+**0.62 s per block on a `1g.20gb` slice and 0.72 s on a `1g.10gb` one**, i.e. 10 to 15 minutes for a
+task's ~1000 blocks. Peak GPU memory is under 10 GB, so the smallest slice is enough, and those are
+the plentiful ones.
+
+Preemption is cheap for this stage by construction: a shard is written in a single atomic write and
+`--skip_existing` resumes at the next unwritten shard, so a kill costs at most one shard, about 20 s.
+`submit_all.sh --preemptible` sets `--partition=grete:preemptible --gpus=1g.10gb:1` on the prediction
+only; the watershed and the table are CPU jobs and stay where they are.
+
 ## Two constraints that are easy to get wrong
 
 - **The evaluation must not be an array job.** `json_util.update_json` reads `SGN_3D.json`, updates
@@ -139,7 +154,7 @@ real queue time on every submission.
 |---|---|---|
 | stage | 1 h | measured 1:25 and 2:23 |
 | convert | 4 h | measured 1:49 to 1:56 per version, two at a time |
-| apply | 2 h | not yet measured here; 20-30 min expected from the selftest's per-shard cost |
+| apply | 2 h | measured 0.62 s/block on a 1g.20gb slice, 0.72 s on 1g.10gb -> 10-15 min per task |
 | watershed | 3 h | gerbil 53 min at 676 GB; these are 192-326 GB, four tasks contend for lustre |
 | table | 1.5 h | gerbil 13 min at 2.5 GB MaxRSS over a larger volume |
 | evaluate | 2 h | not measured; 48 single-plane slice evaluations |
@@ -200,7 +215,7 @@ Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 | `sgn_variance.py` | Geometry, manifest, array creation, per-shard prediction, conversion, verification, self-test. One module so those cannot drift apart. |
 | `common.sh` | Paths, cochlea and version lists, expected block counts. Sourced by every sbatch. |
 | `check_results.py` | Sanity-checks the four accuracy entries in `SGN_3D.json`. |
-| `submit_all.sh` | Submits the per-cochlea chain with dependencies. |
+| `submit_all.sh` | Submits the per-cochlea chain with dependencies. `--preemptible` for a MIG slice, `--dry_run` to print instead of submit. |
 | `cleanup_predictions.sh` | Deletes `predictions.zarr` in the workspace once the tables are complete and plausible. |
 | `remove_converted_source.sh` | Deletes the unsharded `predictions.zarr` on vast for a converted cochlea, after verifying the conversion. Run before `cleanup_predictions.sh`. |
 | `check_derived_products.py` | Checks a segmentation and its component table, for `remove_converted_source.sh --accept_derived`. |

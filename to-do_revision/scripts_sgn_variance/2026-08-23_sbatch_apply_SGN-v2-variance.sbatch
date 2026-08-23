@@ -7,9 +7,10 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --array=0-9
-# Not measured yet in this configuration. The selftest predicts a shard in well under a
-# minute, and a task owns 31 (M_LR_000226_L) to 55 (M_LR_000169_R) shards, so 20-30 min is
-# expected. Revisit after the first real apply job.
+# Measured on M_LR_000226_L: 0.62 s per block on a 1g.20gb MIG slice and 0.72 s on a
+# 1g.10gb one, so a task owning 963 to 1231 blocks takes 10 to 15 minutes. 2 h is roughly
+# 8x that. The default here is a whole A100 on grete:shared; pass --preemptible to
+# submit_all.sh to use a MIG slice instead, which is usually schedulable immediately.
 
 # Apply one SGN v2 seed variant to one cochlea. Usage:
 #   sbatch 2026-08-23_sbatch_apply_SGN-v2-variance.sbatch <cochlea> <version>

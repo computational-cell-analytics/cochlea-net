@@ -2,7 +2,15 @@
 # Submit the full chain for one or more cochleae, with the dependencies between the stages.
 #
 #   bash submit_all.sh M_LR_000226_L
+#   bash submit_all.sh --preemptible M_AMD_000058_L
 #   bash submit_all.sh --dry_run M_AMD_000058_L M_LR_000227_L M_LR_000227_R
+#
+# --preemptible sends the prediction to grete:preemptible on a 1g.10gb MIG slice instead of a whole
+# A100 on grete:shared. That partition is usually free while grete:shared is not, and the model is
+# small enough that a seventh of an A100 costs only ~15% over a 1g.20gb slice: measured 0.72 s per
+# block against 0.62 s. Preemption is cheap here because a shard is written in one atomic write and
+# --skip_existing resumes at the next one, so a kill costs at most one shard, about 20 s of work.
+# Only the prediction moves; the watershed and the table are CPU jobs.
 #
 # Run one cochlea at a time: four predictions of the largest cochlea are 1.3 TB, and
 # cleanup_predictions.sh has to run before the next one starts. Staging must be done first.
@@ -20,13 +28,23 @@ set -euo pipefail
 cd "$SGN_VARIANCE_DIR"
 
 DRY_RUN=0
-if [[ "${1:-}" == "--dry_run" ]]; then
-	DRY_RUN=1
-	shift
+PREEMPTIBLE=0
+while [[ $# -gt 0 ]]; do
+	case "$1" in
+		--dry_run) DRY_RUN=1; shift ;;
+		--preemptible) PREEMPTIBLE=1; shift ;;
+		*) break ;;
+	esac
+done
+
+# Extra sbatch arguments for the prediction only. The watershed and the table run on CPU nodes.
+gpu_args=()
+if [[ "$PREEMPTIBLE" -eq 1 ]]; then
+	gpu_args=(--partition=grete:preemptible --gpus=1g.10gb:1)
 fi
 
 if [[ $# -eq 0 ]]; then
-	echo "Usage: bash submit_all.sh [--dry_run] <cochlea> [<cochlea> ...]" >&2
+	echo "Usage: bash submit_all.sh [--dry_run] [--preemptible] <cochlea> [<cochlea> ...]" >&2
 	exit 1
 fi
 
@@ -72,6 +90,7 @@ for COCHLEA in "$@"; do
 	else
 		for version in "${VERSIONS[@]}"; do
 			job=$(submit -J "apply-$COCHLEA-v$version" \
+				${gpu_args[@]+"${gpu_args[@]}"} \
 				2026-08-23_sbatch_apply_SGN-v2-variance.sbatch "$COCHLEA" "$version")
 			echo "  apply v2-$version: $job"
 			prediction_jobs+=("$job")

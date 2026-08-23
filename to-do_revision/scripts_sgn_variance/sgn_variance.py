@@ -29,6 +29,7 @@ import json
 import math
 import multiprocessing as mp
 import os
+import time
 from concurrent import futures
 from typing import Dict, List, Optional, Sequence, Tuple
 
@@ -430,6 +431,8 @@ def cmd_predict(args) -> None:
           f"{sum(manifest['shard_block_counts'][s] for s in shard_ids)} blocks")
     print(f"Block shape {block_shape}, halo {halo}")
 
+    start = time.perf_counter()
+    n_done, blocks_done = 0, 0
     for n, shard_id in enumerate(shard_ids, start=1):
         shard_bb = shard_bounding_box(shard_id, shape)
         key_path = shard_key_path(
@@ -452,10 +455,19 @@ def cmd_predict(args) -> None:
             disable_tqdm=True,
         )
         output[(slice(None),) + shard_bb] = buffer.buffer
-        print(f"[{n}/{len(shard_ids)}] shard {shard_id} "
-              f"({manifest['shard_block_counts'][shard_id]} blocks) written.", flush=True)
+        n_blocks = manifest["shard_block_counts"][shard_id]
+        n_done += 1
+        blocks_done += n_blocks
+        elapsed = time.perf_counter() - start
+        # Report the per-block cost as well: it is the figure that carries over to another GPU or
+        # another cochlea, whereas the per-shard time depends on how much of the shard is in mask.
+        print(f"[{n}/{len(shard_ids)}] shard {shard_id} ({n_blocks} blocks) written, "
+              f"{elapsed:.0f}s total, {elapsed/blocks_done:.2f}s per block, "
+              f"{elapsed/n_done:.0f}s per shard", flush=True)
 
-    print(f"Task {args.task_id} done.")
+    elapsed = time.perf_counter() - start
+    print(f"Task {args.task_id} done: {n_done} shards, {blocks_done} blocks in {elapsed:.0f}s "
+          f"({elapsed/max(blocks_done, 1):.2f}s per block).")
 
 
 def cmd_selftest(args) -> None:
