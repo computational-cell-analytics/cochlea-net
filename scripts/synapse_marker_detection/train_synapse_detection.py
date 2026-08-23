@@ -13,8 +13,9 @@ from flamingo_tools.synapse_detection.detection_dataset import (
     MinPointSampler,
 )
 
-sys.path.append("/user/pape41/u12086/Work/my_projects/czii-protein-challenge")
-sys.path.append("/user/schilling40/u15000/czii-protein-challenge/detection")
+CZII_REPOSITORY = "/user/pape41/u12086/Work/my_projects/czii-protein-challenge"
+sys.path.insert(0, CZII_REPOSITORY)
+sys.path.insert(0, os.path.join(CZII_REPOSITORY, "detection"))
 
 from utils.training.training import supervised_training  # noqa
 

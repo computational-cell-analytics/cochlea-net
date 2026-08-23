@@ -10,7 +10,7 @@
 #SBATCH --mem 64G
 
 source ~/.bashrc
-micromamba activate sam
+micromamba activate new-stack || exit 1
 
 # Print out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"

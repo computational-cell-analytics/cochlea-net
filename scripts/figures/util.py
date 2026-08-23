@@ -91,6 +91,12 @@ VALUE_DICT = {
             "SGN_v2": {"count": 18541},
         },
     },
+    # Only the SGN count is documented so far, the IHC component list is still to be decided.
+    "G_LR_000301_L": {
+        "SGN": {
+            "SGN_v2": {"count": 22284},
+        },
+    },
     "G_LR_000301_R": {
         "IHC": {
             "IHC_v11": {"count": 975},
