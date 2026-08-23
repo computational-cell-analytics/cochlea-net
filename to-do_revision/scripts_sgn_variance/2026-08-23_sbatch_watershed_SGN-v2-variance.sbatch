@@ -4,7 +4,7 @@
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=16
-#SBATCH --mem=256G
+#SBATCH --mem=300G
 #SBATCH --array=0-3
 # The gerbil watershed took 53 min on a 676 GB prediction; these are 192-326 GB and the
 # first run is on a sub-hour pace. Four tasks run concurrently and contend for lustre
@@ -17,10 +17,11 @@
 # comparable to the published v2 accuracy. distance_watershed_implementation takes its foreground
 # from channel 0 of the prediction and never reads mask.zarr.
 #
-# Memory: do not cut this without measuring. M_LR_000169_R peaked at 229 GiB, i.e. 89% of the
-# request, even though it has 16327 in-mask blocks against the gerbil's 34248 at 189 GB. The peak
-# therefore does not scale with the block count, so a smaller cochlea is not automatically cheaper.
-# Check `sacct -o MaxRSS` per cochlea and raise this if it gets closer than a few tens of GB.
+# Memory: the four versions of M_LR_000169_R peaked at 161, 229, 254 and 229 GiB, so 300G leaves
+# about 46 GiB over the observed maximum. Note the peak varies by 90 GiB between versions of the
+# *same* volume and does not track the in-mask block count (this cochlea has 16327 against the
+# gerbil's 34248 at 189 GB), so a smaller cochlea is not automatically cheaper and this margin is
+# not generous. Check `sacct -o MaxRSS` per cochlea and raise it if a run gets close.
 
 # sbatch runs a copy of this script from the slurm spool directory, so the path cannot be
 # derived from BASH_SOURCE.
