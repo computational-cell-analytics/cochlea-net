@@ -100,9 +100,24 @@ To reclaim the 1.3 TB those originals occupy without waiting for the whole exper
 `remove_converted_source.sh` (dry run by default). It removes only `predictions.zarr` on vast, keeps
 `mask.zarr` and `mean_std.json`, and refuses unless every expected shard is present and a sample of
 whole shards is bit-for-bit equal to the original. `--n_samples` raises the sample size; each sample
-reads about 1.6 GB from either side. The safer order is to run the watershed first and check the
-object count against the reference, which is an independent end-to-end confirmation, and only then
-delete.
+reads about 1.6 GB from either side.
+
+**Order matters.** `remove_converted_source.sh` compares the converted array against the original,
+so it has to run *before* `cleanup_predictions.sh`, which deletes the converted array. Once that
+array is gone the comparison is impossible for good, and the only way through is `--accept_derived`,
+which accepts `segmentation.zarr` and `default_components.tsv` as evidence instead: the watershed
+reads every voxel of every shard to produce them, so their existence shows the converted array was
+complete and readable. Sound, but a different argument, so it is opt-in rather than a silent
+fallback.
+
+The safe sequence for the converted cochlea:
+
+```bash
+bash submit_all.sh M_LR_000169_R                       # watershed + table
+# check the component-1 count against the reference, then:
+bash remove_converted_source.sh --delete               # vast, needs the converted array
+bash cleanup_predictions.sh --delete M_LR_000169_R     # workspace, removes it
+```
 
 ## Two constraints that are easy to get wrong
 
@@ -187,5 +202,6 @@ Per-cochlea in-mask 128³ blocks, shard grid, and the size of one prediction:
 | `check_results.py` | Sanity-checks the four accuracy entries in `SGN_3D.json`. |
 | `submit_all.sh` | Submits the per-cochlea chain with dependencies. |
 | `cleanup_predictions.sh` | Deletes `predictions.zarr` in the workspace once the tables are complete and plausible. |
-| `remove_converted_source.sh` | Deletes the unsharded `predictions.zarr` on vast for a converted cochlea, after verifying the conversion. |
+| `remove_converted_source.sh` | Deletes the unsharded `predictions.zarr` on vast for a converted cochlea, after verifying the conversion. Run before `cleanup_predictions.sh`. |
+| `check_derived_products.py` | Checks a segmentation and its component table, for `remove_converted_source.sh --accept_derived`. |
 | `remove_vast_outputs.sh` | Removes the old vast output folders entirely, behind four gates. |
