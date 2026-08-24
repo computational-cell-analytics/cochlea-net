@@ -3,8 +3,14 @@
 Synapse detection (`synapse_detection_model_v3.pt`) for the four wild-type gerbil cochleae of
 figure 5. Two of them were already finished; this folder covers the two that were not.
 
-**Nothing here has been submitted yet.** The inputs are staged and the chain is validated with
-`--dry_run`, but no prediction has run: `synapses-v3/` does not exist yet.
+**No prediction has been run yet.** The inputs are staged and the chain is validated with
+`--dry_run`, but no `predictions.zarr` exists for either cochlea.
+
+One exception to be aware of: `synapses-v3/G_LR_000301_L/` already holds a `mask.zarr` and a
+`mean_std.json` from a preprocessing job that ran on 2026-08-24 (4.5 min, job 15469008) before
+the chain was cancelled. They are valid and 220 KB in total, so `submit_all.sh G_LR_000301_L`
+will report `preprocess: already done, skipping` and go straight to the prediction. Delete that
+folder if you want the chain to start from scratch.
 
 Everything is written to
 `/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/synapses-v3/<cochlea>/`.
