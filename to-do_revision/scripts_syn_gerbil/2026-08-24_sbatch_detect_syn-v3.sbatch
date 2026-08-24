@@ -6,9 +6,10 @@
 # The peak detection is thread-parallel over blocks, so it scales with the cores.
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=200G
-# Unlike the other two stages this walltime is a guess, not a measurement: the peak detection
-# walks the whole predictions.zarr rather than only the in-mask blocks, and the matching then
-# reads the IHC segmentation at full resolution. Record the real number when it first runs.
+# Measured 10.5 min for G_LR_000301_L (job 15472293) at 16 cores, for a 44,850 block volume
+# with 1,185 predicted blocks. The peak detection walks the whole predictions.zarr rather than
+# only the in-mask blocks, and the matching then reads the IHC segmentation at full resolution,
+# so this scales with the volume and not with the mask. 6 h is a wide margin on that.
 
 # Step 3 of 3: detect the maxima in the finished prediction, match them to the IHCs and write
 # the two tables. Usage:

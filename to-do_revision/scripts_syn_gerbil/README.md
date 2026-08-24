@@ -24,7 +24,7 @@ the current G_LR_000302_R result stays in place until the new one has been compa
 | `G_EK_000233_L` | 395,523 | yes, all 20 bins at 6-9 um | 16.4 | finished |
 | `G_LR_000301_R` | 18,149 | yes, all bins at 5-20 um | 13.1 | finished |
 | `G_LR_000302_R` | 7,230 | **no, 13 bins at 105-682 um** | 5.06 | re-run |
-| `G_LR_000301_L` | - | - | - | never run |
+| `G_LR_000301_L` | 4,298 | **no, 11 bins at 90-437 um** | ~4.4 | **run, and the data is the limit** |
 
 `G_LR_000302_R` was the reason this folder exists. Its detection is not merely noisy, it is
 truncated: 583 of its 930 counted IHCs got zero synapses, and in a contiguous 13-bin stretch of
@@ -34,7 +34,24 @@ to 0.97, so the mask is fine and it is the v3 pass that did not finish. Its numb
 published -- the `synapse_v3_ihc_v11` table on S3, the `syn_per_IHC` column of its S3 IHC table,
 and `ihc_counts_v11/ihc_count_G_LR_000302_R.tsv` -- and all three have to be replaced.
 
-`G_LR_000301_L` has no synapse detection and is not on S3 at all. The detection itself can run
+`G_LR_000301_L` has now been run, and its result is partial for a reason that no amount of
+re-running will fix: **the CTBP2 channel has no punctate signal over about a third of the
+helix.** The prediction array finished (all five receipts present) and the mask covers 967 of
+its 973 IHCs, including 290 of the 295 that ended up with no detection nearby -- so those
+blocks were predicted and the model correctly found nothing. The raw data says the same thing:
+
+| region | mean | p99.9 | max |
+|---|---|---|---|
+| around IHCs with detections | 133.9 | 307.8 | 531 |
+| around IHCs without | 144.0 | 240.8 | 303 |
+
+Slightly *higher* background, no puncta -- a maximum 1.6x the mean where ribbons would be 4x.
+Its `mean_std.json` shows the same at whole-volume scale: std 28.9, against 210.5 for
+`G_LR_000302_R`. So 4,298 detections and roughly 4.4 per IHC is what this staining supports,
+against 13 to 16 for the two good cochleae. **This is a data quality question for whoever
+acquired it, not a processing one**, and the cochlea may not be usable for the syn/IHC panel.
+
+`G_LR_000301_L` is also not on S3 at all. The detection itself can run
 entirely from the workspace, see below. Its *downstream* count cannot yet: `measure_synapses.py`
 reads the tables through S3 and needs `length[um]` and `frequency[kHz]`, and this cochlea has no
 tonotopic mapping and no decided IHC component list (its largest IHC_v11 component holds 252 of
@@ -142,7 +159,7 @@ the job asks for 8, 4 or 2 cores. All that changes is the prefetch throughput, s
 Nodes are interchangeable, for what it is worth: `ggpu137` and `ggpu159` both give 2.78 s per
 block at `-c 8`. Which is what makes the next result trustworthy.
 
-### expandable_segments: 1.6x faster, 1.3 GiB more occupancy
+### expandable_segments: 1.6x faster, 1.3 GiB more occupancy (not used)
 
 `PYTORCH_ALLOC_CONF=expandable_segments:True` is a real speedup and a real cost, measured on
 one node so the comparison is clean:
@@ -251,6 +268,12 @@ table covering part of the cochlea.
 The guard that would have caught this. For every IHC it asks how far away the nearest detection
 of any kind is -- a few micrometer around a predicted IHC, hundreds around one in an unpredicted
 block -- and reports that per component and along the main axis of the largest component.
+
+It reads the prediction array's receipts before concluding anything, because a large distance
+has two causes it cannot otherwise separate: blocks that were never predicted, and blocks that
+were predicted and hold no ribbons. `G_LR_000301_L` is the case that forced this -- a third of
+its helix uncovered with a complete set of receipts, which is the image and not the pipeline.
+Without the receipt check the script told me to delete a perfectly good prediction and re-run.
 
 The verdict keys on the median distance, not on the fraction of IHCs with a detection nearby,
 because those two measure different things. `G_LR_000301_R` has a stretch where only half the

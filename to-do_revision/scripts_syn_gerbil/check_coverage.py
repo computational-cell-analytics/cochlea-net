@@ -7,9 +7,16 @@ G_LR_000302_R result had 6,068 detections spread over a third of its helix and n
 the files said so; it took comparing it against the v5 run on the same mask to see it.
 
 The test is deliberately independent of the synapse counts: for every IHC, how far away is
-the nearest detection of any kind? Around a predicted IHC that distance is a few micrometer,
-because the model fires on the ribbons. Around an IHC in an unpredicted block it is hundreds
-of micrometer, because the nearest detection belongs to a different turn of the helix.
+the nearest detection of any kind? Around an IHC with ribbons that distance is a few
+micrometer, because the model fires on them. Where there are none it is hundreds of micrometer,
+because the nearest detection belongs to a different turn of the helix.
+
+A large distance has two causes and this script cannot tell them apart on its own: the blocks
+were never predicted, or they were predicted and hold no detectable ribbons. It therefore reads
+the per-task receipts of the prediction array before drawing a conclusion. G_LR_000301_L is the
+case that forced this: it came out with a third of its helix uncovered and a complete set of
+receipts, and the raw CTBP2 there turned out to be flat -- background around 144 with a maximum
+of 303, against 134 and 531 where the detections are.
 
 That distinction is the whole point, and it is why the verdict keys on the *median* distance
 rather than on the fraction of IHCs with a detection nearby. A region with genuinely few
@@ -25,6 +32,7 @@ Usage:
 
 import argparse
 import os
+import re
 
 import numpy as np
 import pandas as pd
@@ -37,6 +45,11 @@ VAST_PREDICTIONS = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightshee
 # An IHC counts as covered when a detection sits within this distance of its anchor. Reported
 # for information; the verdict does not depend on it.
 COVERED_DISTANCE = 20.0
+
+# Where the per-task receipts of the prediction array live, relative to the output folder.
+# If they show a complete array then an uncovered region cannot be an unpredicted one, which
+# changes the conclusion completely -- see the verdict at the bottom.
+RECEIPT_DIRNAME = "tasks"
 
 # A region whose median nearest detection is further away than this was not predicted. The
 # two scales it separates are ~10 um (a predicted IHC, ribbons included) and ~200 um (the gap
@@ -108,6 +121,29 @@ def helix_order(anchors: np.ndarray) -> np.ndarray:
     return np.argsort(centered @ axis)
 
 
+def prediction_was_complete(output_folder: str):
+    """True if the per-task receipts show a complete prediction array, None if unknown.
+
+    A gap in the coverage has two very different causes and this is what separates them. If
+    the array did not finish, the blocks are empty and the fix is to resubmit the missing
+    tasks. If it did finish, the blocks were predicted and the model found nothing in them,
+    which is a property of the image and no amount of re-running will change it.
+    """
+    tasks_dir = os.path.join(output_folder, RECEIPT_DIRNAME)
+    if not os.path.isdir(tasks_dir):
+        return None
+    found, sizes = set(), set()
+    for name in os.listdir(tasks_dir):
+        match = re.match(r"^task_(\d+)_of_(\d+)\.json$", name)
+        if match:
+            found.add(int(match.group(1)))
+            sizes.add(int(match.group(2)))
+    if len(sizes) != 1:
+        return None
+    instances = sizes.pop()
+    return len(found) == instances and found == set(range(instances))
+
+
 def check(cochlea: str, detections_path: str, label: str, n_bins: int) -> bool:
     """Report the coverage of one detection table. Returns True if nothing looks truncated."""
     detections = pd.read_csv(detections_path, sep="\t")
@@ -143,7 +179,7 @@ def check(cochlea: str, detections_path: str, label: str, n_bins: int) -> bool:
     distances = tree.query(anchors)[0][helix_order(anchors)]
     medians = [float(np.median(b)) for b in np.array_split(distances, n_bins)]
     print(f"    component {largest} along its main axis, median nearest detection per bin "
-          f"('#' predicted, '!' above {TRUNCATED_DISTANCE:.0f} um):")
+          f"('#' has detections, '!' above {TRUNCATED_DISTANCE:.0f} um):")
     print("      [" + "".join("!" if m > TRUNCATED_DISTANCE else "#" for m in medians) + "]")
     print("      " + " ".join(f"{m:5.0f}" for m in medians))
     # The longest run of neighbouring bins above the threshold, see MIN_HOLE_BINS.
@@ -153,10 +189,12 @@ def check(cochlea: str, detections_path: str, label: str, n_bins: int) -> bool:
         longest_run = max(longest_run, run)
     isolated = sum(m > TRUNCATED_DISTANCE for m in medians) - longest_run
 
+    # Phrased as an observation, not a cause: whether this means "not predicted" or "predicted
+    # and empty" is decided by the receipts, in the verdict at the end of main().
     if truncated:
-        print(f"    -> components {truncated} were not predicted")
+        print(f"    -> components {truncated} have no detections near their IHCs")
     if longest_run >= MIN_HOLE_BINS:
-        print(f"    -> {longest_run} neighbouring bins of component {largest} were not predicted")
+        print(f"    -> {longest_run} neighbouring bins of component {largest} have none either")
     elif longest_run or isolated:
         print(f"    -> {longest_run + isolated} isolated bin(s) of component {largest} above "
               f"{TRUNCATED_DISTANCE:.0f} um, but no run of {MIN_HOLE_BINS}: weak signal, not a hole")
@@ -197,11 +235,27 @@ def main():
 
     print()
     if ok:
-        print("Every component and every bin was predicted. The detection looks complete.")
+        print("Every component and every bin has detections nearby. The result looks complete.")
+        return 0
+
+    # Do not blame the pipeline before checking whether it actually finished. The receipts are
+    # the authority on that, and if they say the array completed then these regions were
+    # predicted and simply hold no detectable ribbons.
+    complete = prediction_was_complete(output_folder)
+    if complete:
+        print("The regions above have no detections nearby, but the prediction array finished:")
+        print("every task receipt is present, so those blocks were predicted and the model")
+        print("found nothing in them. Re-running changes nothing. Look at the image instead --")
+        print("check the raw CTBP2 for punctate signal in those regions, and check that the IHC")
+        print("segmentation there is real. Report a partial result, do not resubmit.")
+    elif complete is None:
+        print("Coverage is incomplete and there are no usable task receipts, so whether the")
+        print("prediction finished is unknown. Run verify_prediction.py first.")
     else:
-        print("Part of the volume was not predicted. Delete predictions.zarr and re-run;")
-        print("do not resubmit the array on top of it, the missing blocks stay empty.")
-    return 0 if ok else 1
+        print("Coverage is incomplete and the task receipts show the prediction array did not")
+        print("finish. Run verify_prediction.py and resubmit the tasks it names; do not")
+        print("resubmit the whole array on top of a partial one.")
+    return 1
 
 
 if __name__ == "__main__":
