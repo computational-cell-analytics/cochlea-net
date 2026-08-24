@@ -22,6 +22,18 @@ The volume can be masked based on an IHC segmentation, which can be local or on 
 The mask may cut off potential synapses because its size is currently limited to the extension of the IHC segmentation.
 Future updates may improve this by dilating the mask before applying the network.
 
+**Prefer the three-stage slurm workflow over `marker_detection` for a whole cochlea.**
+`synapse_process_GLR000302R.sbatch` runs prediction, peak detection and matching in one 10 h
+job, and the `G_LR_000302_R` result it produced covers only part of the helix while looking
+complete. Whatever interrupted that run, the reason it went unnoticed is structural:
+`marker_detection` skips the prediction outright when `synapse_detection.tsv` already exists,
+so a rerun detects maxima in whatever the previous attempt left behind.
+`run_synapse_prediction_preprocess_slurm` / `run_synapse_prediction_slurm` /
+`run_synapse_detection_slurm` split the same work into a preprocessing job, a prediction array
+and a detection job. `to-do_revision/scripts_syn_gerbil/` wires them up for the wild-type
+gerbils, including the coverage check that catches a truncated prediction; read its README
+before applying the network to a new cochlea.
+
 
 ## Post-processing
 
