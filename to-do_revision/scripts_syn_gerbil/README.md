@@ -3,6 +3,9 @@
 Synapse detection (`synapse_detection_model_v3.pt`) for the four wild-type gerbil cochleae of
 figure 5. Two of them were already finished; this folder covers the two that were not.
 
+**Nothing here has been submitted yet.** The inputs are staged and the chain is validated with
+`--dry_run`, but no prediction has run: `synapses-v3/` does not exist yet.
+
 Everything is written to
 `/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/synapses-v3/<cochlea>/`.
 Nothing is written into the existing `predictions/<cochlea>/synapses_v3` folders on vast, so
@@ -34,11 +37,22 @@ three cochleae, and has no `IHC` entry in `VALUE_DICT`.
 
 ## Inputs
 
-Both CTBP2 channels live in the workspace. `G_LR_000301_L` was transferred from the UKON
-archive as a fused n5; `G_LR_000302_R` had to be copied back from S3 (158 GiB) because its raw
-data is no longer on vast -- `predictions/G_LR_000302_R/` still exists but the data folder
-`cochlea-lightsheet/G_LR_000302_R/` is empty. Its IHC_v11 pyramid was only on S3 as well and
-was copied in too, which is cheap (52 MiB).
+Both CTBP2 channels live in the workspace, so the chains can be submitted as they are.
+`G_LR_000301_L` was transferred from the UKON archive as a fused n5. `G_LR_000302_R` had to be
+copied back from S3 because its raw data is no longer on vast -- `predictions/G_LR_000302_R/`
+still exists but the data folder `cochlea-lightsheet/G_LR_000302_R/` is empty. That copy is
+complete and verified against the remote at 680,267 objects and 170,080,345,045 bytes; if it
+ever needs redoing, `rclone copy` skips what is already there:
+
+```bash
+WS=/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools
+rclone copy cochlea-lightsheet:cochlea-lightsheet/G_LR_000302_R/images/ome-zarr/CTBP2.ome.zarr \
+	"$WS/G_LR_000302_R/CTBP2.ome.zarr" --transfers 32 --checkers 32
+```
+
+Its IHC_v11 pyramid was only on S3 as well and was copied in too, which is cheap (52 MiB).
+`G_LR_000301_L`'s mask is the IHC_v11 segmentation produced in this workspace by
+`scripts_gerbil/`.
 
 The mask that restricts the prediction is derived from the IHC_v11 segmentation at `s4`,
 binarized and dilated by a 9^3 structure element, so about 55 micrometer around the IHCs. The
