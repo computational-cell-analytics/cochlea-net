@@ -45,14 +45,22 @@ def apply_marker_labels(segmentation, label_ids_positive, label_ids_negative, gr
     return segmentation.astype("float32")
 
 
-def filter_marker_instances(cochlea, segmentation, seg_name, group=None):
+def filter_marker_instances(cochlea, segmentation, seg_name, group=None, table_path=None):
     """Filter segmentation with marker labels.
     Positive segmentation instances are set to 1, negative to 2.
     """
-    internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
-    tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
-    with fs.open(tsv_path, "r") as f:
-        table_seg = pd.read_csv(f, sep="\t")
+    if table_path is None:
+        internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
+        tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
+        with fs.open(tsv_path, "r") as f:
+            table_seg = pd.read_csv(f, sep="\t")
+    else:
+        table_seg = pd.read_csv(table_path, sep="\t")
+
+    required_columns = {"label_id", "marker_labels"}
+    missing_columns = sorted(required_columns.difference(table_seg.columns))
+    if missing_columns:
+        raise ValueError(f"The marker table is missing required columns: {missing_columns}.")
 
     label_ids_positive = list(table_seg.loc[table_seg["marker_labels"] == 1, "label_id"])
     label_ids_negative = list(table_seg.loc[table_seg["marker_labels"] == 2, "label_id"])
@@ -70,6 +78,8 @@ def export_lower_resolution(
     axis: Optional[int] = None,
     suffix: Optional[str] = None,
     voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+    table_path: Optional[str] = None,
+    overwrite: bool = False,
 ):
     crop = crop_center is not None
 
@@ -89,7 +99,8 @@ def export_lower_resolution(
                     )
                 else:
                     out_path = os.path.join(out_folder, f"{channel}_marker_{group}.tif")
-                if os.path.exists(out_path):
+                if os.path.exists(out_path) and not overwrite:
+                    print(f"Skipping {out_path}. File already exists.")
                     continue
 
                 print("Exporting channel", channel)
@@ -106,7 +117,13 @@ def export_lower_resolution(
                 print("Data shape", data.shape)
 
                 print(f"Filtering {group} marker instances.")
-                data = filter_marker_instances(cochlea, data, channel, group=group)
+                data = filter_marker_instances(
+                    cochlea,
+                    data,
+                    channel,
+                    group=group,
+                    table_path=table_path,
+                )
                 tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
 
 
@@ -116,6 +133,17 @@ def main():
     parser.add_argument("--scale", "-s", nargs="+", type=int, required=True)
     parser.add_argument("--output_folder", "-o", required=True)
     parser.add_argument("--channels", nargs="+", type=str, default=["PV", "VGlut3", "CTBP2"])
+    parser.add_argument(
+        "--table",
+        dest="table_path",
+        default=None,
+        help="Local marker TSV. Default: load <cochlea>/tables/<channel>/default.tsv from S3.",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="Replace marker TIFFs that already exist.",
+    )
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,
