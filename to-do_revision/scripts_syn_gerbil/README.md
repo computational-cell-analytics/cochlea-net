@@ -93,11 +93,13 @@ when it counts, so keeping 8 leaves that cutoff free to change without re-runnin
 Worth knowing before sizing anything, because the mask makes it much smaller than the volume
 suggests. `G_LR_000301_L` is 4951 x 5762 x 6308 voxels, which is 44,850 prediction blocks of
 (64, 256, 256) -- but only **1,238 of them (2.8 %) overlap the dilated IHC mask** and get a
-forward pass. Split over ten tasks that is 102 to 139 blocks each, so a task is a few minutes
-of GPU work and a few more walking the 4,485 blocks it was assigned to find them.
+forward pass. Walking the rest to find them is free within the measurement: the benchmark's
+72.2 s is fully accounted for by its 26 in-mask blocks at 2.78 s each.
 
-That is why the walltime requests are an hour rather than the four I first guessed, and it is
-what makes the preemptible queue attractive: a preempted task loses minutes, not hours.
+So the array is **five tasks, not ten**. Ten put 102 to 139 in-mask blocks in each, about five
+minutes of work, which is mostly slurm overhead. Five gives 227 to 269 blocks, 11 to
+12.5 minutes -- still short enough that a preemption costs one requeue of that, which is why
+the walltime is 1 h rather than the four I first guessed.
 
 ## Which GPU, and the preemptible queue
 
@@ -111,8 +113,8 @@ remembering:
 | slice | visible | peak device use | s/block | outcome |
 |---|---|---|---|---|
 | `1g.10gb` | 9.5 GiB | - | - | **CUDA OOM inside the first in-mask block** |
-| `1g.20gb` | 19.5 GiB | 18.10 GiB, 1.40 spare | 2.8 | fits, little room |
-| `3g.40gb` | 39.5 GiB | 18.10 GiB expected | 2.8 or better | fits comfortably, 3x the compute |
+| `1g.20gb` | 19.5 GiB | 18.10 GiB, 1.40 spare | 2.78 | **the default** |
+| `3g.40gb` | 39.5 GiB | 18.10 GiB expected | 2.78 or better | more room, but too scarce to wait for |
 
 `1g.10gb` and `1g.20gb` are both one compute slice of an A100 and differ only in framebuffer,
 so this is not a speed trade-off -- it is purely whether the forward pass fits. It does not fit
@@ -161,21 +163,24 @@ mostly caching. With expandable segments, reserved is essentially all real occup
 occupancy.
 
 The knob is `SYN_ALLOC_CONF` in `common.sh`, passed to the apply job as `PYTORCH_ALLOC_CONF`
-when non-empty. It is **off by default**, because the slice is chosen at submit time and the
-only slice it has been measured on is the one where it does not fit. Turn it on for `3g.40gb`
-once `bench-40exp` confirms the occupancy there:
+when non-empty. It is **deliberately empty**: the default slice is `1g.20gb`, and this is
+exactly the slice it must not be used on. Trading 1.32 of 1.40 GiB of margin for four minutes
+per task is not worth it, and running a preemptible job at 100 % of framebuffer invites an OOM
+that looks like a preemption. Only set it if the slice changes to something with real room:
 
 ```bash
-# in common.sh
+# in common.sh, only with --slice 3g.40gb or a whole A100
 SYN_ALLOC_CONF=expandable_segments:True
 ```
 
-Availability cuts the other way and is worth checking before choosing. There are only eight
-`3g.40gb` slices (`ggpu158`, `ggpu192`) and eight `1g.20gb` ones (`ggpu137`, `ggpu159`). The first
-`1g.20gb` test jobs started within a minute, while a `3g.40gb` request sat at the top of the
-queue with an estimated start ten hours out -- though later `1g.20gb` submissions queued too,
-so neither is reliably free. If `3g.40gb` is not moving, `--slice 1g.20gb` works; it fits with
-1.40 GiB spare, and there is no knob that widens that.
+**`1g.20gb` is the default, not `3g.40gb`.** Its 1.40 GiB of spare framebuffer is enough --
+the working set is a fixed 18.10 GiB, it does not grow with the volume -- and the extra room on
+a `3g.40gb` slice buys nothing that the prediction needs. What it costs is availability: there
+are only eight `3g.40gb` slices (`ggpu158`, `ggpu192`), they are the scarcest thing on the
+partition, and a request for one sat at the top of the queue with an estimated start ten hours
+out while `1g.20gb` jobs were starting within the minute. Waiting ten hours to make a
+twelve-minute task marginally faster is the wrong trade. `--slice 3g.40gb` is there if they
+ever free up.
 
 `benchmark_slice.py` is what produced all of this. It runs the real prediction path on a slice
 of the real volume, writing to a scratch folder with the mask and normalization symlinked in so

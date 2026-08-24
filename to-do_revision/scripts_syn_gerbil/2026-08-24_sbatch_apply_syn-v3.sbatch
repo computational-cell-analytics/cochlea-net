@@ -7,22 +7,22 @@
 # The prefetch workers load the next blocks while the GPU predicts, so give the job cores.
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
-#SBATCH --array=0-9
+#SBATCH --array=0-4
 # Requeue on preemption. This is not a convenience: a preempted task that is not requeued
 # leaves its blocks empty, and the detection step writes a complete-looking table from the
 # partial volume. Requeueing costs at most one task's work because a task redoes its whole
-# share, which is only ~124 forward passes. Append so a requeued task does not clobber the
-# log of its first attempt.
+# share, which is ~250 forward passes, about 12 minutes. Append so a requeued task does not
+# clobber the log of its first attempt.
 #SBATCH --requeue
 #SBATCH --open-mode=append
 #
 # The size of the array and PREDICTION_INSTANCES in common.sh must match: fewer tasks than
 # instances leaves blocks unpredicted, more tasks than instances raises in the library.
 #
-# Walltime: measured 1.8 to 2.8 s per in-mask block on a MIG slice, and G_LR_000301_L has
-# 1,238 in-mask blocks of 44,850 (2.8 %), so 102 to 139 per task. That is 3 to 7 minutes of
-# prediction plus a few minutes to walk the 4,485 assigned blocks and skip the masked-out ones.
-# 1 h is roughly 6x that. Set by measurement, see the README.
+# Walltime: measured 2.78 s per in-mask block on a 1g.20gb slice, and G_LR_000301_L has 1,238
+# in-mask blocks of 44,850 (2.8 %), so 227 to 269 per task across five tasks. That is 11 to
+# 12.5 minutes; walking the 8,970 assigned blocks to find them is free within the measurement.
+# 1 h is ~5x that, which also covers one requeue after a preemption. See the README.
 
 # Usage:
 #   sbatch 2026-08-24_sbatch_apply_syn-v3.sbatch <cochlea>

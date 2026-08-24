@@ -25,7 +25,7 @@ task finish) and belongs after the array.
 
 Usage:
     python verify_prediction.py G_LR_000301_L
-    python verify_prediction.py G_LR_000301_L --instances 10
+    python verify_prediction.py G_LR_000301_L --instances 5
 """
 
 import argparse

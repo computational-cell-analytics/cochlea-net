@@ -15,20 +15,24 @@ MODEL=$DATA_ROOT/trained_models/Synapses/synapse_detection_model_v3.pt
 # The two wild-type gerbils that still need a synapse detection. G_EK_000233_L and
 # G_LR_000301_R are finished and verified, see the README.
 COCHLEAE=(G_LR_000301_L G_LR_000302_R)
-PREDICTION_INSTANCES=10
+# Five tasks, not ten: only 2.8 % of the blocks are in the mask, so ten tasks were ~5 min of
+# work each and mostly slurm overhead. Five gives 227 to 269 in-mask blocks per task, about
+# 11 to 12.5 min. Changing this invalidates any existing prediction, because the block-to-task
+# assignment is a permutation split into exactly this many parts.
+PREDICTION_INSTANCES=5
 
-# MIG slice for the preemptible queue. Measured, not guessed: the forward pass peaks at
-# 17.55 GiB allocated, so a 1g.10gb slice (9.5 GiB visible) dies with a CUDA OOM part way
-# through the first in-mask block. 1g.20gb (19.5 GiB) does fit, but with under 2 GiB of head
-# room, and the caching allocator was already reserving 19.30 of 19.5 GiB in one run. 3g.40gb
-# has the room and three times the compute for the same preemption risk. See the README.
+# MIG slice for the preemptible queue. Measured, not guessed: peak device occupancy is
+# 18.10 GiB, so a 1g.10gb slice (9.5 GiB visible) dies with a CUDA OOM part way through the
+# first in-mask block, while 1g.20gb (19.5 GiB) fits with 1.40 GiB spare. 3g.40gb has more
+# room but there are only eight of them and they are the scarcest thing on the partition, so
+# the wait costs more than the head room is worth. See the README.
 PREEMPTIBLE_PARTITION=grete:preemptible
-PREEMPTIBLE_SLICE=3g.40gb
+PREEMPTIBLE_SLICE=1g.20gb
 
-# Passed to the apply job as PYTORCH_ALLOC_CONF when non-empty. expandable_segments is worth
-# 1.6x on the prediction (1.76 against 2.78 s per block) but costs 1.3 GiB of device
-# occupancy, taking a 1g.20gb slice to 100 % with 0.08 GiB spare. Off by default: it is only
-# measured as safe where there is room, and the slice is chosen at submit time. See the README.
+# Passed to the apply job as PYTORCH_ALLOC_CONF when non-empty. Deliberately empty:
+# expandable_segments is worth 1.6x on the prediction (1.76 against 2.78 s per block) but takes
+# device occupancy from 18.10 to 19.42 GiB, which is 100 % of the 1g.20gb slice above with
+# 0.08 GiB spare. The speed is not worth running that close to the edge. See the README.
 SYN_ALLOC_CONF=
 
 # Key of the IHC segmentation used to build the prediction mask (low scale, held in memory
