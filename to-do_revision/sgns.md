@@ -68,6 +68,38 @@ takes care of that are easy to get wrong by hand: the four runs must be sequenti
 cache file names do not contain the segmentation name.
 
 The accuracy values are written into `reproducibility/model_accuracy/SGN_3D.json` as `v2-1` … `v2-4`
-next to the existing `v2` reference (precision 0.887 / recall 0.880 / F1 0.884). `check_results.py`
-sanity-checks them. Reading them into a figure is still to be done: `plot_fig2.py` currently reads
-only the `v2` key.
+next to the existing `v2` reference. `check_results.py` sanity-checks them.
+
+## Result
+
+| key | precision | recall | F1 |
+|---|---|---|---|
+| `v2` (published reference) | 0.887 | 0.880 | 0.884 |
+| `v2-1` | 0.849 | 0.915 | 0.881 |
+| `v2-2` | 0.845 | 0.918 | 0.880 |
+| `v2-3` | 0.867 | 0.920 | 0.893 |
+| `v2-4` | 0.857 | 0.919 | 0.887 |
+
+**F1 varies by 0.013 across the four seeds** (0.885 +- 0.005), which matches the IHC seed experiment
+(`v11-1` … `v11-4`, 0.882 +- 0.005). The four variants consistently trade precision for recall
+against the reference: they find 2 to 4 % more cells in the component on every cochlea, so they are
+slightly more sensitive rather than noisier.
+
+`plot_supp_fig2.py` plots this as `supp_fig_02_seed_variation`, via the `SEED_KEYS` constant and the
+existing `plot_fold_variation`. Note that panel is a different experiment from the neighbouring
+`supp_fig_02_fold_variation`, which shows 2D cross-validation folds.
+
+Two things to know when quoting these numbers:
+
+* `M_LR_000227_L` needs `max_edge_distance=45` rather than the default 30, recorded in
+  `reproducibility/label_components/SGN_v2_variance.json`. At 30 the helix breaks into two
+  components for `v2-1` and `v2-3`, so the evaluation would score half of it and count the rest as
+  false negatives. Re-running the component labelling without the override silently reintroduces
+  this.
+* `M_AMD_000058_L` has a 11 % spread in *cell count* across the seeds, far more than the 1-2 %
+  elsewhere, because its cells are smaller and more marginal (median 8,842 voxels against 12,572 on
+  `M_LR_000226_L`) so each seed draws the signal boundary differently. It compresses to 0.032 in F1,
+  in line with the other cochleae, and the extra detections are mostly real cells the reference
+  missed (recall 0.840 for `v2` against 0.916-0.932 for the variants). Neither `max_edge_distance`
+  nor `min_size` separates them, so the count spread is a property of the volume. Quote F1 rather
+  than counts for that cochlea.

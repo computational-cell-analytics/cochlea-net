@@ -123,6 +123,19 @@ REF_DICT = {
     "IHC": {"distance_unet_v11": FOLD_KEYS["IHC"]},
 }
 
+# Training-seed variants, for the same combined panel. These are a different experiment from
+# FOLD_KEYS above: the fold keys come from cross-validation on 2D slices, whereas these are full 3D
+# segmentations of the validation cochleae by networks that share the training data and the split
+# and differ only in the training seed. So this panel shows how much of the accuracy depends on the
+# seed alone, and the two must not be conflated. The outer key selects the accuracy file.
+SEED_KEYS = {
+    "SGN_3D": ["v2-1", "v2-2", "v2-3", "v2-4"],
+    "IHC_3D": ["v11-1", "v11-2", "v11-3", "v11-4"],
+}
+
+# X-axis labels for the seed-variation panel.
+SEED_GROUP_LABELS = {"SGN_3D": "SGN", "IHC_3D": "IHC"}
+
 
 def plot_legend_supp_fig02(save_path):
     """Plot common legend for figure 2c.
@@ -649,6 +662,17 @@ def main():
             save_path=os.path.join(args.figure_dir, f"supp_fig_02_fold_variation.{FILE_EXTENSION}"),
             fold_dict=FOLD_KEYS,
             data_dir=data_dir,
+            plot=args.plot,
+        )
+
+        # The same panel for the training-seed variants of the 3D segmentations. Reuses
+        # plot_fold_variation because the computation is identical: mean and standard deviation of
+        # precision, recall and F1 over a list of keys in one accuracy file.
+        plot_fold_variation(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02_seed_variation.{FILE_EXTENSION}"),
+            fold_dict=SEED_KEYS,
+            data_dir=data_dir,
+            group_labels=SEED_GROUP_LABELS,
             plot=args.plot,
         )
 
