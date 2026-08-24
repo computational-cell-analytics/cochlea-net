@@ -1,0 +1,3 @@
+# Slurm logs stay local, as in the other script folders. The progress bars alone make them
+# tens of KB of noise, and the numbers worth keeping are written into the README instead.
+slurm-*.out
