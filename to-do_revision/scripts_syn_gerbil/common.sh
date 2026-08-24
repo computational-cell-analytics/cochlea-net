@@ -25,6 +25,12 @@ PREDICTION_INSTANCES=10
 PREEMPTIBLE_PARTITION=grete:preemptible
 PREEMPTIBLE_SLICE=3g.40gb
 
+# Passed to the apply job as PYTORCH_ALLOC_CONF when non-empty. expandable_segments is worth
+# 1.6x on the prediction (1.76 against 2.78 s per block) but costs 1.3 GiB of device
+# occupancy, taking a 1g.20gb slice to 100 % with 0.08 GiB spare. Off by default: it is only
+# measured as safe where there is room, and the slice is chosen at submit time. See the README.
+SYN_ALLOC_CONF=
+
 # Key of the IHC segmentation used to build the prediction mask (low scale, held in memory
 # and dilated) and to match the detections to the IHCs (full resolution).
 MASK_INPUT_KEY=s4

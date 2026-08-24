@@ -57,6 +57,17 @@ echo "Output: $OUTPUT_FOLDER"
 echo "Model: $MODEL"
 echo "Node: ${SLURM_NODELIST}, gpus: ${SLURM_GPUS:-unset}, restarts: ${SLURM_RESTART_COUNT:-0}"
 
+# expandable_segments makes the prediction 1.6x faster (1.76 vs 2.78 s per block, measured
+# twice on the same node) but raises peak device occupancy from 18.10 to 19.42 GiB, which is
+# 100 % of a 1g.20gb slice. So it is a per-slice decision, not a global win: leave it off
+# unless the slice has room. Deliberately '${VAR-default}' and not '${VAR:-default}', so that
+# submit_all.sh can pass an empty SYN_ALLOC_CONF to mean "off" rather than "unset".
+SYN_ALLOC_CONF=${SYN_ALLOC_CONF-}
+if [[ -n "$SYN_ALLOC_CONF" ]]; then
+	export PYTORCH_ALLOC_CONF="$SYN_ALLOC_CONF"
+	echo "PYTORCH_ALLOC_CONF=$PYTORCH_ALLOC_CONF"
+fi
+
 export INPUT INPUT_KEY OUTPUT_FOLDER MODEL PREDICTION_INSTANCES
 python -c 'import os
 from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm

@@ -76,6 +76,13 @@ if [[ "$PREEMPTIBLE" -eq 1 ]]; then
 	echo "Prediction goes to $PREEMPTIBLE_PARTITION on a $SLICE slice."
 fi
 
+# Carry SYN_ALLOC_CONF through to the apply job. Empty means "leave the allocator alone",
+# which the apply job distinguishes from unset.
+gpu_args+=(--export="ALL,SYN_ALLOC_CONF=$SYN_ALLOC_CONF")
+if [[ -n "$SYN_ALLOC_CONF" ]]; then
+	echo "Allocator: PYTORCH_ALLOC_CONF=$SYN_ALLOC_CONF"
+fi
+
 submit() {
 	if [[ "$DRY_RUN" -eq 1 ]]; then
 		echo "    would run: sbatch $*" >&2

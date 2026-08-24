@@ -122,11 +122,9 @@ existing `1g.10gb` recommendation in `scripts_sgn_variance/` came from. Do not c
 recommendation over; `submit_all.sh` rejects `1g.10gb` outright.
 
 The requirement is **18.10 GiB of device occupancy**: 17.55 GiB of tensors
-(`torch.cuda.max_memory_allocated`) plus about 0.55 GiB of CUDA context. Read that number off
+(`torch.cuda.max_memory_allocated`) plus about 0.55 GiB of CUDA context. Read it off
 `cuda.mem_get_info`, which the benchmark samples on a thread, rather than off the per-process
-torch counters -- and in particular not off `max_memory_reserved`, which is the caching
-allocator growing into whatever happens to be free (17.98 GiB on a quiet slice, 19.30 GiB in
-another run) and is not a requirement.
+torch counters.
 
 **Requesting fewer cores does not buy headroom.** The OOM on `1g.10gb` listed nine processes
 holding ~188 MiB each, which looked like one CUDA context per prefetch worker and therefore
@@ -140,7 +138,37 @@ the job asks for 8, 4 or 2 cores. All that changes is the prefetch throughput, s
 | 2 | 5.76 | 18.10 GiB |
 
 Nodes are interchangeable, for what it is worth: `ggpu137` and `ggpu159` both give 2.78 s per
-block at `-c 8`.
+block at `-c 8`. Which is what makes the next result trustworthy.
+
+### expandable_segments: 1.6x faster, 1.3 GiB more occupancy
+
+`PYTORCH_ALLOC_CONF=expandable_segments:True` is a real speedup and a real cost, measured on
+one node so the comparison is clean:
+
+| allocator | s/block | peak device use on `1g.20gb` |
+|---|---|---|
+| default | 2.78 | 18.10 GiB, 1.40 spare |
+| `expandable_segments:True` | **1.76** | **19.42 GiB, 0.08 spare (100 %)** |
+
+1.76 s per block reproduced exactly across two runs, so the 1.6x is not noise. But it takes a
+`1g.20gb` slice to 80 MiB of spare framebuffer, which is no margin at all -- **do not use it
+there**. On slices with room it is free speed.
+
+Note what this says about `max_memory_reserved`, which rose to 19.30 GiB in the same runs. With
+the default allocator, reserved (17.98) overstates occupancy (18.10) by nothing much and is
+mostly caching. With expandable segments, reserved is essentially all real occupancy
+(19.30 against 19.42). So reserved is neither a requirement nor safe to ignore; measure
+occupancy.
+
+The knob is `SYN_ALLOC_CONF` in `common.sh`, passed to the apply job as `PYTORCH_ALLOC_CONF`
+when non-empty. It is **off by default**, because the slice is chosen at submit time and the
+only slice it has been measured on is the one where it does not fit. Turn it on for `3g.40gb`
+once `bench-40exp` confirms the occupancy there:
+
+```bash
+# in common.sh
+SYN_ALLOC_CONF=expandable_segments:True
+```
 
 Availability cuts the other way and is worth checking before choosing. There are only eight
 `3g.40gb` slices (`ggpu158`, `ggpu192`) and eight `1g.20gb` ones (`ggpu137`, `ggpu159`). The first
