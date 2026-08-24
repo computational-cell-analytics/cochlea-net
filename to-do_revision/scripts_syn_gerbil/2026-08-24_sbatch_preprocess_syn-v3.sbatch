@@ -1,13 +1,14 @@
 #!/bin/bash
 #SBATCH --job-name=pre-syn-v3
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --partition=standard96s:shared
 #SBATCH --account=nim00007
 #SBATCH --cpus-per-task=16
 #SBATCH --mem=128G
 # calc_mean_and_std is thread-parallel over blocks and uses min(16, cpu_count) threads, so
-# give it 16 cores. It reads only the in-mask blocks, which for a synapse mask is a small
-# fraction of the volume, but 'small fraction' of 360 GB is still an hour of I/O.
+# give it 16 cores. It reads only the in-mask blocks, which for a synapse mask is 2.8 % of the
+# volume. Measured 4.5 min for G_LR_000301_L (job 15469008), mask included; 1 h is ~13x that.
+# G_LR_000302_R is a smaller volume, so it should not be slower.
 
 # Step 1 of 3: build the prediction mask from the IHC segmentation and compute the mean and
 # standard deviation of the masked volume. Usage:

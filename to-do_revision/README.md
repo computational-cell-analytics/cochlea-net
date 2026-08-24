@@ -14,9 +14,11 @@ Open TODOs:
   predicted, so 583 of its 930 counted IHCs get zero synapses. Its numbers on S3 and in
   `ihc_counts_v11` therefore have to be replaced, not just supplemented.
   The scripts for both are written and validated but **not submitted**: see
-  `scripts_syn_gerbil/README.md`, run with `bash scripts_syn_gerbil/submit_all.sh <cochlea>`.
+  `scripts_syn_gerbil/README.md`, run with
+  `bash scripts_syn_gerbil/submit_all.sh --preemptible <cochlea>`.
   Both CTBP2 channels and both IHC_v11 masks are already staged in the workspace, so the chains
-  can be submitted as they are.
+  can be submitted as they are. The prediction runs on a MIG slice on `grete:preemptible`;
+  `1g.10gb` is too small for it (measured, it OOMs), so use `3g.40gb` or `1g.20gb`.
 
 Resolved:
 - Implement the mask dilation for synapse prediction.

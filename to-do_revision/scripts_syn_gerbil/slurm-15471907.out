@@ -1,0 +1,84 @@
+Node: ggpu137, gpus: 1g.10gb:1
+GPU: NVIDIA A100-SXM4-80GB MIG 1g.10gb, 9.5 GiB visible
+Block shape (64, 256, 256), halo (16, 64, 64)
+Mean and standard deviation computed for the full volume:
+129.602932921978 28.89928426441264
+Predict with GPU: shape (4951, 5762, 6308), block_shape (64, 256, 256), halo (16, 64, 64), 44850 blocks
+predict with halo (pipelined):   0%|          | 0/897 [00:00<?, ?it/s]predict with halo (pipelined):   0%|          | 1/897 [00:00<02:05,  7.12it/s]predict with halo (pipelined):   1%|          | 6/897 [00:00<00:31, 27.92it/s]predict with halo (pipelined):   1%|          | 10/897 [00:00<00:33, 26.62it/s]predict with halo (pipelined):   2%|▏         | 16/897 [00:00<00:25, 33.93it/s]predict with halo (pipelined):   2%|▏         | 20/897 [00:00<00:25, 34.14it/s]predict with halo (pipelined):   3%|▎         | 24/897 [00:00<00:25, 34.67it/s]predict with halo (pipelined):   3%|▎         | 28/897 [00:00<00:24, 34.93it/s]predict with halo (pipelined):   4%|▎         | 32/897 [00:00<00:25, 34.29it/s]predict with halo (pipelined):   4%|▍         | 36/897 [00:01<00:25, 34.25it/s]predict with halo (pipelined):   4%|▍         | 40/897 [00:01<00:24, 34.65it/s]predict with halo (pipelined):   5%|▌         | 46/897 [00:01<00:21, 39.50it/s]predict with halo (pipelined):   6%|▌         | 50/897 [00:01<00:22, 37.62it/s]predict with halo (pipelined):   6%|▌         | 54/897 [00:01<00:22, 37.20it/s]predict with halo (pipelined):   6%|▋         | 58/897 [00:01<00:22, 37.03it/s]predict with halo (pipelined):   7%|▋         | 62/897 [00:01<00:25, 33.06it/s]predict with halo (pipelined):   7%|▋         | 66/897 [00:01<00:26, 31.07it/s]predict with halo (pipelined):   8%|▊         | 71/897 [00:02<00:26, 30.85it/s]predict with halo (pipelined):   8%|▊         | 76/897 [00:02<00:23, 34.41it/s]predict with halo (pipelined):   9%|▉         | 80/897 [00:02<00:25, 32.56it/s]predict with halo (pipelined):   9%|▉         | 85/897 [00:02<00:22, 36.03it/s]predict with halo (pipelined):  10%|▉         | 89/897 [00:02<00:25, 31.85it/s]predict with halo (pipelined):  10%|█         | 94/897 [00:02<00:26, 30.38it/s]predict with halo (pipelined):  11%|█▏        | 101/897 [00:03<00:24, 31.89it/s]predict with halo (pipelined):  12%|█▏        | 107/897 [00:03<00:25, 31.51it/s]predict with halo (pipelined):  12%|█▏        | 112/897 [00:03<00:22, 35.02it/s]predict with halo (pipelined):  13%|█▎        | 116/897 [00:03<00:24, 32.25it/s]predict with halo (pipelined):  13%|█▎        | 120/897 [00:03<00:25, 30.44it/s]predict with halo (pipelined):  14%|█▍        | 125/897 [00:03<00:22, 34.62it/s]predict with halo (pipelined):  14%|█▍        | 129/897 [00:03<00:23, 32.27it/s]predict with halo (pipelined):  15%|█▍        | 133/897 [00:04<00:24, 31.35it/s]predict with halo (pipelined):  15%|█▌        | 137/897 [00:04<00:24, 31.15it/s]predict with halo (pipelined):  16%|█▌        | 141/897 [00:04<00:26, 28.96it/s]predict with halo (pipelined):  16%|█▋        | 146/897 [00:04<00:25, 28.92it/s]predict with halo (pipelined):  17%|█▋        | 151/897 [00:04<00:23, 31.39it/s]predict with halo (pipelined):  17%|█▋        | 155/897 [00:04<00:23, 31.87it/s]predict with halo (pipelined):  18%|█▊        | 160/897 [00:04<00:22, 32.85it/s]predict with halo (pipelined):  18%|█▊        | 165/897 [00:05<00:20, 36.31it/s]predict with halo (pipelined):  18%|█▊        | 165/897 [00:05<00:22, 32.91it/s]
+Traceback (most recent call last):
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/my_projects/flamingo-tools/to-do_revision/scripts_syn_gerbil/benchmark_slice.py", line 116, in <module>
+    main()
+    ~~~~^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/my_projects/flamingo-tools/to-do_revision/scripts_syn_gerbil/benchmark_slice.py", line 84, in main
+    prediction_impl(
+    ~~~~~~~~~~~~~~~^
+        input_path, input_key, scratch, MODEL,
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        mean=stats["mean"], std=stats["std"],
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/user/pape41/u12086/Work/my_projects/flamingo-tools/flamingo_tools/segmentation/unet_prediction.py", line 281, in prediction_impl
+    predict_with_halo_pipelined(
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        input_, model,
+        ^^^^^^^^^^^^^^
+    ...<6 lines>...
+        num_write_workers=2,
+        ^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch_em/util/prediction.py", line 757, in predict_with_halo_pipelined
+    raise error_box[0]
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch_em/util/prediction.py", line 692, in consumer
+    prediction = net(batch) if prediction_function is None \
+                 ~~~^^^^^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch_em/model/unet.py", line 253, in forward
+    return self._apply_default(x)
+           ~~~~~~~~~~~~~~~~~~~^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch_em/model/unet.py", line 200, in _apply_default
+    x = self.decoder(x, encoder_inputs=encoder_out[::-1])
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch_em/model/unet.py", line 381, in forward
+    x = sampler(x)
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch_em/model/unet.py", line 457, in forward
+    x = self.conv(x)
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1776, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+           ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/module.py", line 1787, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/conv.py", line 723, in forward
+    return self._conv_forward(input, self.weight, self.bias)
+           ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/mnt/vast-nhr/home/pape41/u12086/Work/software/micromamba/envs/envs/new-stack/lib/python3.14/site-packages/torch/nn/modules/conv.py", line 718, in _conv_forward
+    return F.conv3d(
+           ~~~~~~~~^
+        input, weight, bias, self.stride, self.padding, self.dilation, self.groups
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    )
+    ^
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 1.69 GiB. GPU 0 has a total capacity of 9.50 GiB of which 1.53 GiB is free. Process 3780623 has 188.00 MiB memory in use. Process 3781092 has 188.00 MiB memory in use. Process 3781832 has 188.00 MiB memory in use. Process 3782272 has 188.00 MiB memory in use. Process 3799476 has 98.00 MiB memory in use. Process 3799478 has 188.00 MiB memory in use. Process 3800168 has 188.00 MiB memory in use. Process 3801347 has 188.00 MiB memory in use. Process 3801812 has 188.00 MiB memory in use. Including non-PyTorch memory, this process has 7.94 GiB memory in use. Of the allocated memory 7.42 GiB is allocated by PyTorch, and 437.03 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+============ Job Information ===================================================
+Submitted: 2026-08-24T10:58:51
+Started: 2026-08-24T10:59:08
+Ended: 2026-08-24T11:00:10
+Elapsed: 2 min, Limit: 40 min, Difference: 38 min
+CPUs: 8, Nodes: 1
+Estimated credit Consumption: 0.13 core-hours
+================================================================================

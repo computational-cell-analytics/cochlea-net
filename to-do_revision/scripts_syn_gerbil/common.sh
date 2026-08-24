@@ -17,6 +17,14 @@ MODEL=$DATA_ROOT/trained_models/Synapses/synapse_detection_model_v3.pt
 COCHLEAE=(G_LR_000301_L G_LR_000302_R)
 PREDICTION_INSTANCES=10
 
+# MIG slice for the preemptible queue. Measured, not guessed: the forward pass peaks at
+# 17.55 GiB allocated, so a 1g.10gb slice (9.5 GiB visible) dies with a CUDA OOM part way
+# through the first in-mask block. 1g.20gb (19.5 GiB) does fit, but with under 2 GiB of head
+# room, and the caching allocator was already reserving 19.30 of 19.5 GiB in one run. 3g.40gb
+# has the room and three times the compute for the same preemption risk. See the README.
+PREEMPTIBLE_PARTITION=grete:preemptible
+PREEMPTIBLE_SLICE=3g.40gb
+
 # Key of the IHC segmentation used to build the prediction mask (low scale, held in memory
 # and dilated) and to match the detections to the IHCs (full resolution).
 MASK_INPUT_KEY=s4

@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=apply-syn-v3
-#SBATCH --time=04:00:00
+#SBATCH --time=01:00:00
 #SBATCH --partition=grete:shared
 #SBATCH --account=nim00007
 #SBATCH --gpus=A100:1
@@ -8,22 +8,32 @@
 #SBATCH --cpus-per-task=8
 #SBATCH --mem=64G
 #SBATCH --array=0-9
+# Requeue on preemption. This is not a convenience: a preempted task that is not requeued
+# leaves its blocks empty, and the detection step writes a complete-looking table from the
+# partial volume. Requeueing costs at most one task's work because a task redoes its whole
+# share, which is only ~124 forward passes. Append so a requeued task does not clobber the
+# log of its first attempt.
+#SBATCH --requeue
+#SBATCH --open-mode=append
+#
 # The size of the array and PREDICTION_INSTANCES in common.sh must match: fewer tasks than
 # instances leaves blocks unpredicted, more tasks than instances raises in the library.
 #
-# Walltime is an estimate, not a measurement: the earlier single-job run of G_LR_000302_R had
-# 10 h for the whole volume and did not finish, so a tenth of the volume in 4 h is roughly
-# fourfold margin over that pace. Check the first array's Elapsed before trusting it for the
-# second cochlea.
+# Walltime: measured 1.8 to 2.8 s per in-mask block on a MIG slice, and G_LR_000301_L has
+# 1,238 in-mask blocks of 44,850 (2.8 %), so 102 to 139 per task. That is 3 to 7 minutes of
+# prediction plus a few minutes to walk the 4,485 assigned blocks and skip the masked-out ones.
+# 1 h is roughly 6x that. Set by measurement, see the README.
 
-# Step 2 of 3: predict the synapse maps for one array task's share of the blocks. Usage:
+# Usage:
 #   sbatch 2026-08-24_sbatch_apply_syn-v3.sbatch <cochlea>
+#   sbatch --partition=grete:preemptible --gpus=3g.40gb:1 2026-08-24_sbatch_apply_syn-v3.sbatch <cochlea>
 #
-# Every task writes into the same predictions.zarr, each into its own blocks. There is no
-# skip-existing check inside the library for this path, by design: the dataset is created by
-# whichever task starts first, so skipping on its existence would leave the other tasks'
-# blocks empty. That is the failure mode that produced the truncated G_LR_000302_R result, so
-# on a re-run delete predictions.zarr rather than resubmitting on top of it.
+# Every task writes into the same predictions.zarr, each into its own blocks; the chunks are
+# aligned with the block shape so each chunk has exactly one writer. There is no skip-existing
+# check inside the library, by design: predictions.zarr is created by whichever task starts
+# first, so skipping on its existence would leave every other task's blocks empty. Do not
+# resubmit the whole array on top of a partial prediction -- run verify_prediction.py and
+# resubmit only the tasks it names.
 
 # sbatch runs a copy of this script from the slurm spool directory, so the path cannot be
 # derived from BASH_SOURCE.
@@ -45,6 +55,7 @@ echo "Cochlea: $COCHLEA"
 echo "Input: $INPUT ($INPUT_KEY)"
 echo "Output: $OUTPUT_FOLDER"
 echo "Model: $MODEL"
+echo "Node: ${SLURM_NODELIST}, gpus: ${SLURM_GPUS:-unset}, restarts: ${SLURM_RESTART_COUNT:-0}"
 
 export INPUT INPUT_KEY OUTPUT_FOLDER MODEL PREDICTION_INSTANCES
 python -c 'import os
@@ -57,3 +68,22 @@ run_synapse_prediction_slurm(
     model_path=os.environ["MODEL"],
     prediction_instances=os.environ["PREDICTION_INSTANCES"],
 )'
+
+# The receipt is the only record that this task finished, so write it last and only on
+# success -- 'set -e' plus the python exit status means we never get here otherwise.
+# verify_prediction.py turns the set of missing receipts into the list of tasks to resubmit.
+RECEIPT_DIR="$OUTPUT_FOLDER/tasks"
+mkdir -p "$RECEIPT_DIR"
+RECEIPT="$RECEIPT_DIR/task_${SLURM_ARRAY_TASK_ID}_of_${PREDICTION_INSTANCES}.json"
+cat > "$RECEIPT" <<JSON
+{
+  "task_id": ${SLURM_ARRAY_TASK_ID},
+  "instances": ${PREDICTION_INSTANCES},
+  "job_id": "${SLURM_JOB_ID}",
+  "node": "${SLURM_NODELIST}",
+  "gpus": "${SLURM_GPUS:-unset}",
+  "restarts": ${SLURM_RESTART_COUNT:-0},
+  "elapsed_s": ${SECONDS}
+}
+JSON
+echo "Wrote receipt $RECEIPT after ${SECONDS} s"
