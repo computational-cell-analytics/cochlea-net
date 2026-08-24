@@ -111,8 +111,8 @@ remembering:
 | slice | visible | peak device use | s/block | outcome |
 |---|---|---|---|---|
 | `1g.10gb` | 9.5 GiB | - | - | **CUDA OOM inside the first in-mask block** |
-| `1g.20gb` | 19.5 GiB | 17.6 GiB tensors + a context per worker | 1.8 - 2.8 | fits, under 2 GiB spare |
-| `3g.40gb` | 39.5 GiB | same | same or better | fits comfortably, 3x the compute |
+| `1g.20gb` | 19.5 GiB | 18.10 GiB, 1.40 spare | 2.8 | fits, little room |
+| `3g.40gb` | 39.5 GiB | 18.10 GiB expected | 2.8 or better | fits comfortably, 3x the compute |
 
 `1g.10gb` and `1g.20gb` are both one compute slice of an A100 and differ only in framebuffer,
 so this is not a speed trade-off -- it is purely whether the forward pass fits. It does not fit
@@ -121,21 +121,33 @@ in 10 GiB: the block is (64, 256, 256) with a (16, 64, 64) halo, so the padded i
 existing `1g.10gb` recommendation in `scripts_sgn_variance/` came from. Do not carry that
 recommendation over; `submit_all.sh` rejects `1g.10gb` outright.
 
-Two details behind the numbers:
+The requirement is **18.10 GiB of device occupancy**: 17.55 GiB of tensors
+(`torch.cuda.max_memory_allocated`) plus about 0.55 GiB of CUDA context. Read that number off
+`cuda.mem_get_info`, which the benchmark samples on a thread, rather than off the per-process
+torch counters -- and in particular not off `max_memory_reserved`, which is the caching
+allocator growing into whatever happens to be free (17.98 GiB on a quiet slice, 19.30 GiB in
+another run) and is not a requirement.
 
-* The 17.6 GiB is `torch.cuda.max_memory_allocated`, i.e. the main process's tensors. On top of
-  it each prefetch worker holds its own CUDA context on the same slice -- the OOM listed nine
-  processes at about 188 MiB each -- which is why `1g.20gb` was seen at 19.3 of 19.5 GiB. The
-  benchmark now samples `cuda.mem_get_info` to report device-level occupancy directly.
-* `PYTORCH_ALLOC_CONF=expandable_segments:True` did not help: allocated stayed at 17.55 GiB and
-  reserved went *up*, to 19.30 GiB. Reserved is the caching allocator growing into whatever is
-  free, not a requirement.
+**Requesting fewer cores does not buy headroom.** The OOM on `1g.10gb` listed nine processes
+holding ~188 MiB each, which looked like one CUDA context per prefetch worker and therefore
+like something a smaller `-c` would reclaim. It is not: occupancy is flat at 18.10 GiB whether
+the job asks for 8, 4 or 2 cores. All that changes is the prefetch throughput, so keep `-c 8`:
+
+| cores | s/block | peak device use |
+|---|---|---|
+| 8 | 2.78 | 18.10 GiB |
+| 4 | 3.00 | 18.10 GiB |
+| 2 | 5.76 | 18.10 GiB |
+
+Nodes are interchangeable, for what it is worth: `ggpu137` and `ggpu159` both give 2.78 s per
+block at `-c 8`.
 
 Availability cuts the other way and is worth checking before choosing. There are only eight
-`3g.40gb` slices (`ggpu158`, `ggpu192`) and eight `1g.20gb` ones (`ggpu137`, `ggpu159`). Both
+`3g.40gb` slices (`ggpu158`, `ggpu192`) and eight `1g.20gb` ones (`ggpu137`, `ggpu159`). The first
 `1g.20gb` test jobs started within a minute, while a `3g.40gb` request sat at the top of the
-queue with an estimated start ten hours out. If `3g.40gb` is not moving, `--slice 1g.20gb`
-works -- it just has little room to spare, so pair it with fewer cores to cut worker contexts.
+queue with an estimated start ten hours out -- though later `1g.20gb` submissions queued too,
+so neither is reliably free. If `3g.40gb` is not moving, `--slice 1g.20gb` works; it fits with
+1.40 GiB spare, and there is no knob that widens that.
 
 `benchmark_slice.py` is what produced all of this. It runs the real prediction path on a slice
 of the real volume, writing to a scratch folder with the mask and normalization symlinked in so
