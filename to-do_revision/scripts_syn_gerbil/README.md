@@ -46,8 +46,18 @@ blocks were predicted and the model correctly found nothing. The raw data says t
 | around IHCs without | 144.0 | 240.8 | 303 |
 
 Slightly *higher* background, no puncta -- a maximum 1.6x the mean where ribbons would be 4x.
-Its `mean_std.json` shows the same at whole-volume scale: std 28.9, against 210.5 for
-`G_LR_000302_R`. So 4,298 detections and roughly 4.4 per IHC is what this staining supports,
+The whole-volume statistics say it too. Comparing like with like, i.e. the `mean_std.json` that
+this pipeline's own preprocessing writes for the CTBP2 channel under the synapse mask:
+
+| cochlea | CTBP2 mean | CTBP2 std |
+|---|---|---|
+| `G_LR_000301_L` | 129.6 | **28.9** |
+| `G_LR_000302_R` | 152.7 | **192.1** |
+
+A sixfold difference in std, which for a punctate marker is the difference between having
+ribbons and not. (Do not reach for `predictions/<cochlea>/IHC_v11/mean_std.json` for this
+comparison, tempting as it looks: that folder belongs to the IHC segmentation and its
+statistics are for the Vglut3 channel, not CTBP2.) So 4,298 detections and roughly 4.4 per IHC is what this staining supports,
 against 13 to 16 for the two good cochleae. **This is a data quality question for whoever
 acquired it, not a processing one**, and the cochlea may not be usable for the syn/IHC panel.
 
