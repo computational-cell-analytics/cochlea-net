@@ -14,63 +14,50 @@ COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 ANNOTATION_DIR = os.path.join(COCHLEA_DIR, "AnnotatedImageCrops/Synapses_2026-04")
 CONSENSUS_REF_ROOT = os.path.join(ANNOTATION_DIR, "consensus_annotation")
 
-SYNAPSE_DICT = {
-    "v3": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v3-1": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-1"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v3-2": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-2"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v3-3": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-3"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v3-4": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v3-4"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v4": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v4"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5-f1": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5-f1"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5-f2": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5-f2"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5-f3": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5-f3"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-    "v5-f4": {
-        "pred_root": os.path.join(COCHLEA_DIR, "predictions/val_synapses/v5-f4"),
-        "ref_root": CONSENSUS_REF_ROOT,
-        "image_root": os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images"),
-    },
-}
+# Predictions produced with the production settings (see prediction.py). The earlier,
+# per-version predictions are still at predictions/val_synapses/<version> and are what the
+# historical entries in reproducibility/model_accuracy/synapses.json describe; reach them
+# with --legacy. Mixing the two is what made v3 (threshold 1.3) look like it had far worse
+# recall than v5 (threshold 0.5).
+_PROD_PRED_ROOT = os.path.join(COCHLEA_DIR, "predictions/val_synapses/production")
+_LEGACY_PRED_ROOT = os.path.join(COCHLEA_DIR, "predictions/val_synapses")
+
+_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
+
+# v3 / v3-1: heatmap-only, 15-crop v3 training data (v3-1 is a second seed).
+# v5 / v6-1: same 29-crop training data; v5 adds the flow channels and the MinPointSampler,
+# v6-1 is heatmap-only. So v5 vs v6-1 isolates the architecture and v3 vs v6-1 the data.
+_PRODUCTION_VERSIONS = (
+    "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
+    "v3-flow-1-best", "v3-flow-1-latest",
+)
+_LEGACY_VERSIONS = (
+    "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v5-f1", "v5-f2", "v5-f3", "v5-f4",
+)
+
+
+def _entries(versions, pred_root):
+    return {
+        version: {
+            "pred_root": os.path.join(pred_root, version),
+            "ref_root": CONSENSUS_REF_ROOT,
+            "image_root": _IMAGE_ROOT,
+        }
+        for version in versions
+    }
+
+
+SYNAPSE_DICT = _entries(_PRODUCTION_VERSIONS, _PROD_PRED_ROOT)
+LEGACY_SYNAPSE_DICT = _entries(_LEGACY_VERSIONS, _LEGACY_PRED_ROOT)
+
+# marker_detection() writes 'synapse_detection_filtered.tsv'; the validation script used to write
+# 'filtered_synapse_detection.tsv'. Both are accepted, otherwise whole-cochlea style output would
+# silently fall through to the unfiltered detections.
+_DETECTION_FILENAMES = (
+    "synapse_detection_filtered.tsv",
+    "filtered_synapse_detection.tsv",
+    "synapse_detection.tsv",
+)
 
 INDIVIDUAL_ANNOTATORS = {
     "AMD": os.path.join(ANNOTATION_DIR, "for_consensus_annotations_synapses_AMD/labels"),
@@ -280,20 +267,26 @@ def main():
                         help="Optional directory to save per-crop uint8 TIF arrays marking "
                              "TP (1), FP (2), and FN (3) synapse positions.")
     parser.add_argument("--visualize", action="store_true")
+    parser.add_argument("--legacy", action="store_true",
+                        help="Evaluate the older predictions in predictions/val_synapses/<version> "
+                             "instead of the production ones. Those were produced with per-version "
+                             "settings (v3 at threshold 1.3, v5 at 0.5) and are not comparable "
+                             "across versions.")
 
     args = parser.parse_args()
 
     if args.version is not None:
-        valid_versions = list(SYNAPSE_DICT.keys())
+        version_dict = LEGACY_SYNAPSE_DICT if args.legacy else SYNAPSE_DICT
+        valid_versions = list(version_dict.keys())
         if args.version not in valid_versions:
             raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
 
-        image_root = SYNAPSE_DICT[args.version]["image_root"]
+        image_root = version_dict[args.version]["image_root"]
         if args.ref_root is None:
-            ref_roots = [SYNAPSE_DICT[args.version]["ref_root"]]
+            ref_roots = [version_dict[args.version]["ref_root"]]
         else:
             ref_roots = args.ref_root
-        pred_root = SYNAPSE_DICT[args.version]["pred_root"]
+        pred_root = version_dict[args.version]["pred_root"]
 
     else:
         image_root = args.image_root
@@ -313,11 +306,12 @@ def main():
         pred_files = []
         for ff in ctbp2_files:
             fname = Path(ff).stem
-            pred_file = os.path.join(pred_root, fname, "filtered_synapse_detection.tsv")
-            if not os.path.isfile(pred_file):
-                pred_file = os.path.join(pred_root, fname, "synapse_detection.tsv")
-
-            assert os.path.exists(pred_file), pred_file
+            candidates = [os.path.join(pred_root, fname, name) for name in _DETECTION_FILENAMES]
+            pred_file = next((c for c in candidates if os.path.isfile(c)), None)
+            if pred_file is None:
+                raise FileNotFoundError(
+                    f"No detection file for {fname} in {pred_root}. Looked for: {_DETECTION_FILENAMES}"
+                )
             pred_files.append(pred_file)
 
         if args.visualize:

@@ -58,6 +58,43 @@ def plot_legend_fig02c(
         raise ValueError("Choose either 'shapes' or 'colors' as plot_mode.")
 
 
+# Scatter marker area. Kept small enough that a marker does not hide the error bar drawn behind
+# it: the SGN and IHC seed standard deviations are ~0.005, only a few points tall on these axes.
+MARKER_SIZE = 28
+
+# Training-seed replicates behind the error bars of the automatic results. Each entry is
+# (accuracy file, reference key of the released model, replicate keys). The replicates share the
+# training data and the split with the reference and differ only in the training seed, so their
+# spread is the run-to-run variability of the released model. All entries are evaluated at the
+# production settings: SGN with component filtering, IHC with component filtering and without the
+# zero-synapse filter, synapses with the assignment to the IHCs.
+REPLICATE_KEYS = {
+    "SGN": ("SGN_3D.json", "v2", ["v2-1", "v2-2", "v2-3", "v2-4"]),
+    "IHC": ("IHC_3D.json", "v11", ["v11-1", "v11-2", "v11-3", "v11-4"]),
+    "Synapse": ("synapses.json", "v3", ["v3-1", "v3-2", "v3-3", "v3-4"]),
+}
+
+# Accepted values of the 'error_bars' argument of fig_02c.
+ERROR_BAR_MODES = ("none", "production", "mean")
+
+
+def _read_replicate_stats(data_dir: str, file_name: str, keys: list) -> tuple:
+    """Read the mean and standard deviation of precision, recall and F1 over several entries.
+
+    Args:
+        data_dir: Directory containing the accuracy JSON files.
+        file_name: Name of the accuracy JSON file.
+        keys: Top-level entries to aggregate over, e.g. the training-seed replicates.
+
+    Returns:
+        The per-metric means and the per-metric standard deviations, each in the order
+        precision, recall, F1-score.
+    """
+    scores = np.array([_read_scores(data_dir, file_name, key) for key in keys])
+    # np.std's default normalization, to match the seed panel of plot_supp_fig2.py.
+    return scores.mean(axis=0), scores.std(axis=0)
+
+
 def _read_scores(data_dir: str, file_name: str, key: str) -> list:
     """Read the precision, recall, and F1-score of one entry from an accuracy JSON file.
 
@@ -84,10 +121,24 @@ def fig_02c(
     data_dir: str,
     plot: bool = False,
     annotator_keyword: str = "all",
+    error_bars: str = "none",
 ):
     """Scatter plot showing the precision, recall, and F1-score of SGN (distance U-Net, manual),
     IHC (distance U-Net, manual), and synapse detection (U-Net).
+
+    Args:
+        save_path: Path for saving the figure.
+        data_dir: Directory containing the accuracy JSON files.
+        plot: Whether to display the plot interactively.
+        annotator_keyword: Entry to read from the annotator accuracy files.
+        error_bars: How to show the training-seed variability of the automatic results.
+            'none' plots the released model without an error bar, 'production' keeps the released
+            model as the marker and adds the replicate standard deviation as the error bar, and
+            'mean' plots the mean over the replicates instead. The manual results have no
+            replicates and never get an error bar.
     """
+    if error_bars not in ERROR_BAR_MODES:
+        raise ValueError(f"Invalid error_bars '{error_bars}'. Expected one of {ERROR_BAR_MODES}.")
     prism_style()
 
     # SGN
@@ -128,13 +179,41 @@ def fig_02c(
     main_label_size = 20
     main_tick_size = 16
 
-    plt.scatter(x_manual - offset, precision_manual, label="Precision manual", color=COLOR_P, marker="o", s=80)
-    plt.scatter(x_manual, recall_manual, label="Recall manual", color=COLOR_R, marker="o", s=80)
-    plt.scatter(x_manual + offset, f1score_manual, label="F1-score manual", color=COLOR_F, marker="o", s=80)
+    plt.scatter(x_manual - offset, precision_manual, label="Precision manual", color=COLOR_P,
+                marker="o", s=MARKER_SIZE)
+    plt.scatter(x_manual, recall_manual, label="Recall manual", color=COLOR_R,
+                marker="o", s=MARKER_SIZE)
+    plt.scatter(x_manual + offset, f1score_manual, label="F1-score manual", color=COLOR_F,
+                marker="o", s=MARKER_SIZE)
 
-    plt.scatter(x_automatic - offset, precision_automatic, label="Precision automatic", color=COLOR_P, marker="s", s=80)
-    plt.scatter(x_automatic, recall_automatic, label="Recall automatic", color=COLOR_R, marker="s", s=80)
-    plt.scatter(x_automatic + offset, f1score_automatic, label="F1-score automatic", color=COLOR_F, marker="s", s=80)
+    # The automatic values, optionally as mean +- standard deviation over the training-seed
+    # replicates. 'production' keeps the released model on the marker and only takes the spread
+    # from the replicates, so the plotted values stay the ones reported elsewhere.
+    automatic_std = None
+    if error_bars != "none":
+        means, stds = [], []
+        for structure in setting:
+            file_name, _, replicate_keys = REPLICATE_KEYS[structure]
+            mean, std = _read_replicate_stats(data_dir, file_name, replicate_keys)
+            means.append(mean)
+            stds.append(std)
+        automatic_std = np.array(stds)
+        if error_bars == "mean":
+            means = np.array(means)
+            precision_automatic = means[:, 0].tolist()
+            recall_automatic = means[:, 1].tolist()
+            f1score_automatic = means[:, 2].tolist()
+
+    for values, color, shift, label, column in (
+        (precision_automatic, COLOR_P, -offset, "Precision automatic", 0),
+        (recall_automatic, COLOR_R, 0.0, "Recall automatic", 1),
+        (f1score_automatic, COLOR_F, offset, "F1-score automatic", 2),
+    ):
+        if automatic_std is not None:
+            plt.errorbar(x_automatic + shift, values, yerr=automatic_std[:, column],
+                         fmt="none", color="black", capsize=4, zorder=1)
+        plt.scatter(x_automatic + shift, values, label=label, color=color, marker="s",
+                    s=MARKER_SIZE, zorder=2)
 
     # Labels and formatting
     plt.xticks([1, 2, 3], setting, fontsize=main_label_size)
@@ -307,6 +386,9 @@ def main():
     parser = argparse.ArgumentParser(description="Generate plots for Figure 2 of the CochleaNet paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.", default="./panels/fig2")
     parser.add_argument("--plot", action="store_true")
+    parser.add_argument("--pairwise", action="store_true",
+                        help="Additionally plot panel C against the pairwise annotator agreement "
+                             "instead of the consensus. Only the manual points differ.")
     _default_data_dir = os.path.join(
         os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
         "reproducibility", "model_accuracy",
@@ -321,14 +403,23 @@ def main():
 
     os.makedirs(args.figure_dir, exist_ok=True)
 
-    # Panel C: Evaluation of the segmentation results:
-    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c.{FILE_EXTENSION}"),
-            data_dir=args.data_dir, plot=args.plot)
+    # Panel C: Evaluation of the segmentation results. Three variants of the automatic results:
+    # without an error bar, and with the training-seed standard deviation around either the
+    # released model or the mean over the replicates.
+    variants = (("none", ""), ("production", "_sd_production"), ("mean", "_sd_mean"))
+    for error_bars, suffix in variants:
+        fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c{suffix}.{FILE_EXTENSION}"),
+                data_dir=args.data_dir, plot=args.plot, error_bars=error_bars)
 
-    annotator_keyword = "pairwise"
-    fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c_{annotator_keyword}.{FILE_EXTENSION}"),
-            data_dir=args.data_dir, plot=args.plot,
-            annotator_keyword=annotator_keyword,)
+    # The same panel against the pairwise annotator agreement instead of the consensus. Only the
+    # manual points change, so this is a reference plot and is off by default.
+    if args.pairwise:
+        annotator_keyword = "pairwise"
+        for error_bars, suffix in variants:
+            fig_02c(save_path=os.path.join(
+                        args.figure_dir, f"fig_02c_{annotator_keyword}{suffix}.{FILE_EXTENSION}"),
+                    data_dir=args.data_dir, plot=args.plot,
+                    annotator_keyword=annotator_keyword, error_bars=error_bars)
 
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_shapes.{FILE_EXTENSION}"), plot_mode="shapes")
     plot_legend_fig02c(os.path.join(args.figure_dir, f"fig_02c_legend_colors.{FILE_EXTENSION}"), plot_mode="colors")
