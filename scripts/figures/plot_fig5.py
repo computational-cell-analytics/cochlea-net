@@ -35,13 +35,32 @@ GERBIL_COHORT_DICT = {
     "f-Chrimson": cohort_cochleae("fchrimson_gerbil"),
 }
 
+# The four wild-type cochleae with finalized SGN and IHC counts. Keep this explicit until
+# G_LR_000301_L has been transferred to S3 and can join the profile/synapse cohort above.
+WT_COUNT_COCHLEAE = [
+    "G_EK_000233_L",
+    "G_LR_000301_L",
+    "G_LR_000301_R",
+    "G_LR_000302_R",
+]
+# The SGN and IHC axes include all four manuscript wild types. GLR301L is excluded only from
+# the synapse axis because its staining-limited estimate remains distinctly low even after
+# removing zero-count IHCs. The other three cochleae retain that zero-exclusion rule below.
+WT_SYNAPSE_COCHLEAE = [
+    "G_EK_000233_L",
+    "G_LR_000301_R",
+    "G_LR_000302_R",
+]
+
 FCHRIMSON_COCHLEAE_DICT = cochleae_for(GERBIL_COHORT_DICT["f-Chrimson"], "SGN", "SGN_v2")
 
 
-def _wt_counts(structure: str, source_name: str) -> list:
+def _wt_counts(structure: str, source_name: str, cochleae: list[str] = None) -> list:
     """Documented wild type gerbil counts, read from util.VALUE_DICT."""
+    if cochleae is None:
+        cochleae = GERBIL_COHORT_DICT["wild_type"]
     counts = []
-    for cochlea in GERBIL_COHORT_DICT["wild_type"]:
+    for cochlea in cochleae:
         if cochlea not in VALUE_DICT:
             raise ValueError(f"Cochlea {cochlea} is not in value dictionary.")
         counts.append(VALUE_DICT[cochlea][structure][source_name]["count"])
@@ -81,7 +100,10 @@ def fig_05c(
     sgn_version: str = "SGN_v2",
     synapse_dir: str = None,
 ):
-    """Box plot showing the counts for SGN and IHC per gerbil cochlea in comparison to literature values.
+    """Composite strip for manuscript panels 5c-e: SGN count, IHC count, and synapses per IHC.
+
+    The output retains its historical ``fig_05c`` filename, although its three axes are placed
+    as separate manuscript panels. In particular, the middle IHC axis is manuscript panel 5d.
 
     Args:
         save_path: File path to save the figure.
@@ -100,8 +122,8 @@ def fig_05c(
 
     fig, ax = plt.subplots(rows, columns, figsize=(8.5, 4.5))
 
-    sgn_values = _wt_counts("SGN", sgn_version)
-    ihc_values = _wt_counts("IHC", ihc_version)
+    sgn_values = _wt_counts("SGN", sgn_version, WT_COUNT_COCHLEAE)
+    ihc_values = _wt_counts("IHC", ihc_version, WT_COUNT_COCHLEAE)
 
     box_plot = ax[0].boxplot(sgn_values, patch_artist=True, zorder=1)
     for median in box_plot["medians"]:
@@ -159,7 +181,8 @@ def fig_05c(
     ax[1].fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)
 
     ribbon_synapse_counts = _load_ribbon_synapse_counts(
-        synapse_dir=synapse_dir, ihc_version="v11", cochleae=GERBIL_COHORT_DICT["wild_type"],
+        synapse_dir=synapse_dir, ihc_version="v11", cochleae=WT_SYNAPSE_COCHLEAE,
+        exclude_zero=True, require_all=True,
     )
     ylim0 = -1
     ylim1 = 80
@@ -260,7 +283,7 @@ def fig_05d(
         label.set_verticalalignment('center')
     ax.tick_params(axis='x', which='major', pad=16)
 
-    reference_values = _wt_counts("SGN", sgn_version)
+    reference_values = _wt_counts("SGN", sgn_version, WT_COUNT_COCHLEAE)
     sgn_value = np.mean(reference_values)
     sgn_std = np.std(reference_values)
 
@@ -316,7 +339,7 @@ def main():
     use_alias = not args.no_alias
     os.makedirs(args.figure_dir, exist_ok=True)
 
-    # Panel C: The number of SGNs, IHCs and average number of ribbon synapses per IHC
+    # Composite output for panels C-E: SGNs, IHCs and ribbon synapses per IHC.
     fig_05c(save_path=os.path.join(args.figure_dir, f"fig_05c.{FILE_EXTENSION}"), plot=args.plot,
             synapse_dir=args.synapse_dir)
 

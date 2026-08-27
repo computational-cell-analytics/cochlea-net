@@ -26,7 +26,7 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
-    use_flow=False, sampler_name=None,
+    use_flow=False, sampler_name=None, n_iterations=int(1e5),
 ):
     if model_suffix is None:
         model_suffix = version
@@ -102,7 +102,7 @@ def train(
         patch_shape=patch_shape, batch_size=batch_size,
         check=check,
         lr=1e-4,
-        n_iterations=int(1e5),
+        n_iterations=n_iterations,
         out_channels=out_channels,
         augmentations=None,
         label_transform=label_transform,
@@ -139,6 +139,8 @@ def main():
     parser.add_argument("--sampler", type=str, default=None, choices=["none", "minpoint"],
                         help="Sampler to reject patches with too few points. "
                              "Default: minpoint with --use_flow, none without.")
+    parser.add_argument("-n", "--n_iterations", type=int, default=int(1e5),
+                        help="Number of training iterations. Default: 100000.")
 
     args = parser.parse_args()
     train(
@@ -148,6 +150,7 @@ def main():
         random_state=args.random_state,
         use_flow=args.use_flow,
         sampler_name=args.sampler,
+        n_iterations=args.n_iterations,
     )
 
 

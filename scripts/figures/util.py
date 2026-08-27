@@ -91,15 +91,19 @@ VALUE_DICT = {
             "SGN_v2": {"count": 18541},
         },
     },
-    # Only the SGN count is documented so far, the IHC component list is still to be decided.
+    # The SGN count is component 1 of the local SGN_v2 result. The IHC count comes from the
+    # dilated-mask IHC_v11 re-prediction and components 1-13 of its component table.
     "G_LR_000301_L": {
+        "IHC": {
+            "IHC_v11": {"count": 946},
+        },
         "SGN": {
             "SGN_v2": {"count": 22284},
         },
     },
     "G_LR_000301_R": {
         "IHC": {
-            "IHC_v11": {"count": 975},
+            "IHC_v11": {"count": 1074},
         },
         "SGN": {
             "SGN_v2": {"count": 21801},
@@ -107,7 +111,7 @@ VALUE_DICT = {
     },
     "G_LR_000302_R": {
         "IHC": {
-            "IHC_v11": {"count": 935},
+            "IHC_v11": {"count": 930},
         },
         "SGN": {
             "SGN_v2": {"count": 23717},
@@ -530,7 +534,9 @@ COHORT_DICT = {
     },
     "wt_gerbil": {
         "label": "WT gerbil", "animal": "gerbil", "color": COLOR_UNTREATED,
-        "cochleae": ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"],
+        "cochleae": [
+            "G_EK_000233_L", "G_LR_000301_L", "G_LR_000301_R", "G_LR_000302_R",
+        ],
     },
 }
 
@@ -645,9 +651,26 @@ COCHLEA_DICT = {
     "G_EK_000076_R": {"alias": "G_4R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1]}}},
     # Untreated gerbil cochleae. G_LR_000302_R keeps component 3, which holds 234 of its 23717
     # SGNs; the SGN_density_2d_extended.json on S3 was recalculated with [1, 3].
-    "G_EK_000233_L": {"alias": "G_5L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_LR_000301_R": {"alias": "G_6R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_LR_000302_R": {"alias": "G_7R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1, 3]}}},
+    "G_EK_000233_L": {
+        "alias": "G_5L", "color": "#279C52",
+        "IHC": {"IHC_v11": {"component": [2, 1, 6, 4, 3, 5]}},
+        "SGN": {"SGN_v2": {"component": [1]}},
+    },
+    "G_LR_000301_L": {
+        "alias": "G_6L", "color": "#67279C",
+        "IHC": {"IHC_v11": {"component": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]}},
+        "SGN": {"SGN_v2": {"component": [1]}},
+    },
+    "G_LR_000301_R": {
+        "alias": "G_6R", "color": "#67279C",
+        "IHC": {"IHC_v11": {"component": [8, 9, 7, 6, 4, 3, 11, 1, 5, 2]}},
+        "SGN": {"SGN_v2": {"component": [1]}},
+    },
+    "G_LR_000302_R": {
+        "alias": "G_7R", "color": "#27339C",
+        "IHC": {"IHC_v11": {"component": [3, 1, 2]}},
+        "SGN": {"SGN_v2": {"component": [1, 3]}},
+    },
 }
 
 

@@ -62,16 +62,20 @@ def plot_legend_fig02c(
 # it: the SGN and IHC seed standard deviations are ~0.005, only a few points tall on these axes.
 MARKER_SIZE = 28
 
-# Training-seed replicates behind the error bars of the automatic results. Each entry is
-# (accuracy file, reference key of the released model, replicate keys). The replicates share the
-# training data and the split with the reference and differ only in the training seed, so their
-# spread is the run-to-run variability of the released model. All entries are evaluated at the
-# production settings: SGN with component filtering, IHC with component filtering and without the
+# Model sets behind the error bars of the automatic results. Each entry is
+# (accuracy file, reference key of the released model, model keys). The SGN and IHC entries are
+# training-seed replicates. For synapses, use the five highest-test-F1 v3-style models: the
+# original v3 model and the four best seed variants. This is the spread among the selected best
+# models, not an unbiased estimate over every seed run. All entries are evaluated at the same
+# settings: SGN with component filtering, IHC with component filtering and without the
 # zero-synapse filter, synapses with the assignment to the IHCs.
 REPLICATE_KEYS = {
     "SGN": ("SGN_3D.json", "v2", ["v2-1", "v2-2", "v2-3", "v2-4"]),
     "IHC": ("IHC_3D.json", "v11", ["v11-1", "v11-2", "v11-3", "v11-4"]),
-    "Synapse": ("synapses.json", "v3", ["v3-1", "v3-2", "v3-3", "v3-4"]),
+    "Synapse": (
+        "synapses.json", "v3",
+        ["v3-4", "v3", "v3-3-best", "v3-6", "v3-5-epoch71"],
+    ),
 }
 
 # Accepted values of the 'error_bars' argument of fig_02c.
@@ -84,7 +88,8 @@ def _read_replicate_stats(data_dir: str, file_name: str, keys: list) -> tuple:
     Args:
         data_dir: Directory containing the accuracy JSON files.
         file_name: Name of the accuracy JSON file.
-        keys: Top-level entries to aggregate over, e.g. the training-seed replicates.
+        keys: Top-level entries to aggregate over, e.g. training-seed replicates or a selected
+            model set.
 
     Returns:
         The per-metric means and the per-metric standard deviations, each in the order
@@ -131,11 +136,11 @@ def fig_02c(
         data_dir: Directory containing the accuracy JSON files.
         plot: Whether to display the plot interactively.
         annotator_keyword: Entry to read from the annotator accuracy files.
-        error_bars: How to show the training-seed variability of the automatic results.
-            'none' plots the released model without an error bar, 'production' keeps the released
-            model as the marker and adds the replicate standard deviation as the error bar, and
-            'mean' plots the mean over the replicates instead. The manual results have no
-            replicates and never get an error bar.
+        error_bars: How to show variability over the configured automatic-model sets. 'none'
+            plots the released model without an error bar, 'production' keeps the released model
+            as the marker and adds the model-set standard deviation as the error bar, and 'mean'
+            plots the model-set mean instead. The manual results have no model sets and never get
+            an error bar.
     """
     if error_bars not in ERROR_BAR_MODES:
         raise ValueError(f"Invalid error_bars '{error_bars}'. Expected one of {ERROR_BAR_MODES}.")
@@ -186,9 +191,9 @@ def fig_02c(
     plt.scatter(x_manual + offset, f1score_manual, label="F1-score manual", color=COLOR_F,
                 marker="o", s=MARKER_SIZE)
 
-    # The automatic values, optionally as mean +- standard deviation over the training-seed
-    # replicates. 'production' keeps the released model on the marker and only takes the spread
-    # from the replicates, so the plotted values stay the ones reported elsewhere.
+    # The automatic values, optionally as mean +- standard deviation over the configured model
+    # sets. 'production' keeps the released model on the marker and only takes the spread from the
+    # model set, so the plotted values stay the ones reported elsewhere.
     automatic_std = None
     if error_bars != "none":
         means, stds = [], []
@@ -248,15 +253,44 @@ def _load_ribbon_synapse_counts(
         "M_LR_000227_L",
         "M_LR_000227_R",
     ],
+    exclude_zero: bool = False,
+    require_all: bool = False,
 ) -> list:
+    """Load and pool per-IHC synapse counts for the requested cochleae.
+
+    ``exclude_zero`` is opt-in because zero-detection IHCs are part of the measurement in the
+    other manuscript figures. Figure 5 uses it for the gerbil staining-quality sensitivity
+    analysis. ``require_all`` prevents that panel from silently plotting a partial cohort when
+    one of its expected tables has not been generated yet.
+    """
     if synapse_dir is None:
         measure_synapse_dir = f"ihc_counts_{ihc_version}"
         synapse_dir = os.path.join(SYNAPSE_DIR_ROOT, measure_synapse_dir)
-    tables = [entry.path for entry in os.scandir(synapse_dir) if any(c in entry.name for c in cochleae)]
+
+    entries = [entry for entry in os.scandir(synapse_dir) if entry.is_file()]
+    tables = []
+    missing = []
+    for cochlea in cochleae:
+        matches = [entry.path for entry in entries if cochlea in entry.name]
+        if len(matches) > 1:
+            raise ValueError(f"Found multiple synapse-count tables for {cochlea}: {matches}")
+        if matches:
+            tables.extend(matches)
+        else:
+            missing.append(cochlea)
+    if require_all and missing:
+        raise FileNotFoundError(
+            f"Missing synapse-count tables for {missing} in {synapse_dir}. "
+            "Refusing to plot an incomplete cohort."
+        )
+
     syn_counts = []
     for tab in tables:
         x = pd.read_csv(tab, sep="\t")
-        syn_counts.extend(x["synapse_count"].values.tolist())
+        counts = x["synapse_count"]
+        if exclude_zero:
+            counts = counts[counts > 0]
+        syn_counts.extend(counts.values.tolist())
     return syn_counts
 
 
@@ -404,8 +438,8 @@ def main():
     os.makedirs(args.figure_dir, exist_ok=True)
 
     # Panel C: Evaluation of the segmentation results. Three variants of the automatic results:
-    # without an error bar, and with the training-seed standard deviation around either the
-    # released model or the mean over the replicates.
+    # without an error bar, and with the configured model-set standard deviation around either
+    # the released model or the model-set mean.
     variants = (("none", ""), ("production", "_sd_production"), ("mean", "_sd_mean"))
     for error_bars, suffix in variants:
         fig_02c(save_path=os.path.join(args.figure_dir, f"fig_02c{suffix}.{FILE_EXTENSION}"),

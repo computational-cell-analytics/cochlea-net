@@ -4,6 +4,10 @@
 		"cell_type": "ihc",
 		"segmentation_channel": "IHC_v11",
 		"component_list": [
+			8,
+			9,
+			7,
+			6,
 			4,
 			3,
 			11,
