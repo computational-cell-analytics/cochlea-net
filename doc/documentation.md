@@ -112,8 +112,12 @@ The segmentation plugin offers the choice of different models under `Select Mode
 The segmentation is started by clicking the `Run Segmentation` button. After the segmentation has finished, a new segmentation layer with the result (here `IHC`) will be added:
 <img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-segmentation.png" alt="The CochleaNet segmentation plugin." width="768">
 
+Select `Show intermediate outputs` in the advanced settings to add the foreground, center-distance, and boundary-distance predictions as image layers.
+
 The detection model works similarly. It currently provides the model for synapse detection. The predictions are added as a point layer (`Synapses`):
 <img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-detection.png" alt="The CochleaNet detection plugin." width="768">
+
+Select `Show intermediate outputs` in the advanced settings to also add the synapse heatmap as an image layer.
 
 For more information on how to use napari, check out the tutorials at [www.napari.org](https://napari.org/stable/).
 

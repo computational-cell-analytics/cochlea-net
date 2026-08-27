@@ -1234,6 +1234,7 @@ def plot_legend_subtypes(
     save_path: str,
     grouping: str,
     ncol: Optional[int] = None,
+    outlined_subtypes: Optional[List[str]] = None,
 ):
     """Plot common legend for subtype panels in Figure 3 and Supplementary Figure 3.
 
@@ -1241,6 +1242,7 @@ def plot_legend_subtypes(
         save_path: File path to output.
         grouping: String for identification of subtypes. Subtypes are separated by ";"
         ncol: Number of columns for legend.
+        outlined_subtypes: Subtypes to enclose in one shared frame.
     """
     subtypes = grouping.split(";")
     labels = [LEGEND_LABEL.get(label, label) for label in subtypes]
@@ -1251,6 +1253,29 @@ def plot_legend_subtypes(
     # Colors
     handles = [get_flatline_handle(c) for c in colors]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
+    if outlined_subtypes:
+        fig = legend.figure
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        legend_handles = legend.get_lines()
+        legend_texts = legend.get_texts()
+        indices = [subtypes.index(subtype) for subtype in outlined_subtypes]
+        extents = [
+            artist.get_window_extent(renderer)
+            for index in indices
+            for artist in (legend_handles[index], legend_texts[index])
+        ]
+        bbox = matplotlib.transforms.Bbox.union(extents)
+        padding = 3
+        lower_left = fig.transFigure.inverted().transform((bbox.x0 - padding, bbox.y0 - padding))
+        upper_right = fig.transFigure.inverted().transform((bbox.x1 + padding, bbox.y1 + padding))
+        width, height = upper_right - lower_left
+        for color, linewidth in ((COLORS["bbox_outer"], 2), (COLORS["bbox_inner"], 1)):
+            outline = plt.Rectangle(
+                lower_left, width, height, transform=fig.transFigure,
+                linewidth=linewidth, edgecolor=color, facecolor="none", clip_on=False,
+            )
+            fig.add_artist(outline)
     export_legend(legend, save_path)
     legend.remove()
     plt.close()
@@ -1328,7 +1353,7 @@ def main():
 
     grouping = "Type Ia;Type Ib;Type Ic;Type II"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03e_legend_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
-                         grouping=grouping, ncol=1)
+                         grouping=grouping, ncol=4, outlined_subtypes=["Type Ib", "Type Ic"])
     fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
                             grouping=grouping)
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),

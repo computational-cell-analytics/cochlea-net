@@ -26,11 +26,11 @@ png_dpi = 300
 # Display names for the annotators. The order also fixes the marker shape and the x offset.
 # The marker annotations and the subtype annotations use a different key for the same annotator.
 ANNOTATOR_ALIAS = {
-    "ResultsAMD": "Annotator 1",
-    "Result_AMD": "Annotator 1",
-    "ResultsEK": "Annotator 2",
-    "Result_EK": "Annotator 2",
-    "ResultsLR": "Annotator 3",
+    "ResultsAMD": "Ann. 1",
+    "Result_AMD": "Ann. 1",
+    "ResultsEK": "Ann. 2",
+    "Result_EK": "Ann. 2",
+    "ResultsLR": "Ann. 3",
 }
 
 ANNOTATOR_MARKERS = ["o", "^", "s", "D", "v", "P", "X", "*"]
