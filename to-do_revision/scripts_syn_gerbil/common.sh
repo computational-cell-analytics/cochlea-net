@@ -67,19 +67,27 @@ raw_key() {
 	esac
 }
 
-# The IHC_v11 segmentation, as a multiscale ome-zarr. G_LR_000301_L was segmented in this
-# workspace; G_LR_000302_R's pyramid only existed on S3 and was copied in (52 MiB).
+# The finalized IHC_v11 segmentation, as a multiscale ome-zarr. G_LR_000301_L uses the
+# dilated-mask re-prediction; G_LR_000302_R's pyramid only existed on S3 and was copied in
+# (52 MiB).
 mask_path() {
 	case "$1" in
-		G_LR_000301_L) echo "$WS/prediction/G301L/IHC_v11/segmentation.ome.zarr" ;;
+		G_LR_000301_L) echo "$WS/prediction/G301L/IHC_v11_dilated_mask1/segmentation.ome.zarr" ;;
 		G_LR_000302_R) echo "$WS/G_LR_000302_R/IHC_v11.ome.zarr" ;;
 		*) echo "unknown cochlea: $1" >&2; return 1 ;;
 	esac
 }
 
 # Folder holding mask.zarr, mean_std.json, predictions.zarr and the detection tables.
+# OUTPUT_FOLDER_OVERRIDE lets a deliberately versioned rerun coexist with an earlier result.
+# It is exported explicitly by the rerun submission script; ordinary runs keep the historical
+# OUT_ROOT/<cochlea> layout.
 output_folder() {
-	echo "$OUT_ROOT/$1"
+	if [[ -n "${OUTPUT_FOLDER_OVERRIDE:-}" ]]; then
+		echo "$OUTPUT_FOLDER_OVERRIDE"
+	else
+		echo "$OUT_ROOT/$1"
+	fi
 }
 
 activate_env() {

@@ -8,17 +8,11 @@ Open TODOs:
 - Synapses: check validation for bugs, compare v3 and v6, train folds for best, re-eval if needed.
   In progress: `v3-1` and `v6-1` are trained, `v3-2` .. `v3-4` were still training on 2026-08-24
   (jobs 15464598-15464600). Scripts in `scripts_synapses/`, instructions in `synapses.md`.
-- Wild-type gerbil synapse detection, for the four cochleae of figure 5. `G_EK_000233_L` and
-  `G_LR_000301_R` are finished and verified. `G_LR_000301_L` has never been run, and
-  `G_LR_000302_R`'s published result is truncated -- a contiguous stretch of its helix was never
-  predicted, so 583 of its 930 counted IHCs get zero synapses. Its numbers on S3 and in
-  `ihc_counts_v11` therefore have to be replaced, not just supplemented.
-  The scripts for both are written and validated but **not submitted**: see
-  `scripts_syn_gerbil/README.md`, run with
-  `bash scripts_syn_gerbil/submit_all.sh --preemptible <cochlea>`.
-  Both CTBP2 channels and both IHC_v11 masks are already staged in the workspace, so the chains
-  can be submitted as they are. The prediction runs on a MIG slice on `grete:preemptible`;
-  `1g.10gb` is too small for it (measured, it OOMs), so use `3g.40gb` or `1g.20gb`.
+- Wild-type gerbil synapse detection, for the four cochleae of figure 5. All prediction chains
+  have finished. The complete `G_LR_000302_R` result has replaced the truncated S3/MoBIE and
+  `ihc_counts_v11` tables. `G_LR_000301_L` is computationally complete, but its CTBP2 staining is
+  biologically partial over about one third of the cochlea; do not interpret it as a complete
+  synapse-per-IHC measurement. See `scripts_syn_gerbil/README.md` for the validation evidence.
 
 Resolved:
 - Implement the mask dilation for synapse prediction.

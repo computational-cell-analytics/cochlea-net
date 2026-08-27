@@ -69,10 +69,12 @@ MIN_COMPONENT_SIZE = 30
 MIN_HOLE_BINS = 2
 
 # Where to read the IHC segmentation table for each cochlea. G_LR_000301_L exists only in the
-# workspace and has neither a tonotopic mapping nor a decided component list yet.
+# workspace; use the finalized dilated-mask re-prediction and its selected components.
 IHC_TABLES = {
     "G_EK_000233_L": {"s3": "G_EK_000233_L/tables/IHC_v11/default.tsv"},
-    "G_LR_000301_L": {"local": os.path.join(WS, "prediction/G301L/IHC_v11/default_components.tsv")},
+    "G_LR_000301_L": {
+        "local": os.path.join(WS, "prediction/G301L/IHC_v11_dilated_mask1/default_components.tsv"),
+    },
     "G_LR_000301_R": {"s3": "G_LR_000301_R/tables/IHC_v11/default.tsv"},
     "G_LR_000302_R": {"s3": "G_LR_000302_R/tables/IHC_v11/default.tsv"},
 }
