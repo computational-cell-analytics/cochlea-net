@@ -14,7 +14,7 @@ from ..model_utils import (
 )
 
 
-def _run_segmentation(image, model, model_type, tiling, device, min_size):
+def _run_segmentation(image, model, model_type, tiling, device, min_size, return_intermediates=False):
     block_shape = [tiling["tile"][ax] for ax in "zyx"]
     halo = [tiling["halo"][ax] for ax in "zyx"]
     prediction = predict_with_halo(
@@ -31,7 +31,18 @@ def _run_segmentation(image, model, model_type, tiling, device, min_size):
         min_size=min_size, foreground_threshold=foreground_threshold,
         **settings,
     )
+    if return_intermediates:
+        return segmentation, prediction
     return segmentation
+
+
+def _add_segmentation_layers(viewer, segmentation, model_type, prediction=None):
+    if prediction is not None:
+        foreground_map, center_distances, boundary_distances = prediction
+        viewer.add_image(foreground_map, name=f"{model_type} foreground")
+        viewer.add_image(center_distances, name=f"{model_type} center distances")
+        viewer.add_image(boundary_distances, name=f"{model_type} boundary distances")
+    viewer.add_labels(segmentation, name=model_type)
 
 
 class SegmentationWidget(BaseWidget):
@@ -112,11 +123,16 @@ class SegmentationWidget(BaseWidget):
 
         # Get the current tiling.
         self.tiling = _get_current_tiling(self.tiling, self.default_tiling, model_type)
-        segmentation = _run_segmentation(
-            image, model=model, model_type=model_type, tiling=self.tiling, device=device, min_size=self.min_size
+        result = _run_segmentation(
+            image, model=model, model_type=model_type, tiling=self.tiling, device=device, min_size=self.min_size,
+            return_intermediates=self.return_intermediates,
         )
+        if self.return_intermediates:
+            segmentation, prediction = result
+        else:
+            segmentation, prediction = result, None
 
-        self.viewer.add_labels(segmentation, name=model_type)
+        _add_segmentation_layers(self.viewer, segmentation, model_type, prediction)
         show_info(f"INFO: Segmentation of {model_type} added to layers.")
 
     def _create_settings_widget(self):
@@ -160,6 +176,13 @@ class SegmentationWidget(BaseWidget):
             placeholder="path/to/checkpoint.pt",
         )
         setting_values.layout().addLayout(layout)
+
+        self.return_intermediates = False
+        self.return_intermediates_checkbox = self._add_boolean_param(
+            "return_intermediates", self.return_intermediates, title="Show intermediate outputs",
+            tooltip="Add the model predictions as image layers.",
+        )
+        setting_values.layout().addWidget(self.return_intermediates_checkbox)
 
         settings = self._make_collapsible(widget=setting_values, title="Advanced Settings")
         return settings

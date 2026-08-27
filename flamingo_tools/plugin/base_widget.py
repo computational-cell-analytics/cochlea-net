@@ -228,7 +228,7 @@ class BaseWidget(QWidget):
     def _add_boolean_param(self, name, value, title=None, tooltip=None):
         checkbox = QCheckBox(name if title is None else title)
         checkbox.setChecked(value)
-        checkbox.stateChanged.connect(lambda val: setattr(self, name, val))
+        checkbox.toggled.connect(lambda checked: setattr(self, name, checked))
         if tooltip:
             checkbox.setToolTip(tooltip)
         return checkbox

@@ -17,6 +17,28 @@ from flamingo_tools.postprocessing.label_components import filter_cochlea_volume
 # from skimage.segmentation import relabel_sequential
 
 
+def _write_tiff(out_path, data, voxel_size, scale):
+    voxel_size = np.asarray(normalize_voxel_size(voxel_size), dtype="float64") * 2 ** scale
+    metadata = {
+        "axes": "ZYX",
+        "PhysicalSizeX": voxel_size[0],
+        "PhysicalSizeXUnit": "µm",
+        "PhysicalSizeY": voxel_size[1],
+        "PhysicalSizeYUnit": "µm",
+        "PhysicalSizeZ": voxel_size[2],
+        "PhysicalSizeZUnit": "µm",
+    }
+    tifffile.imwrite(
+        out_path,
+        data,
+        bigtiff=True,
+        compression="zlib",
+        photometric="minisblack",
+        ome=True,
+        metadata=metadata,
+    )
+
+
 def filter_component(fs, segmentation, cochlea, seg_name, components):
     # First, we download the MoBIE table for this segmentation.
     internal_path = os.path.join(BUCKET_NAME, cochlea, "tables", seg_name, "default.tsv")
@@ -121,6 +143,7 @@ def export_lower_resolution(
     axis: Optional[int] = None,
     suffix: Optional[str] = None,
     voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+    input_scale_offset: int = 0,
 ):
     crop = crop_center is not None
     voxel_size = normalize_voxel_size(voxel_size)
@@ -144,7 +167,12 @@ def export_lower_resolution(
             out_folder = os.path.join(output_folder, cochlea, f"scale{s}")
         os.makedirs(out_folder, exist_ok=True)
 
-        input_key = f"s{s}"
+        input_scale = s + input_scale_offset
+        if input_scale < 0:
+            raise ValueError(
+                f"The input scale must be non-negative, got scale {s} with offset {input_scale_offset}."
+            )
+        input_key = f"s{input_scale}"
         for channel in channels:
             out_path = export_output_path(out_folder, channel, ome_zarr, crop_center, axis, suffix)
             if os.path.exists(out_path):
@@ -181,13 +209,15 @@ def export_lower_resolution(
                 data[data > max_intensity] = max_intensity
 
             if binarize:
-                data = (data > 0).astype("uint16")
+                data = data > 0
+
+            data = data.astype("float32", copy=False)
 
             if ome_zarr:
                 f_out = zarr.open(out_path, mode="w")
                 f_out.create_array("image", data=data, compressors=zarr.codecs.GzipCodec())
             else:
-                tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
+                _write_tiff(out_path, data, voxel_size, s)
 
 
 def main():
@@ -216,6 +246,12 @@ def main():
                         "e.g. a position name such as 'apex'.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
+    parser.add_argument(
+        "--input_scale_offset",
+        type=int,
+        default=0,
+        help="Offset added to each requested scale when selecting the input pyramid key. Default: 0.",
+    )
     args = parser.parse_args()
     if args.crop_center is not None:
         if args.roi_halo is None and args.axis is None:

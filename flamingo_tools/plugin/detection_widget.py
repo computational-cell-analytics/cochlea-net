@@ -11,15 +11,24 @@ from .util import _load_custom_model, _available_devices, _get_current_tiling
 from ..model_utils import get_model, get_model_registry, get_device, get_default_tiling
 
 
-def _run_detection(image, model, model_type, tiling, device):
+def _run_detection(image, model, model_type, tiling, device, return_intermediates=False):
     block_shape = [tiling["tile"][ax] for ax in "zyx"]
     halo = [tiling["halo"][ax] for ax in "zyx"]
     prediction = predict_with_halo(
         image, model, gpu_ids=[device], block_shape=block_shape, halo=halo,
         tqdm_desc="Run prediction"
-    ).squeeze()
-    detections = peak_local_max(prediction, min_distance=2, threshold_abs=0.5)
+    )
+    heatmap = prediction[0] if prediction.ndim == image.ndim + 1 else prediction
+    detections = peak_local_max(heatmap, min_distance=2, threshold_abs=0.5)
+    if return_intermediates:
+        return detections, heatmap
     return detections
+
+
+def _add_detection_layers(viewer, detections, model_type, heatmap=None):
+    if heatmap is not None:
+        viewer.add_image(heatmap, name=f"{model_type} heatmap")
+    viewer.add_points(detections, name=model_type)
 
 
 class DetectionWidget(BaseWidget):
@@ -101,9 +110,16 @@ class DetectionWidget(BaseWidget):
         # Get the current tiling.
         self.tiling = _get_current_tiling(self.tiling, self.default_tiling, model_type)
         # TODO extra segmentation for filtering.
-        detections = _run_detection(image, model=model, model_type=model_type, tiling=self.tiling, device=device)
+        result = _run_detection(
+            image, model=model, model_type=model_type, tiling=self.tiling, device=device,
+            return_intermediates=self.return_intermediates,
+        )
+        if self.return_intermediates:
+            detections, heatmap = result
+        else:
+            detections, heatmap = result, None
 
-        self.viewer.add_points(detections, name=model_type)
+        _add_detection_layers(self.viewer, detections, model_type, heatmap)
         show_info(f"INFO: Detection of {model_type} added to layers.")
 
     def _create_settings_widget(self):
@@ -142,6 +158,13 @@ class DetectionWidget(BaseWidget):
             placeholder="path/to/checkpoint.pt",
         )
         setting_values.layout().addLayout(layout)
+
+        self.return_intermediates = False
+        self.return_intermediates_checkbox = self._add_boolean_param(
+            "return_intermediates", self.return_intermediates, title="Show intermediate outputs",
+            tooltip="Add the synapse heatmap as an image layer.",
+        )
+        setting_values.layout().addWidget(self.return_intermediates_checkbox)
 
         settings = self._make_collapsible(widget=setting_values, title="Advanced Settings")
         return settings
