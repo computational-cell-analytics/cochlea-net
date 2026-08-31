@@ -472,7 +472,7 @@ def density_by_sliding_window(length_fraction, total_length, window=0.05, n_poin
 # counts per cochlea, synapse is the number of synapses per IHC.
 _LITERATURE_REFERENCE_VALUES = {
     "mouse": {"SGN": (9141, 11736), "IHC": (656, 681), "synapse": (9.1, 20.7)},
-    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1081), "synapse": (15.8, 25.6)},
+    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1130), "synapse": (15.8, 25.6)},
 }
 
 
