@@ -612,7 +612,7 @@ def supp_fig_03a_meyer(
         label = [k for k in marker_dict.keys()]
         for num, lbl in enumerate(label):
             if lbl == "Meyer":
-                label[num] = "Meyer et al."
+                label[num] = "Meyer et al. 2009"
 
         handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
 
@@ -685,7 +685,7 @@ def plot_legend_supp_fig03a(
     # add parameters for data from Meyer
     color_dict["Meyer"] = MEYER_COLOR
     marker.append(MEYER_MARKER)
-    label.append("Meyer et al.")
+    label.append("Meyer et al. 2009")
 
     color = [color_dict[key] for key in color_dict.keys()]
     if ncol is None:
