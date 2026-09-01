@@ -272,6 +272,32 @@ def plot_legend_gerbil_adult_mean(save_path: str):
     plt.close()
 
 
+def plot_legend_fig05e_gerbil(
+    save_path: str,
+    color: Optional[List[str]] = None,
+    label: Optional[List[str]] = None,
+    marker: Optional[List[str]] = None,
+):
+    """Plot the legend of a figure 5e panel that shows a single cochlea pair.
+
+    Args:
+        save_path: File path to save legend.
+        color: One color per entry. Defaults to the injected and non-injected side colors.
+        label: One label per entry. Defaults to the aliases of the postnatal cochleae.
+        marker: One marker per entry. Defaults to the injected and non-injected markers.
+    """
+    color = [COLOR_LEFT, COLOR_RIGHT] if color is None else color
+    if label is None:
+        label = [COCHLEA_DICT[name]["alias"] for name in POSTNATAL_COCHLEAE]
+    marker = [MARKER_LEFT, MARKER_RIGHT] if marker is None else marker
+
+    handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
+    legend = plt.legend(handles, label, loc=3, ncol=len(label), framealpha=1, frameon=False)
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
+
+
 def _density_value(entry: dict) -> float:
     """Extract SGN density in cells/mm^2 from a SGN_density_2d.json position entry."""
     density = entry.get("density")

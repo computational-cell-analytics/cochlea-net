@@ -1,2 +1,0 @@
-# slurm writes its logs into the submission directory
-slurm-*.out

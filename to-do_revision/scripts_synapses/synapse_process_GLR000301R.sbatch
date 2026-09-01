@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=synapse-marker_G-LR-000302-R
+#SBATCH --job-name=synapse-marker_G-LR-000301-R
 #SBATCH -t 10:00:00             # estimated time, adapt to your needs
 #SBATCH --mail-user=martin.schilling@med.uni-goettingen.de # change this to your mailaddress
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
@@ -43,11 +43,11 @@ cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
 export SCRIPT_DIR=$SCRIPT_REPO/scripts
 
-COCHLEA="G_LR_000302_R"
+COCHLEA="G_LR_000301_R"
 
 # Local CTBP2 image data.
-export INPUT_PATH=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/"$COCHLEA"/GLR_302R_CTBP2_fused.n5
-export INPUT_KEY="setup0/timepoint0/s0"
+export INPUT_PATH=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/"$COCHLEA"/CTBP2.ome.zarr
+export INPUT_KEY="s0"
 
 # IHC segmentation on the S3 bucket, given as a path relative to the bucket.
 export MASK_PATH="$COCHLEA"/images/ome-zarr/IHC_v11.ome.zarr

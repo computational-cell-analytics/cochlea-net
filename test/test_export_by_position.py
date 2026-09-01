@@ -359,8 +359,10 @@ class TestRunGroups(unittest.TestCase):
 
         self.assertEqual(self.resolve_calls, [("SGN_v2", (1,)), ("IHC_v4c", (1,))])
 
-        sgn_calls = [call for call in calls if call["output_folder"] == "/tmp/out/sgn"]
-        ihc_calls = [call for call in calls if call["output_folder"] == "/tmp/out/ihc"]
+        # run_groups joins with os.path.join, so the expectation must use the native separator.
+        sgn_folder, ihc_folder = os.path.join("/tmp/out", "sgn"), os.path.join("/tmp/out", "ihc")
+        sgn_calls = [call for call in calls if call["output_folder"] == sgn_folder]
+        ihc_calls = [call for call in calls if call["output_folder"] == ihc_folder]
         self.assertEqual(len(sgn_calls), 2)
         self.assertEqual(len(ihc_calls), 3)
 
@@ -432,12 +434,13 @@ class TestRunGroups(unittest.TestCase):
             )
 
         # every export of a group runs before that group is viewed.
+        sgn_folder, ihc_folder = os.path.join("/tmp/out", "sgn"), os.path.join("/tmp/out", "ihc")
         self.assertEqual(
             order,
-            [("export", "/tmp/out/sgn")] * 2 + [("view", "/tmp/out/sgn")]
-            + [("export", "/tmp/out/ihc")] * 3 + [("view", "/tmp/out/ihc")],
+            [("export", sgn_folder)] * 2 + [("view", sgn_folder)]
+            + [("export", ihc_folder)] * 3 + [("view", ihc_folder)],
         )
-        self.assertEqual([call[0] for call in view_calls], ["/tmp/out/sgn", "/tmp/out/ihc"])
+        self.assertEqual([call[0] for call in view_calls], [sgn_folder, ihc_folder])
         self.assertEqual(view_calls[0][1], self._fake_positions("cochlea_x", "SGN_v2", None))
         self.assertEqual(view_calls[0][2]["axis"], 0)
         self.assertEqual(view_calls[0][2]["label"], "sgn")

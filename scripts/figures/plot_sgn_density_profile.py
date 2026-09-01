@@ -289,7 +289,8 @@ def _build_trend_dict(result: pd.DataFrame, aliases: set, absolute_runlength: bo
     }
 
 
-def _legend_entries(color_dict, marker_dict, mode, sides=(), cohort_colors=None, reference_styles=()):
+def _legend_entries(color_dict, marker_dict, mode, sides=(), cohort_colors=None,
+                    trendline_label=None, reference_styles=()):
     """Build the handles and labels of a density profile legend.
 
     Args:
@@ -300,6 +301,8 @@ def _legend_entries(color_dict, marker_dict, mode, sides=(), cohort_colors=None,
         sides: Sides that got a trendline, as keys of SIDE_TRENDLINES.
         cohort_colors: Mapping of cohort name to trendline color, for one trendline per cohort.
             Ignored when sides is given, matching how the figure picks between the two.
+        trendline_label: Label of a single trendline drawn over all cochleae. Ignored when sides
+            or cohort_colors is given.
         reference_styles: Style dicts of the drawn references, each with a color, linestyle,
             marker and label.
 
@@ -321,6 +324,9 @@ def _legend_entries(color_dict, marker_dict, mode, sides=(), cohort_colors=None,
         for cohort_name, trendline_color in cohort_colors.items():
             handles.append(get_flatline_handle(trendline_color, linestyle="dashed"))
             labels.append(cohort_name)
+    elif trendline_label is not None:
+        handles.append(get_flatline_handle("gray", linestyle="dashed"))
+        labels.append(trendline_label)
 
     for style in reference_styles:
         handles.append(get_line_marker_handle(
@@ -686,29 +692,13 @@ def fig_sgn_density_profile(
     plt.tight_layout()
 
     if show_legend:
-        label = list(marker_dict.keys())
-        if mode == "sliding":
-            handles = [get_flatline_handle(color_dict[key]) for key in label]
-        else:
-            handles = [get_marker_handle(color_dict[key], marker_dict[key]) for key in label]
-
-        if trendline and trendline_by_side:
-            for side in sides_drawn:
-                style = SIDE_TRENDLINES[side]
-                handles.append(get_flatline_handle(style["color"], linestyle=style["linestyle"]))
-                label.append(style["label"])
-        elif trendline and trendline_colors:
-            for cohort_name, trendline_color in trendline_colors.items():
-                handles.append(get_flatline_handle(trendline_color, linestyle="dashed"))
-                label.append(cohort_name)
-        elif trendline and trendline_label is not None:
-            handles.append(get_flatline_handle("gray", linestyle="dashed"))
-            label.append(trendline_label)
-
-        for style in reference_styles:
-            handles.append(get_line_marker_handle(
-                style["color"], linestyle=style["linestyle"], marker=style["marker"]))
-            label.append(style["label"])
+        handles, labels = _legend_entries(
+            color_dict, marker_dict, mode,
+            sides=sides_drawn if (trendline and trendline_by_side) else (),
+            cohort_colors=trendline_colors if trendline else None,
+            trendline_label=trendline_label if trendline else None,
+            reference_styles=reference_styles,
+        )
 
         fig.subplots_adjust(bottom=legend_height / (5 + legend_height))
         fig.legend(handles, labels, loc="lower center", ncol=n_col, framealpha=1, frameon=False)
@@ -765,10 +755,6 @@ def main():
         "--cohort", "-c", type=str, nargs="+", choices=list(COHORTS), default=list(COHORTS),
         help="Cohorts to plot. One figure is created per cohort, plus a combined figure.",
     )
-    parser.add_argument(
-        "--mode", "-m", type=str, choices=["bins", "sliding", "both"], default="both",
-        help="Density calculation. 'bins' uses equally spaced bins, 'sliding' a centered window.",
-    )
     parser.add_argument("--n_bins", type=int, default=10, help="Number of length fraction bins.")
     parser.add_argument("--window", type=float, default=0.05,
                         help="Width of the sliding window as a length fraction.")
@@ -785,7 +771,6 @@ def main():
     args = parser.parse_args()
 
     use_alias = not args.no_alias
-    modes = ["bins", "sliding"] if args.mode == "both" else [args.mode]
     runlength_suffix = "_absolute" if args.absolute_runlength else ""
     os.makedirs(args.figure_dir, exist_ok=True)
 
@@ -896,33 +881,6 @@ def main():
             animal=COHORT_DICT[cohort]["animal"],
             show_legend=True, length_info=False,
         )
-
-
-#    for mode in modes:
-#        for cohort in cohorts:
-#            fig_sgn_density_profile(
-#                length_data[cohort],
-#                save_path=os.path.join(args.figure_dir, f"sgn_density_{cohort}_{mode}.{FILE_EXTENSION}"),
-#                mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
-#                cochleae_dict=metadata[cohort], use_alias=use_alias, plot=args.plot,
-#                trendline=True, trendline_std=True, top_axis=True,
-#                animal=COHORT_DICT[cohort]["animal"],
-#                show_legend=True, length_info=True,
-#            )
-
-        # The combined figure uses one trendline per cohort. The top frequency axis is dropped,
-        # because the Greenwood mapping differs between mouse and gerbil.
-#        combined_data = {c: v for cohort in cohorts for c, v in length_data[cohort].items()}
-#        combined_meta = {c: v for cohort in cohorts for c, v in metadata[cohort].items()}
-#        fig_sgn_density_profile(
-#            combined_data,
-#            save_path=os.path.join(args.figure_dir, f"sgn_density_combined_{mode}.{FILE_EXTENSION}"),
-#            mode=mode, n_bins=args.n_bins, window=args.window, n_points=args.n_points,
-#            cochleae_dict=combined_meta, use_alias=use_alias, plot=args.plot,
-#            trendline=True, trendline_std=True,
-#            trendline_colors={COHORT_DICT[c]["label"]: COHORT_DICT[c]["color"] for c in cohorts},
-#            show_legend=True,
-#        )
 
 
 if __name__ == "__main__":

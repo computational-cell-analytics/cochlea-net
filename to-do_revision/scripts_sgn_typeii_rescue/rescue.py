@@ -888,7 +888,8 @@ def write_report(results: List[dict], rows: List[dict]) -> None:
         "The primary after-rescue result uses the fixed cohort (old CR+Ntng1 component 1 plus PV",
         "objects attached within 30 µm). The recomputed-component result is reported as a sensitivity",
         "analysis.", "",
-        "| Cochlea | Scenario | Assigned SGNs | Type Ia | Type Ib | Type Ic | Type II |", "|---|---|---:|---:|---:|---:|---:|",
+        "| Cochlea | Scenario | Assigned SGNs | Type Ia | Type Ib | Type Ic | Type II |",
+        "|---|---|---:|---:|---:|---:|---:|",
     ]
     for result in results:
         for key in ("before", "after_fixed_cohort", "after_recomputed_component"):
