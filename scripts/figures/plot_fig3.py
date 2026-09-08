@@ -594,7 +594,7 @@ def supp_fig_03a_meyer(
         label = [k for k in marker_dict.keys()]
         for num, lbl in enumerate(label):
             if lbl == "Meyer":
-                label[num] = "Meyer et al."
+                label[num] = "Meyer et al. 2009"
 
         handles = [get_marker_handle(c, m) for (c, m) in zip(color, marker)]
 
@@ -667,7 +667,7 @@ def plot_legend_supp_fig03a(
     # add parameters for data from Meyer
     color_dict["Meyer"] = MEYER_COLOR
     marker.append(MEYER_MARKER)
-    label.append("Meyer et al.")
+    label.append("Meyer et al. 2009")
 
     color = [color_dict[key] for key in color_dict.keys()]
     if ncol is None:
@@ -1067,6 +1067,14 @@ def plot_subtype_fraction(
         plt.close()
 
 
+def _load_subtype_table(cochlea: str, seg_name: str) -> pd.DataFrame:
+    """Load the subtype table of one cochlea from S3."""
+    s3_path = f"{cochlea}/tables/{seg_name}/default.tsv"
+    table_path, fs = get_s3_path(s3_path)
+    with fs.open(table_path, "r") as f:
+        return pd.read_csv(f, sep="\t")
+
+
 def get_subtype_data(
     cochleae: List[str],
 ):
@@ -1095,10 +1103,7 @@ def get_subtype_data(
         else:
             stain_channels = COCHLEAE[cochlea]["subtype_stains"]
 
-        s3_path = f"{cochlea}/tables/{seg_name}/default.tsv"
-        table_path, fs = get_s3_path(s3_path)
-        with fs.open(table_path, 'r') as f:
-            table = pd.read_csv(f, sep="\t")
+        table = _load_subtype_table(cochlea, seg_name)
         table = table[table["component_labels"].isin(component_list)]
 
         # filter subtype table
@@ -1187,6 +1192,7 @@ def plot_legend_subtypes(
     save_path: str,
     grouping: str,
     ncol: Optional[int] = None,
+    outlined_subtypes: Optional[List[str]] = None,
 ):
     """Plot common legend for subtype panels in Figure 3 and Supplementary Figure 3.
 
@@ -1194,6 +1200,7 @@ def plot_legend_subtypes(
         save_path: File path to output.
         grouping: String for identification of subtypes. Subtypes are separated by ";"
         ncol: Number of columns for legend.
+        outlined_subtypes: Subtypes to enclose in one shared frame.
     """
     subtypes = grouping.split(";")
     labels = [LEGEND_LABEL.get(label, label) for label in subtypes]
@@ -1204,6 +1211,29 @@ def plot_legend_subtypes(
     # Colors
     handles = [get_flatline_handle(c) for c in colors]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
+    if outlined_subtypes:
+        fig = legend.figure
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        legend_handles = legend.get_lines()
+        legend_texts = legend.get_texts()
+        indices = [subtypes.index(subtype) for subtype in outlined_subtypes]
+        extents = [
+            artist.get_window_extent(renderer)
+            for index in indices
+            for artist in (legend_handles[index], legend_texts[index])
+        ]
+        bbox = matplotlib.transforms.Bbox.union(extents)
+        padding = 3
+        lower_left = fig.transFigure.inverted().transform((bbox.x0 - padding, bbox.y0 - padding))
+        upper_right = fig.transFigure.inverted().transform((bbox.x1 + padding, bbox.y1 + padding))
+        width, height = upper_right - lower_left
+        for color, linewidth in ((COLORS["bbox_outer"], 2), (COLORS["bbox_inner"], 1)):
+            outline = plt.Rectangle(
+                lower_left, width, height, transform=fig.transFigure,
+                linewidth=linewidth, edgecolor=color, facecolor="none", clip_on=False,
+            )
+            fig.add_artist(outline)
     export_legend(legend, save_path)
     legend.remove()
     plt.close()
@@ -1217,6 +1247,7 @@ def main():
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
+
     tonotopic_data = get_tonotopic_data(source_name="IHC_v11")
 
     # Panel A: Tonotopic mapping of SGNs and IHCs (rendering in napari + heatmap)
@@ -1244,7 +1275,7 @@ def main():
 
     grouping = "Type Ia;Type Ib;Type Ic;Type II"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03e_legend_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
-                         grouping=grouping, ncol=1)
+                         grouping=grouping, ncol=4, outlined_subtypes=["Type Ib", "Type Ic"])
     fig_03_subtype_fraction(save_path=os.path.join(args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
                             grouping=grouping)
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),

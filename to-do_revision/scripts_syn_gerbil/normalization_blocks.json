@@ -1,0 +1,623 @@
+{
+  "block_shape": [
+    64,
+    256,
+    256
+  ],
+  "halo": [
+    16,
+    64,
+    64
+  ],
+  "voxel_size": [
+    0.38,
+    0.38,
+    0.38
+  ],
+  "selection": {
+    "G_EK_000233_L": {
+      "shape": [
+        5240,
+        5917,
+        4412
+      ],
+      "blocks": [
+        {
+          "block_id": 8053,
+          "grid_position": [
+            18,
+            15,
+            7
+          ],
+          "regime": "good_contrast_high_count",
+          "target_label": 343,
+          "target_anchor_zyx_voxels": [
+            1181,
+            4067,
+            1881
+          ],
+          "target_block_margin_voxels": 28,
+          "length_fraction": 0.2004100273875638,
+          "syn_per_IHC": 19.0
+        },
+        {
+          "block_id": 21896,
+          "grid_position": [
+            50,
+            16,
+            8
+          ],
+          "regime": "good_contrast_high_count",
+          "target_label": 977,
+          "target_anchor_zyx_voxels": [
+            3214,
+            4172,
+            2078
+          ],
+          "target_block_margin_voxels": 14,
+          "length_fraction": 0.2982485002574501,
+          "syn_per_IHC": 20.0
+        },
+        {
+          "block_id": 15746,
+          "grid_position": [
+            36,
+            10,
+            14
+          ],
+          "regime": "good_contrast_high_count",
+          "target_label": 672,
+          "target_anchor_zyx_voxels": [
+            2332,
+            2603,
+            3739
+          ],
+          "target_block_margin_voxels": 28,
+          "length_fraction": 0.4083892007869534,
+          "syn_per_IHC": 24.0
+        },
+        {
+          "block_id": 4923,
+          "grid_position": [
+            11,
+            9,
+            9
+          ],
+          "regime": "good_contrast_high_count",
+          "target_label": 94,
+          "target_anchor_zyx_voxels": [
+            732,
+            2402,
+            2409
+          ],
+          "target_block_margin_voxels": 28,
+          "length_fraction": 0.499596021651941,
+          "syn_per_IHC": 18.0
+        },
+        {
+          "block_id": 25175,
+          "grid_position": [
+            58,
+            6,
+            11
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 1168,
+          "target_anchor_zyx_voxels": [
+            3728,
+            1582,
+            2908
+          ],
+          "target_block_margin_voxels": 16,
+          "length_fraction": 0.8119749082876965,
+          "syn_per_IHC": 16.0
+        },
+        {
+          "block_id": 13854,
+          "grid_position": [
+            32,
+            1,
+            12
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 591,
+          "target_anchor_zyx_voxels": [
+            2073,
+            439,
+            3214
+          ],
+          "target_block_margin_voxels": 25,
+          "length_fraction": 0.8787174881951343,
+          "syn_per_IHC": 16.0
+        },
+        {
+          "block_id": 7786,
+          "grid_position": [
+            18,
+            0,
+            10
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 253,
+          "target_anchor_zyx_voxels": [
+            1165,
+            238,
+            2789
+          ],
+          "target_block_margin_voxels": 13,
+          "length_fraction": 0.912979129040422,
+          "syn_per_IHC": 15.0
+        },
+        {
+          "block_id": 2592,
+          "grid_position": [
+            6,
+            0,
+            0
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 36,
+          "target_anchor_zyx_voxels": [
+            409,
+            104,
+            118
+          ],
+          "target_block_margin_voxels": 25,
+          "length_fraction": 1.0,
+          "syn_per_IHC": 8.0
+        }
+      ]
+    },
+    "G_LR_000301_R": {
+      "shape": [
+        4650,
+        6172,
+        5365
+      ],
+      "blocks": [
+        {
+          "block_id": 1837,
+          "grid_position": [
+            3,
+            12,
+            10
+          ],
+          "regime": "poor_contrast_middle",
+          "target_label": 37,
+          "target_anchor_zyx_voxels": [
+            207,
+            3262,
+            2725
+          ],
+          "target_block_margin_voxels": 15,
+          "length_fraction": 0.6139694647266953,
+          "syn_per_IHC": 1.0
+        },
+        {
+          "block_id": 2343,
+          "grid_position": [
+            4,
+            11,
+            12
+          ],
+          "regime": "poor_contrast_middle",
+          "target_label": 64,
+          "target_anchor_zyx_voxels": [
+            271,
+            2836,
+            3246
+          ],
+          "target_block_margin_voxels": 15,
+          "length_fraction": 0.6466539252281414,
+          "syn_per_IHC": 0.0
+        },
+        {
+          "block_id": 4928,
+          "grid_position": [
+            9,
+            9,
+            14
+          ],
+          "regime": "poor_contrast_middle",
+          "target_label": 126,
+          "target_anchor_zyx_voxels": [
+            590,
+            2408,
+            3677
+          ],
+          "target_block_margin_voxels": 14,
+          "length_fraction": 0.67762026960976,
+          "syn_per_IHC": 0.0
+        },
+        {
+          "block_id": 7533,
+          "grid_position": [
+            14,
+            8,
+            15
+          ],
+          "regime": "poor_contrast_middle",
+          "target_label": 256,
+          "target_anchor_zyx_voxels": [
+            910,
+            2263,
+            3884
+          ],
+          "target_block_margin_voxels": 14,
+          "length_fraction": 0.695353859050608,
+          "syn_per_IHC": 0.0
+        },
+        {
+          "block_id": 35371,
+          "grid_position": [
+            67,
+            9,
+            7
+          ],
+          "regime": "good_contrast_basal",
+          "target_label": 1822,
+          "target_anchor_zyx_voxels": [
+            4330,
+            2531,
+            1842
+          ],
+          "target_block_margin_voxels": 21,
+          "length_fraction": 0.913046578923422,
+          "syn_per_IHC": 34.0
+        },
+        {
+          "block_id": 35389,
+          "grid_position": [
+            67,
+            10,
+            4
+          ],
+          "regime": "good_contrast_basal",
+          "target_label": 1834,
+          "target_anchor_zyx_voxels": [
+            4319,
+            2785,
+            1039
+          ],
+          "target_block_margin_voxels": 15,
+          "length_fraction": 0.9501487699833968,
+          "syn_per_IHC": 33.0
+        },
+        {
+          "block_id": 33832,
+          "grid_position": [
+            64,
+            11,
+            1
+          ],
+          "regime": "good_contrast_basal",
+          "target_label": 1786,
+          "target_anchor_zyx_voxels": [
+            4114,
+            2841,
+            494
+          ],
+          "target_block_margin_voxels": 17,
+          "length_fraction": 0.9777196217486012,
+          "syn_per_IHC": 38.0
+        },
+        {
+          "block_id": 32235,
+          "grid_position": [
+            61,
+            10,
+            0
+          ],
+          "regime": "good_contrast_basal",
+          "target_label": 1712,
+          "target_anchor_zyx_voxels": [
+            3933,
+            2759,
+            110
+          ],
+          "target_block_margin_voxels": 29,
+          "length_fraction": 0.9985009412471264,
+          "syn_per_IHC": 42.0
+        }
+      ]
+    },
+    "G_LR_000302_R": {
+      "shape": [
+        4609,
+        7550,
+        5460
+      ],
+      "blocks": [
+        {
+          "block_id": 37382,
+          "grid_position": [
+            56,
+            19,
+            4
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 820,
+          "target_anchor_zyx_voxels": [
+            3621,
+            4907,
+            1053
+          ],
+          "target_block_margin_voxels": 26,
+          "length_fraction": 0.8002110193673696,
+          "syn_per_IHC": 7.0
+        },
+        {
+          "block_id": 27480,
+          "grid_position": [
+            41,
+            19,
+            2
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 435,
+          "target_anchor_zyx_voxels": [
+            2665,
+            5085,
+            741
+          ],
+          "target_block_margin_voxels": 22,
+          "length_fraction": 0.8565569206272814,
+          "syn_per_IHC": 6.0
+        },
+        {
+          "block_id": 20880,
+          "grid_position": [
+            31,
+            19,
+            2
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 294,
+          "target_anchor_zyx_voxels": [
+            2032,
+            5089,
+            754
+          ],
+          "target_block_margin_voxels": 13,
+          "length_fraction": 0.8917852182131649,
+          "syn_per_IHC": 4.0
+        },
+        {
+          "block_id": 9004,
+          "grid_position": [
+            13,
+            19,
+            6
+          ],
+          "regime": "lower_count_basal",
+          "target_label": 46,
+          "target_anchor_zyx_voxels": [
+            879,
+            4913,
+            1572
+          ],
+          "target_block_margin_voxels": 16,
+          "length_fraction": 0.9746144995751528,
+          "syn_per_IHC": 3.0
+        },
+        {
+          "block_id": 40797,
+          "grid_position": [
+            61,
+            24,
+            9
+          ],
+          "regime": "typical_count_middle",
+          "target_label": 919,
+          "target_anchor_zyx_voxels": [
+            3936,
+            6250,
+            2320
+          ],
+          "target_block_margin_voxels": 16,
+          "length_fraction": 0.2050490267429358,
+          "syn_per_IHC": 10.0
+        },
+        {
+          "block_id": 18377,
+          "grid_position": [
+            27,
+            25,
+            7
+          ],
+          "regime": "typical_count_middle",
+          "target_label": 235,
+          "target_anchor_zyx_voxels": [
+            1768,
+            6632,
+            1806
+          ],
+          "target_block_margin_voxels": 14,
+          "length_fraction": 0.3515722013902801,
+          "syn_per_IHC": 11.0
+        },
+        {
+          "block_id": 20721,
+          "grid_position": [
+            31,
+            11,
+            19
+          ],
+          "regime": "typical_count_middle",
+          "target_label": 273,
+          "target_anchor_zyx_voxels": [
+            2034,
+            2963,
+            5102
+          ],
+          "target_block_margin_voxels": 13,
+          "length_fraction": 0.5662439792236998,
+          "syn_per_IHC": 15.0
+        },
+        {
+          "block_id": 43966,
+          "grid_position": [
+            66,
+            18,
+            10
+          ],
+          "regime": "typical_count_middle",
+          "target_label": 1127,
+          "target_anchor_zyx_voxels": [
+            4240,
+            4731,
+            2742
+          ],
+          "target_block_margin_voxels": 16,
+          "length_fraction": 0.6969547254265795,
+          "syn_per_IHC": 12.0
+        }
+      ]
+    },
+    "G_LR_000301_L": {
+      "shape": [
+        4951,
+        5762,
+        6308
+      ],
+      "blocks": [
+        {
+          "block_id": 18773,
+          "grid_position": [
+            32,
+            14,
+            23
+          ],
+          "regime": "poor_contrast",
+          "target_label": 659,
+          "target_anchor_zyx_voxels": [
+            2079,
+            3618,
+            5963
+          ],
+          "target_block_margin_voxels": 31,
+          "raw_roi_p999": 159.52800000000025
+        },
+        {
+          "block_id": 36317,
+          "grid_position": [
+            63,
+            3,
+            17
+          ],
+          "regime": "poor_contrast",
+          "target_label": 1035,
+          "target_anchor_zyx_voxels": [
+            4044,
+            856,
+            4382
+          ],
+          "target_block_margin_voxels": 12,
+          "raw_roi_p999": 160.42499999999995
+        },
+        {
+          "block_id": 32011,
+          "grid_position": [
+            55,
+            15,
+            11
+          ],
+          "regime": "poor_contrast",
+          "target_label": 927,
+          "target_anchor_zyx_voxels": [
+            3541,
+            4038,
+            3028
+          ],
+          "target_block_margin_voxels": 21,
+          "raw_roi_p999": 162.101
+        },
+        {
+          "block_id": 31967,
+          "grid_position": [
+            55,
+            13,
+            17
+          ],
+          "regime": "poor_contrast",
+          "target_label": 910,
+          "target_anchor_zyx_voxels": [
+            3541,
+            3539,
+            4393
+          ],
+          "target_block_margin_voxels": 21,
+          "raw_roi_p999": 162.64799999999923
+        },
+        {
+          "block_id": 7619,
+          "grid_position": [
+            13,
+            5,
+            19
+          ],
+          "regime": "good_contrast",
+          "target_label": 248,
+          "target_anchor_zyx_voxels": [
+            866,
+            1292,
+            4948
+          ],
+          "target_block_margin_voxels": 12,
+          "raw_roi_p999": 827.4059999999935
+        },
+        {
+          "block_id": 8194,
+          "grid_position": [
+            14,
+            5,
+            19
+          ],
+          "regime": "good_contrast",
+          "target_label": 300,
+          "target_anchor_zyx_voxels": [
+            917,
+            1307,
+            4985
+          ],
+          "target_block_margin_voxels": 21,
+          "raw_roi_p999": 787.325999999992
+        },
+        {
+          "block_id": 7284,
+          "grid_position": [
+            12,
+            15,
+            9
+          ],
+          "regime": "good_contrast",
+          "target_label": 271,
+          "target_anchor_zyx_voxels": [
+            782,
+            3870,
+            2501
+          ],
+          "target_block_margin_voxels": 14,
+          "raw_roi_p999": 342.8839999999959
+        },
+        {
+          "block_id": 7859,
+          "grid_position": [
+            13,
+            15,
+            9
+          ],
+          "regime": "good_contrast",
+          "target_label": 275,
+          "target_anchor_zyx_voxels": [
+            866,
+            3902,
+            2488
+          ],
+          "target_block_margin_voxels": 29,
+          "raw_roi_p999": 335.36000000000104
+        }
+      ]
+    }
+  }
+}

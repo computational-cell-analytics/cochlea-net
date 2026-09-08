@@ -17,6 +17,11 @@ COLOR_R = "#67279C"
 COLOR_F = "#9C276F"
 COLOR_T = "#279C52"
 
+# Scatter marker area, shared by every panel so the figures stay consistent. Kept small enough
+# that a marker does not hide the error bar drawn behind it: the SGN and IHC seed standard
+# deviations are ~0.005, which is only a few points tall on these axes.
+MARKER_SIZE = 28
+
 # Plotting metadata (label and marker) per segmentation type and baseline key.
 # Key order determines the left-to-right order on the x-axis.
 PLOT_METADATA = {
@@ -123,6 +128,22 @@ REF_DICT = {
     "IHC": {"distance_unet_v11": FOLD_KEYS["IHC"]},
 }
 
+# Training-seed variants, for the same combined panel. These are a different experiment from
+# FOLD_KEYS above: the fold keys come from cross-validation on 2D slices, whereas these are full 3D
+# segmentations of the validation cochleae by networks that share the training data and the split
+# and differ only in the training seed. So this panel shows how much of the accuracy depends on the
+# seed alone, and the two must not be conflated. The outer key selects the accuracy file.
+SEED_KEYS = {
+    "SGN_3D": ["v2-1", "v2-2", "v2-3", "v2-4"],
+    "IHC_3D": ["v11-1", "v11-2", "v11-3", "v11-4"],
+    # The synapse replicates share the v3 training data and split (random_state 42) and were
+    # evaluated at the production settings, see scripts/validation/synapses/prediction.py.
+    "synapses": ["v3-1", "v3-2", "v3-3", "v3-4"],
+}
+
+# X-axis labels for the seed-variation panel.
+SEED_GROUP_LABELS = {"SGN_3D": "SGN", "IHC_3D": "IHC", "synapses": "Synapses"}
+
 
 def plot_legend_supp_fig02(save_path):
     """Plot common legend for figure 2c.
@@ -218,7 +239,7 @@ def supp_fig_02(
 
     main_label_size = 20
     main_tick_size = 16
-    marker_size = 200
+    marker_size = MARKER_SIZE
     capsize = 4
 
     labels = [value_dict[segm][key]["label"] for key in value_dict[segm].keys()]
@@ -346,7 +367,7 @@ def plot_fold_accuracy(
     x_positions = np.arange(1, len(fold_keys) + 1)
 
     marker = "s"
-    marker_size = 200
+    marker_size = MARKER_SIZE
     main_label_size = 20
     main_tick_size = 16
     offset = 0.08
@@ -445,7 +466,7 @@ def plot_fold_variation(
 
     main_label_size = 20
     main_tick_size = 16
-    marker_size = 120
+    marker_size = MARKER_SIZE
     marker = "s"
     capsize = 4
     offset = 0.15
@@ -640,6 +661,17 @@ def main():
             save_path=os.path.join(args.figure_dir, f"supp_fig_02_fold_variation.{FILE_EXTENSION}"),
             fold_dict=FOLD_KEYS,
             data_dir=data_dir,
+            plot=args.plot,
+        )
+
+        # The same panel for the training-seed variants of the 3D segmentations. Reuses
+        # plot_fold_variation because the computation is identical: mean and standard deviation of
+        # precision, recall and F1 over a list of keys in one accuracy file.
+        plot_fold_variation(
+            save_path=os.path.join(args.figure_dir, f"supp_fig_02_seed_variation.{FILE_EXTENSION}"),
+            fold_dict=SEED_KEYS,
+            data_dir=data_dir,
+            group_labels=SEED_GROUP_LABELS,
             plot=args.plot,
         )
 

@@ -28,7 +28,6 @@ def export_synapse_detections(
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
     suffix: Optional[str] = None,
-    as_float: bool = False,
     use_syn_ids: bool = False,
     voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
 ):
@@ -52,7 +51,6 @@ def export_synapse_detections(
             crop center. Requires crop_center.
         suffix: Optional extra label appended to the output filename after the crop/axis suffix,
             e.g. a position name such as "apex".
-        as_float: Whether to save the exported data as floating point values.
         use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
         voxel_size: Voxel size of the data in micrometer, in (x, y, z) order.
     """
@@ -118,7 +116,8 @@ def export_synapse_detections(
             out_suffix = ""
 
         # Create the output.
-        output = np.zeros(shape, dtype="uint16")
+        output = np.zeros(shape, dtype="float32")
+        radius = int(radius)
         mask = ball(radius).astype(bool)
 
         ids = syn_ids if use_syn_ids else ihc_ids
@@ -126,12 +125,17 @@ def export_synapse_detections(
         for coord, syn_id in tqdm(
             zip(coordinates, ids), total=len(coordinates), desc="Writing synapses to volume"
         ):
-            bb = tuple(slice(c - radius, c + radius + 1) for c in coord)
-            try:
-                output[bb][mask] = syn_id + id_offset
-            except IndexError:
-                print("Index error for", coord)
+            # The footprint is clipped to the volume, so that synapses close to the border and
+            # synapses in a 2D slice (where one axis is a single pixel) are written as well.
+            starts = [max(0, c - radius) for c in coord]
+            stops = [min(sh, c + radius + 1) for c, sh in zip(coord, shape)]
+            if any(sto <= sta for sta, sto in zip(starts, stops)):
                 continue
+            bb = tuple(slice(sta, sto) for sta, sto in zip(starts, stops))
+            footprint = tuple(
+                slice(sta - c + radius, sto - c + radius) for sta, sto, c in zip(starts, stops, coord)
+            )
+            output[bb][mask[footprint]] = syn_id + id_offset
 
         # Write the output.
         out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
@@ -140,9 +144,6 @@ def export_synapse_detections(
             out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}{out_suffix}.tif")
         else:
             out_path = os.path.join(out_folder, f"{synapse_name}{out_suffix}.tif")
-
-        if as_float:
-            output = output.astype("float32")
 
         print("Writing synapses to", out_path)
         tifffile.imwrite(out_path, output, bigtiff=True, compression="zlib")
@@ -170,7 +171,6 @@ def main():
     parser.add_argument("--suffix", type=str, default=None,
                         help="Extra label appended to the output filename after the crop/axis suffix, "
                         "e.g. a position name such as 'apex'.")
-    parser.add_argument("--as_float", action="store_true")
     parser.add_argument("--use_syn_ids", action="store_true")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
@@ -188,7 +188,7 @@ def main():
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
         crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis, suffix=args.suffix,
-        as_float=args.as_float, use_syn_ids=args.use_syn_ids, voxel_size=args.voxel_size,
+        use_syn_ids=args.use_syn_ids, voxel_size=args.voxel_size,
     )
 
 

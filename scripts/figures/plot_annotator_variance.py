@@ -2,7 +2,9 @@
 
 The input are the `<cochlea>_<marker>_<seg>_variance.json` files written by
 `scripts/measurements/eval_marker_annotations.py` and `eval_subtype_annotations.py`.
-Each file holds one scenario per annotator plus a "median" consensus scenario.
+Each file holds one scenario per annotator plus a consensus scenario. The consensus scenario
+applies the threshold averaged over the annotators of a crop, so it is displayed as a mean.
+The file stores it under the key "median" for historical reasons.
 """
 
 import argparse
@@ -26,11 +28,11 @@ png_dpi = 300
 # Display names for the annotators. The order also fixes the marker shape and the x offset.
 # The marker annotations and the subtype annotations use a different key for the same annotator.
 ANNOTATOR_ALIAS = {
-    "ResultsAMD": "Annotator 1",
-    "Result_AMD": "Annotator 1",
-    "ResultsEK": "Annotator 2",
-    "Result_EK": "Annotator 2",
-    "ResultsLR": "Annotator 3",
+    "ResultsAMD": "Ann. 1",
+    "Result_AMD": "Ann. 1",
+    "ResultsEK": "Ann. 2",
+    "Result_EK": "Ann. 2",
+    "ResultsLR": "Ann. 3",
 }
 
 ANNOTATOR_MARKERS = ["o", "^", "s", "D", "v", "P", "X", "*"]
@@ -48,8 +50,10 @@ CLASS_COLORS = {
     "inconclusive": "#BAB0AC",
 }
 
-MEDIAN_KEY = "median"
-MEDIAN_LABEL = "Median"
+# The variance files store the consensus scenario under the key "median". The scenario holds the
+# threshold averaged over the annotators of a crop, so it is displayed as a mean.
+CONSENSUS_KEY = "median"
+MEAN_LABEL = "Mean threshold"
 
 
 def _class_names(scenario: dict) -> List[str]:
@@ -80,8 +84,8 @@ def load_variance_records(
         min_crops: Minimal number of annotated crops to include annotator.
 
     Returns:
-        Table with one row per cochlea, series, and annotator. The "median" scenario is marked
-        with `is_median`.
+        Table with one row per cochlea, series, and annotator. The consensus scenario is marked
+        with `is_mean`.
     """
     paths = sorted(glob.glob(os.path.join(input_dir, pattern)))
     if len(paths) == 0:
@@ -106,7 +110,7 @@ def load_variance_records(
         cochlea = content["cochlea"]
         marker_name = content.get("marker")
         for scenario_name, scenario in content["scenarios"].items():
-            is_median = scenario_name == MEDIAN_KEY
+            is_mean = scenario_name == CONSENSUS_KEY
             for class_name in _class_names(scenario):
                 percent = scenario[f"percent_{class_name}"]
                 if percent is None:
@@ -120,10 +124,10 @@ def load_variance_records(
                     "class_name": class_name,
                     "series": f"{marker_name} {class_name}" if prefix_marker else class_name,
                     "annotator": scenario_name,
-                    "annotator_label": MEDIAN_LABEL if is_median
+                    "annotator_label": MEAN_LABEL if is_mean
                     else ANNOTATOR_ALIAS.get(scenario_name, scenario_name),
                     "percent": float(percent),
-                    "is_median": is_median,
+                    "is_mean": is_mean,
                 })
 
     return pd.DataFrame(records)
@@ -188,13 +192,13 @@ def _draw_break_marks(axes: Sequence[plt.Axes], height_ratios: Sequence[float]) 
         lower.plot((-size, +size), (1 - dy_lower, 1 + dy_lower), transform=lower.transAxes, **kwargs)
 
 
-def _annotator_order(df: pd.DataFrame, show_median: bool) -> List[str]:
+def _annotator_order(df: pd.DataFrame, show_mean: bool) -> List[str]:
     """Order the scenarios, so that an annotator keeps its shape and x offset for every cochlea."""
     present = set(df["annotator"])
     annotators = [name for name in ANNOTATOR_ALIAS if name in present]
-    annotators += sorted(name for name in present if name not in ANNOTATOR_ALIAS and name != MEDIAN_KEY)
-    if show_median and MEDIAN_KEY in present:
-        annotators = [MEDIAN_KEY] + annotators
+    annotators += sorted(name for name in present if name not in ANNOTATOR_ALIAS and name != CONSENSUS_KEY)
+    if show_mean and CONSENSUS_KEY in present:
+        annotators = [CONSENSUS_KEY] + annotators
     return annotators
 
 
@@ -207,7 +211,7 @@ def _annotator_shapes(annotators: Sequence[str]) -> Dict[str, str]:
     order = list(dict.fromkeys(ANNOTATOR_ALIAS.values()))
     shapes = {}
     for name in annotators:
-        if name == MEDIAN_KEY:
+        if name == CONSENSUS_KEY:
             shapes[name] = "_"
             continue
         label = ANNOTATOR_ALIAS.get(name)
@@ -255,9 +259,9 @@ def _legend_entries(
     handles = [get_flatline_handle(colors[name]) for name in series_names]
     labels = [name.capitalize() if name.islower() else name for name in series_names]
     for annotator in annotators:
-        if annotator == MEDIAN_KEY:
+        if annotator == CONSENSUS_KEY:
             handles.append(get_marker_handle("black", shapes[annotator]))
-            labels.append(MEDIAN_LABEL)
+            labels.append(MEAN_LABEL)
         else:
             handles.append(get_marker_handle("black", shapes[annotator]))
             labels.append(ANNOTATOR_ALIAS.get(annotator, annotator))
@@ -271,7 +275,7 @@ def plot_annotator_variance(
     break_ranges: Union[str, None, Tuple[float, float], Sequence[Tuple[float, float]]] = "auto",
     n_breaks: int = 1,
     min_gap: float = 15.0,
-    show_median: bool = True,
+    show_mean: bool = True,
     show_range: bool = False,
     show_legend: bool = True,
     ylim: Optional[Tuple[float, float]] = None,
@@ -288,7 +292,8 @@ def plot_annotator_variance(
             None plots a single axis, a tuple or list of tuples sets the ranges explicitly.
         n_breaks: Maximal number of breaks for `break_ranges="auto"`.
         min_gap: Minimal gap in percentage points for `break_ranges="auto"`.
-        show_median: Show the median scenario, which is the threshold used for the segmentation table.
+        show_mean: Show the mean scenario, which applies the threshold averaged over the annotators
+            of a crop. This is the threshold used for the segmentation table.
         show_range: Draw a line from the lowest to the highest annotator value.
         show_legend: Draw the legend in the figure.
         ylim: Y limits. They are derived from the data by default.
@@ -297,7 +302,7 @@ def plot_annotator_variance(
     """
     prism_style()
 
-    main_label_size = 20
+    main_label_size = 32
     main_tick_size = 16
     xtick_size = 14
 
@@ -305,8 +310,8 @@ def plot_annotator_variance(
         df = df[df["class_name"].isin(classes)]
         if len(df) == 0:
             raise ValueError(f"No data for the classes {classes}.")
-    if not show_median:
-        df = df[~df["is_median"]]
+    if not show_mean:
+        df = df[~df["is_mean"]]
 
     cochleae = list(dict.fromkeys(df["cochlea"]))
     known = [name for name in COCHLEAE_DICT if name in cochleae]
@@ -315,7 +320,7 @@ def plot_annotator_variance(
 
     series_names = list(dict.fromkeys(df["series"]))
     colors = _series_colors(series_names)
-    annotators = _annotator_order(df, show_median)
+    annotators = _annotator_order(df, show_mean)
     shapes = _annotator_shapes(annotators)
     series_shift, annotator_shift = _x_offsets(series_names, annotators)
 
@@ -353,7 +358,7 @@ def plot_annotator_variance(
                     continue
                 x_center = num + series_shift[series]
 
-                annotated = subset[~subset["is_median"]]
+                annotated = subset[~subset["is_mean"]]
                 if show_range and len(annotated) > 1:
                     ax.plot(
                         [x_center, x_center], [annotated["percent"].min(), annotated["percent"].max()],
@@ -362,9 +367,9 @@ def plot_annotator_variance(
 
                 for _, row in subset.iterrows():
                     x_pos = x_center + annotator_shift[row["annotator"]]
-                    if row["is_median"]:
+                    if row["is_mean"]:
                         ax.scatter(
-                            x_pos, row["percent"], marker=shapes[MEDIAN_KEY], s=260, linewidths=2.5,
+                            x_pos, row["percent"], marker=shapes[CONSENSUS_KEY], s=260, linewidths=2.5,
                             color=colors[series], alpha=1.0, zorder=3,
                         )
                     else:
@@ -390,7 +395,7 @@ def plot_annotator_variance(
     axes[-1].set_xticks(range(len(cochleae)))
     axes[-1].set_xticklabels(labels, rotation=45, ha="right", fontsize=xtick_size)
 
-    y_label = "Marker positive [%]" if series_names == ["positive"] else "Fraction of segmented cells [%]"
+    y_label = "Marker positive [%]" if series_names == ["positive"] else "SGN fraction [%]"
     fig.supylabel(y_label, fontsize=main_label_size, fontweight="bold")
 
     if show_legend:
@@ -422,7 +427,12 @@ def plot_annotator_offset(
     figsize: Tuple[float, float] = (12, 5),
     plot: bool = False,
 ) -> None:
-    """Plot the deviation of the annotators from the median, with the median as the zero reference.
+    """Plot the deviation of the annotators from the mean, with the mean as the zero reference.
+
+    The reference is the percentage that the per-crop mean threshold produces. It is not the mean of
+    the annotator percentages, because the threshold is averaged before it is applied and a
+    threshold maps to a percentage in steps. An offset pair is therefore not symmetric around zero,
+    and both annotators can lie on the same side of it.
 
     This function is specific for a marker that divides the cells into positive and negative.
     The percentages of both classes add up to 100, so the deviation of the negative class is the
@@ -453,18 +463,18 @@ def plot_annotator_offset(
     if len(df) == 0:
         raise ValueError(f"No data for the class {reference_class}.")
 
-    # Subtract the median per cochlea and series, which puts every cochlea on the same reference.
+    # Subtract the mean per cochlea and series, which puts every cochlea on the same reference.
     offsets = []
     for (cochlea, series), group in df.groupby(["cochlea", "series"], sort=False):
-        reference = group.loc[group["is_median"], "percent"]
+        reference = group.loc[group["is_mean"], "percent"]
         if len(reference) == 0:
-            print(f"Warning: skipping {cochlea} / {series}. No median scenario available.")
+            print(f"Warning: skipping {cochlea} / {series}. No mean scenario available.")
             continue
-        annotated = group[~group["is_median"]].copy()
+        annotated = group[~group["is_mean"]].copy()
         annotated["offset"] = annotated["percent"] - float(reference.iloc[0])
         offsets.append(annotated)
     if len(offsets) == 0:
-        raise ValueError("No cochlea with a median scenario.")
+        raise ValueError("No cochlea with a mean scenario.")
     df = pd.concat(offsets, ignore_index=True)
 
     cochleae = list(dict.fromkeys(df["cochlea"]))
@@ -474,7 +484,7 @@ def plot_annotator_offset(
 
     series_names = list(dict.fromkeys(df["series"]))
     colors = _series_colors(series_names)
-    annotators = _annotator_order(df, show_median=False)
+    annotators = _annotator_order(df, show_mean=False)
     shapes = _annotator_shapes(annotators)
     series_shift, annotator_shift = _x_offsets(series_names, annotators)
 
@@ -502,7 +512,7 @@ def plot_annotator_offset(
     ax.set_xlim(-0.5, len(cochleae) - 0.5)
     ax.set_xticks(range(len(cochleae)))
     ax.set_xticklabels(labels, rotation=45, ha="right", fontsize=xtick_size)
-    ax.set_ylabel("Deviation from median [% points]", fontsize=main_label_size)
+    ax.set_ylabel("Deviation from mean threshold [% points]", fontsize=main_label_size)
     prism_cleanup_axes(ax)
 
     if show_legend:
@@ -530,19 +540,19 @@ def plot_annotator_variance_legend(
     df: pd.DataFrame,
     save_path: str,
     classes: Optional[Sequence[str]] = None,
-    show_median: bool = True,
+    show_mean: bool = True,
 ) -> None:
     """Save the legend of `plot_annotator_variance` as a separate figure."""
     prism_style()
 
     if classes is not None:
         df = df[df["class_name"].isin(classes)]
-    if not show_median:
-        df = df[~df["is_median"]]
+    if not show_mean:
+        df = df[~df["is_mean"]]
 
     series_names = list(dict.fromkeys(df["series"]))
     colors = _series_colors(series_names)
-    annotators = _annotator_order(df, show_median)
+    annotators = _annotator_order(df, show_mean)
     shapes = _annotator_shapes(annotators)
 
     handles, labels = _legend_entries(series_names, colors, annotators, shapes)
@@ -569,7 +579,7 @@ def main():
     parser.add_argument("--n_breaks", type=int, default=0, help="Maximal number of automatic breaks.")
     parser.add_argument("--min_gap", type=float, default=15.0,
                         help="Minimal gap in percentage points for an automatic break.")
-    parser.add_argument("--no_median", action="store_true", help="Do not plot the median scenario.")
+    parser.add_argument("--no_mean", action="store_true", help="Do not plot the mean scenario.")
     parser.add_argument("--min_crops", type=int, default=5,
                         help="Minimal number of annotated crops to include an annotator.")
     parser.add_argument("--ylim", type=float, nargs=2, default=None, metavar=("LOWER", "UPPER"),
@@ -586,7 +596,7 @@ def main():
         min_crops=args.min_crops,
     )
     marker_name = args.marker if args.marker is not None else "-".join(sorted(set(df["marker"].dropna())))
-    show_median = not args.no_median
+    show_mean = not args.no_mean
 
     if args.no_break:
         break_ranges = None
@@ -600,12 +610,12 @@ def main():
         df,
         save_path=os.path.join(args.figure_dir, f"annotator_variance_{marker_name}{suffix}.{FILE_EXTENSION}"),
         classes=args.classes, break_ranges=break_ranges, n_breaks=args.n_breaks, min_gap=args.min_gap,
-        show_median=show_median, plot=args.plot,
+        show_mean=show_mean, plot=args.plot,
     )
     plot_annotator_variance_legend(
         df,
         save_path=os.path.join(args.figure_dir, f"annotator_variance_{marker_name}{suffix}_legend.{FILE_EXTENSION}"),
-        classes=args.classes, show_median=show_median,
+        classes=args.classes, show_mean=show_mean,
     )
 
     if args.offset:
@@ -617,7 +627,7 @@ def main():
         plot_annotator_variance_legend(
             df,
             save_path=os.path.join(args.figure_dir, f"annotator_offset_{marker_name}_legend.{FILE_EXTENSION}"),
-            classes=["positive"], show_median=False,
+            classes=["positive"], show_mean=False,
         )
 
 

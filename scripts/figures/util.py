@@ -94,9 +94,19 @@ VALUE_DICT = {
             "SGN_v2": {"count": 18541},
         },
     },
+    # The SGN count is component 1 of the local SGN_v2 result. The IHC count comes from the
+    # dilated-mask IHC_v11 re-prediction and components 1-13 of its component table.
+    "G_LR_000301_L": {
+        "IHC": {
+            "IHC_v11": {"count": 946},
+        },
+        "SGN": {
+            "SGN_v2": {"count": 22284},
+        },
+    },
     "G_LR_000301_R": {
         "IHC": {
-            "IHC_v11": {"count": 975},
+            "IHC_v11": {"count": 1074},
         },
         "SGN": {
             "SGN_v2": {"count": 21801},
@@ -104,7 +114,7 @@ VALUE_DICT = {
     },
     "G_LR_000302_R": {
         "IHC": {
-            "IHC_v11": {"count": 935},
+            "IHC_v11": {"count": 930},
         },
         "SGN": {
             "SGN_v2": {"count": 23717},
@@ -502,7 +512,7 @@ def density_by_sliding_window(length_fraction, total_length, window=0.05, n_poin
 # counts per cochlea, synapse is the number of synapses per IHC.
 _LITERATURE_REFERENCE_VALUES = {
     "mouse": {"SGN": (9141, 11736), "IHC": (656, 681), "synapse": (9.1, 20.7)},
-    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1081), "synapse": (15.8, 25.6)},
+    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1130), "synapse": (15.8, 25.6)},
 }
 
 
@@ -567,7 +577,9 @@ COHORT_DICT = {
     },
     "wt_gerbil": {
         "label": "WT gerbil", "animal": "gerbil", "color": COLOR_UNTREATED,
-        "cochleae": ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"],
+        "cochleae": [
+            "G_EK_000233_L", "G_LR_000301_L", "G_LR_000301_R", "G_LR_000302_R",
+        ],
     },
 }
 
@@ -686,19 +698,36 @@ COCHLEA_DICT = {
     "M_LR_000189_R": {"alias": "M_09R", "color": "#9C276F", "SGN": {"SGN_v2": {"component": [1]}}},
     # Gerbil cochleae for the f-Chrimson analysis. The components match the component_list used to
     # generate each SGN_density_2d.json.
-    "G_EK_000049_L": {"alias": "G_1L", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1, 3, 4, 5]}}},
-    "G_EK_000071_L": {"alias": "G_2L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_EK_000074_L": {"alias": "G_3L", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_EK_000076_L": {"alias": "G_4L", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1, 2, 3]}}},
-    "G_EK_000049_R": {"alias": "G_1R", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1, 2]}}},
-    "G_EK_000071_R": {"alias": "G_2R", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_EK_000074_R": {"alias": "G_3R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_EK_000076_R": {"alias": "G_4R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000049_L": {"alias": "G_4L", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1, 3, 4, 5]}}},
+    "G_EK_000071_L": {"alias": "G_5L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000074_L": {"alias": "G_6L", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000076_L": {"alias": "G_7L", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1, 2, 3]}}},
+    "G_EK_000049_R": {"alias": "G_4R", "color": "#9C5027", "SGN": {"SGN_v2": {"component": [1, 2]}}},
+    "G_EK_000071_R": {"alias": "G_5R", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000074_R": {"alias": "G_6R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
+    "G_EK_000076_R": {"alias": "G_7R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1]}}},
     # Untreated gerbil cochleae. G_LR_000302_R keeps component 3, which holds 234 of its 23717
     # SGNs; the SGN_density_2d_extended.json on S3 was recalculated with [1, 3].
-    "G_EK_000233_L": {"alias": "G_5L", "color": "#279C52", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_LR_000301_R": {"alias": "G_6R", "color": "#67279C", "SGN": {"SGN_v2": {"component": [1]}}},
-    "G_LR_000302_R": {"alias": "G_7R", "color": "#27339C", "SGN": {"SGN_v2": {"component": [1, 3]}}},
+    "G_EK_000233_L": {
+        "alias": "G_1L", "color": "#279C52",
+        "IHC": {"IHC_v11": {"component": [2, 1, 6, 4, 3, 5]}},
+        "SGN": {"SGN_v2": {"component": [1]}},
+    },
+    "G_LR_000301_L": {
+        "alias": "G_2L", "color": "#67279C",
+        "IHC": {"IHC_v11": {"component": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]}},
+        "SGN": {"SGN_v2": {"component": [1]}},
+    },
+    "G_LR_000301_R": {
+        "alias": "G_2R", "color": "#67279C",
+        "IHC": {"IHC_v11": {"component": [8, 9, 7, 6, 4, 3, 11, 1, 5, 2]}},
+        "SGN": {"SGN_v2": {"component": [1]}},
+    },
+    "G_LR_000302_R": {
+        "alias": "G_3R", "color": "#27339C",
+        "IHC": {"IHC_v11": {"component": [3, 1, 2]}},
+        "SGN": {"SGN_v2": {"component": [1, 3]}},
+    },
 }
 
 

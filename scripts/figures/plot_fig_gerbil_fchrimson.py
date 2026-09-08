@@ -26,6 +26,7 @@ from util import (
     export_legend,
     frequency_mapping,
     get_marker_handle,
+    get_trendline_handle,
     png_dpi,
     prism_cleanup_axes,
     prism_style,
@@ -246,6 +247,26 @@ def plot_legend_gerbil(
     handles = [get_marker_handle(c, m) for (c, m) in zip(colors, markers)]
     legend = plt.legend(handles, labels, loc=3, ncol=ncol, framealpha=1, frameon=False)
 
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
+
+
+def plot_legend_gerbil_adult_mean(save_path: str):
+    """Plot the legend for the adult injected mean in the tonotopic panel.
+
+    Args:
+        save_path: File path for the legend.
+    """
+    handle = get_trendline_handle("dashed", 3)
+    handle.set_color(COLOR_LEFT)
+    legend = plt.legend(
+        [handle],
+        ["Mean, adult injected"],
+        loc=3,
+        frameon=False,
+        handlelength=4.5,
+    )
     export_legend(legend, save_path)
     legend.remove()
     plt.close()
@@ -878,6 +899,9 @@ def main():
     plot_legend_gerbil(fchrimson_data, save_path=os.path.join(args.figure_dir, f"fig_gerbil_legend.{FILE_EXTENSION}"))
     plot_legend_fig04_trendline(
         save_path=os.path.join(args.figure_dir, f"fig_gerbil_legend_trendline.{FILE_EXTENSION}")
+    )
+    plot_legend_gerbil_adult_mean(
+        save_path=os.path.join(args.figure_dir, f"fig_gerbil_legend_adult_mean.{FILE_EXTENSION}")
     )
 
     # C: SGN density at apex/mid/base, Injected vs Non-Injected, against the untreated band.

@@ -62,6 +62,7 @@ def run_evaluation(
     output_file: Optional[str],
     cache_folder: Optional[str],
     segmentation_name: str,
+    local_root: Optional[str] = None,
 ) -> None:
     """Evaluate an SGN segmentation against the manual annotations of thin validation slices.
 
@@ -75,6 +76,9 @@ def run_evaluation(
         output_file: Optional path of the accuracy JSON file.
         cache_folder: Optional folder for caching the downloaded segmentation slices.
         segmentation_name: Name of the segmentation in the S3 bucket.
+        local_root: Optional root of a local pipeline output tree, laid out as
+            '<local_root>/<cochlea>/<segmentation_name>'. If given, the segmentation and the
+            component labels are read from there and nothing is read from S3.
     """
     results = {
         "annotator": [],
@@ -97,11 +101,20 @@ def run_evaluation(
             cochlea, slice_id = _parse_annotation_path(annotation_path)
             component = COMPONENT_DICT.get(segmentation_name, {}).get(cochlea, [1])
 
+            # The local tree is keyed by the plain cochlea name, so MOBIE_NAMES only applies to S3.
+            segmentation_folder = None
+            if local_root is not None:
+                segmentation_folder = os.path.join(local_root, cochlea, segmentation_name)
+                if not os.path.isdir(segmentation_folder):
+                    raise FileNotFoundError(segmentation_folder)
+
             print(f"Run evaluation for {annotator}, {cochlea}, z={slice_id}")
             segmentation, annotations = fetch_data_for_evaluation(
                 annotation_path, components_for_postprocessing=component,
-                seg_name=segmentation_name, cochlea=MOBIE_NAMES.get(cochlea),
+                seg_name=segmentation_name,
+                cochlea=None if local_root is not None else MOBIE_NAMES.get(cochlea),
                 cache_path=None if cache_folder is None else os.path.join(cache_folder, f"{cochlea}_{slice_id}.tif"),
+                segmentation_folder=segmentation_folder,
             )
             print(f"Evaluating segmentation with shape {segmentation.shape}")
             scores = compute_scores_for_annotated_slice(
@@ -148,14 +161,21 @@ def main():
     parser.add_argument("--segmentation_name", default="SGN_v2",
                         help="Name of the segmentation in the S3 bucket.")
     parser.add_argument("--cache_folder", default=None,
-                        help="Optional folder for caching the downloaded segmentation slices.")
+                        help="Optional folder for caching the downloaded segmentation slices. "
+                        "The cache file names do not contain the segmentation name, so use a "
+                        "separate folder per segmentation.")
+    parser.add_argument("--local_root", default=None,
+                        help="Optional root of a local pipeline output tree, laid out as "
+                        "'<local_root>/<cochlea>/<segmentation_name>' and holding "
+                        "segmentation.zarr and default_components.tsv. Reads nothing from S3.")
     args = parser.parse_args()
 
     output_file = None
     if args.output_dir is not None:
         output_file = os.path.join(args.output_dir, "SGN_3D.json")
 
-    run_evaluation(args.input, args.folders, output_file, args.cache_folder, args.segmentation_name)
+    run_evaluation(args.input, args.folders, output_file, args.cache_folder, args.segmentation_name,
+                   local_root=args.local_root)
 
 
 if __name__ == "__main__":

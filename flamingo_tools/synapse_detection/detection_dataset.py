@@ -116,7 +116,7 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
         if not _spotiflow_available:
             raise ImportError(
                 "spotiflow is required for flow computation. "
-                "Install it with: pip install spotiflow"
+                'Install it with: pip install "cochlea_net[flow]"'
             )
         super().__init__(sigma, eps)
 

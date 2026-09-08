@@ -1,0 +1,77 @@
+#!/bin/bash
+#SBATCH --job-name=synapse-marker_G-LR-000301-R
+#SBATCH -t 10:00:00             # estimated time, adapt to your needs
+#SBATCH --mail-user=martin.schilling@med.uni-goettingen.de # change this to your mailaddress
+#SBATCH --mail-type=FAIL        # send mail when job begins and ends
+
+#SBATCH -p grete:shared         # the partition
+#SBATCH -G A100:1               # For requesting 1 A100 GPU.
+#SBATCH -A nim00007
+#SBATCH -c 8                    # cores for the prefetch workers and the peak detection
+#SBATCH --mem 200G
+#SBATCH --constraint=inet       # for reading the IHC segmentation from S3
+
+# Prediction, peak detection and matching to the IHCs in one call.
+# The CTBP2 image data is read from a local file, the IHC segmentation from the S3 bucket.
+# The IHC segmentation restricts the inference to the region around the IHCs, which skips
+# the background blocks and is much faster than predicting the full volume.
+
+source ~/.bashrc
+micromamba activate sam
+
+# Fail before the long prediction if the node did not hand over a usable GPU.
+# A silent CPU fallback is ~50x slower and will not finish inside the time limit.
+nvidia-smi
+python - <<'PYCHECK' || exit 1
+import os, sys, torch
+if not torch.cuda.is_available():
+    sys.exit(f"No CUDA device visible on {os.environ.get('SLURMD_NODENAME')}: "
+             f"device_count={torch.cuda.device_count()} "
+             f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')!r} "
+             f"torch={torch.__version__} cuda_build={torch.version.cuda}")
+print(f"GPU OK: {torch.cuda.get_device_name(0)}")
+PYCHECK
+
+# Print out some info.
+echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
+echo "Home directory: ${HOME}"
+echo "Working directory: $PWD"
+echo "Current node: ${SLURM_NODELIST}"
+
+SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
+cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
+
+export SCRIPT_DIR=$SCRIPT_REPO/scripts
+
+COCHLEA="G_LR_000301_R"
+
+# Local CTBP2 image data.
+export INPUT_PATH=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/"$COCHLEA"/CTBP2.ome.zarr
+export INPUT_KEY="s0"
+
+# IHC segmentation on the S3 bucket, given as a path relative to the bucket.
+export MASK_PATH="$COCHLEA"/images/ome-zarr/IHC_v11.ome.zarr
+export MASK_INPUT_KEY="s4"
+export MASK_KEY="s0"
+
+export OUTPUT_FOLDER=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/"$COCHLEA"/synapses_v3
+export MODEL=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/trained_models/Synapses/synapse_detection_model_v3.pt
+export MAX_DISTANCE=8
+
+echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
+echo "MODEL $MODEL"
+
+if [ ! -d "$OUTPUT_FOLDER" ] ; then
+	mkdir -p "$OUTPUT_FOLDER"
+fi
+
+python $SCRIPT_DIR/synapse_marker_detection/marker_detection.py \
+	--input $INPUT_PATH \
+	--input_key $INPUT_KEY \
+	--output_folder $OUTPUT_FOLDER \
+	--mask $MASK_PATH \
+	--mask_input_key $MASK_INPUT_KEY \
+	--mask_key $MASK_KEY \
+	--model $MODEL \
+	--max_distance $MAX_DISTANCE \
+	--s3_mask

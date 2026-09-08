@@ -13,8 +13,13 @@ from flamingo_tools.postprocessing.sgn_subtype_utils import STAIN_TO_TYPE, COCHL
 # from skimage.segmentation import relabel_sequential
 
 
+# Merged masks use consecutive IDs after they select the types that apply to one cochlea.
+# This order gives N98L the IDs 1=Ia, 2=Ib, 3=Ic and 4=II.
+SUBTYPE_ID_ORDER = ("Type Ia", "Type Ib", "Type IbIc", "Type Ic", "Type I", "Type II", "inconclusive")
+
+
 def types_for_stain(stains):
-    stains.sort()
+    stains = sorted(stains)
     assert len(stains) in (1, 2)
     if len(stains) == 1:
         combinations = [f"{stains[0]}+", f"{stains[0]}-"]
@@ -27,6 +32,16 @@ def types_for_stain(stains):
         ]
     types = list(set([STAIN_TO_TYPE[stain] for stain in combinations]))
     return types
+
+
+def subtype_ids_for_stains(stains):
+    """Return consecutive label IDs for the subtype classes defined by the stains."""
+    subtypes = set(types_for_stain(stains))
+    unknown = sorted(subtypes.difference(SUBTYPE_ID_ORDER))
+    if unknown:
+        raise ValueError(f"No subtype ID order is defined for: {unknown}.")
+    ordered = [subtype for subtype in SUBTYPE_ID_ORDER if subtype in subtypes]
+    return {subtype: type_id for type_id, subtype in enumerate(ordered, start=1)}
 
 
 def stain_expression_from_subtype(subtype, stains):
@@ -56,6 +71,39 @@ def stain_expression_from_subtype(subtype, stains):
     return dic_list
 
 
+def label_ids_for_subtype(table_seg, subtype, stains):
+    """Return the segmentation instance IDs assigned to one subtype."""
+    label_ids = []
+    for expression in stain_expression_from_subtype(subtype, stains):
+        subset = table_seg
+        for stain, sign in expression.items():
+            expression_value = 1 if sign == "+" else 2
+            subset = subset.loc[subset[f"marker_{stain}"] == expression_value]
+        label_ids.extend(subset["label_id"].tolist())
+    return label_ids
+
+
+def merge_subtype_masks(segmentation, table_seg, stains, subtype_ids):
+    """Replace segmentation instance IDs with subtype IDs in one label volume."""
+    merged = np.zeros(segmentation.shape, dtype="uint8")
+    for subtype, type_id in subtype_ids.items():
+        label_ids = label_ids_for_subtype(table_seg, subtype, stains)
+        subtype_mask = np.isin(segmentation, label_ids)
+        if np.any(merged[subtype_mask] != 0):
+            raise ValueError(f"Subtype '{subtype}' overlaps a subtype that was already assigned.")
+        merged[subtype_mask] = type_id
+        print(f"subtype {subtype}: id={type_id}, {len(label_ids)} instances")
+    return merged
+
+
+def read_subtype_table(cochlea, seg_name):
+    """Read the default table for a subtype segmentation."""
+    internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
+    tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
+    with fs.open(tsv_path, "r") as f:
+        return pd.read_csv(f, sep="\t")
+
+
 def stain_to_type(stain):
     # Normalize the staining string.
     stains = stain.replace(" ", "").split("/")
@@ -78,10 +126,7 @@ def filter_subtypes(cochlea, segmentation, seg_name, subtype):
     """Filter segmentation with marker labels.
     Positive segmentation instances are set to 1, negative to 2.
     """
-    internal_path = os.path.join(cochlea, "tables", seg_name, "default.tsv")
-    tsv_path, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
-    with fs.open(tsv_path, "r") as f:
-        table_seg = pd.read_csv(f, sep="\t")
+    table_seg = read_subtype_table(cochlea, seg_name)
 
     # get stains
     stains = [column.split("_")[1] for column in list(table_seg.columns) if "marker_" in column]
@@ -136,6 +181,7 @@ def export_lower_resolution(
     output_folder: str,
     stains: Optional[List[str]] = None,
     force: bool = False,
+    merge_masks: bool = False,
     crop_center: Optional[List[float]] = None,
     roi_halo: Optional[List[int]] = None,
     axis: Optional[int] = None,
@@ -162,6 +208,38 @@ def export_lower_resolution(
         print(f"Subtype stains: {subtype_stains}.")
         subtypes = types_for_stain(subtype_stains)
         subtypes.sort()
+
+        if merge_masks:
+            subtype_ids = subtype_ids_for_stains(subtype_stains)
+            print(f"Merged subtype IDs: {subtype_ids}")
+            if crop:
+                out_path = os.path.join(
+                    out_folder, f"{seg_name}_subtypes{crop_suffix(crop_center, axis, suffix)}.tif"
+                )
+            else:
+                out_path = os.path.join(out_folder, f"{seg_name}_subtypes.tif")
+            if os.path.exists(out_path) and not force_overwrite:
+                print(f"Skipping {out_path}. File already exists.")
+                continue
+
+            input_key = f"s{s}"
+            internal_path = os.path.join(cochlea, "images", "ome-zarr", f"{seg_name}.ome.zarr")
+            s3_store, fs = get_s3_path(internal_path, bucket_name=BUCKET_NAME, service_endpoint=SERVICE_ENDPOINT)
+            f = zarr.open(s3_store, mode="r")
+            if crop:
+                start, stop = compute_crop_bb(
+                    crop_center, roi_halo, voxel_size=voxel_size, scale=s, shape=f[input_key].shape, axis=axis,
+                )
+                data = f[input_key][start[0]:stop[0], start[1]:stop[1], start[2]:stop[2]]
+            else:
+                data = f[input_key][:]
+
+            print("Data shape", data.shape)
+            table_seg = read_subtype_table(cochlea, seg_name)
+            data = merge_subtype_masks(data, table_seg, subtype_stains, subtype_ids)
+            tifffile.imwrite(out_path, data, bigtiff=True, compression="zlib")
+            continue
+
         if "Type Ib" in subtypes and "Type Ic" in subtypes:
             subtypes.append(["Type Ib", "Type Ic"])
 
@@ -206,6 +284,8 @@ def main():
     parser.add_argument("-o", "--output_folder", required=True)
     parser.add_argument("--stains", nargs="+", type=str, default=None)
     parser.add_argument("-f", "--force", action="store_true")
+    parser.add_argument("--merge_masks", action="store_true",
+                        help="Write one categorical subtype label volume instead of one binary mask per subtype.")
     parser.add_argument("--crop_center", nargs=3, type=float, default=None,
                         help="Crop center as x y z in µm. Requires --roi_halo.")
     parser.add_argument("--roi_halo", nargs=3, type=int, default=None,

@@ -9,3 +9,6 @@ logs/
 # And some other files
 *.pt
 *.pkl
+
+# Slurm
+*.out

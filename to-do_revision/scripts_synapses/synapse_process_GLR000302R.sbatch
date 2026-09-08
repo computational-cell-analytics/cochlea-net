@@ -19,6 +19,19 @@
 source ~/.bashrc
 micromamba activate sam
 
+# Fail before the long prediction if the node did not hand over a usable GPU.
+# A silent CPU fallback is ~50x slower and will not finish inside the time limit.
+nvidia-smi
+python - <<'PYCHECK' || exit 1
+import os, sys, torch
+if not torch.cuda.is_available():
+    sys.exit(f"No CUDA device visible on {os.environ.get('SLURMD_NODENAME')}: "
+             f"device_count={torch.cuda.device_count()} "
+             f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')!r} "
+             f"torch={torch.__version__} cuda_build={torch.version.cuda}")
+print(f"GPU OK: {torch.cuda.get_device_name(0)}")
+PYCHECK
+
 # Print out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
 echo "Home directory: ${HOME}"
@@ -52,7 +65,7 @@ if [ ! -d "$OUTPUT_FOLDER" ] ; then
 	mkdir -p "$OUTPUT_FOLDER"
 fi
 
-python ~/flamingo-tools/scripts/synapse_marker_detection/marker_detection.py \
+python $SCRIPT_DIR/synapse_marker_detection/marker_detection.py \
 	--input $INPUT_PATH \
 	--input_key $INPUT_KEY \
 	--output_folder $OUTPUT_FOLDER \
