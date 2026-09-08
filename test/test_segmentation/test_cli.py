@@ -6,7 +6,9 @@ import unittest
 
 import imageio.v3 as imageio
 import numpy as np
+import torch
 import z5py
+from torch_em.model import UNet3d
 
 
 @unittest.skipIf(platform.system() == "Windows", "CLI tests fail on windows.")
@@ -19,14 +21,27 @@ class TestSegmentationCLI(unittest.TestCase):
         imageio.imwrite(path, data)
         return path
 
+    def _create_model(self, tmp_dir, out_channels):
+        """Save an untrained tiny model, so that the test does not fetch the released one.
+
+        These tests cover the CLI, not the segmentation quality. The released models are 82 MB
+        each and would be downloaded on every run.
+        """
+        model = UNet3d(in_channels=1, out_channels=out_channels, initial_features=4, depth=2)
+        model_path = os.path.join(tmp_dir, "model.pt")
+        torch.save(model, model_path)
+        return model_path
+
     def test_run_segmentation(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             data_path = self._create_data(tmp_dir)
+            model_path = self._create_model(tmp_dir, out_channels=3)
             output_folder = os.path.join(tmp_dir, "output")
 
             result = subprocess.run([
                 "flamingo_tools.run_segmentation",
-                "-i", data_path, "-o", output_folder, "-m", "SGN", "--min_size", "0"
+                "-i", data_path, "-o", output_folder, "-m", "SGN", "--min_size", "0",
+                "-c", model_path,
             ], capture_output=True, text=True)
             self.assertEqual(
                 result.returncode, 0,
@@ -44,10 +59,12 @@ class TestSegmentationCLI(unittest.TestCase):
     def test_run_detection(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             data_path = self._create_data(tmp_dir)
+            model_path = self._create_model(tmp_dir, out_channels=1)
             output_folder = os.path.join(tmp_dir, "output")
 
             result = subprocess.run([
-                "flamingo_tools.run_detection", "-i", data_path, "-o", output_folder
+                "flamingo_tools.run_detection", "-i", data_path, "-o", output_folder,
+                "-c", model_path,
             ], capture_output=True, text=True)
             self.assertEqual(
                 result.returncode, 0,

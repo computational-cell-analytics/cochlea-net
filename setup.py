@@ -8,6 +8,8 @@ setup(
     version=version,
     author="Constantin Pape; Martin Schilling",
     license="MIT",
+    # spotiflow is only needed for the flow channels of the synapse detection training.
+    extras_require={"flow": ["spotiflow"]},
     entry_points={
         "console_scripts": [
             "flamingo_tools.convert_data = flamingo_tools.data_conversion:convert_lightsheet_to_bdv_cli",

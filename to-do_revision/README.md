@@ -28,10 +28,10 @@ repository contains the scripts, provenance and durable accuracy tables.
 - **M29 Type-II rescue (Figure 3):** I implemented a local, non-destructive rescue that merges
   PV-derived SGNs into the CR/Ntng1 segmentation for M29L/R and recomputes subtype assignments.
   In the fixed cohort, Type II changes from 0.41% to 1.74% for M29L and from 3.08% to 2.52% for
-  M29R. `plot_fig3.py` can generate matched panels with and without the rescued M29 cochleae. The
-  generated segmentations/tables are intentionally ignored and have not been promoted to MoBIE or
-  S3; see [the rescue README](scripts_sgn_typeii_rescue/README.md). However, we decided **not to inluce this in the paper**
-  and to stay with the 2 cochleae we had before for this figure.
+  M29R. The generated segmentations/tables are intentionally ignored and have not been promoted
+  to MoBIE or S3; see [the rescue README](scripts_sgn_typeii_rescue/README.md). However, we
+  decided **not to include this in the paper** and to stay with the 2 cochleae we had before for
+  this figure, so `plot_fig3.py` no longer reads the rescued tables at all.
 
 - **Supporting revision work:** I recorded consistent training/test annotation counts in
   [training_data_counts.md](training_data_counts.md), added OTOF annotation/export and random-forest

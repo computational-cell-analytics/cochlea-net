@@ -37,21 +37,6 @@ FILE_EXTENSION = "png"
 
 png_dpi = 300
 
-PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
-M29_RESCUE_OUTPUT = os.environ.get(
-    "FLAMINGO_M29_RESCUE_OUTPUT",
-    os.path.join(PROJECT_ROOT, "to-do_revision", "scripts_sgn_typeii_rescue", "output"),
-)
-LOCAL_SUBTYPE_TABLES = {
-    cochlea: {
-        "path": os.path.join(M29_RESCUE_OUTPUT, cochlea, "CR_Ntng1_PV_SGN_v2", "default.tsv"),
-        # This selects the primary rescue cohort rather than the recomputed-component
-        # sensitivity analysis. The two differ by 12 assigned cells for M29R.
-        "cohort_column": "fixed_cohort",
-    }
-    for cochlea in ("M_AMD_N190_L", "M_AMD_N190_R")
-}
-
 COLORS = {
     "Type Ia": "#859cc8",
     "Type Ib": "#49B38B",
@@ -80,9 +65,6 @@ COCHLEAE_DICT = cochleae_for(cohort_cochleae("idisco"), "IHC", "IHC_v11")
 
 GROUPINGS = {
     "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
-    "Type Ia;Type Ib;Type Ic;Type II-M29-rescued": [
-        "M_LR_000098_L", "M_LR_N152_L", "M_AMD_N190_L", "M_AMD_N190_R",
-    ],
     "Type Ia;Type Ib;Type Ic;Type II-noPV": ["M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R"],
     "Type Ia;Type Ib;Type Ic;Type II-old+new": [
         "M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
@@ -1085,28 +1067,12 @@ def plot_subtype_fraction(
         plt.close()
 
 
-def _load_subtype_table(cochlea: str, seg_name: str):
-    """Load a subtype table and return it with an optional cohort column.
-
-    The rescued M29 segmentations remain workspace-local until they have been reviewed and
-    promoted. Requiring these explicit local tables prevents plots from silently mixing in the
-    pre-rescue S3 tables.
-    """
-    local_table = LOCAL_SUBTYPE_TABLES.get(cochlea)
-    if local_table is not None:
-        table_path = local_table["path"]
-        if not os.path.isfile(table_path):
-            raise FileNotFoundError(
-                f"The rescued subtype table for {cochlea} is missing: {table_path}. "
-                "Run to-do_revision/scripts_sgn_typeii_rescue/rescue.py first or set "
-                "FLAMINGO_M29_RESCUE_OUTPUT."
-            )
-        return pd.read_csv(table_path, sep="\t"), local_table["cohort_column"]
-
+def _load_subtype_table(cochlea: str, seg_name: str) -> pd.DataFrame:
+    """Load the subtype table of one cochlea from S3."""
     s3_path = f"{cochlea}/tables/{seg_name}/default.tsv"
     table_path, fs = get_s3_path(s3_path)
     with fs.open(table_path, "r") as f:
-        return pd.read_csv(f, sep="\t"), None
+        return pd.read_csv(f, sep="\t")
 
 
 def get_subtype_data(
@@ -1137,16 +1103,8 @@ def get_subtype_data(
         else:
             stain_channels = COCHLEAE[cochlea]["subtype_stains"]
 
-        table, cohort_column = _load_subtype_table(cochlea, seg_name)
-        if cohort_column is None:
-            table = table[table["component_labels"].isin(component_list)]
-        else:
-            if cohort_column not in table.columns:
-                raise KeyError(f"Missing cohort column '{cohort_column}' in the table for {cochlea}")
-            cohort = table[cohort_column]
-            if not pd.api.types.is_bool_dtype(cohort):
-                cohort = cohort.isin((1, "1", True, "True", "true"))
-            table = table[cohort]
+        table = _load_subtype_table(cochlea, seg_name)
+        table = table[table["component_labels"].isin(component_list)]
 
         # filter subtype table
         for chan in stain_channels:
@@ -1281,50 +1239,14 @@ def plot_legend_subtypes(
     plt.close()
 
 
-def generate_m29_rescue_subtype_variants(figure_dir: str):
-    """Generate matched Figure 3 subtype panels without and with rescued M29L/R."""
-    os.makedirs(figure_dir, exist_ok=True)
-    variants = {
-        "M12L-M15L": "Type Ia;Type Ib;Type Ic;Type II",
-        "M12L-M15L-M29L-M29R": "Type Ia;Type Ib;Type Ic;Type II-M29-rescued",
-    }
-    for suffix, grouping in variants.items():
-        fig_03_subtype_fraction(
-            save_path=os.path.join(
-                figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II_{suffix}.{FILE_EXTENSION}"
-            ),
-            grouping=grouping,
-        )
-        fig_03_subtype_tonotopic(
-            save_path=os.path.join(
-                figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II_{suffix}.{FILE_EXTENSION}"
-            ),
-            grouping=grouping,
-            combine_IbIc=True,
-        )
-    plot_legend_subtypes(
-        save_path=os.path.join(figure_dir, f"fig_03e-f_legend_Ia-Ib-Ic-II.{FILE_EXTENSION}"),
-        grouping="Type Ia;Type Ib;Type Ic;Type II",
-        ncol=1,
-    )
-
-
 def main():
     parser = argparse.ArgumentParser(description="Generate plots for Fig 3 of the cochlea paper.")
     parser.add_argument("--figure_dir", "-f", type=str, help="Output directory for plots.", default="./panels/fig3")
     parser.add_argument("--napari", action="store_true", help="Visualize tonotopic mapping in napari.")
     parser.add_argument("--plot", action="store_true")
-    parser.add_argument(
-        "--m29-rescue-subtype-variants-only",
-        action="store_true",
-        help="Only generate matched M12L/M15L and M12L/M15L/M29L/M29R subtype panels.",
-    )
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
-    if args.m29_rescue_subtype_variants_only:
-        generate_m29_rescue_subtype_variants(args.figure_dir)
-        return
 
     tonotopic_data = get_tonotopic_data(source_name="IHC_v11")
 
@@ -1358,20 +1280,6 @@ def main():
                             grouping=grouping)
     fig_03_subtype_tonotopic(save_path=os.path.join(args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II.{FILE_EXTENSION}"),
                              grouping=grouping, combine_IbIc=True)
-
-    grouping = "Type Ia;Type Ib;Type Ic;Type II-M29-rescued"
-    fig_03_subtype_fraction(
-        save_path=os.path.join(
-            args.figure_dir, f"fig_03e_fraction_Ia-Ib-Ic-II_with-M29-rescued.{FILE_EXTENSION}"
-        ),
-        grouping=grouping,
-    )
-    fig_03_subtype_tonotopic(
-        save_path=os.path.join(
-            args.figure_dir, f"fig_03f_tonotopic_Ia-IbIc-II_with-M29-rescued.{FILE_EXTENSION}"
-        ),
-        grouping=grouping, combine_IbIc=True,
-    )
 
     grouping = "Type Ia;Type Ib;Type Ic;Type II-noPV"
     plot_legend_subtypes(save_path=os.path.join(args.figure_dir, f"fig_03f_legend_Ia-IbIc-II-noPV.{FILE_EXTENSION}"),

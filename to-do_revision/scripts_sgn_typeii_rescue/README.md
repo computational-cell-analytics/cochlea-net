@@ -54,18 +54,11 @@ The comparison contains two after-rescue cohorts:
 - `after_recomputed_component`: component 1 after recomputing the standard 30 µm SGN graph on
   the complete merged table. This is a sensitivity analysis for changes in component topology.
 
-## Figure 3 subtype variants
+## Figure 3 no longer reads these tables
 
-`scripts/figures/plot_fig3.py` loads the workspace-local rescued M29 tables and selects
-`fixed_cohort`, while M12L and M15L continue to come from their current S3 `SGN_v2` tables. It
-raises an error if a rescued table is missing instead of falling back to the pre-rescue M29 data.
+The rescue is not part of the paper. `scripts/figures/plot_fig3.py` reads every cochlea from its
+S3 `SGN_v2` table, M29L/R included, so nothing here is on the figure path any more. The rescued
+tables, the `fixed_cohort` selection and the `FLAMINGO_M29_RESCUE_OUTPUT` override were removed
+from the plotter together with the panels named after the rescue.
 
-Generate matched fraction and tonotopic panels for M12L/M15L alone and for all four cochleae:
-
-```bash
-python scripts/figures/plot_fig3.py \
-    --m29-rescue-subtype-variants-only \
-    --figure_dir to-do_revision/scripts_sgn_typeii_rescue/output/figures
-```
-
-Set `FLAMINGO_M29_RESCUE_OUTPUT` to point the plotter at a different rescue output directory.
+This folder stays as the record of what the rescue did and what it would have changed.

@@ -64,8 +64,8 @@ def fetch_data_for_evaluation(
 ) -> Tuple[np.ndarray, pd.DataFrame]:
     """Fetch the segmentation matching the annotation path for evaluation.
 
-    The segmentation is read from the S3 bucket by default, and from a local output folder of the
-    U-Net pipeline if `segmentation_folder` is given.
+    The segmentation is read from the S3 bucket by default, and from a local folder if
+    `segmentation_folder` is given.
 
     Args:
         annotation_path: The path to the manual annotations.
@@ -78,9 +78,10 @@ def fetch_data_for_evaluation(
         extra_data: Extra data to fetch.
         exclude_zero_synapse_count: Exclude cells that have zero synapses mapped.
             This is relevant for the IHC evaluation.
-        segmentation_folder: Optional local folder holding 'segmentation.zarr' and
-            'default_components.tsv', as written by the U-Net pipeline and
-            'create_table_and_components.py'. If given, nothing is read from S3. The local
+        segmentation_folder: Optional local folder to read instead of S3. It must hold
+            'segmentation.zarr' with the labels at the key 'segmentation', and, for any of the
+            table-based filters, 'default_components.tsv' with the columns 'label_id' and
+            'component_labels' (plus 'syn_per_IHC' for exclude_zero_synapse_count). The local
             segmentation has the same shape as the raw volume the annotations refer to, so the
             slice index is the same one used for the OME-Zarr on S3.
 
@@ -132,8 +133,8 @@ def fetch_data_for_evaluation(
     def get_table():
         if segmentation_folder is None:
             return _get_table(fs, cochlea, seg_name)
-        # The local 'default.tsv' holds the MoBIE columns only; the component labels are written to
-        # a separate file by create_table_and_components.py.
+        # The component labels live in their own file: a MoBIE 'default.tsv' holds the morphology
+        # columns only.
         return pd.read_csv(os.path.join(segmentation_folder, "default_components.tsv"), sep="\t")
 
     table = None

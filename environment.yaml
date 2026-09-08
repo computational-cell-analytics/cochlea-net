@@ -21,4 +21,3 @@ dependencies:
   - pip:
       - "dask[array]>=2026.7"
       - "distributed>=2026.7"
-      - spotiflow

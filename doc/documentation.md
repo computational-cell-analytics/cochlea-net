@@ -47,6 +47,10 @@ pip install .
 ```
 conda install -c conda-forge napari pyqt
 ```
+- (Optional): if you want to train the synapse detection with the flow channels you have to install spotiflow:
+```
+pip install "cochlea_net[flow]"
+```
 ## Available Models
 
 CochleaNet provides four different segmentation models:
