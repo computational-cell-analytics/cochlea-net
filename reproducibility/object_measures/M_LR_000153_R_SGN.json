@@ -2,7 +2,8 @@
 	{
 		"dataset_name": "M_LR_000153_R",
 		"image_channel": [
-			"GFP"
+			"GFP",
+			"PV"
 		],
 		"segmentation_channel": "SGN_v2",
 		"use_bg_mask": "yes",
