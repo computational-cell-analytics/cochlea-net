@@ -9,16 +9,5 @@
 		"component_list": [
 			1
 		]
-	},
-	{
-		"dataset_name": "M_LR_000184_L",
-		"image_channel": [
-			"PV",
-			"Prph"
-		],
-		"segmentation_channel": "SGN_v2",
-		"component_list": [
-			1
-		]
 	}
 ]

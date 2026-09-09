@@ -6,18 +6,5 @@
 		"component_list": [
 			1
 		]
-	},
-	{
-		"dataset_name": "M_AMD_000126_R",
-		"cell_type": "ihc",
-		"segmentation_channel": "IHC_v4",
-		"component_list": [
-			1,
-			6,
-			2,
-			3
-		],
-		"min_component_length": 10,
-		"min_size": 20000
 	}
 ]
