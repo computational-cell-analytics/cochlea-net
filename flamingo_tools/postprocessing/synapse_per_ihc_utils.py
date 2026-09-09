@@ -1,3 +1,7 @@
+# The "protocol" of a cochlea is its sample preparation and clearing protocol. The comments below
+# repeat it as a section header. reproducibility/cohorts.json documents the same membership on its
+# "protocol" axis, and test/test_cohorts.py fails if the two disagree. The registry cannot read
+# that file, because the installed package ships no data files.
 SYNAPSE_DICT = {
     "M_LR_000226_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                       "component_list": [1, 3]},

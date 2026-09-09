@@ -540,6 +540,10 @@ def literature_reference_values(structure, animal="mouse"):
 # --cohort values of plot_sgn_density_profile.py. Read the member list through cohort_cochleae();
 # "label" and "animal" are single level, so indexing them directly is fine. "color" is optional,
 # because not every cohort is drawn as one group.
+# reproducibility/cohorts.json documents the membership of every cochlea, including the cohorts
+# that no figure draws. test/test_cohorts.py fails if the two disagree.
+# TODO: populate "cochleae" from reproducibility/cohorts.json, which is repo local and therefore
+# readable from here, and keep only the presentation keys in this dict.
 COHORT_DICT = {
     "idisco": {
         "label": "iDISCO", "animal": "mouse", "color": "#10CC17",

@@ -1,0 +1,318 @@
+{
+	"schema_version": 1,
+	"description": "Cohort membership of every cochlea in the reproducibility parameter files. Cohorts are grouped into named axes: 'protocol' is the sample preparation and clearing protocol, 'group' is the experimental grouping. A cochlea has at most one cohort per axis and appears in at least one axis. A cochlea that no axis can classify is listed under the 'undefined' group. This file records membership only; plot labels and colors stay in scripts/figures/util.py, and component lists stay with the per-cochlea parameters.",
+	"rerun_of": {
+		"M_AMD_N163_L_v2": "M_AMD_N163_L",
+		"M_AMD_N163_R_v2": "M_AMD_N163_R"
+	},
+	"axes": {
+		"protocol": {
+			"iDISCO": {
+				"label": "iDISCO",
+				"animal": "mouse",
+				"description": "iDISCO-cleared reference cochleae.",
+				"cochleae": [
+					"M_LR_000226_L",
+					"M_LR_000226_R",
+					"M_LR_000227_L",
+					"M_LR_000227_R"
+				]
+			},
+			"fHC": {
+				"label": "fHC",
+				"animal": "mouse",
+				"description": "Free-floating hybrid clearing.",
+				"cochleae": [
+					"M_AMD_N139_L",
+					"M_AMD_N139_R",
+					"M_AMD_N153_L",
+					"M_AMD_N153_R"
+				]
+			},
+			"PELCOfHC1": {
+				"label": "PELCOfHC1",
+				"animal": "mouse",
+				"description": "Microwave-assisted hybrid clearing, first protocol revision.",
+				"cochleae": [
+					"M_AMD_N140_L",
+					"M_AMD_N140_R",
+					"M_AMD_N142_L",
+					"M_AMD_N142_R"
+				]
+			},
+			"PELCOfHC2": {
+				"label": "PELCOfHC2",
+				"animal": "mouse",
+				"description": "Microwave-assisted hybrid clearing, second protocol revision.",
+				"cochleae": [
+					"M_AMD_000115_L",
+					"M_AMD_N129_L",
+					"M_AMD_N129_R",
+					"M_AMD_N162_L",
+					"M_AMD_N162_R",
+					"M_AMD_N75_L",
+					"M_AMD_N75_R"
+				]
+			},
+			"PELCOfHC2longnoDCM": {
+				"label": "MWfLS",
+				"animal": "mouse",
+				"description": "Microwave-assisted hybrid clearing with long incubation and without dichloromethane. Same cochleae as the 'mwfls' group.",
+				"cochleae": [
+					"M_AMD_000126_L",
+					"M_AMD_000126_R",
+					"M_AMD_000127_L",
+					"M_AMD_000127_R"
+				]
+			},
+			"PELCODISCO1": {
+				"label": "PELCODISCO1",
+				"animal": "mouse",
+				"description": "Microwave-assisted DISCO clearing, first protocol revision.",
+				"cochleae": [
+					"M_AMD_N88_L",
+					"M_AMD_N88_R",
+					"M_AMD_N89_L",
+					"M_AMD_N89_R"
+				]
+			},
+			"PELCODISCO2": {
+				"label": "PELCODISCO2",
+				"animal": "mouse",
+				"description": "Microwave-assisted DISCO clearing, second protocol revision.",
+				"cochleae": [
+					"M_AMD_000103_L",
+					"M_AMD_000103_R",
+					"M_AMD_N95_L",
+					"M_AMD_N95_R",
+					"M_AMD_N97_L",
+					"M_AMD_N97_R"
+				]
+			},
+			"PELCOfDISCO": {
+				"label": "PELCOfDISCO",
+				"animal": "mouse",
+				"description": "Microwave-assisted fDISCO clearing.",
+				"cochleae": [
+					"M_AMD_000087_L",
+					"M_AMD_000087_R",
+					"M_AMD_000088_L",
+					"M_AMD_000088_R",
+					"M_AMD_N163_L",
+					"M_AMD_N163_L_v2",
+					"M_AMD_N163_R",
+					"M_AMD_N163_R_v2"
+				]
+			},
+			"fDISCO": {
+				"label": "fDISCO",
+				"animal": "mouse",
+				"description": "fDISCO clearing.",
+				"cochleae": [
+					"M_AMD_000111_L",
+					"M_AMD_000111_R",
+					"M_AMD_000112_L",
+					"M_AMD_000112_R"
+				]
+			},
+			"vfDISCO": {
+				"label": "vfDISCO",
+				"animal": "mouse",
+				"description": "Vacuum-assisted fDISCO clearing.",
+				"aliases": [
+					"vfHC"
+				],
+				"cochleae": [
+					"M_LR_000248_L",
+					"M_LR_000248_R",
+					"M_LR_000249_L",
+					"M_LR_000249_R"
+				]
+			}
+		},
+		"group": {
+			"idisco": {
+				"label": "iDISCO",
+				"animal": "mouse",
+				"description": "iDISCO reference cochleae of the segmentation benchmark.",
+				"cochleae": [
+					"M_LR_000226_L",
+					"M_LR_000226_R",
+					"M_LR_000227_L",
+					"M_LR_000227_R"
+				]
+			},
+			"mwfls": {
+				"label": "MWfLS",
+				"animal": "mouse",
+				"description": "Cochleae of the MWfLS comparison. Prepared with the PELCOfHC2longnoDCM protocol.",
+				"cochleae": [
+					"M_AMD_000126_L",
+					"M_AMD_000126_R",
+					"M_AMD_000127_L",
+					"M_AMD_000127_R"
+				]
+			},
+			"chreef_mouse": {
+				"label": "ChReef mouse",
+				"animal": "mouse",
+				"description": "ChReef optogenetic therapy. The left cochlea is injected, the right one is not. M_LR_000143 is the pilot animal.",
+				"aliases": [
+					"ChReef"
+				],
+				"cochleae": [
+					"M_LR_000143_L",
+					"M_LR_000143_R",
+					"M_LR_000144_L",
+					"M_LR_000144_R",
+					"M_LR_000145_L",
+					"M_LR_000145_R",
+					"M_LR_000153_L",
+					"M_LR_000153_R",
+					"M_LR_000155_L",
+					"M_LR_000155_R",
+					"M_LR_000189_L",
+					"M_LR_000189_R"
+				]
+			},
+			"otof_mouse": {
+				"label": "OTOF mouse",
+				"animal": "mouse",
+				"description": "OTOF gene therapy. These have no SGN segmentation.",
+				"cochleae": [
+					"M_AMD_OTOF27_L",
+					"M_AMD_OTOF27_R",
+					"M_AMD_OTOF28_L",
+					"M_AMD_OTOF28_R"
+				]
+			},
+			"fchrimson_gerbil": {
+				"label": "f-Chrimson gerbil",
+				"animal": "gerbil",
+				"description": "f-Chrimson optogenetic therapy. G_EK_000049 was injected postnatally, the other animals as adults. The retired ChReef_GEK49*.json filenames named these ChReef, which was wrong: gerbils carry f-Chrimson.",
+				"cochleae": [
+					"G_EK_000049_L",
+					"G_EK_000049_R",
+					"G_EK_000071_L",
+					"G_EK_000071_R",
+					"G_EK_000074_L",
+					"G_EK_000074_R",
+					"G_EK_000076_L",
+					"G_EK_000076_R"
+				]
+			},
+			"wt_gerbil": {
+				"label": "WT gerbil",
+				"animal": "gerbil",
+				"description": "Untreated gerbil cochleae.",
+				"cochleae": [
+					"G_EK_000233_L",
+					"G_LR_000301_L",
+					"G_LR_000301_R",
+					"G_LR_000302_R"
+				]
+			},
+			"otof_mouse_pilot": {
+				"label": "OTOF mouse pilot",
+				"animal": "mouse",
+				"description": "Pilot cochleae of the OTOF gene therapy, measured on IHC_v2.",
+				"cochleae": [
+					"M_AMD_OTOF1_L",
+					"M_AMD_OTOF2_L"
+				]
+			},
+			"otof_lavision": {
+				"label": "OTOF LaVision",
+				"animal": "mouse",
+				"description": "OTOF cochleae imaged on the LaVision Ultramicroscope.",
+				"cochleae": [
+					"LaVision-OTOF23R",
+					"LaVision-OTOF25R",
+					"LaVision-OTOF36R"
+				]
+			},
+			"lavision_mouse": {
+				"label": "LaVision mouse",
+				"animal": "mouse",
+				"description": "Mouse cochleae imaged on the LaVision Ultramicroscope.",
+				"cochleae": [
+					"LaVision-M02",
+					"LaVision-M03",
+					"LaVision-M04"
+				]
+			},
+			"lavision_marmoset": {
+				"label": "LaVision marmoset",
+				"animal": "marmoset",
+				"description": "Marmoset cochlea from Keppeler et al., imaged on the LaVision Ultramicroscope. No Greenwood parameters exist for this species.",
+				"cochleae": [
+					"LaVision-Mar05"
+				]
+			},
+			"sgn_subtypes": {
+				"label": "SGN subtypes",
+				"animal": "mouse",
+				"description": "Cochleae stained for SGN subtype markers.",
+				"aliases": [
+					"SGNsub",
+					"SGNsubtype",
+					"SGN_subtypes"
+				],
+				"cochleae": [
+					"M_AMD_N180_L",
+					"M_AMD_N180_R",
+					"M_AMD_N190_L",
+					"M_AMD_N190_R",
+					"M_AMD_N62_L",
+					"M_AMD_Runx1_L",
+					"M_LR_000098_L",
+					"M_LR_000099_L",
+					"M_LR_000184_L",
+					"M_LR_000184_R",
+					"M_LR_000214_L",
+					"M_LR_000260_L",
+					"M_LR_N110_L",
+					"M_LR_N110_R",
+					"M_LR_N127_L",
+					"M_LR_N152_L",
+					"M_LR_N152_R",
+					"M_LR_N98_R"
+				]
+			},
+			"undefined": {
+				"label": "undefined",
+				"description": "No experimental group can be derived. Every appearance is a processing purpose or an isolated measurement.",
+				"cochleae": [
+					"G_EK_000011_R",
+					"G_LR_000233_R",
+					"G_LR_000234_L",
+					"G_LR_000234_R",
+					"M_AMD_000058_L",
+					"M_AMD_C202_L",
+					"M_AMD_RcKO354_R",
+					"M_AMD_RcKO355_R",
+					"M_AMD_Roe310_L",
+					"M_LR_000151_R",
+					"M_LR_000167_R",
+					"M_LR_000169_R",
+					"M_LR_000215_R"
+				],
+				"notes": {
+					"G_EK_000011_R": "Myo7a IHC block extraction only.",
+					"G_LR_000233_R": "SGN domain adaptation and IHC training. Dropped from SYNAPSE_DICT in #137.",
+					"G_LR_000234_L": "IHC training crops and tonotopic mapping only.",
+					"G_LR_000234_R": "IHC training crops and tonotopic mapping only.",
+					"M_AMD_000058_L": "SGN v2 segmentation variance; part of the SGN validation set.",
+					"M_AMD_C202_L": "One SGN component labeling run, nothing else.",
+					"M_AMD_RcKO354_R": "PV/CR/Lypd1 object measures. Subtype markers, but absent from sgn_subtype_utils.COCHLEAE.",
+					"M_AMD_RcKO355_R": "PV/CR/Lypd1 object measures. Subtype markers, but absent from sgn_subtype_utils.COCHLEAE.",
+					"M_AMD_Roe310_L": "PV/Calb1/CR object measures. Subtype markers, but absent from sgn_subtype_utils.COCHLEAE.",
+					"M_LR_000151_R": "Resized SGN object measures and annotation crops. Candidate ChReef pilot.",
+					"M_LR_000167_R": "Annotation and domain adaptation crops only.",
+					"M_LR_000169_R": "SGN v2 segmentation variance only.",
+					"M_LR_000215_R": "IHC domain adaptation on the CR channel."
+				}
+			}
+		}
+	}
+}
