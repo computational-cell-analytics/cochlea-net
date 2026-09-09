@@ -14,9 +14,9 @@ For IHC segmentation run:
 
 After this, run the following to add segmentation to MoBIE, create component labels and upload to S3:
 - templates_transfer/mobie_segmentation_template.sbatch
-- templates_transfer/sync_mobie.py
-- label_components/repro_label_components.py
-- templates_transfer/sync_mobie.py
+- templates_transfer/s3_seg_template.sh
+- `flamingo_tools.label_components`, with the parameters recorded in label_components/
+- templates_transfer/s3_seg_template.sh
 
 For ribbon synapse detection run:
 - mean_std_synapse_template.sbatch
@@ -32,7 +32,7 @@ To run the detection as a single job instead, without splitting up the predictio
 
 After this, run the following to add detections to MoBIE and upload to S3:
 - templates_transfer/mobie_spots_template.sbatch
-- templates_transfer/sync_mobie.py
+- templates_transfer/s3_synapse_template.sh
 
 ## Model training
 
