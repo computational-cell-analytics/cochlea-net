@@ -670,7 +670,7 @@ COCHLEA_DICT = {
     },
     # Mouse cochleae for the OTOF gene therapy. These have no SGN segmentation. The components
     # match the component_list used to generate each
-    # reproducibility/object_measures/M_AMD_OTOF2[78]_[LR]_IHC.json.
+    # reproducibility/processing/M_AMD_OTOF2[78]_[LR]_IHC.json.
     "M_AMD_OTOF27_L": {
         "alias": "M_30L", "color": "#9C5027",
         "IHC": {"IHC_v11": {"component": [1]}},

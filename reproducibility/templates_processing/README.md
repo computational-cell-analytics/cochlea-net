@@ -15,7 +15,7 @@ For IHC segmentation run:
 After this, run the following to add segmentation to MoBIE, create component labels and upload to S3:
 - templates_transfer/mobie_segmentation_template.sbatch
 - templates_transfer/s3_seg_template.sh
-- `flamingo_tools.label_components`, with the parameters recorded in label_components/
+- `flamingo_tools.label_components`, with the parameters recorded in processing/
 - templates_transfer/s3_seg_template.sh
 
 For ribbon synapse detection run:
