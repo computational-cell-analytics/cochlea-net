@@ -79,7 +79,13 @@ STEP_RENAMES: Dict[str, Dict[str, str]] = {
     "label_components": {"component_list_path": "component_list"},
 }
 
+# A block extraction entry is recognised by its crop centers, which no processing file has.
+FLAT_KEY = "crop_centers"
+
+# A sectioned entry needs both to name its segmentation table; a flat one only needs the cochlea,
+# because 25 of the 75 block extraction entries describe raw image crops and name no segmentation.
 REQUIRED_KEYS = ("dataset_name", "segmentation_channel")
+REQUIRED_KEYS_FLAT = ("dataset_name",)
 
 
 def load_processing_params(json_file: str, step: str) -> List[dict]:
@@ -91,12 +97,13 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
     file that has no entry for the step yields an empty list, so that a loop over a whole folder
     is not interrupted by a cochlea which skipped the step.
 
-    An entry that holds no section at all is read as a flat parameter dictionary and passed
-    through unvalidated. That keeps the block extraction files working, which are flat by design
-    and which doc/analysis.md feeds to flamingo_tools.object_measures.
+    An entry that holds crop centers is a block extraction entry, which is flat by design. It is
+    passed through unvalidated, so that the files doc/analysis.md feeds to
+    flamingo_tools.object_measures keep working. Every other entry is read as a sectioned one and
+    validated, so a misspelled section name is reported rather than quietly ignored.
 
     Args:
-        json_file: Shared parameter file, or a list of such parameter dictionaries.
+        json_file: Shared parameter file, a block extraction file, or a list of either.
         step: Name of the processing step, a key of STEP_KEYS.
 
     Returns:
@@ -121,14 +128,17 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
         if not isinstance(entry, dict):
             raise ValueError(f"{where} is not a parameter dictionary.")
 
+        if FLAT_KEY in entry:
+            # A block extraction entry. Pass it through as it is.
+            missing = [key for key in REQUIRED_KEYS_FLAT if key not in entry]
+            if missing:
+                raise ValueError(f"{where} is missing the required key(s) {missing}.")
+            params.append(dict(entry))
+            continue
+
         missing = [key for key in REQUIRED_KEYS if key not in entry]
         if missing:
             raise ValueError(f"{where} is missing the required key(s) {missing}.")
-
-        if not set(entry) & set(STEP_KEYS):
-            # A flat file from before the sectioned format. Pass it through as it is.
-            params.append(dict(entry))
-            continue
 
         unknown = sorted(set(entry) - allowed_top)
         if unknown:

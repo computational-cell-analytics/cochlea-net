@@ -101,8 +101,8 @@ class TestLoadProcessingParams(unittest.TestCase):
                                            "image_channel", "component_list"})
 
     def test_flat_file_is_passed_through(self):
-        """A block extraction file has no sections. doc/analysis.md feeds those to
-        flamingo_tools.object_measures, so they must keep working unvalidated."""
+        """A block extraction entry is recognised by its crop centers. doc/analysis.md feeds
+        those to flamingo_tools.object_measures, so they must keep working unvalidated."""
         from flamingo_tools.json_util import load_processing_params
 
         flat = {
@@ -120,6 +120,58 @@ class TestLoadProcessingParams(unittest.TestCase):
             for step in ("label_components", "object_measures", "tonotopic_mapping"):
                 params = load_processing_params(path, step)
                 self.assertEqual(params, [flat])
+
+    def test_flat_file_needs_no_segmentation_channel(self):
+        """25 of the 75 block extraction entries describe raw image crops and name no
+        segmentation, so the sectioned requirement must not apply to them."""
+        from flamingo_tools.json_util import load_processing_params
+
+        flat = {
+            "dataset_name": "M_LR_000145_L",
+            "image_channel": "PV_resized",
+            "roi_halo": [128, 128, 64],
+            "crop_centers": [[1, 2, 3]],
+        }
+        with TemporaryDirectory() as tmp_dir:
+            path = self._write(tmp_dir, flat, "M_LR_000145_L_SGN_empty.json")
+            self.assertEqual(load_processing_params(path, "object_measures"), [flat])
+
+    def test_misspelled_section_raises(self):
+        """The whole point of the strict reader: a typo must not be read as a legacy flat file."""
+        from flamingo_tools.json_util import load_processing_params
+
+        entry = {
+            "dataset_name": "M_X", "segmentation_channel": "IHC_v11", "cell_type": "ihc",
+            "labell_components": {"min_component_length": 10},
+        }
+        with TemporaryDirectory() as tmp_dir:
+            path = self._write(tmp_dir, entry, "M_X_IHC.json")
+            with self.assertRaises(ValueError):
+                load_processing_params(path, "label_components")
+
+    def test_sectioned_file_without_any_section_yields_nothing(self):
+        from flamingo_tools.json_util import load_processing_params
+
+        entry = {"dataset_name": "M_Y", "segmentation_channel": "SGN_v2", "cell_type": "sgn"}
+        with TemporaryDirectory() as tmp_dir:
+            path = self._write(tmp_dir, entry, "M_Y_SGN.json")
+            for step in ("label_components", "tonotopic_mapping", "object_measures"):
+                self.assertEqual(load_processing_params(path, step), [])
+
+    def test_every_repository_file_loads(self):
+        """Both parameter folders must be readable by all three steps."""
+        import glob
+
+        from flamingo_tools.json_util import load_processing_params
+
+        root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+                            "reproducibility")
+        files = sorted(glob.glob(os.path.join(root, "processing", "*.json"))
+                       + glob.glob(os.path.join(root, "block_extraction", "*.json")))
+        self.assertGreater(len(files), 200)
+        for path in files:
+            for step in ("label_components", "tonotopic_mapping", "object_measures"):
+                load_processing_params(path, step)
 
     def test_voxel_size_is_common(self):
         """scripts/analysis/create_main_table.py reads voxel_size with a flat update."""
