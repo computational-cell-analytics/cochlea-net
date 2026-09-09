@@ -1,11 +1,6 @@
 [
 	{
 		"dataset_name": "M_LR_000226_R",
-		"segmentation_channel": "IHC_v4c",
-		"cell_type": "ihc"
-	},
-	{
-		"dataset_name": "M_LR_000226_R",
 		"segmentation_channel": "IHC_v11",
 		"cell_type": "ihc",
 		"component_list": [
