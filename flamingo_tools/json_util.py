@@ -87,7 +87,9 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
 
     A file describes one cochlea and one segmentation. It holds the common keys at the top level
     and one section per processing step. An empty section means the step ran with its defaults.
-    An absent section means the step was not run for this cochlea, and the entry is skipped.
+    An absent section means the step was not run for this cochlea, and the entry is skipped. A
+    file that has no entry for the step yields an empty list, so that a loop over a whole folder
+    is not interrupted by a cochlea which skipped the step.
 
     An entry that holds no section at all is read as a flat parameter dictionary and passed
     through unvalidated. That keeps the block extraction files working, which are flat by design
@@ -98,11 +100,11 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
         step: Name of the processing step, a key of STEP_KEYS.
 
     Returns:
-        One flat parameter dictionary per entry that applies to the step.
+        One flat parameter dictionary per entry that applies to the step, empty if none does.
 
     Raises:
-        ValueError: If the step is unknown, if a sectioned entry holds an unknown key, if a
-            required key is missing, or if no entry of the file applies to the step.
+        ValueError: If the step is unknown, if a sectioned entry holds an unknown key, or if a
+            required key is missing.
     """
     if step not in STEP_KEYS:
         raise ValueError(f"Unknown processing step {step!r}. Expected one of {sorted(STEP_KEYS)}.")
@@ -151,6 +153,4 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
         flat.update({renames.get(key, key): value for key, value in section.items()})
         params.append(flat)
 
-    if not params:
-        raise ValueError(f"No entry of {json_file} applies to the {step!r} step.")
     return params

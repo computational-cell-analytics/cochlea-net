@@ -1,4 +1,3 @@
-import json
 import math
 import multiprocessing as mp
 import os
@@ -13,6 +12,7 @@ import pandas as pd
 from bioimage_cpp.utils import Blocking
 
 from elf.io import open_file
+from flamingo_tools.json_util import load_processing_params
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.sparse import csr_matrix
@@ -974,9 +974,10 @@ def label_components_json_wrapper(
         kwargs: Further arguments for label_components_single. An entry of the JSON file
             overrides them.
     """
-    with open(json_file, "r") as f:
-        params = json.load(f)
-    param_dicts = params if isinstance(params, list) else [params]
+    param_dicts = load_processing_params(json_file, "label_components")
+    if not param_dicts:
+        print(f"{json_file} has no 'label_components' section. Nothing to do.")
+        return
 
     out_is_dir = out_path is not None and os.path.isdir(out_path)
     if out_path is not None and not out_is_dir and len(param_dicts) > 1:

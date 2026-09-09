@@ -1,7 +1,6 @@
 """Functionality for measuring morphology and fluorescence intensities of segmented cells.
 """
 
-import json
 import multiprocessing as mp
 import os
 import warnings
@@ -26,6 +25,7 @@ from tqdm import tqdm
 from .file_utils import read_image_data
 from .postprocessing.label_components import compute_table_on_the_fly
 import flamingo_tools.s3_utils as s3_utils
+from flamingo_tools.json_util import load_processing_params
 from flamingo_tools.s3_utils import MOBIE_FOLDER
 
 
@@ -825,10 +825,10 @@ def object_measures_json_wrapper(
         seg_path: Optional segmentation path.
     """
     if json_file is not None:
-        # load parameters from JSON
-        with open(json_file, "r") as f:
-            params = json.loads(f.read())
-        param_dicts = params if isinstance(params, list) else [params]
+        param_dicts = load_processing_params(json_file, "object_measures")
+        if not param_dicts:
+            print(f"{json_file} has no 'object_measures' section. Nothing to do.")
+            return
         explicit_files = [p for p in out_paths if ".tsv" in p]
         if len(param_dicts) > 1 and explicit_files:
             raise ValueError(

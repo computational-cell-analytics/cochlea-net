@@ -11,6 +11,7 @@ from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closin
 from scipy.interpolate import interp1d
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
+from flamingo_tools.json_util import load_processing_params
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 
 
@@ -1150,7 +1151,10 @@ def tonotopic_mapping_json_wrapper(
     else:
         if out_path is None:
             raise ValueError("Specify an output path when supplying a JSON dictionary.")
-        param_dicts = _load_json_as_list(json_file)
+        param_dicts = load_processing_params(json_file, "tonotopic_mapping")
+        if not param_dicts:
+            print(f"{json_file} has no 'tonotopic_mapping' section. Nothing to do.")
+            return
         for params in param_dicts:
 
             cochlea = params["dataset_name"]

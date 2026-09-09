@@ -129,14 +129,14 @@ class TestLoadProcessingParams(unittest.TestCase):
         for keys in STEP_KEYS.values():
             self.assertNotIn("voxel_size", keys)
 
-    def test_absent_section_raises(self):
+    def test_absent_section_yields_nothing(self):
+        """A folder-wide loop must not stop at a cochlea which skipped the step."""
         from flamingo_tools.json_util import load_processing_params
 
         entry = {key: value for key, value in self.ENTRY.items() if key != "object_measures"}
         with TemporaryDirectory() as tmp_dir:
             path = self._write(tmp_dir, entry)
-            with self.assertRaises(ValueError):
-                load_processing_params(path, "object_measures")
+            self.assertEqual(load_processing_params(path, "object_measures"), [])
 
     def test_absent_section_of_one_entry_is_skipped(self):
         from flamingo_tools.json_util import load_processing_params
