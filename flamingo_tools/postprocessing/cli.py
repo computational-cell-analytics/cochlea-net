@@ -2,8 +2,9 @@
 """
 import argparse
 
-from .label_components import label_components_single
-from .cochlea_mapping import tonotopic_mapping_json_wrapper, equidistant_centers_single
+from .label_components import label_components_json_wrapper, label_components_single
+from .cochlea_mapping import (equidistant_centers_json_wrapper, equidistant_centers_single,
+                              tonotopic_mapping_json_wrapper)
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
@@ -16,9 +17,15 @@ def equidistant_centers():
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
     parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
+    parser.add_argument("--json_info", type=str, default=None,
+                        help="JSON file with parameters. The crop centers of every entry are "
+                        "recomputed and written back in place, using the segmentation table "
+                        "derived from its 'dataset_name' and 'segmentation_channel'.")
     parser.add_argument("-o", "--output", type=str, default=None,
-                        help="Output path for JSON dictionary.")
-    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+                        help="Output path for JSON dictionary. Ignored for '--json_info', which "
+                        "updates the input file.")
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project. Only used for '--json_info'.")
 
     # options for equidistant centers
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
@@ -42,9 +49,10 @@ def equidistant_centers():
 
     args = parser.parse_args()
 
-    equidistant_centers_single(
-        table_path=args.input,
-        output_path=args.output,
+    if (args.input is None) == (args.json_info is None):
+        parser.error("Pass either --input for a single table or --json_info for a parameter file.")
+
+    shared = dict(
         n_blocks=args.n_blocks,
         cell_type=args.cell_type,
         component_list=args.components,
@@ -54,6 +62,13 @@ def equidistant_centers():
         s3_bucket_name=args.s3_bucket_name,
         s3_service_endpoint=args.s3_service_endpoint,
     )
+
+    if args.json_info is None:
+        equidistant_centers_single(table_path=args.input, output_path=args.output, **shared)
+    else:
+        equidistant_centers_json_wrapper(
+            json_file=args.json_info, mobie_dir=args.mobie_dir, **shared,
+        )
 
 
 def extract_block():
@@ -180,9 +195,15 @@ def label_components():
     parser = argparse.ArgumentParser(
         description="Script to label segmentation using a segmentation table and graph connected components.")
 
-    parser.add_argument("-i", "--input", type=str, required=True, help="Input path to segmentation table.")
+    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
+    parser.add_argument("--json_info", type=str, default=None,
+                        help="JSON file with parameters for label_components. "
+                        "The segmentation table of an entry is derived from its 'dataset_name' "
+                        "and 'segmentation_channel'.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output path for segmentation table. Default: Overwrite input table.")
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project. Only used for '--json_info'.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for post-processing
@@ -226,9 +247,10 @@ def label_components():
 
     args = parser.parse_args()
 
-    label_components_single(
-        table_path=args.input,
-        out_path=args.output,
+    if (args.input is None) == (args.json_info is None):
+        parser.error("Pass either --input for a single table or --json_info for a parameter file.")
+
+    shared = dict(
         cell_type=args.cell_type,
         component_list=args.components,
         max_edge_distance=args.max_edge_distance,
@@ -241,9 +263,18 @@ def label_components():
         s3_service_endpoint=args.s3_service_endpoint,
         use_napari=args.napari,
         scale_factor=args.scale_factor,
-        path_file=args.path_file,
         max_path_deviation=args.max_path_deviation,
     )
+
+    if args.json_info is None:
+        label_components_single(
+            table_path=args.input, out_path=args.output, path_file=args.path_file, **shared,
+        )
+    else:
+        label_components_json_wrapper(
+            json_file=args.json_info, out_path=args.output, mobie_dir=args.mobie_dir,
+            path_file=args.path_file, **shared,
+        )
 
 
 def object_measures():

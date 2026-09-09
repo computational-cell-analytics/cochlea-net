@@ -1,3 +1,4 @@
+import json
 import math
 import multiprocessing as mp
 import os
@@ -12,7 +13,7 @@ import pandas as pd
 from bioimage_cpp.utils import Blocking
 
 from elf.io import open_file
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.sparse import csr_matrix
 from scipy.spatial import distance
@@ -945,3 +946,66 @@ def label_components_single(
             viewer.add_image(image_downscaled, name='3D Volume')
             viewer.add_labels(array_downscaled, name="components")
             napari.run()
+
+
+def label_components_json_wrapper(
+    json_file: str,
+    out_path: Optional[str] = None,
+    mobie_dir: str = MOBIE_FOLDER,
+    s3: bool = False,
+    path_file: Optional[str] = None,
+    **kwargs,
+):
+    """Label connected components for every entry of a parameter dictionary in a JSON file.
+
+    A file may hold several entries, for example one per segmentation version of the cochlea.
+    The segmentation table of an entry is derived from its "dataset_name" and
+    "segmentation_channel", so one file can be replayed without naming any path.
+
+    Args:
+        json_file: JSON file with one parameter dictionary, or a list of them.
+        out_path: Output path for the segmentation table. A directory receives one table per
+            entry, named after the cochlea and the segmentation channel. Default: overwrite the
+            input table, which requires local data.
+        mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
+        s3: Flag for accessing data stored on S3 bucket.
+        path_file: Path to a central path TSV for the IHC deviation filter. A directory out_path
+            turns this into one file per entry.
+        kwargs: Further arguments for label_components_single. An entry of the JSON file
+            overrides them.
+    """
+    with open(json_file, "r") as f:
+        params = json.load(f)
+    param_dicts = params if isinstance(params, list) else [params]
+
+    out_is_dir = out_path is not None and os.path.isdir(out_path)
+    if out_path is not None and not out_is_dir and len(param_dicts) > 1:
+        raise ValueError(
+            f"{json_file} holds {len(param_dicts)} entries, which cannot share the single output "
+            "file given with --output. Pass an output directory instead."
+        )
+
+    for entry in param_dicts:
+        cochlea = entry["dataset_name"]
+        print(f"\n{cochlea}")
+        seg_channel = entry["segmentation_channel"]
+
+        if s3:
+            table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
+        else:
+            table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+
+        save_path, entry_path_file = out_path, path_file
+        if out_is_dir:
+            prefix = f"{cochlea.replace('_', '-')}_{seg_channel.replace('_', '-')}"
+            save_path = os.path.join(out_path, f"{prefix}.tsv")
+            if path_file is not None:
+                entry_path_file = os.path.join(out_path, f"{prefix}_path.tsv")
+
+        label_components_single(
+            table_path=table_path,
+            out_path=save_path,
+            s3=s3,
+            path_file=entry_path_file,
+            **{**kwargs, **entry},
+        )

@@ -11,7 +11,7 @@ from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closin
 from scipy.interpolate import interp1d
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 
 
 def path_dict_to_central_path_table(path_dict):
@@ -1065,6 +1065,48 @@ def equidistant_centers_single(
 
     with open(output_path, "w") as f:
         json.dump(dic, f, indent='\t', separators=(',', ': '))
+
+
+def equidistant_centers_json_wrapper(
+    json_file: str,
+    mobie_dir: str = MOBIE_FOLDER,
+    s3: bool = False,
+    **kwargs,
+):
+    """Recompute the crop centers of every entry of a JSON file and write them back in place.
+
+    The segmentation table of an entry is derived from its "dataset_name" and
+    "segmentation_channel", so the crop centers of a whole parameter file can be refreshed
+    without naming any path.
+
+    Args:
+        json_file: JSON file with one parameter dictionary, or a list of them.
+        mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
+        s3: Flag for accessing data stored on S3 bucket.
+        kwargs: Further arguments for equidistant_centers_single. An entry of the JSON file
+            overrides them.
+    """
+    param_dicts = _load_json_as_list(json_file)
+    with open(json_file, "r") as f:
+        is_list = isinstance(json.load(f), list)
+
+    for index, entry in enumerate(param_dicts):
+        cochlea = entry["dataset_name"]
+        print(f"\n{cochlea}")
+        seg_channel = entry["segmentation_channel"]
+
+        if s3:
+            table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
+        else:
+            table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+
+        equidistant_centers_single(
+            table_path=table_path,
+            output_path=json_file,
+            dict_index=index if is_list else None,
+            s3=s3,
+            **{**kwargs, **entry},
+        )
 
 
 def _load_json_as_list(ddict_path: str) -> List[dict]:
