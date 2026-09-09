@@ -2,8 +2,7 @@
 	{
 		"dataset_name": "LaVision-M03",
 		"segmentation_channel": "IHC_LOWRES-v3",
-		"component_list":
-		[
+		"component_list": [
 			1,
 			2
 		],
