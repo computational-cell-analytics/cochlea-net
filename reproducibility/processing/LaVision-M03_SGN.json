@@ -1,0 +1,11 @@
+{
+	"dataset_name": "LaVision-M03",
+	"segmentation_channel": "SGN_detect-v5b",
+	"cell_type": "sgn",
+	"component_list": [
+		1
+	],
+	"tonotopic_mapping": {
+		"apex_position": "apex_lower"
+	}
+}

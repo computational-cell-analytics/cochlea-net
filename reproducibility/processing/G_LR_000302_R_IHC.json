@@ -1,0 +1,14 @@
+{
+	"dataset_name": "G_LR_000302_R",
+	"segmentation_channel": "IHC_v11",
+	"cell_type": "ihc",
+	"component_list": [
+		3,
+		1,
+		2
+	],
+	"label_components": {
+		"max_edge_distance": 50
+	},
+	"tonotopic_mapping": {}
+}

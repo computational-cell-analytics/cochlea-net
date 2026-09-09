@@ -1,0 +1,16 @@
+{
+	"dataset_name": "M_AMD_N180_L",
+	"segmentation_channel": "SGN_merged",
+	"cell_type": "sgn",
+	"image_channel": [
+		"CR",
+		"Lypd1",
+		"Ntng1"
+	],
+	"component_list": [
+		1
+	],
+	"label_components": {},
+	"tonotopic_mapping": {},
+	"object_measures": {}
+}

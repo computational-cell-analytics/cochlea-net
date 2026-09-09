@@ -1,0 +1,17 @@
+{
+	"dataset_name": "M_LR_N152_L",
+	"segmentation_channel": "SGN_v2",
+	"cell_type": "sgn",
+	"image_channel": [
+		"PV",
+		"CR",
+		"Ntng1"
+	],
+	"component_list": [
+		1,
+		2
+	],
+	"label_components": {},
+	"tonotopic_mapping": {},
+	"object_measures": {}
+}

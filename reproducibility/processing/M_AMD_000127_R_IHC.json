@@ -1,0 +1,28 @@
+{
+	"dataset_name": "M_AMD_000127_R",
+	"segmentation_channel": "IHC_v9",
+	"cell_type": "ihc",
+	"image_channel": [
+		"Vglut3"
+	],
+	"component_list": [
+		1
+	],
+	"label_components": {
+		"component_list_path": [
+			4,
+			2,
+			7,
+			5,
+			16,
+			8
+		],
+		"max_edge_distance": 20,
+		"min_component_length": 5,
+		"min_size": 10000
+	},
+	"tonotopic_mapping": {},
+	"object_measures": {
+		"use_bg_mask": "yes"
+	}
+}

@@ -1,0 +1,13 @@
+{
+	"dataset_name": "G_LR_000234_L",
+	"segmentation_channel": "IHC_v10",
+	"cell_type": "ihc",
+	"component_list": [
+		2,
+		5,
+		6,
+		3
+	],
+	"label_components": {},
+	"tonotopic_mapping": {}
+}

@@ -1,0 +1,18 @@
+{
+	"dataset_name": "G_EK_000233_L",
+	"segmentation_channel": "IHC_v11",
+	"cell_type": "ihc",
+	"component_list": [
+		2,
+		1,
+		6,
+		4,
+		3,
+		5
+	],
+	"label_components": {
+		"max_edge_distance": 40,
+		"min_component_length": 20
+	},
+	"tonotopic_mapping": {}
+}

@@ -1,7 +1,0 @@
-[
-	{
-		"dataset_name": "M_AMD_N180_L",
-		"segmentation_channel": "SGN_merged",
-		"cell_type": "sgn"
-	}
-]

@@ -1,0 +1,18 @@
+{
+	"dataset_name": "M_AMD_N95_R",
+	"segmentation_channel": "IHC_v4b",
+	"cell_type": "ihc",
+	"component_list": [
+		8,
+		4,
+		2,
+		29,
+		6,
+		9,
+		3
+	],
+	"label_components": {
+		"max_edge_distance": 35
+	},
+	"tonotopic_mapping": {}
+}

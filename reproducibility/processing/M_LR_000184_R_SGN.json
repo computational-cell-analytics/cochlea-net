@@ -1,0 +1,15 @@
+{
+	"dataset_name": "M_LR_000184_R",
+	"segmentation_channel": "SGN_v2b",
+	"cell_type": "sgn",
+	"image_channel": [
+		"PV",
+		"Prph"
+	],
+	"component_list": [
+		1
+	],
+	"label_components": {},
+	"tonotopic_mapping": {},
+	"object_measures": {}
+}

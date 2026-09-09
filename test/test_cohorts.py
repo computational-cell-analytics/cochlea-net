@@ -96,8 +96,8 @@ class TestCohorts(unittest.TestCase):
         for cohorts in self.members.values():
             for cochleae in cohorts.values():
                 classified |= cochleae
-        directories = ["block_extraction", "label_components", "object_measures",
-                       "tonotopic_mapping"]
+        directories = ["block_extraction", "processing"]
+        checked = 0
         for directory in directories:
             root = os.path.join(REPO_ROOT, "reproducibility", directory)
             for name in sorted(os.listdir(root)):
@@ -106,8 +106,11 @@ class TestCohorts(unittest.TestCase):
                 with open(os.path.join(root, name)) as f:
                     data = json.load(f)
                 for entry in (data if isinstance(data, list) else [data]):
+                    checked += 1
                     self.assertIn(entry["dataset_name"], classified,
                                   f"{directory}/{name} names an undocumented cochlea")
+        # Guard against the loop passing vacuously if a directory is renamed again.
+        self.assertGreater(checked, 100)
 
 
 if __name__ == "__main__":

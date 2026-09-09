@@ -1,0 +1,21 @@
+{
+	"dataset_name": "M_LR_000143_L",
+	"segmentation_channel": "SGN_v2",
+	"cell_type": "sgn",
+	"image_channel": [
+		"GFP",
+		"PV"
+	],
+	"component_list": [
+		1
+	],
+	"label_components": {
+		"max_edge_distance": 70
+	},
+	"tonotopic_mapping": {
+		"apex_position": "apex_lower"
+	},
+	"object_measures": {
+		"use_bg_mask": "yes"
+	}
+}

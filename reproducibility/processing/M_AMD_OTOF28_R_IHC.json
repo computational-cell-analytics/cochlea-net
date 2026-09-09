@@ -1,0 +1,23 @@
+{
+	"dataset_name": "M_AMD_OTOF28_R",
+	"segmentation_channel": "IHC_v11",
+	"cell_type": "ihc",
+	"image_channel": [
+		"Vglut3",
+		"Alphatag",
+		"Otof"
+	],
+	"component_list": [
+		2,
+		1,
+		3,
+		4
+	],
+	"label_components": {
+		"max_edge_distance": 30
+	},
+	"tonotopic_mapping": {},
+	"object_measures": {
+		"use_bg_mask": "yes"
+	}
+}
