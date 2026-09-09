@@ -11,7 +11,7 @@ from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closin
 from scipy.interpolate import interp1d
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
-from flamingo_tools.json_util import load_processing_params
+from flamingo_tools.json_util import load_processing_params, STEP_KEYS
 from flamingo_tools.s3_utils import (default_table_path, get_s3_path, MOBIE_FOLDER,
                                      table_name_prefix)
 
@@ -1073,6 +1073,7 @@ def equidistant_centers_json_wrapper(
     json_file: str,
     mobie_dir: str = MOBIE_FOLDER,
     s3: bool = False,
+    overrides: Optional[dict] = None,
     **kwargs,
 ):
     """Recompute the crop centers of every entry of a JSON file and write them back in place.
@@ -1085,12 +1086,27 @@ def equidistant_centers_json_wrapper(
         json_file: JSON file with one parameter dictionary, or a list of them.
         mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
         s3: Flag for accessing data stored on S3 bucket.
+        overrides: Parameters that win over the entry, for the flags the caller set explicitly.
         kwargs: Further arguments for equidistant_centers_single. An entry of the JSON file
-            overrides them.
+            overrides them, and overrides wins over both.
     """
-    param_dicts = _load_json_as_list(json_file)
     with open(json_file, "r") as f:
-        is_list = isinstance(json.load(f), list)
+        data = json.load(f)
+    is_list = isinstance(data, list)
+    param_dicts = data if is_list else [data]
+
+    # equidistant_centers_single writes n_blocks, include_gap and crop_centers back into the
+    # entry, none of which a processing file may hold at the top level, so it would make that
+    # file unreadable for the three processing steps.
+    for entry in param_dicts:
+        sections = sorted(set(entry) & set(STEP_KEYS))
+        if sections:
+            raise ValueError(
+                f"{json_file} is a processing parameter file, holding the section(s) {sections}. "
+                "The crop centers of a block extraction file are updated in place, which would "
+                "add keys that a processing file must not have. Point --json_info at a file in "
+                "reproducibility/block_extraction instead."
+            )
 
     for index, entry in enumerate(param_dicts):
         cochlea = entry["dataset_name"]
@@ -1104,7 +1120,7 @@ def equidistant_centers_json_wrapper(
             output_path=json_file,
             dict_index=index if is_list else None,
             s3=s3,
-            **{**kwargs, **entry},
+            **{**kwargs, **entry, **(overrides or {})},
         )
 
 

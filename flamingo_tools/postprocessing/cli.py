@@ -65,8 +65,15 @@ def equidistant_centers():
     if args.json_info is None:
         equidistant_centers_single(table_path=args.input, output_path=args.output, **shared)
     else:
+        # This command rewrites the file, so a flag the user typed must beat what the file
+        # records. Everything left at its default does not, since 45 of the block extraction
+        # files record n_blocks and 48 record cell_type and component_list.
+        dests = {"n_blocks": "n_blocks", "cell_type": "cell_type", "component_list": "components",
+                 "include_gap": "include_gap"}
+        overrides = {name: shared[name] for name, dest in dests.items()
+                     if getattr(args, dest) != parser.get_default(dest)}
         equidistant_centers_json_wrapper(
-            json_file=args.json_info, mobie_dir=args.mobie_dir, **shared,
+            json_file=args.json_info, mobie_dir=args.mobie_dir, overrides=overrides, **shared,
         )
 
 
