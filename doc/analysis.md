@@ -135,12 +135,14 @@ flamingo_tools.object_measures -o M-AMD-N162-L_PV_SGN-v2_object-measures.tsv \
 ```
 This is an example for the calculation of object measures using a background mask.
 Once the background mask has been calculated it can be reused by supplying the explicit path.
+A directory is filled with one mask per image channel; explicit paths need one per channel.
 If no path is specified, the background mask is only computed on the fly and not saved.
+The image, segmentation and table paths come from the parameter file, so `-i`, `--seg_path` and
+`--seg_table` are only needed to override them, and then one image path per channel is required.
 ```bash
-flamingo_tools.object_measures -i M_LR_000144_L/images/ome-zarr/GFP.ome.zarr \
-    --seg_table M_LR_000144_L/tables/SGN_v2/default.tsv \
+flamingo_tools.object_measures \
     --json_info /path/to/cochlea-net/reproducibility/processing/M_LR_000144_L_SGN.json \
-    --bg_cache_paths M_LR_000144_L_bg-mask.zarr \
+    --bg_cache_paths bg_masks \
     -o . --s3
 ```
 

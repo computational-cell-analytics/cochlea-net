@@ -742,7 +742,12 @@ def _object_measures_from_params(
 
     # use pre-set output paths given as arguments in CLI
     else:
-        assert len(image_channels) == len(out_paths)
+        if len(out_paths) != len(image_channels):
+            raise ValueError(
+                f"{cochlea}: {len(out_paths)} output path(s) were given for the "
+                f"{len(image_channels)} channel(s) {image_channels} of the parameter file. "
+                "Pass one path per channel, or a single directory."
+            )
         out_paths_tmp = out_paths.copy()
 
     bg_cache_paths_tmp = None
@@ -762,8 +767,20 @@ def _object_measures_from_params(
 
         # use pre-set output paths given as arguments in CLI
         else:
-            assert len(bg_cache_paths) == len(image_channels)
+            if len(bg_cache_paths) != len(image_channels):
+                raise ValueError(
+                    f"{cochlea}: {len(bg_cache_paths)} background mask path(s) were given for "
+                    f"the {len(image_channels)} channel(s) {image_channels} of the parameter "
+                    "file. Pass one path per channel, or a single directory."
+                )
             bg_cache_paths_tmp = bg_cache_paths.copy()
+
+    if image_paths is not None and len(image_paths) != len(image_channels):
+        raise ValueError(
+            f"{cochlea}: {len(image_paths)} image path(s) were given for the "
+            f"{len(image_channels)} channel(s) {image_channels} of the parameter file. "
+            "Pass one path per channel, or none to derive them from the channel names."
+        )
 
     # create paths based on JSON parameters
     if s3:
