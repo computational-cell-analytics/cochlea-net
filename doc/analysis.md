@@ -139,7 +139,7 @@ If no path is specified, the background mask is only computed on the fly and not
 ```bash
 flamingo_tools.object_measures -i M_LR_000144_L/images/ome-zarr/GFP.ome.zarr \
     --seg_table M_LR_000144_L/tables/SGN_v2/default.tsv \
-    --json_info /path/to/cochlea-net/reproducibility/object_measures/ChReef_MLR144L.json \
+    --json_info /path/to/cochlea-net/reproducibility/object_measures/M_LR_000144_L_SGN.json \
     --bg_cache_paths M_LR_000144_L_bg-mask.zarr \
     -o . --s3
 ```

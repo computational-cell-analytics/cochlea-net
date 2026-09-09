@@ -92,7 +92,7 @@ existing `plot_fold_variation`. Note that panel is a different experiment from t
 Two things to know when quoting these numbers:
 
 * `M_LR_000227_L` needs `max_edge_distance=45` rather than the default 30, recorded in
-  `reproducibility/label_components/SGN_v2_variance.json`. At 30 the helix breaks into two
+  `reproducibility/label_components/M_LR_000227_L_SGN_variance.json`. At 30 the helix breaks into two
   components for `v2-1` and `v2-3`, so the evaluation would score half of it and count the rest as
   false negatives. Re-running the component labelling without the override silently reintroduces
   this.
