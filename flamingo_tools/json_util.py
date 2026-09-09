@@ -66,7 +66,9 @@ STEP_KEYS: Dict[str, frozenset] = {
         "component_list_path", "max_edge_distance", "min_component_length", "min_size",
         "custom_dic", "max_path_deviation",
     }),
-    "tonotopic_mapping": frozenset({"apex_position", "component_mapping", "include_gap"}),
+    "tonotopic_mapping": frozenset({
+        "apex_position", "component_mapping", "include_gap", "animal", "otof",
+    }),
     "object_measures": frozenset({"use_bg_mask"}),
 }
 

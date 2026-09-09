@@ -346,6 +346,8 @@ def tonotopic_mapping():
     # options for tonotopic mapping
     parser.add_argument("--json_info", type=str, default=None,
                         help="JSON file with dataset information.")
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project. Only used for '--json_info'.")
     parser.add_argument("--central_spots_path", type=str, default=None,
                         help="Dataframe containing spots of the central path of the segmentation.")
     parser.add_argument("--animal", type=str, default="mouse",
@@ -380,6 +382,7 @@ def tonotopic_mapping():
         table_path=args.input,
         out_path=args.output,
         json_file=args.json_info,
+        mobie_dir=args.mobie_dir,
         central_spots_path=args.central_spots_path,
         force_overwrite=args.force,
         animal=args.animal,

@@ -1125,6 +1125,7 @@ def tonotopic_mapping_json_wrapper(
     animal: str = "mouse",
     otof: bool = False,
     s3: bool = False,
+    mobie_dir: str = MOBIE_FOLDER,
     **kwargs
 ):
     """Wrapper function for tonotopic mapping using a segmentation table.
@@ -1140,9 +1141,10 @@ def tonotopic_mapping_json_wrapper(
         animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         s3: Use data path of S3 bucket for segmentation table.
+        mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
     """
     if json_file is None:
-        tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, ototf=otof,
+        tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, otof=otof,
                                  central_spots_path=central_spots_path,
                                  force_overwrite=force_overwrite, s3=s3, **kwargs)
     else:
@@ -1154,7 +1156,10 @@ def tonotopic_mapping_json_wrapper(
             cochlea = params["dataset_name"]
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
-            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
+            if s3:
+                table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
+            else:
+                table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
 
             if "OTOF" in cochlea:
                 otof = True
@@ -1168,15 +1173,13 @@ def tonotopic_mapping_json_wrapper(
             else:
                 animal = "mouse"
 
+            save_path, entry_spots_path = out_path, central_spots_path
             if os.path.isdir(out_path):
-                cochlea_str = cochlea.replace('_', '-')
-                table_str = seg_channel.replace('_', '-')
-                save_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
+                prefix = f"{cochlea.replace('_', '-')}_{seg_channel.replace('_', '-')}"
+                save_path = os.path.join(out_path, f"{prefix}.tsv")
                 if central_spots_path is not None:
-                    central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
-            else:
-                save_path = out_path
+                    entry_spots_path = os.path.join(out_path, f"{prefix}_path.tsv")
 
-            tonotopic_mapping_single(table_path=table_path, out_path=save_path, animal=animal, otof=otof,
-                                     force_overwrite=force_overwrite, central_spots_path=central_spots_path,
-                                     s3=s3, **params)
+            tonotopic_mapping_single(table_path=table_path, out_path=save_path,
+                                     force_overwrite=force_overwrite, central_spots_path=entry_spots_path,
+                                     s3=s3, **{**kwargs, "animal": animal, "otof": otof, **params})

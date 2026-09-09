@@ -705,11 +705,16 @@ def _object_measures_from_params(
     c_str = cochlea.replace('_', '-')
     s_str = seg_channel.replace('_', '-')
 
-    if "use_bg_mask" in list(params.keys()):
-        if params.pop("use_bg_mask") in ["yes", "Yes"]:
-            use_bg_mask = True
+    if "use_bg_mask" in params:
+        # Read rather than pop: the entry may be reused, and losing the key would silently
+        # drop the background mask together with the "-bg-mask" suffix of the output name.
+        recorded = params["use_bg_mask"]
+        if isinstance(recorded, bool):
+            use_bg_mask = recorded
+        elif isinstance(recorded, str):
+            use_bg_mask = recorded.strip().lower() in ("yes", "true")
         else:
-            use_bg_mask = False
+            raise ValueError(f"use_bg_mask must be a boolean or a string, got {recorded!r}.")
 
     if use_bg_mask:
         suffix = "-bg-mask"
@@ -779,7 +784,8 @@ def _object_measures_from_params(
         if table_path is None:
             table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
 
-    kwargs = {**kwargs, **params}
+    # use_bg_mask is passed explicitly, so it must not also arrive through the entry.
+    kwargs = {**kwargs, **{k: v for k, v in params.items() if k != "use_bg_mask"}}
     object_measures_single(
         table_path=table_path,
         seg_path=seg_path,
@@ -787,7 +793,6 @@ def _object_measures_from_params(
         out_paths=out_paths_tmp,
         s3=s3,
         use_bg_mask=use_bg_mask,
-        cochlea=cochlea,
         bg_cache_paths=bg_cache_paths_tmp,
         **kwargs,
     )
