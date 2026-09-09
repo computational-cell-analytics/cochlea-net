@@ -16,8 +16,10 @@ def equidistant_centers():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
-    parser.add_argument("--json_info", type=str, default=None,
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("-i", "--input", type=str, default=None,
+                        help="Input path to segmentation table.")
+    source.add_argument("--json_info", type=str, default=None,
                         help="JSON file with parameters. The crop centers of every entry are "
                         "recomputed and written back in place, using the segmentation table "
                         "derived from its 'dataset_name' and 'segmentation_channel'.")
@@ -48,9 +50,6 @@ def equidistant_centers():
                         help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
 
     args = parser.parse_args()
-
-    if (args.input is None) == (args.json_info is None):
-        parser.error("Pass either --input for a single table or --json_info for a parameter file.")
 
     shared = dict(
         n_blocks=args.n_blocks,
@@ -195,8 +194,10 @@ def label_components():
     parser = argparse.ArgumentParser(
         description="Script to label segmentation using a segmentation table and graph connected components.")
 
-    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
-    parser.add_argument("--json_info", type=str, default=None,
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("-i", "--input", type=str, default=None,
+                        help="Input path to segmentation table.")
+    source.add_argument("--json_info", type=str, default=None,
                         help="JSON file with parameters for label_components. "
                         "The segmentation table of an entry is derived from its 'dataset_name' "
                         "and 'segmentation_channel'.")
@@ -246,9 +247,6 @@ def label_components():
                         help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
 
     args = parser.parse_args()
-
-    if (args.input is None) == (args.json_info is None):
-        parser.error("Pass either --input for a single table or --json_info for a parameter file.")
 
     shared = dict(
         cell_type=args.cell_type,
@@ -338,14 +336,16 @@ def tonotopic_mapping():
     parser = argparse.ArgumentParser(
         description="Script to extract region of interest (ROI) block around center coordinate.")
 
-    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to segmentation table.")
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument("-i", "--input", type=str, default=None,
+                        help="Input path to segmentation table.")
+    source.add_argument("--json_info", type=str, default=None,
+                        help="JSON file with dataset information.")
     parser.add_argument("-o", "--output", type=str, default=None,
                         help="Output path for segmentation table. Default: Overwrite input table.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for tonotopic mapping
-    parser.add_argument("--json_info", type=str, default=None,
-                        help="JSON file with dataset information.")
     parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
                         help="Directory containing MoBIE project. Only used for '--json_info'.")
     parser.add_argument("--central_spots_path", type=str, default=None,

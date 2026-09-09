@@ -73,13 +73,33 @@ class TestCohorts(unittest.TestCase):
     def test_agrees_with_synapse_dict(self):
         from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
         protocols = self.members["protocol"]
+        compared = 0
         for cochlea, info in SYNAPSE_DICT.items():
             protocol = info.get("protocol")
             if protocol is None:
+                # Silence is not a disagreement, but see test_synapse_dict_protocol_coverage.
                 continue
+            compared += 1
             self.assertIn(protocol, protocols, f"unknown protocol {protocol} for {cochlea}")
             self.assertIn(cochlea, protocols[protocol],
                           f"{cochlea} is missing from protocol {protocol}")
+        # Guard against the loop passing vacuously if the key is renamed.
+        self.assertGreater(compared, 40)
+
+    def test_synapse_dict_protocol_coverage(self):
+        """Pin how many SYNAPSE_DICT entries carry no protocol.
+
+        test_agrees_with_synapse_dict skips those, so they are the blind spot of that check.
+        Four of them are filed under the iDISCO protocol in cohorts.json. The key is deliberately
+        not set for them, because analysis/training_data_utils.py builds training-crop file names
+        from it, so this test records the gap instead of closing it.
+        """
+        from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
+        without = sorted(c for c, info in SYNAPSE_DICT.items() if "protocol" not in info)
+        self.assertEqual(without, [
+            "G_EK_000233_L", "G_LR_000301_L", "G_LR_000301_R", "G_LR_000302_R",
+            "M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R",
+        ])
 
     def test_agrees_with_figure_cohort_dict(self):
         if importlib.util.find_spec("matplotlib") is None:
