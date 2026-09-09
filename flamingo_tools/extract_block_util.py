@@ -11,7 +11,7 @@ import zarr
 from skimage.transform import rescale
 
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
+from flamingo_tools.s3_utils import default_table_path, get_s3_path, MOBIE_FOLDER
 from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_single
 from flamingo_tools.analysis.density_utils import hull_to_mask
 
@@ -344,13 +344,8 @@ def extract_central_block_from_json(
             dic_list = [dic]
 
     for dict_index, dic in enumerate(dic_list):
-        if s3:
-            s3_name = dic["dataset_name"]
-            s3_seg_channel = dic["segmentation_channel"]
-            table_path = f"{s3_name}/tables/{s3_seg_channel}/default.tsv"
-        else:
-            table_path = os.path.join(
-                mobie_dir, dic["dataset_name"], "tables", dic["segmentation_channel"], "default.tsv")
+        table_path = default_table_path(
+            dic["dataset_name"], dic["segmentation_channel"], s3=s3, mobie_dir=mobie_dir)
 
         equidistant_centers_single(
             table_path=table_path,

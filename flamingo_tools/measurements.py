@@ -26,7 +26,7 @@ from .file_utils import read_image_data
 from .postprocessing.label_components import compute_table_on_the_fly
 import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER
 
 
 def _measure_volume_and_surface(
@@ -783,14 +783,14 @@ def _object_measures_from_params(
         )
 
     # create paths based on JSON parameters
+    if table_path is None:
+        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
     if s3:
         if image_paths is None:
             image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr"
                            for ch in image_channels]
         if seg_path is None:
             seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
-        if table_path is None:
-            table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
     else:
         if image_paths is None:
             image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
@@ -798,8 +798,6 @@ def _object_measures_from_params(
         if seg_path is None:
             seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
                                     f"{seg_channel}.ome.zarr")
-        if table_path is None:
-            table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
 
     # use_bg_mask is passed explicitly, so it must not also arrive through the entry.
     kwargs = {**kwargs, **{k: v for k, v in params.items() if k != "use_bg_mask"}}
@@ -846,12 +844,14 @@ def object_measures_json_wrapper(
         if not param_dicts:
             print(f"{json_file} has no 'object_measures' section. Nothing to do.")
             return
-        explicit_files = [p for p in out_paths if ".tsv" in p]
-        if len(param_dicts) > 1 and explicit_files:
-            raise ValueError(
-                f"{json_file} holds {len(param_dicts)} entries, which cannot share the "
-                "explicit output files given with --output. Pass an output directory instead."
-            )
+        shared = {"--output": [p for p in out_paths if ".tsv" in p],
+                  "--bg_cache_paths": [p for p in bg_cache_paths if ".zarr" in p]}
+        for flag, explicit in shared.items():
+            if len(param_dicts) > 1 and explicit:
+                raise ValueError(
+                    f"{json_file} holds {len(param_dicts)} entries, which cannot share the "
+                    f"explicit files given with {flag}. Pass a directory instead."
+                )
         for entry in param_dicts:
             _object_measures_from_params(
                 entry,

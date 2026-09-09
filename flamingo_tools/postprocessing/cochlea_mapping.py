@@ -12,7 +12,8 @@ from scipy.interpolate import interp1d
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
 from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
+from flamingo_tools.s3_utils import (default_table_path, get_s3_path, MOBIE_FOLDER,
+                                     table_name_prefix)
 
 
 def path_dict_to_central_path_table(path_dict):
@@ -1096,10 +1097,7 @@ def equidistant_centers_json_wrapper(
         print(f"\n{cochlea}")
         seg_channel = entry["segmentation_channel"]
 
-        if s3:
-            table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
-        else:
-            table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
 
         equidistant_centers_single(
             table_path=table_path,
@@ -1155,15 +1153,23 @@ def tonotopic_mapping_json_wrapper(
         if not param_dicts:
             print(f"{json_file} has no 'tonotopic_mapping' section. Nothing to do.")
             return
+
+        # An output path that is not a TSV file names a directory, which is created if needed.
+        out_is_dir = not out_path.endswith(".tsv")
+        if out_is_dir:
+            os.makedirs(out_path, exist_ok=True)
+        elif len(param_dicts) > 1:
+            raise ValueError(
+                f"{json_file} holds {len(param_dicts)} entries, which cannot share the single "
+                f"output file {out_path}. Pass an output directory instead."
+            )
+
         for params in param_dicts:
 
             cochlea = params["dataset_name"]
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
-            if s3:
-                table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
-            else:
-                table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+            table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
 
             if "OTOF" in cochlea:
                 otof = True
@@ -1177,12 +1183,14 @@ def tonotopic_mapping_json_wrapper(
             else:
                 animal = "mouse"
 
+            prefix = table_name_prefix(cochlea, seg_channel)
             save_path, entry_spots_path = out_path, central_spots_path
-            if os.path.isdir(out_path):
-                prefix = f"{cochlea.replace('_', '-')}_{seg_channel.replace('_', '-')}"
+            if out_is_dir:
                 save_path = os.path.join(out_path, f"{prefix}.tsv")
-                if central_spots_path is not None:
-                    entry_spots_path = os.path.join(out_path, f"{prefix}_path.tsv")
+            # Several entries must not share one central path file.
+            if central_spots_path is not None and (out_is_dir or len(param_dicts) > 1):
+                root = out_path if out_is_dir else os.path.dirname(central_spots_path)
+                entry_spots_path = os.path.join(root, f"{prefix}_path.tsv")
 
             tonotopic_mapping_single(table_path=table_path, out_path=save_path,
                                      force_overwrite=force_overwrite, central_spots_path=entry_spots_path,

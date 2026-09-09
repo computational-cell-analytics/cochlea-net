@@ -13,7 +13,8 @@ from bioimage_cpp.utils import Blocking
 
 from elf.io import open_file
 from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
+from flamingo_tools.s3_utils import (default_table_path, get_s3_path, MOBIE_FOLDER,
+                                     table_name_prefix)
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.sparse import csr_matrix
 from scipy.spatial import distance
@@ -979,29 +980,34 @@ def label_components_json_wrapper(
         print(f"{json_file} has no 'label_components' section. Nothing to do.")
         return
 
-    out_is_dir = out_path is not None and os.path.isdir(out_path)
+    # An output path that is not a TSV file names a directory, which is created if needed. Testing
+    # with os.path.isdir would classify a directory that does not exist yet as a single file.
+    out_is_dir = out_path is not None and not out_path.endswith(".tsv")
+    if out_is_dir:
+        os.makedirs(out_path, exist_ok=True)
     if out_path is not None and not out_is_dir and len(param_dicts) > 1:
         raise ValueError(
             f"{json_file} holds {len(param_dicts)} entries, which cannot share the single output "
-            "file given with --output. Pass an output directory instead."
+            f"file {out_path}. Pass an output directory instead."
         )
 
     for entry in param_dicts:
         cochlea = entry["dataset_name"]
         print(f"\n{cochlea}")
         seg_channel = entry["segmentation_channel"]
-
-        if s3:
-            table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
-        else:
-            table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
+        prefix = table_name_prefix(cochlea, seg_channel)
 
         save_path, entry_path_file = out_path, path_file
         if out_is_dir:
-            prefix = f"{cochlea.replace('_', '-')}_{seg_channel.replace('_', '-')}"
             save_path = os.path.join(out_path, f"{prefix}.tsv")
-            if path_file is not None:
-                entry_path_file = os.path.join(out_path, f"{prefix}_path.tsv")
+        # Several entries must not share one central path file, or the later cochleae would be
+        # filtered against the first cochlea's spiral.
+        if path_file is not None and len(param_dicts) > 1:
+            root = out_path if out_is_dir else os.path.dirname(path_file)
+            entry_path_file = os.path.join(root, f"{prefix}_path.tsv")
+        elif out_is_dir and path_file is not None:
+            entry_path_file = os.path.join(out_path, f"{prefix}_path.tsv")
 
         label_components_single(
             table_path=table_path,
