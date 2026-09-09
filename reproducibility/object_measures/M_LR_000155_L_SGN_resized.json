@@ -1,0 +1,13 @@
+[
+	{
+		"dataset_name": "M_LR_000155_L",
+		"image_channel": [
+			"PV_resized",
+			"GFP_resized"
+		],
+		"segmentation_channel": "SGN_resized_v2",
+		"component_list": [
+			1
+		]
+	}
+]

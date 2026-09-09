@@ -1,0 +1,18 @@
+[
+	{
+		"dataset_name": "M_AMD_000127_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v9",
+		"component_list": [
+			4,
+			2,
+			7,
+			5,
+			16,
+			8
+		],
+		"min_component_length": 5,
+		"max_edge_distance": 20,
+		"min_size": 10000
+	}
+]

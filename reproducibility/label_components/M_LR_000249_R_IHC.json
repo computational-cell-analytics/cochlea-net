@@ -1,0 +1,11 @@
+[
+	{
+		"dataset_name": "M_LR_000249_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v4b",
+		"component_list": [
+			1
+		],
+		"max_edge_distance": 40
+	}
+]

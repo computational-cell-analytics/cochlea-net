@@ -1,0 +1,10 @@
+[
+	{
+		"dataset_name": "M_AMD_N180_R",
+		"segmentation_channel": "SGN_merged",
+		"cell_type": "sgn",
+		"component_list": [
+			1
+		]
+	}
+]

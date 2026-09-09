@@ -1,0 +1,13 @@
+[
+	{
+		"dataset_name": "M_AMD_N129_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			4,
+			2,
+			6
+		],
+		"max_edge_distance": 40
+	}
+]

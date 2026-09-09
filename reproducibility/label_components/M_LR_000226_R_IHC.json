@@ -1,0 +1,11 @@
+[
+	{
+		"dataset_name": "M_LR_000226_R",
+		"image_channel": "VGlut3",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v4c",
+		"component_list": [
+			1
+		]
+	}
+]

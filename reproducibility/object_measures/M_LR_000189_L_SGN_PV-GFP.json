@@ -1,0 +1,14 @@
+[
+	{
+		"dataset_name": "M_LR_000189_L",
+		"image_channel": [
+			"PV",
+			"GFP"
+		],
+		"segmentation_channel": "SGN_v2",
+		"use_bg_mask": "yes",
+		"component_list": [
+			1
+		]
+	}
+]

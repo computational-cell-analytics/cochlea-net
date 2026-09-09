@@ -1,0 +1,18 @@
+[
+	{
+		"dataset_name": "M_AMD_N75_R",
+		"cell_type": "ihc",
+		"segmentation_channel": "IHC_v4b",
+		"component_list": [
+			1,
+			5,
+			12,
+			4,
+			2,
+			13,
+			7
+		],
+		"max_edge_distance": 40,
+		"min_component_length": 3
+	}
+]

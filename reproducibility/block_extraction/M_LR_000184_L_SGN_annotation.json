@@ -1,0 +1,23 @@
+[
+	{
+		"dataset_name": "M_LR_000184_L",
+		"image_channel": "PV_resized",
+		"crop_centers": [
+			[
+				1326,
+				844,
+				516
+			],
+			[
+				885,
+				913,
+				1023
+			]
+		],
+		"roi_halo": [
+			128,
+			128,
+			32
+		]
+	}
+]

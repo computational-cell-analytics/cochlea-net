@@ -1,6 +1,11 @@
 [
 	{
 		"dataset_name": "G_EK_000233_L",
+		"segmentation_channel": "IHC_v6",
+		"cell_type": "ihc"
+	},
+	{
+		"dataset_name": "G_EK_000233_L",
 		"component_list": [
 			2,
 			1,
