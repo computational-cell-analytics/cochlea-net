@@ -91,11 +91,12 @@ existing `plot_fold_variation`. Note that panel is a different experiment from t
 
 Two things to know when quoting these numbers:
 
-* `M_LR_000227_L` needs `max_edge_distance=45` rather than the default 30, recorded in
-  `reproducibility/label_components/SGN_v2_variance.json`. At 30 the helix breaks into two
-  components for `v2-1` and `v2-3`, so the evaluation would score half of it and count the rest as
-  false negatives. Re-running the component labelling without the override silently reintroduces
-  this.
+* `M_LR_000227_L` needs `max_edge_distance=45` rather than the default 30. At 30 the helix breaks
+  into two components for `v2-1` and `v2-3`, so the evaluation would score half of it and count the
+  rest as false negatives. Re-running the component labelling without the override silently
+  reintroduces this. This note is now the only record of the value: the
+  `SGN_v2-1` to `SGN_v2-4` parameter files were retired, because those replica tables were never
+  published to S3 and could not be replayed.
 * `M_AMD_000058_L` has a 11 % spread in *cell count* across the seeds, far more than the 1-2 %
   elsewhere, because its cells are smaller and more marginal (median 8,842 voxels against 12,572 on
   `M_LR_000226_L`) so each seed draws the signal boundary differently. It compresses to 0.032 in F1,

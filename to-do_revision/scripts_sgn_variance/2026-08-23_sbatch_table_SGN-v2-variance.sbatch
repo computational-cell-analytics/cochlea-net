@@ -35,6 +35,6 @@ echo "Segmentation: $OUTPUT_FOLDER/segmentation.zarr"
 # default.tsv is only computed if it is missing, so re-running this after changing the component
 # parameters below only repeats the cheap component labeling. The component defaults are the SGN
 # ones (max_edge_distance 30 um, min_component_length 50, min_size 1000); no per-cochlea override
-# exists for SGN_v2 in reproducibility/label_components.
+# exists for SGN_v2 in reproducibility/processing.
 python "$SCRIPT" -i "$OUTPUT_FOLDER" --cell_type sgn \
 	--voxel_size 0.38 --n_threads "${SLURM_CPUS_PER_TASK}" -c 1

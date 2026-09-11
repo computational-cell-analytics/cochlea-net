@@ -1,0 +1,53 @@
+[
+	{
+		"dataset_name": "M_LR_000155_L",
+		"image_channel": [
+			"PV",
+			"GFP",
+			"SGN_v2"
+		],
+		"segmentation_channel": "SGN_v2",
+		"cell_type": "sgn",
+		"n_blocks": 6,
+		"crop_centers": [
+			[
+				804,
+				1057,
+				690
+			],
+			[
+				1122,
+				1002,
+				770
+			],
+			[
+				1057,
+				677,
+				785
+			],
+			[
+				1071,
+				682,
+				454
+			],
+			[
+				1396,
+				810,
+				390
+			],
+			[
+				1726,
+				713,
+				483
+			]
+		],
+		"roi_halo": [
+			256,
+			256,
+			50
+		],
+		"component_list": [
+			1
+		]
+	}
+]

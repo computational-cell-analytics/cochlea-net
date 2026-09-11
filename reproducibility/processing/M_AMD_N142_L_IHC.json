@@ -1,0 +1,12 @@
+{
+	"dataset_name": "M_AMD_N142_L",
+	"segmentation_channel": "IHC_v4b",
+	"cell_type": "ihc",
+	"component_list": [
+		1
+	],
+	"label_components": {
+		"max_edge_distance": 25
+	},
+	"tonotopic_mapping": {}
+}

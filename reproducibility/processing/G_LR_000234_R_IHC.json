@@ -1,0 +1,21 @@
+{
+	"dataset_name": "G_LR_000234_R",
+	"segmentation_channel": "IHC_v10",
+	"cell_type": "ihc",
+	"component_list": [
+		2,
+		1,
+		32,
+		4,
+		35,
+		34,
+		6,
+		12
+	],
+	"label_components": {
+		"max_edge_distance": 22,
+		"min_component_length": 20,
+		"max_path_deviation": 20
+	},
+	"tonotopic_mapping": {}
+}

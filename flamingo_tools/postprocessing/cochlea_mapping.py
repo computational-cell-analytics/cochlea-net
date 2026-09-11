@@ -11,7 +11,9 @@ from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closin
 from scipy.interpolate import interp1d
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.json_util import load_processing_params, STEP_KEYS
+from flamingo_tools.s3_utils import (default_table_path, get_s3_path, MOBIE_FOLDER,
+                                     table_name_prefix)
 
 
 def path_dict_to_central_path_table(path_dict):
@@ -1067,6 +1069,61 @@ def equidistant_centers_single(
         json.dump(dic, f, indent='\t', separators=(',', ': '))
 
 
+def equidistant_centers_json_wrapper(
+    json_file: str,
+    mobie_dir: str = MOBIE_FOLDER,
+    s3: bool = False,
+    overrides: Optional[dict] = None,
+    **kwargs,
+):
+    """Recompute the crop centers of every entry of a JSON file and write them back in place.
+
+    The segmentation table of an entry is derived from its "dataset_name" and
+    "segmentation_channel", so the crop centers of a whole parameter file can be refreshed
+    without naming any path.
+
+    Args:
+        json_file: JSON file with one parameter dictionary, or a list of them.
+        mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
+        s3: Flag for accessing data stored on S3 bucket.
+        overrides: Parameters that win over the entry, for the flags the caller set explicitly.
+        kwargs: Further arguments for equidistant_centers_single. An entry of the JSON file
+            overrides them, and overrides wins over both.
+    """
+    with open(json_file, "r") as f:
+        data = json.load(f)
+    is_list = isinstance(data, list)
+    param_dicts = data if is_list else [data]
+
+    # equidistant_centers_single writes n_blocks, include_gap and crop_centers back into the
+    # entry, none of which a processing file may hold at the top level, so it would make that
+    # file unreadable for the three processing steps.
+    for entry in param_dicts:
+        sections = sorted(set(entry) & set(STEP_KEYS))
+        if sections:
+            raise ValueError(
+                f"{json_file} is a processing parameter file, holding the section(s) {sections}. "
+                "The crop centers of a block extraction file are updated in place, which would "
+                "add keys that a processing file must not have. Point --json_info at a file in "
+                "reproducibility/block_extraction instead."
+            )
+
+    for index, entry in enumerate(param_dicts):
+        cochlea = entry["dataset_name"]
+        print(f"\n{cochlea}")
+        seg_channel = entry["segmentation_channel"]
+
+        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
+
+        equidistant_centers_single(
+            table_path=table_path,
+            output_path=json_file,
+            dict_index=index if is_list else None,
+            s3=s3,
+            **{**kwargs, **entry, **(overrides or {})},
+        )
+
+
 def _load_json_as_list(ddict_path: str) -> List[dict]:
     with open(ddict_path, "r") as f:
         data = json.loads(f.read())
@@ -1083,6 +1140,7 @@ def tonotopic_mapping_json_wrapper(
     animal: str = "mouse",
     otof: bool = False,
     s3: bool = False,
+    mobie_dir: str = MOBIE_FOLDER,
     **kwargs
 ):
     """Wrapper function for tonotopic mapping using a segmentation table.
@@ -1098,21 +1156,36 @@ def tonotopic_mapping_json_wrapper(
         animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         s3: Use data path of S3 bucket for segmentation table.
+        mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
     """
     if json_file is None:
-        tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, ototf=otof,
+        tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, otof=otof,
                                  central_spots_path=central_spots_path,
                                  force_overwrite=force_overwrite, s3=s3, **kwargs)
     else:
         if out_path is None:
             raise ValueError("Specify an output path when supplying a JSON dictionary.")
-        param_dicts = _load_json_as_list(json_file)
+        param_dicts = load_processing_params(json_file, "tonotopic_mapping")
+        if not param_dicts:
+            print(f"{json_file} has no 'tonotopic_mapping' section. Nothing to do.")
+            return
+
+        # An output path that is not a TSV file names a directory, which is created if needed.
+        out_is_dir = not out_path.endswith(".tsv")
+        if out_is_dir:
+            os.makedirs(out_path, exist_ok=True)
+        elif len(param_dicts) > 1:
+            raise ValueError(
+                f"{json_file} holds {len(param_dicts)} entries, which cannot share the single "
+                f"output file {out_path}. Pass an output directory instead."
+            )
+
         for params in param_dicts:
 
             cochlea = params["dataset_name"]
             print(f"\n{cochlea}")
             seg_channel = params["segmentation_channel"]
-            table_path = os.path.join(f"{cochlea}", "tables", seg_channel, "default.tsv")
+            table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
 
             if "OTOF" in cochlea:
                 otof = True
@@ -1126,15 +1199,15 @@ def tonotopic_mapping_json_wrapper(
             else:
                 animal = "mouse"
 
-            if os.path.isdir(out_path):
-                cochlea_str = cochlea.replace('_', '-')
-                table_str = seg_channel.replace('_', '-')
-                save_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}.tsv"]))
-                if central_spots_path is not None:
-                    central_spots_path = os.path.join(out_path, "_".join([cochlea_str, f"{table_str}_path.tsv"]))
-            else:
-                save_path = out_path
+            prefix = table_name_prefix(cochlea, seg_channel)
+            save_path, entry_spots_path = out_path, central_spots_path
+            if out_is_dir:
+                save_path = os.path.join(out_path, f"{prefix}.tsv")
+            # Several entries must not share one central path file.
+            if central_spots_path is not None and (out_is_dir or len(param_dicts) > 1):
+                root = out_path if out_is_dir else os.path.dirname(central_spots_path)
+                entry_spots_path = os.path.join(root, f"{prefix}_path.tsv")
 
-            tonotopic_mapping_single(table_path=table_path, out_path=save_path, animal=animal, otof=otof,
-                                     force_overwrite=force_overwrite, central_spots_path=central_spots_path,
-                                     s3=s3, **params)
+            tonotopic_mapping_single(table_path=table_path, out_path=save_path,
+                                     force_overwrite=force_overwrite, central_spots_path=entry_spots_path,
+                                     s3=s3, **{**kwargs, "animal": animal, "otof": otof, **params})

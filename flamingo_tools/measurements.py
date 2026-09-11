@@ -1,7 +1,6 @@
 """Functionality for measuring morphology and fluorescence intensities of segmented cells.
 """
 
-import json
 import multiprocessing as mp
 import os
 import warnings
@@ -26,7 +25,8 @@ from tqdm import tqdm
 from .file_utils import read_image_data
 from .postprocessing.label_components import compute_table_on_the_fly
 import flamingo_tools.s3_utils as s3_utils
-from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.json_util import load_processing_params
+from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER
 
 
 def _measure_volume_and_surface(
@@ -661,6 +661,158 @@ def object_measures_single(
             )
 
 
+def _object_measures_from_params(
+    params: dict,
+    out_paths: List[str],
+    mobie_dir: str,
+    use_bg_mask: bool,
+    bg_cache_paths: List[str],
+    s3: bool,
+    image_paths: Optional[List[str]] = None,
+    table_path: Optional[str] = None,
+    seg_path: Optional[str] = None,
+    **kwargs,
+):
+    """Compute the object measures for one parameter dictionary of a JSON file.
+
+    The image, segmentation and table paths are derived per entry, so that one JSON file can
+    hold several entries for one cochlea.
+
+    Args:
+        params: Parameter dictionary of a single cochlea and segmentation.
+        out_paths: Output path(s) to table containing object measures.
+        mobie_dir: Local MoBIE directory used for creating data paths.
+        use_bg_mask: Use background mask for calculating object measures.
+        bg_cache_paths: Cache path(s) for background mask in zarr format.
+        s3: Flag for accessing data stored on S3 bucket.
+        image_paths: Optional image paths.
+        table_path: Optional path to segmentation table.
+        seg_path: Optional segmentation path.
+    """
+    cochlea = params["dataset_name"]
+    if isinstance(params["image_channel"], list):
+        image_channels = params["image_channel"]
+    else:
+        image_channels = [params["image_channel"]]
+
+    seg_channel = params["segmentation_channel"]
+    if len(seg_channel) == 0:
+        raise ValueError("Provide a segmentation channel.")
+
+    image_channels = [i for i in image_channels if i != seg_channel]
+    print(f"Calculating object measures for image channels: {image_channels}.")
+
+    c_str = cochlea.replace('_', '-')
+    s_str = seg_channel.replace('_', '-')
+
+    if "use_bg_mask" in params:
+        # Read rather than pop: the entry may be reused, and losing the key would silently
+        # drop the background mask together with the "-bg-mask" suffix of the output name.
+        recorded = params["use_bg_mask"]
+        if isinstance(recorded, bool):
+            use_bg_mask = recorded
+        elif isinstance(recorded, str):
+            use_bg_mask = recorded.strip().lower() in ("yes", "true")
+        else:
+            raise ValueError(f"use_bg_mask must be a boolean or a string, got {recorded!r}.")
+
+    if use_bg_mask:
+        suffix = "-bg-mask"
+    else:
+        suffix = ""
+
+    out_paths_tmp = []
+    # create output path in local MoBIE project
+    if len(out_paths) == 0:
+        if s3:
+            raise ValueError("The automatic copying to the S3 bucket is not supported yet. "
+                             "Make sure to specify an output directory.")
+        for img_channel in image_channels:
+            i_str = img_channel.replace('_', '-')
+            meas_table_name = f"{i_str}_{s_str}_object-measures{suffix}.tsv"
+            out_paths_tmp.append(os.path.join(mobie_dir, cochlea, "tables", seg_channel, meas_table_name))
+
+    # create distinct output names in output folder
+    elif len(out_paths) == 1 and ".tsv" not in out_paths[0]:
+        os.makedirs(out_paths[0], exist_ok=True)
+        for img_channel in image_channels:
+            i_str = img_channel.replace('_', '-')
+            prefix = f"{c_str}_{i_str}_{s_str}"
+            out_paths_tmp.append(os.path.join(out_paths[0], f"{prefix}_object-measures{suffix}.tsv"))
+
+    # use pre-set output paths given as arguments in CLI
+    else:
+        if len(out_paths) != len(image_channels):
+            raise ValueError(
+                f"{cochlea}: {len(out_paths)} output path(s) were given for the "
+                f"{len(image_channels)} channel(s) {image_channels} of the parameter file. "
+                "Pass one path per channel, or a single directory."
+            )
+        out_paths_tmp = out_paths.copy()
+
+    bg_cache_paths_tmp = None
+    if use_bg_mask:
+        # create output path in local MoBIE project
+        if len(bg_cache_paths) == 0:
+            bg_cache_paths_tmp = [None for _ in range(len(image_channels))]
+
+        # create distinct output names in output folder
+        elif len(bg_cache_paths) == 1 and ".zarr" not in bg_cache_paths[0]:
+            os.makedirs(bg_cache_paths[0], exist_ok=True)
+            bg_cache_paths_tmp = []
+            for img_channel in image_channels:
+                i_str = img_channel.replace('_', '-')
+                bg_cache_name = f"{c_str}_{i_str}_{s_str}_bg-mask.zarr"
+                bg_cache_paths_tmp.append(os.path.join(bg_cache_paths[0], bg_cache_name))
+
+        # use pre-set output paths given as arguments in CLI
+        else:
+            if len(bg_cache_paths) != len(image_channels):
+                raise ValueError(
+                    f"{cochlea}: {len(bg_cache_paths)} background mask path(s) were given for "
+                    f"the {len(image_channels)} channel(s) {image_channels} of the parameter "
+                    "file. Pass one path per channel, or a single directory."
+                )
+            bg_cache_paths_tmp = bg_cache_paths.copy()
+
+    if image_paths is not None and len(image_paths) != len(image_channels):
+        raise ValueError(
+            f"{cochlea}: {len(image_paths)} image path(s) were given for the "
+            f"{len(image_channels)} channel(s) {image_channels} of the parameter file. "
+            "Pass one path per channel, or none to derive them from the channel names."
+        )
+
+    # create paths based on JSON parameters
+    if table_path is None:
+        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
+    if s3:
+        if image_paths is None:
+            image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr"
+                           for ch in image_channels]
+        if seg_path is None:
+            seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
+    else:
+        if image_paths is None:
+            image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
+                           for ch in image_channels]
+        if seg_path is None:
+            seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
+                                    f"{seg_channel}.ome.zarr")
+
+    # use_bg_mask is passed explicitly, so it must not also arrive through the entry.
+    kwargs = {**kwargs, **{k: v for k, v in params.items() if k != "use_bg_mask"}}
+    object_measures_single(
+        table_path=table_path,
+        seg_path=seg_path,
+        image_paths=image_paths,
+        out_paths=out_paths_tmp,
+        s3=s3,
+        use_bg_mask=use_bg_mask,
+        bg_cache_paths=bg_cache_paths_tmp,
+        **kwargs,
+    )
+
+
 def object_measures_json_wrapper(
     out_paths: List[str],
     json_file: Optional[str] = None,
@@ -688,115 +840,31 @@ def object_measures_json_wrapper(
         seg_path: Optional segmentation path.
     """
     if json_file is not None:
-        # load parameters from JSON
-        with open(json_file, "r") as f:
-            params = json.loads(f.read())
-            if isinstance(params, list):
-                warnings.warn("Using only the first entry of the JSON dictionary.")
-                params = params[0]
-        cochlea = params["dataset_name"]
-        if isinstance(params["image_channel"], list):
-            image_channels = params["image_channel"]
-        else:
-            image_channels = [params["image_channel"]]
-
-        seg_channel = params["segmentation_channel"]
-        if len(seg_channel) == 0:
-            raise ValueError("Provide a segmentation channel.")
-
-        image_channels = [i for i in image_channels if i != seg_channel]
-        print(f"Calculating object measures for image channels: {image_channels}.")
-
-        c_str = cochlea.replace('_', '-')
-        s_str = seg_channel.replace('_', '-')
-
-        if "use_bg_mask" in list(params.keys()):
-            if params.pop("use_bg_mask") in ["yes", "Yes"]:
-                use_bg_mask = True
-            else:
-                use_bg_mask = False
-
-        if use_bg_mask:
-            suffix = "-bg-mask"
-        else:
-            suffix = ""
-
-        out_paths_tmp = []
-        # create output path in local MoBIE project
-        if len(out_paths) == 0:
-            if s3:
-                raise ValueError("The automatic copying to the S3 bucket is not supported yet. "
-                                 "Make sure to specify an output directory.")
-            for img_channel in image_channels:
-                i_str = img_channel.replace('_', '-')
-                meas_table_name = f"{i_str}_{s_str}_object-measures{suffix}.tsv"
-                out_paths_tmp.append(os.path.join(mobie_dir, cochlea, "tables", seg_channel, meas_table_name))
-
-        # create distinct output names in output folder
-        elif len(out_paths) == 1 and ".tsv" not in out_paths[0]:
-            os.makedirs(out_paths[0], exist_ok=True)
-            for img_channel in image_channels:
-                i_str = img_channel.replace('_', '-')
-                prefix = f"{c_str}_{i_str}_{s_str}"
-                out_paths_tmp.append(os.path.join(out_paths[0], f"{prefix}_object-measures{suffix}.tsv"))
-
-        # use pre-set output paths given as arguments in CLI
-        else:
-            assert len(image_channels) == len(out_paths)
-            out_paths_tmp = out_paths.copy()
-
-        bg_cache_paths_tmp = None
-        if use_bg_mask:
-            # create output path in local MoBIE project
-            if len(bg_cache_paths) == 0:
-                bg_cache_paths_tmp = [None for _ in range(len(image_channels))]
-
-            # create distinct output names in output folder
-            elif len(bg_cache_paths) == 1 and ".zarr" not in bg_cache_paths[0]:
-                os.makedirs(bg_cache_paths[0], exist_ok=True)
-                bg_cache_paths_tmp = []
-                for img_channel in image_channels:
-                    i_str = img_channel.replace('_', '-')
-                    bg_cache_name = f"{c_str}_{i_str}_{s_str}_bg-mask.zarr"
-                    bg_cache_paths_tmp.append(os.path.join(bg_cache_paths[0], bg_cache_name))
-
-            # use pre-set output paths given as arguments in CLI
-            else:
-                assert len(bg_cache_paths) == len(image_channels)
-                bg_cache_paths_tmp = bg_cache_paths.copy()
-
-        # create paths based on JSON parameters
-        if s3:
-            if image_paths is None:
-                image_paths = [f"{cochlea}/images/ome-zarr/{ch}.ome.zarr"
-                               for ch in image_channels]
-            if seg_path is None:
-                seg_path = f"{cochlea}/images/ome-zarr/{seg_channel}.ome.zarr"
-            if table_path is None:
-                table_path = f"{cochlea}/tables/{seg_channel}/default.tsv"
-        else:
-            if image_paths is None:
-                image_paths = [os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{ch}.ome.zarr")
-                               for ch in image_channels]
-            if seg_path is None:
-                seg_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr",
-                                        f"{seg_channel}.ome.zarr")
-            if table_path is None:
-                table_path = os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
-
-        kwargs.update(params)
-        object_measures_single(
-            table_path=table_path,
-            seg_path=seg_path,
-            image_paths=image_paths,
-            out_paths=out_paths_tmp,
-            s3=s3,
-            use_bg_mask=use_bg_mask,
-            cochlea=cochlea,
-            bg_cache_paths=bg_cache_paths_tmp,
-            **kwargs,
-        )
-
+        param_dicts = load_processing_params(json_file, "object_measures")
+        if not param_dicts:
+            print(f"{json_file} has no 'object_measures' section. Nothing to do.")
+            return
+        shared = {"--output": [p for p in out_paths if ".tsv" in p],
+                  "--bg_cache_paths": [p for p in bg_cache_paths if ".zarr" in p]}
+        for flag, explicit in shared.items():
+            if len(param_dicts) > 1 and explicit:
+                raise ValueError(
+                    f"{json_file} holds {len(param_dicts)} entries, which cannot share the "
+                    f"explicit files given with {flag}. Pass a directory instead."
+                )
+        for entry in param_dicts:
+            _object_measures_from_params(
+                entry,
+                out_paths=out_paths,
+                mobie_dir=mobie_dir,
+                use_bg_mask=use_bg_mask,
+                bg_cache_paths=bg_cache_paths,
+                s3=s3,
+                image_paths=image_paths,
+                table_path=table_path,
+                seg_path=seg_path,
+                **kwargs,
+            )
     else:
         object_measures_single(
             out_paths=out_paths,

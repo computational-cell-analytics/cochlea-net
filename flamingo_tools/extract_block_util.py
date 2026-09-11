@@ -12,7 +12,6 @@ from skimage.transform import rescale
 
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
-from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_single
 from flamingo_tools.analysis.density_utils import hull_to_mask
 
 
@@ -336,43 +335,21 @@ def extract_central_block_from_json(
         s3: Flag for accessing data on the S3 bucket.
         mobie_dir: Local MoBIE directory used for creating data paths.
     """
-    with open(json_file, "r") as f:
-        dic = json.loads(f.read())
-        if isinstance(dic, list):
-            dic_list = dic
-        else:
-            dic_list = [dic]
+    from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_json_wrapper
 
-    for dict_index, dic in enumerate(dic_list):
-        if s3:
-            s3_name = dic["dataset_name"]
-            s3_seg_channel = dic["segmentation_channel"]
-            table_path = f"{s3_name}/tables/{s3_seg_channel}/default.tsv"
-        else:
-            table_path = os.path.join(
-                mobie_dir, dic["dataset_name"], "tables", dic["segmentation_channel"], "default.tsv")
+    # Refresh the crop centers of every entry in place, then extract once for the whole file.
+    # Extracting inside the loop repeated the whole file once per entry.
+    equidistant_centers_json_wrapper(
+        json_file=json_file, mobie_dir=mobie_dir, s3=s3, **kwargs,
+    )
 
-        equidistant_centers_single(
-            table_path=table_path,
-            output_path=json_file,
-            n_blocks=dic["n_blocks"],
-            cell_type=dic["cell_type"],
-            component_list=dic["component_list"],
-            include_gap=dic.get("include_gap", False),
-            s3=s3,
-            dict_index=dict_index,
-            **kwargs,
-        )
-
-        os.makedirs(output_path, exist_ok=True)
-        input_key = "s0"
-
-        extract_block_json_wrapper(
-            output_path=output_path,
-            json_file=json_file,
-            s3=s3,
-            input_key=input_key,
-            mobie_dir=mobie_dir,
-            force=force_overwrite,
-            **kwargs,
-        )
+    os.makedirs(output_path, exist_ok=True)
+    extract_block_json_wrapper(
+        output_path=output_path,
+        json_file=json_file,
+        s3=s3,
+        input_key="s0",
+        mobie_dir=mobie_dir,
+        force=force_overwrite,
+        **kwargs,
+    )

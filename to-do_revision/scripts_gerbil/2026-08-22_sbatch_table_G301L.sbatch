@@ -27,7 +27,7 @@ case "${SLURM_ARRAY_TASK_ID}" in
 		CELL_TYPE=ihc
 		# The gerbil IHC spiral is usually split into several components, so the minimal component
 		# length is lowered to also list the small ones, cf.
-		# reproducibility/label_components/G_LR_000301_R_IHC.json.
+		# reproducibility/processing/G_LR_000301_R_IHC.json.
 		EXTRA_ARGS=(--min_component_length 10)
 		;;
 	*)

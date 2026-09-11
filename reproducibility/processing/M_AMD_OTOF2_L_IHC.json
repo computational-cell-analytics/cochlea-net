@@ -1,0 +1,13 @@
+{
+	"dataset_name": "M_AMD_OTOF2_L",
+	"segmentation_channel": "IHC_v2",
+	"cell_type": "ihc",
+	"image_channel": [
+		"Apha"
+	],
+	"component_list": [
+		1,
+		2
+	],
+	"object_measures": {}
+}

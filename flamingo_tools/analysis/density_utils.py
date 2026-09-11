@@ -13,7 +13,7 @@ from skimage.measure import regionprops
 
 from flamingo_tools.analysis.seg_table_utils import filter_table
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import MOBIE_FOLDER, get_s3_path
+from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER, get_s3_path
 from flamingo_tools.json_util import export_dictionary_as_json
 
 REFERENCE_PRESETS = {
@@ -1058,12 +1058,9 @@ def calc_sgn_density(
     elif json_params is not None:
         dataset_name = json_params["dataset_name"]
         seg_channel = json_params.get("segmentation_channel", "SGN_v2")
-        if s3:
-            table_path = f"{dataset_name}/tables/{seg_channel}/default.tsv"
-        else:
-            table_path = os.path.join(mobie_dir, dataset_name, "tables", seg_channel, "default.tsv")
-            if not os.path.isfile(table_path):
-                raise ValueError(f"Table path {table_path} does not exist. Use explicit path or check MoBIE folder.")
+        table_path = default_table_path(dataset_name, seg_channel, s3=s3, mobie_dir=mobie_dir)
+        if not s3 and not os.path.isfile(table_path):
+            raise ValueError(f"Table path {table_path} does not exist. Use explicit path or check MoBIE folder.")
     else:
         raise ValueError("Provide 'seg_table_path' or 'json_input'.")
 

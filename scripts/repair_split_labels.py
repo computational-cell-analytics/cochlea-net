@@ -402,7 +402,7 @@ def stage_measures(args, paths):
             print(f"  anchor moved more than {args.max_anchor_shift} um for {len(far)} labels, so their"
                   f" background term is not revalidated: {far}")
     print("\nRe-run 'flamingo_tools.object_measures' with"
-          f" reproducibility/object_measures/{args.cochlea.replace('_', '')}_IHC.json for exact values.")
+          f" reproducibility/processing/{args.cochlea}_IHC.json for exact values.")
 
 
 def stage_verify(args, paths):

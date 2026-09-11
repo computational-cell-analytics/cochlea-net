@@ -64,6 +64,43 @@ BUCKET_NAME = "cochlea-lightsheet"
 DEFAULT_CREDENTIALS = os.path.expanduser("~/.aws/credentials")
 
 
+def default_table_path(
+    cochlea: str,
+    seg_channel: str,
+    s3: bool = False,
+    mobie_dir: str = MOBIE_FOLDER,
+) -> str:
+    """Build the path of the default segmentation table of one cochlea.
+
+    Args:
+        cochlea: Name of the cochlea, the "dataset_name" of a parameter file.
+        seg_channel: Name of the segmentation channel.
+        s3: Build a path relative to the S3 bucket instead of a local one.
+        mobie_dir: Local MoBIE directory. Ignored when s3 is set.
+
+    Returns:
+        Path of the segmentation table.
+    """
+    if s3:
+        return f"{cochlea}/tables/{seg_channel}/default.tsv"
+    return os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+
+
+def table_name_prefix(cochlea: str, seg_channel: str) -> str:
+    """Build the file name prefix that identifies one cochlea and segmentation.
+
+    Underscores become dashes, so that the parts of the name stay separable.
+
+    Args:
+        cochlea: Name of the cochlea.
+        seg_channel: Name of the segmentation channel.
+
+    Returns:
+        File name prefix, for example "M-LR-000144-L_SGN-v2".
+    """
+    return f"{cochlea.replace('_', '-')}_{seg_channel.replace('_', '-')}"
+
+
 def check_s3_credentials(
     bucket_name: Optional[str], service_endpoint: Optional[str], credential_file: Optional[str]
 ) -> Tuple[str, str, str]:

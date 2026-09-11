@@ -22,7 +22,7 @@ from flamingo_tools.intensity_annotation.eval_annotations import (
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
 
-# Component labels copied from reproducibility/object_measures/MAMDOTOF*_IHC.json.
+# Component labels copied from reproducibility/processing/M_AMD_OTOF2[78]_[LR]_IHC.json.
 COCHLEAE = {
     "M_AMD_OTOF27_L": [1],
     "M_AMD_OTOF27_R": [2, 4, 10],

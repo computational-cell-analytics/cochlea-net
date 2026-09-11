@@ -1,0 +1,19 @@
+{
+	"dataset_name": "M_LR_000144_L",
+	"segmentation_channel": "SGN_v2",
+	"cell_type": "sgn",
+	"image_channel": [
+		"GFP",
+		"PV"
+	],
+	"component_list": [
+		1
+	],
+	"label_components": {
+		"max_edge_distance": 50
+	},
+	"tonotopic_mapping": {},
+	"object_measures": {
+		"use_bg_mask": "yes"
+	}
+}

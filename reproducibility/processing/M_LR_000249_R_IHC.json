@@ -1,0 +1,12 @@
+{
+	"dataset_name": "M_LR_000249_R",
+	"segmentation_channel": "IHC_v4b",
+	"cell_type": "ihc",
+	"component_list": [
+		1
+	],
+	"label_components": {
+		"max_edge_distance": 40
+	},
+	"tonotopic_mapping": {}
+}

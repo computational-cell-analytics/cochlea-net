@@ -1,0 +1,26 @@
+[
+	{
+		"dataset_name": "LaVision-OTOF36R",
+		"image_channel": [
+			"CR",
+			"IHC_LOWRES-v2"
+		],
+		"voxel_size": [
+			1.887779,
+			1.887779,
+			3.0
+		],
+		"roi_halo": [
+			128,
+			128,
+			48
+		],
+		"crop_centers": [
+			[
+				2558,
+				3415,
+				871
+			]
+		]
+	}
+]

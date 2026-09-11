@@ -1,0 +1,45 @@
+[
+	{
+		"dataset_name": "LaVision-OTOF25R",
+		"image_channel": [
+			"CR",
+			"rbOtof",
+			"IHC_LOWRES-v3"
+		],
+		"segmentation_channel": "IHC_LOWRES-v3",
+		"cell_type": "ihc",
+		"voxel_size": [
+			1.887779,
+			1.887779,
+			3.0
+		],
+		"n_blocks": 3,
+		"max_edge_distance": 300,
+		"component_list": [
+			1,
+			2
+		],
+		"roi_halo": [
+			128,
+			128,
+			48
+		],
+		"crop_centers": [
+			[
+				1117,
+				2711,
+				2632
+			],
+			[
+				1025,
+				2870,
+				1179
+			],
+			[
+				899,
+				1423,
+				2319
+			]
+		]
+	}
+]
