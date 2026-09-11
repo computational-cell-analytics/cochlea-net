@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.interpolate import interp1d
+from scipy.spatial import cKDTree, ConvexHull
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
 from flamingo_tools.json_util import load_processing_params, STEP_KEYS
@@ -101,7 +102,8 @@ def central_path_edt_graph(
                 u = idx_to_node(z, y, x)
                 for dz, dy, dx in border_coords:
                     nz, ny, nx_ = z + dz, y + dy, x + dx
-                    if nz >= 0 and nz < shape[0] and mask[nz, ny, nx_]:
+                    in_bounds = (0 <= nz < shape[0]) and (0 <= ny < shape[1]) and (0 <= nx_ < shape[2])
+                    if in_bounds and mask[nz, ny, nx_]:
                         v = idx_to_node(nz, ny, nx_)
                         w = 1.0 / (1e-3 + min(dt[z, y, x], dt[nz, ny, nx_]))
                         G.add_edge(u, v, weight=w)
@@ -129,47 +131,13 @@ def moving_average_3d(path: np.ndarray, window: int = 3) -> np.ndarray:
     kernel_size = 2 * window + 1
     kernel = np.ones(kernel_size) / kernel_size
 
-    smooth_path = np.zeros_like(path)
+    smooth_path = np.zeros(path.shape, dtype=np.float64)
 
     for d in range(3):
         pad = np.pad(path[:, d], window, mode='edge')
         smooth_path[:, d] = np.convolve(pad, kernel, mode='valid')
 
     return smooth_path
-
-
-def extend_path(
-    path_pos,
-    extension_length: Optional[float] = None,
-    max_edge_distance: float = 30,
-):
-    """Extend path of nodes by adding additional points inbetween.
-    Additional nodes are added linearly between existing ones in regular intervals.
-    The interval can be specified using the extension length.
-
-    Args:
-        path_pos: List of coordinates in 3D space.
-        extension_length: Length for the extension between existing nodes
-        max_edge_distance: Maximal distance between two nodes which are viable for extension.
-
-    Returns:
-        Extended coordinates
-    """
-    if extension_length is not None:
-        print(f"Extending nodes every {extension_length}µm.")
-        path_extended = []
-        for num in range(len(path_pos) - 1):
-            dist = math.dist(path_pos[num], path_pos[num + 1])
-            # section between two components
-            if dist > max_edge_distance:
-                path_extended.append(path_pos[num])
-                continue
-            extended_space = np.linspace(path_pos[num], path_pos[num + 1], round(dist / extension_length))
-            path_extended.extend(extended_space[:-1])
-        path_extended.append(path_pos[-1])
-        return np.array(path_extended)
-    else:
-        return np.array(path_pos)
 
 
 def _outward_tangent(path: np.ndarray, end: str, lookback_distance: float = 50.0) -> np.ndarray:
@@ -238,189 +206,650 @@ def _combined_score(flow_score: float, distance: float, min_distance: float) -> 
     return flow_score * (min_distance / distance)
 
 
-def measure_run_length_sgns(
-        centroids_components: List[np.ndarray],
-        scale_factor: int = 10,
-        apex_higher: bool = True,
-        include_gap: bool = False,
-        ambiguous_margin: float = 200.0,
-        min_flow_length: float = 600.0,
-) -> Tuple[float, np.ndarray, dict]:
-    """Measure the run lengths of the SGN segmentation by finding a central path through Rosenthal's canal.
-    This function handles cases with a single or multiple components.
-    The List of centroids has to be in order of neighboring components.
-    For each component:
-    1) Process centroids of each component:
-        a) Create a binary mask based on down-scaled centroids.
-        b) Dilate the mask and close holes to ensure a filled structure.
-        c) Determine the endpoints of the structure using the principal axis.
-        d) Identify a central path based on the 3D Euclidean distance transform.
-        e) The path is up-scaled and smoothed using a moving average filter.
-    2) Order paths to have consistent start/end points, e.g.
-        [[start_c1, ..., end_c1], [end_c2, ..., start_c2]] --> [[start_c1, ..., end_c1], [start_c2, ..., end_c2]]
-        Which endpoints to connect is normally decided by closest distance. If the two closest candidate
-        distances are within `ambiguous_margin` of each other, that criterion is unreliable (e.g. two
-        different turns of the spiral can pass closer to each other than the true anatomical continuation) -
-        a flow-based fallback is used instead, picking whichever candidate keeps each component's local
-        directional trend pointing toward the other (see `_flow_alignment_score`), discounted by how much
-        farther it is than the closest candidate (see `_combined_score`) so distance still has a say. The
-        fallback only engages when both components involved are at least `min_flow_length` long: small
-        torn-off fragments do not have a reliable directional trend (their own shape is unrelated to the
-        true canal direction), and closest distance remains the better default for them.
-    3) Assign base/apex position to path.
-    4) Assign distance of nodes by skipping intermediate space between separate components.
-        Points of path wit their position and fractional length are stored in a dictionary.
-    5) Concatenate individual paths to form total path
+def _principal_axis_endpoints(mask: np.ndarray) -> Tuple[Tuple[int, ...], Tuple[int, ...]]:
+    """Find the two extreme voxels of a binary mask along its principal axis.
 
     Args:
-        centroids_components: List of centroids of the SGN segmentation, ndarray of shape (N, 3).
-        scale_factor: Downscaling factor for finding the central path.
-        apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
-        include_gap: Include the distance between different components for calculating the run length.
-        ambiguous_margin: If the two smallest candidate endpoint distances for a junction are within this
-            many µm of each other, fall back to flow-based matching instead of raw closest distance.
-        min_flow_length: Minimal arc length (µm) both components of a junction must have for the flow-based
-            fallback to be used; below this, small/torn fragments fall back to raw closest distance instead.
+        mask: Binary mask of the volume.
 
     Returns:
-        Total distance of the path.
-        Path as an nd.array of positions.
-        A dictionary containing the position and the length fraction of each point in the path.
+        Start voxel.
+        End voxel.
     """
-    total_path = []
-    print(f"Evaluating {len(centroids_components)} component(s).")
+    pts = np.argwhere(mask == 1)
+    c_mean = pts.mean(axis=0)
+    cov = np.cov((pts - c_mean).T)
+    evals, evecs = np.linalg.eigh(cov)
+    axis = evecs[:, np.argmax(evals)]
+    proj = (pts - c_mean) @ axis
+    return tuple(pts[proj.argmin()]), tuple(pts[proj.argmax()])
 
-    def _find_central_path_through_downscaled_mask(centroids, downscaling_factor):
-        # Check for the existence of and the shortest path between the most distant nodes in the downscaled volume.
-        mask = downscaled_centroids(centroids, scale_factor=downscaling_factor, downsample_mode="capped")
-        mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
-        mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
-        pts = np.argwhere(mask == 1)
 
-        # find two endpoints: min/max along principal axis
-        c_mean = pts.mean(axis=0)
-        cov = np.cov((pts - c_mean).T)
-        evals, evecs = np.linalg.eigh(cov)
-        axis = evecs[:, np.argmax(evals)]
-        proj = (pts - c_mean) @ axis
-        start_voxel = tuple(pts[proj.argmin()])
-        end_voxel = tuple(pts[proj.argmax()])
+def _central_path_downscaled(centroids: np.ndarray, scale_factor: int) -> Optional[np.ndarray]:
+    """Find the central path of one component in a downscaled binary volume.
 
-        # get central path and total distance
-        return central_path_edt_graph(mask, start_voxel, end_voxel)
+    Args:
+        centroids: Centroids of one component, ndarray of shape (N, 3).
+        scale_factor: Downscaling factor. One voxel of the mask spans this many µm.
 
-    # 1) Process centroids for each component
+    Returns:
+        Path in voxel coordinates, or None if the component is not connected at this factor.
+    """
+    mask = downscaled_centroids(centroids, scale_factor=scale_factor, downsample_mode="capped")
+    mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
+    mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
+    start_voxel, end_voxel = _principal_axis_endpoints(mask)
+    return central_path_edt_graph(mask, start_voxel, end_voxel)
+
+
+def component_paths_edt(
+    centroids_components: List[np.ndarray],
+    apex_higher: bool = True,
+    scale_factor: int = 10,
+    smooth_window: int = 3,
+    quantize: bool = True,
+) -> List[np.ndarray]:
+    """Find one central path per component with the 3D Euclidean distance transform.
+
+    For each component the centroids are rasterized into a binary volume of `scale_factor` µm
+    voxels, the volume is dilated and closed, and a path is traced between the two extremes of
+    the principal axis. The path follows the medial axis because the edge weights of the graph
+    are the inverse distance transform.
+
+    This method reproduces the central path used for the CochleaNet paper. Two details are kept
+    for that reason and must not be "cleaned up":
+
+    - `scale_factor` is deliberately not reset between components. A component that is not
+      connected at the current factor raises the factor for every component after it.
+    - The smoothed path is truncated to whole µm. The original implementation allocated the
+      output of the moving average with the integer dtype of the up-scaled path, so every
+      coordinate was truncated. Removing the truncation shifts the run length by about 0.2 %.
+
+    Args:
+        centroids_components: List of centroids per component, each of shape (N, 3).
+        apex_higher: Unused. Part of the shared method signature.
+        scale_factor: Downscaling factor for the binary volume.
+        smooth_window: Half-window of the moving average filter.
+        quantize: Truncate the smoothed path to whole µm. Set to False for a refined path.
+
+    Returns:
+        One ordered path per component, in the order of the input.
+    """
+    paths = []
     for centroids in centroids_components:
-        # get central path and total distance
-        path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
+        path = _central_path_downscaled(centroids, scale_factor)
 
-        # Use larger downscaling factor to have connected components in downscaled volume.
+        # Use a larger downscaling factor to have connected components in the downscaled volume.
         while path is None:
             scale_factor = 2 * scale_factor
             print(f"Not all components are fully connected in downscaled volume. Trying scale factor {scale_factor}.")
             if scale_factor > 100:
                 raise ValueError("Downscaling for tonotopic mapping not possible.")
-            path = _find_central_path_through_downscaled_mask(centroids, downscaling_factor=scale_factor)
+            path = _central_path_downscaled(centroids, scale_factor)
 
-        path = path * scale_factor
-        path = moving_average_3d(path, window=3)
-        total_path.append(path)
+        path = moving_average_3d(path * scale_factor, window=smooth_window)
+        paths.append(path.astype(np.int64) if quantize else path)
+    return paths
 
-    # 2) Order paths to have consistent start/end points
-    if len(total_path) > 1:
-        path_lengths = [_path_length(p) for p in total_path]
 
-        # Find starting order of first two components
-        c1a = total_path[0][0, :]
-        c1b = total_path[0][-1, :]
+def _arc_length(path: np.ndarray) -> np.ndarray:
+    """Cumulative arc length of an ordered path, shape (N,)."""
+    segments = np.linalg.norm(np.diff(path, axis=0), axis=1)
+    return np.concatenate([[0.0], np.cumsum(segments)])
 
-        c2a = total_path[1][0, :]
-        c2b = total_path[1][-1, :]
 
-        end_combos = [("start", "start"), ("start", "end"), ("end", "start"), ("end", "end")]
-        distances = [math.dist(c1a, c2a), math.dist(c1a, c2b), math.dist(c1b, c2a), math.dist(c1b, c2b)]
-        order = sorted(range(len(distances)), key=lambda i: distances[i])
-        min_index = order[0]
-        margin = distances[order[1]] - distances[order[0]]
-        long_enough = path_lengths[0] >= min_flow_length and path_lengths[1] >= min_flow_length
+def resample_path(path: np.ndarray, spacing: float) -> np.ndarray:
+    """Resample an ordered path to a uniform arc-length spacing. Both endpoints are preserved.
+
+    Args:
+        path: Ordered array of 3D positions, shape (N, 3).
+        spacing: Target distance between two consecutive samples in µm.
+
+    Returns:
+        Resampled path of shape (M, 3).
+    """
+    path = np.asarray(path, dtype=float)
+    cum_len = _arc_length(path)
+    # interp1d needs a strictly increasing x. A quantized path does contain repeated nodes.
+    keep = np.concatenate([[True], np.diff(cum_len) > 1e-9])
+    path, cum_len = path[keep], cum_len[keep]
+    if len(path) < 2 or cum_len[-1] <= 0:
+        return path
+    n_samples = max(int(round(cum_len[-1] / spacing)) + 1, 2)
+    return interp1d(cum_len, path, axis=0)(np.linspace(0.0, cum_len[-1], n_samples))
+
+
+def _tangents(samples: np.ndarray, window: float, spacing: float) -> np.ndarray:
+    """Unit tangent at every sample, from a central difference over a fixed physical window.
+
+    Clipping the indices makes the two terminal samples degrade to a one-sided difference.
+
+    Args:
+        samples: Path sampled at uniform arc length, shape (N, 3).
+        window: Total length of the difference window in µm.
+        spacing: Arc-length spacing of the samples in µm.
+
+    Returns:
+        Unit tangents of shape (N, 3).
+    """
+    half = max(int(round(window / (2 * spacing))), 1)
+    index = np.arange(len(samples))
+    tangents = samples[np.clip(index + half, 0, len(samples) - 1)] - samples[np.clip(index - half, 0, len(samples) - 1)]
+    norms = np.linalg.norm(tangents, axis=1, keepdims=True)
+    return tangents / np.where(norms > 0, norms, 1.0)
+
+
+def _plane_basis(tangents: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+    """Orthonormal basis of the plane perpendicular to every tangent.
+
+    Args:
+        tangents: Unit tangents of shape (N, 3).
+
+    Returns:
+        First basis vector per tangent, shape (N, 3).
+        Second basis vector per tangent, shape (N, 3).
+    """
+    helper = np.tile(np.array([0.0, 0.0, 1.0]), (len(tangents), 1))
+    # A helper parallel to the tangent gives a zero cross product. Swap it well before that,
+    # so the angle between tangent and helper always stays above 25 degrees.
+    helper[np.abs(tangents[:, 2]) > 0.9] = np.array([1.0, 0.0, 0.0])
+    first = np.cross(tangents, helper)
+    first /= np.linalg.norm(first, axis=1, keepdims=True)
+    return first, np.cross(tangents, first)
+
+
+def _hull_area_centroid(points: np.ndarray) -> np.ndarray:
+    """Area centroid of the convex hull of a set of 2D points.
+
+    The area centroid is used instead of the mean of the points because the SGN density varies
+    across the cross-section of Rosenthal's canal. The mean of the points follows the density,
+    the area centroid follows the shape of the cross-section.
+
+    Args:
+        points: Points of shape (N, 2).
+
+    Returns:
+        Centroid of shape (2,).
+    """
+    if len(points) < 3:
+        return points.mean(axis=0)
+    try:
+        hull = ConvexHull(points)
+    except Exception:
+        # QhullError for collinear or duplicate input.
+        return points.mean(axis=0)
+    poly = points[hull.vertices]
+    x, y = poly[:, 0], poly[:, 1]
+    cross = x * np.roll(y, -1) - np.roll(x, -1) * y
+    area = 0.5 * cross.sum()
+    if abs(area) < 1e-9:
+        return poly.mean(axis=0)
+    centroid_x = ((x + np.roll(x, -1)) * cross).sum() / (6.0 * area)
+    centroid_y = ((y + np.roll(y, -1)) * cross).sum() / (6.0 * area)
+    return np.array([centroid_x, centroid_y])
+
+
+def refine_central_path(
+    path: np.ndarray,
+    centroids: np.ndarray,
+    sample_spacing: float = 20.0,
+    tangent_window: float = 100.0,
+    slab_half_thickness: float = 40.0,
+    max_radius: float = 120.0,
+    min_cross_section_points: int = 20,
+    n_iterations: int = 3,
+    convergence_tol: float = 2.0,
+    smooth_length: float = 100.0,
+    output_spacing: Optional[float] = 10.0,
+) -> np.ndarray:
+    """Recentre a central path on the area centroids of the cross-sections of the canal.
+
+    Every sample of the path is moved to the area centroid of the convex hull of the cells in a
+    slab perpendicular to the local path direction. Each cell is first assigned to its closest
+    sample. This assignment, not the radial cutoff, is what keeps the neighboring turn of the
+    spiral out of a cross-section: the turns of Rosenthal's canal approach each other to about
+    235 µm, which is close to the diameter of the canal itself, so no fixed radius can separate
+    them.
+
+    Args:
+        path: Initial guess of the central path, shape (N, 3), in µm.
+        centroids: Centroids of the component, shape (M, 3), in µm.
+        sample_spacing: Arc-length spacing of the path samples in µm.
+        tangent_window: Length of the window used to estimate the local direction in µm.
+        slab_half_thickness: Half thickness of the cross-section slab along the tangent in µm.
+        max_radius: Cells farther than this from the sample are ignored in µm.
+        min_cross_section_points: Minimal number of cells needed to move a sample.
+        n_iterations: Maximal number of refinement passes.
+        convergence_tol: Stop once the 95th percentile of the correction is below this, in µm.
+        smooth_length: Length of the moving average window along the path in µm.
+        output_spacing: Arc-length spacing of the returned path in µm. None keeps the samples.
+
+    Returns:
+        The refined path.
+    """
+    centroids = np.asarray(centroids, dtype=float)
+    samples = resample_path(path, sample_spacing)
+    if len(samples) < 3:
+        return samples
+
+    n_neighbor_bins = int(np.ceil(slab_half_thickness / sample_spacing)) + 1
+    smooth_window = max(int(round(smooth_length / (2.0 * sample_spacing))), 1)
+
+    for _ in range(n_iterations):
+        tangents = _tangents(samples, tangent_window, sample_spacing)
+        first, second = _plane_basis(tangents)
+
+        _, assignment = cKDTree(samples).query(centroids, workers=-1)
+        order = np.argsort(assignment, kind="stable")
+        sorted_assignment = assignment[order]
+        sample_index = np.arange(len(samples))
+        bin_start = np.searchsorted(sorted_assignment, sample_index, "left")
+        bin_end = np.searchsorted(sorted_assignment, sample_index, "right")
+
+        refined = samples.copy()
+        for i in range(len(samples)):
+            low = max(0, i - n_neighbor_bins)
+            high = min(len(samples) - 1, i + n_neighbor_bins)
+            # The bins are contiguous in the sorted order, so one slice covers the whole window.
+            selected = order[bin_start[low]:bin_end[high]]
+            if selected.size < min_cross_section_points:
+                continue
+
+            relative = centroids[selected] - samples[i]
+            along = relative @ tangents[i]
+            in_plane = np.stack([relative @ first[i], relative @ second[i]], axis=1)
+            keep = (np.abs(along) <= slab_half_thickness) & ((in_plane ** 2).sum(axis=1) <= max_radius ** 2)
+            if int(keep.sum()) < min_cross_section_points:
+                # Too few cells to trust the hull. Keep the initial guess for this sample.
+                continue
+
+            center = _hull_area_centroid(in_plane[keep])
+            refined[i] = samples[i] + center[0] * first[i] + center[1] * second[i]
+
+        correction = np.linalg.norm(refined - samples, axis=1)
+        samples = resample_path(moving_average_3d(refined, window=smooth_window), sample_spacing)
+        # The correction plateaus at the noise of the hull centroid itself, so the tolerance has
+        # to sit above that floor and the number of passes has to stay capped.
+        if np.percentile(correction, 95) < convergence_tol:
+            break
+
+    if output_spacing is not None:
+        samples = resample_path(samples, output_spacing)
+    return samples
+
+
+def component_paths_edt_refined(
+    centroids_components: List[np.ndarray],
+    apex_higher: bool = True,
+    scale_factor: int = 10,
+    smooth_window: int = 3,
+    **refine_kwargs,
+) -> List[np.ndarray]:
+    """Find one central path per component, then recentre it on the cross-sections of the canal.
+
+    The first step is `component_paths_edt`, without the truncation to whole µm. The second step
+    is `refine_central_path`, which moves every sample to the area centroid of the convex hull of
+    the cells around it. Measured against the area centroids of held-out cells, this reduces the
+    offset of the path from a median of about 20 µm to about 5 µm.
+
+    Args:
+        centroids_components: List of centroids per component, each of shape (N, 3).
+        apex_higher: Unused. Part of the shared method signature.
+        scale_factor: Downscaling factor of the initial guess.
+        smooth_window: Half-window of the moving average filter of the initial guess.
+        refine_kwargs: Passed to `refine_central_path`.
+
+    Returns:
+        One ordered path per component, in the order of the input.
+    """
+    initial = component_paths_edt(
+        centroids_components, scale_factor=scale_factor, smooth_window=smooth_window, quantize=False,
+    )
+    return [refine_central_path(path, np.asarray(centroids, dtype=float), **refine_kwargs)
+            for path, centroids in zip(initial, centroids_components)]
+
+
+def _auto_max_edge_distance(centroids_components: List[np.ndarray]) -> int:
+    """Smallest edge distance that connects every component, rounded up to whole µm."""
+    max_edge_distance = max(minimal_connection_distance(c) for c in centroids_components)
+    return round(max_edge_distance + 0.5)
+
+
+def _component_graph(centroids: np.ndarray, max_edge_distance: float) -> nx.Graph:
+    """Build a graph of one component, with an edge between every pair closer than a threshold.
+
+    Args:
+        centroids: Centroids of one component, shape (N, 3).
+        max_edge_distance: Maximal distance between two nodes that get an edge, in µm.
+
+    Returns:
+        The graph, with the position of each node stored as the node attribute 'pos'.
+    """
+    graph = nx.Graph()
+    for index, position in enumerate(centroids):
+        graph.add_node(index, pos=position)
+    for i in range(len(centroids)):
+        for j in range(i + 1, len(centroids)):
+            distance = math.dist(centroids[i], centroids[j])
+            if distance <= max_edge_distance:
+                graph.add_edge(i, j, weight=distance)
+    return graph
+
+
+def component_paths_graph(
+    centroids_components: List[np.ndarray],
+    apex_higher: bool = True,
+    max_edge_distance: Optional[float] = None,
+) -> List[np.ndarray]:
+    """Find one path per component through the centroids themselves.
+
+    This is the method for IHCs, which form a single row of cells. The centroids are therefore
+    already the central path and no volumetric estimate is needed. Each component is turned into
+    a graph of its centroids and the path is the shortest path between the two most distant nodes.
+
+    The shortest path is deliberately unweighted, which reproduces the paths used for the
+    CochleaNet paper. Passing `weight="weight"` would give the geometric shortest path and lower
+    the reported IHC run lengths by about 1 %.
+
+    Args:
+        centroids_components: List of centroids per component, each of shape (N, 3).
+        apex_higher: Apex is the node with the higher y-value if True. Only used to pick the
+            source and the target of the shortest path, which are not interchangeable for an
+            unweighted path.
+        max_edge_distance: Maximal distance between two nodes that get an edge, in µm. Derived
+            from all components if None.
+
+    Returns:
+        One ordered path per component, in the order of the input.
+    """
+    if max_edge_distance is None:
+        max_edge_distance = _auto_max_edge_distance(centroids_components)
+        print("Automatically determined max edge distance", max_edge_distance)
+
+    paths = []
+    for centroids in centroids_components:
+        graph = _component_graph(centroids, max_edge_distance)
+        if not nx.is_connected(graph):
+            raise ValueError(
+                f"A component is not connected at a maximal edge distance of {max_edge_distance} µm. "
+                f"It splits into {nx.number_connected_components(graph)} parts. Either the component "
+                f"labels do not match the connected components of the segmentation, or the component "
+                f"has to be split into several entries of the component list."
+            )
+        start_node, end_node = find_most_distant_nodes(graph)
+
+        # Compare the y-value to not get into confusion with MoBIE dimensions.
+        if graph.nodes[start_node]["pos"][1] > graph.nodes[end_node]["pos"][1]:
+            apex_node = start_node if apex_higher else end_node
+            base_node = end_node if apex_higher else start_node
+        else:
+            apex_node = end_node if apex_higher else start_node
+            base_node = start_node if apex_higher else end_node
+
+        path = nx.shortest_path(graph, source=apex_node, target=base_node)
+        paths.append(np.array([graph.nodes[node]["pos"] for node in path], dtype=float))
+    return paths
+
+
+CENTRAL_PATH_METHODS = {
+    "edt": component_paths_edt,
+    "edt_refined": component_paths_edt_refined,
+    "graph": component_paths_graph,
+}
+
+DEFAULT_PATH_METHOD = {"sgn": "edt_refined", "ihc": "graph"}
+
+# Transitional notice. The default central path method for SGNs changed from 'edt' to
+# 'edt_refined'. Remove this message once the transition period is over.
+_DEFAULT_METHOD_NOTICE = {
+    "edt_refined": (
+        "Using the refined central path method 'edt_refined', which is the new default. It "
+        "recentres the path on the cross-sections of Rosenthal's canal, so the run length and "
+        "the mapped frequency differ from earlier results. Pass path_method='edt' to reproduce "
+        "the mapping used for the CochleaNet paper."
+    ),
+}
+
+
+def _resolve_path_method(cell_type: str, path_method: Optional[str] = None) -> str:
+    """Resolve the central path method for a cell type.
+
+    Args:
+        cell_type: Cell type of the segmentation. Either 'sgn' or 'ihc', in any case.
+        path_method: Explicit method. The default of the cell type is used if None.
+
+    Returns:
+        Name of the method, a key of `CENTRAL_PATH_METHODS`.
+    """
+    if path_method is None:
+        cell_type = str(cell_type).lower()
+        if cell_type not in DEFAULT_PATH_METHOD:
+            raise ValueError(f"Unrecognized cell type: {cell_type}. Choose either 'sgn' or 'ihc'.")
+        path_method = DEFAULT_PATH_METHOD[cell_type]
+        if path_method in _DEFAULT_METHOD_NOTICE:
+            print(_DEFAULT_METHOD_NOTICE[path_method])
+    elif path_method not in CENTRAL_PATH_METHODS:
+        raise ValueError(f"Unrecognized path method: {path_method}. "
+                         f"Choose one of {sorted(CENTRAL_PATH_METHODS)}.")
+    return path_method
+
+
+def _resolve_ambiguous_junction(
+    path_a: np.ndarray,
+    path_b: np.ndarray,
+    candidates: List[Tuple[str, str]],
+    distances: List[float],
+) -> int:
+    """Pick between two candidate endpoint pairs of a junction by flow alignment.
+
+    Args:
+        path_a: Path of the first component.
+        path_b: Path of the second component.
+        candidates: The two candidate (end of a, end of b) pairs.
+        distances: Distance of each candidate pair.
+
+    Returns:
+        Index of the winning candidate.
+    """
+    min_distance = min(distances)
+    scores = [
+        _combined_score(_flow_alignment_score(path_a, end_a, path_b, end_b), distance, min_distance)
+        for (end_a, end_b), distance in zip(candidates, distances)
+    ]
+    return 0 if scores[0] >= scores[1] else 1
+
+
+def _order_components(
+    paths: List[np.ndarray],
+    ambiguous_margin: float = 200.0,
+    min_flow_length: float = 600.0,
+) -> List[np.ndarray]:
+    """Flip the component paths so that consecutive components connect end to start.
+
+    The paths are expected in the order of neighboring components, e.g.
+    [[start_c1, ..., end_c1], [end_c2, ..., start_c2]] --> [[start_c1, ..., end_c1], [start_c2, ..., end_c2]]
+
+    Which endpoints to connect is normally decided by closest distance. If the two closest
+    candidate distances are within `ambiguous_margin` of each other, that criterion is unreliable,
+    because two different turns of the spiral can pass closer to each other than the true
+    anatomical continuation. A flow-based fallback is used instead. It picks whichever candidate
+    keeps the local directional trend of each component pointing toward the other, discounted by
+    how much farther it is than the closest candidate, so distance still has a say.
+
+    The fallback only engages when both components are at least `min_flow_length` long. Small
+    torn-off fragments do not have a reliable directional trend, because their own shape is
+    unrelated to the true direction of the canal, and closest distance is the better default.
+
+    Args:
+        paths: One ordered path per component.
+        ambiguous_margin: Margin in µm below which a junction counts as ambiguous.
+        min_flow_length: Minimal arc length in µm of both components for the fallback.
+
+    Returns:
+        The paths, flipped where needed.
+    """
+    if len(paths) <= 1:
+        return paths
+
+    path_lengths = [_path_length(p) for p in paths]
+
+    # Find the starting order of the first two components.
+    ends_1 = (paths[0][0, :], paths[0][-1, :])
+    ends_2 = (paths[1][0, :], paths[1][-1, :])
+    end_combos = [("start", "start"), ("start", "end"), ("end", "start"), ("end", "end")]
+    distances = [math.dist(ends_1[0], ends_2[0]), math.dist(ends_1[0], ends_2[1]),
+                 math.dist(ends_1[1], ends_2[0]), math.dist(ends_1[1], ends_2[1])]
+    order = sorted(range(len(distances)), key=lambda i: distances[i])
+    min_index = order[0]
+    margin = distances[order[1]] - distances[order[0]]
+    long_enough = path_lengths[0] >= min_flow_length and path_lengths[1] >= min_flow_length
+    if margin < ambiguous_margin and long_enough:
+        print(f"Endpoint distances for linking components 0 and 1 are ambiguous "
+              f"({distances[order[0]]:.1f} vs {distances[order[1]]:.1f} µm, difference {margin:.1f} µm "
+              f"< {ambiguous_margin} µm). Falling back to flow-based matching.")
+        candidates = [end_combos[order[0]], end_combos[order[1]]]
+        winner = _resolve_ambiguous_junction(paths[0], paths[1], candidates,
+                                             [distances[order[0]], distances[order[1]]])
+        min_index = order[winner]
+    if min_index in [0, 1]:
+        paths[0] = np.flip(paths[0], axis=0)
+
+    # Order the other components from start to end.
+    for num in range(0, len(paths) - 1):
+        distance_to_start = math.dist(paths[num][-1, :], paths[num + 1][0, :])
+        distance_to_end = math.dist(paths[num][-1, :], paths[num + 1][-1, :])
+        margin = abs(distance_to_end - distance_to_start)
+        long_enough = path_lengths[num] >= min_flow_length and path_lengths[num + 1] >= min_flow_length
         if margin < ambiguous_margin and long_enough:
-            print(f"Endpoint distances for linking components 0 and 1 are ambiguous "
-                  f"({distances[order[0]]:.1f} vs {distances[order[1]]:.1f} µm, difference {margin:.1f} µm "
+            print(f"Endpoint distances for linking components {num} and {num + 1} are ambiguous "
+                  f"({min(distance_to_start, distance_to_end):.1f} vs "
+                  f"{max(distance_to_start, distance_to_end):.1f} µm, difference {margin:.1f} µm "
                   f"< {ambiguous_margin} µm). Falling back to flow-based matching.")
-            cand_1, cand_2 = order[0], order[1]
-            score_1 = _flow_alignment_score(total_path[0], end_combos[cand_1][0], total_path[1], end_combos[cand_1][1])
-            score_2 = _flow_alignment_score(total_path[0], end_combos[cand_2][0], total_path[1], end_combos[cand_2][1])
-            min_dist = distances[cand_1]
-            combined_1 = _combined_score(score_1, distances[cand_1], min_dist)
-            combined_2 = _combined_score(score_2, distances[cand_2], min_dist)
-            min_index = cand_1 if combined_1 >= combined_2 else cand_2
-        if min_index in [0, 1]:
-            total_path[0] = np.flip(total_path[0], axis=0)
+            winner = _resolve_ambiguous_junction(paths[num], paths[num + 1],
+                                                 [("end", "start"), ("end", "end")],
+                                                 [distance_to_start, distance_to_end])
+            flip = winner == 1
+        else:
+            flip = distance_to_end < distance_to_start
+        if flip:
+            paths[num + 1] = np.flip(paths[num + 1], axis=0)
 
-        # Order other components from start to end
-        for num in range(0, len(total_path) - 1):
-            dist_connecting_nodes_1 = math.dist(total_path[num][-1, :], total_path[num + 1][0, :])
-            dist_connecting_nodes_2 = math.dist(total_path[num][-1, :], total_path[num + 1][-1, :])
-            margin = abs(dist_connecting_nodes_2 - dist_connecting_nodes_1)
-            long_enough = path_lengths[num] >= min_flow_length and path_lengths[num + 1] >= min_flow_length
-            if margin < ambiguous_margin and long_enough:
-                print(f"Endpoint distances for linking components {num} and {num + 1} are ambiguous "
-                      f"({min(dist_connecting_nodes_1, dist_connecting_nodes_2):.1f} vs "
-                      f"{max(dist_connecting_nodes_1, dist_connecting_nodes_2):.1f} µm, difference {margin:.1f} µm "
-                      f"< {ambiguous_margin} µm). Falling back to flow-based matching.")
-                score_1 = _flow_alignment_score(total_path[num], "end", total_path[num + 1], "start")
-                score_2 = _flow_alignment_score(total_path[num], "end", total_path[num + 1], "end")
-                min_dist = min(dist_connecting_nodes_1, dist_connecting_nodes_2)
-                combined_1 = _combined_score(score_1, dist_connecting_nodes_1, min_dist)
-                combined_2 = _combined_score(score_2, dist_connecting_nodes_2, min_dist)
-                flip = combined_2 > combined_1
-            else:
-                flip = dist_connecting_nodes_2 < dist_connecting_nodes_1
-            if flip:
-                total_path[num + 1] = np.flip(total_path[num + 1], axis=0)
+    return paths
 
-    # 3) Assign base/apex position to path
-    # compare y-value to not get into confusion with MoBIE dimensions
-    if total_path[0][0, 1] > total_path[-1][-1, 1]:
-        if not apex_higher:
-            total_path.reverse()
-            total_path = [np.flip(t, axis=0) for t in total_path]
-    elif apex_higher:
-        total_path.reverse()
-        total_path = [np.flip(t, axis=0) for t in total_path]
 
-    # 4) Assign distance of nodes by skipping intermediate space between separate components
-    if include_gap:
-        # flatten the list of components
-        total_path = [np.array([node for comp_path in total_path for node in comp_path])]
-    total_distance = sum([math.dist(p[num + 1], p[num]) for p in total_path for num in range(len(p) - 1)])
-    print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
+def _orient_apex_base(paths: List[np.ndarray], apex_higher: bool = True) -> List[np.ndarray]:
+    """Order the paths so that the first node is the apex.
 
+    Args:
+        paths: One ordered path per component, already linked end to start.
+        apex_higher: Apex is the node with the higher y-value if True.
+
+    Returns:
+        The paths, reversed as a whole if needed.
+    """
+    # Compare the y-value to not get into confusion with MoBIE dimensions.
+    if paths[0][0, 1] > paths[-1][-1, 1]:
+        if apex_higher:
+            return paths
+    elif not apex_higher:
+        return paths
+    paths = list(reversed(paths))
+    return [np.flip(p, axis=0) for p in paths]
+
+
+def _total_distance(paths: List[np.ndarray]) -> float:
+    """Sum of the arc lengths of the paths. The space between components does not count."""
+    return sum([math.dist(p[num + 1], p[num]) for p in paths for num in range(len(p) - 1)])
+
+
+def _path_dict_from_components(paths: List[np.ndarray], total_distance: float) -> dict:
+    """Collect the nodes of all components with their position and fractional run length.
+
+    The fractional run length continues across a component boundary without a jump, so the space
+    between two components does not count towards the run length.
+
+    Args:
+        paths: One ordered path per component, ordered from apex to base or the other way round.
+        total_distance: Total arc length of all components.
+
+    Returns:
+        Dictionary of the nodes, keyed by a consecutive index.
+    """
     path_dict = {}
     accumulated = 0
     index = 0
-    for num, pa in enumerate(total_path):
-        # first node of first path segment
+    for num, component_path in enumerate(paths):
         if num == 0:
-            path_dict[0] = {"pos": total_path[0][0], "length_fraction": 0}
-        # first node of other path segments
+            path_dict[0] = {"pos": paths[0][0], "length_fraction": 0}
         else:
-            path_dict[index] = {"pos": total_path[num][0], "length_fraction": path_dict[index - 1]["length_fraction"]}
+            path_dict[index] = {"pos": paths[num][0], "length_fraction": path_dict[index - 1]["length_fraction"]}
 
         index += 1
-        for enum, p in enumerate(pa[1:]):
-            distance = math.dist(total_path[num][enum], p)
-            accumulated += distance
-            rel_dist = accumulated / total_distance
-            path_dict[index] = {"pos": p, "length_fraction": rel_dist}
+        for enum, position in enumerate(component_path[1:]):
+            accumulated += math.dist(paths[num][enum], position)
+            path_dict[index] = {"pos": position, "length_fraction": accumulated / total_distance}
             index += 1
-    # add last node of last path segment
-    path_dict[index - 1] = {"pos": total_path[-1][-1, :], "length_fraction": 1}
+    # The last node closes the path, so its fraction is exactly 1.
+    path_dict[index - 1] = {"pos": paths[-1][-1, :], "length_fraction": 1}
+    return path_dict
 
-    # 5) Concatenate individual paths to form total path
-    path = np.concatenate(total_path, axis=0)
 
-    return total_distance, path, path_dict
+def measure_run_length(
+    centroids_components: List[np.ndarray],
+    path_method: str = "edt",
+    apex_higher: bool = True,
+    include_gap: bool = False,
+    ambiguous_margin: float = 200.0,
+    min_flow_length: float = 600.0,
+    method_kwargs: Optional[dict] = None,
+) -> Tuple[float, np.ndarray, dict]:
+    """Measure the run length of a segmentation along the central path through the cochlea.
+
+    The list of centroids has to be in the order of neighboring components. The steps are:
+
+    1) Find one central path per component. This is the only cell type specific step and is
+       selected with `path_method`. See `CENTRAL_PATH_METHODS`.
+    2) Flip the paths so that consecutive components connect end to start, see `_order_components`.
+    3) Assign the apex and the base position, see `_orient_apex_base`.
+    4) Measure the run length of every node, skipping the space between separate components.
+    5) Concatenate the individual paths to form the total path.
+
+    Args:
+        centroids_components: List of centroids per component, each of shape (N, 3).
+        path_method: Method used to find the central path of a component.
+        apex_higher: Apex is set to the node with the higher y-value if True.
+        include_gap: Include the distance between different components in the run length.
+        ambiguous_margin: If the two smallest candidate endpoint distances of a junction are
+            within this many µm of each other, fall back to flow-based matching.
+        min_flow_length: Minimal arc length in µm that both components of a junction must have
+            for the flow-based fallback. Below this, closest distance is used.
+        method_kwargs: Extra arguments for the central path method.
+
+    Returns:
+        Total distance of the path.
+        Path as an ndarray of positions.
+        A dictionary containing the position and the length fraction of each node of the path.
+    """
+    if path_method not in CENTRAL_PATH_METHODS:
+        raise ValueError(f"Unrecognized path method: {path_method}. "
+                         f"Choose one of {sorted(CENTRAL_PATH_METHODS)}.")
+
+    print(f"Evaluating {len(centroids_components)} component(s).")
+    paths = CENTRAL_PATH_METHODS[path_method](
+        centroids_components, apex_higher=apex_higher, **(method_kwargs or {}),
+    )
+
+    paths = _order_components(paths, ambiguous_margin=ambiguous_margin, min_flow_length=min_flow_length)
+    paths = _orient_apex_base(paths, apex_higher=apex_higher)
+
+    if include_gap:
+        # Flatten the list of components, so the junctions count towards the run length.
+        paths = [np.array([node for component_path in paths for node in component_path])]
+    total_distance = _total_distance(paths)
+    print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
+
+    path_dict = _path_dict_from_components(paths, total_distance)
+    return total_distance, np.concatenate(paths, axis=0), path_dict
 
 
 def minimal_connection_distance(points):
@@ -447,134 +876,6 @@ def minimal_connection_distance(points):
     max_edge = max(data["weight"] for _, _, data in mst.edges(data=True))
 
     return max_edge
-
-
-def measure_run_length_ihcs(
-    centroids: np.ndarray,
-    centroids_components: Optional[List[np.ndarray]] = None,
-    max_edge_distance: float = 30,
-    apex_higher: bool = True,
-    component_label: List[int] = [1],
-    include_gap: bool = False,
-) -> Tuple[float, np.ndarray, dict]:
-    """Measure the run lengths of the IHC segmentation
-    by determining the shortest path between the most distant nodes of a graph.
-    The graph is created based on the maximal edge distance between nodes.
-
-    If the graph consists of more than one connected component, a list of component labels must be supplied.
-    The components are then connected with edges between nodes of neighboring components which are closest together.
-    Gaps between individual components are ignored and do not count towards the path length.
-
-    Args:
-        centroids: Centroids of IHC segmentation.
-        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
-        apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
-        component_label: List of component labels. Determines the order of components to connect.
-        include_gap: Include the distance between different components for calculating the run length.
-
-    Returns:
-        Total distance of the path.
-        Path as an nd.array of positions.
-        A dictionary containing the position and the length fraction of each point in the path.
-    """
-    if centroids_components is None:
-        centroids_components = [centroids]
-
-    graph = nx.Graph()
-    coords = {}
-    labels = [int(i) for i in range(len(centroids))]
-    for index, element in zip(labels, centroids):
-        coords[index] = element
-
-    for num, pos in coords.items():
-        graph.add_node(num, pos=pos)
-
-    max_edge_distance = 0
-    for centroids_comp in centroids_components:
-        min_connect_dist = minimal_connection_distance(centroids_comp)
-        max_edge_distance = max([max_edge_distance, min_connect_dist])
-
-    max_edge_distance = round(max_edge_distance + 0.5)
-    print("Automatically determined max edge distance", max_edge_distance)
-    # create edges between points whose distance is less than threshold max_edge_distance
-    for num_i, pos_i in coords.items():
-        for num_j, pos_j in coords.items():
-            if num_i < num_j:
-                dist = math.dist(pos_i, pos_j)
-                if dist <= max_edge_distance:
-                    graph.add_edge(num_i, num_j, weight=dist)
-
-    components = [list(c) for c in nx.connected_components(graph)]
-    len_c = [len(c) for c in components]
-    len_c, components = zip(*sorted(zip(len_c, components), reverse=True))
-
-    # combine separate connected components by adding edges between nodes which are closest together
-    if len(components) > 1:
-        print(f"Graph consists of {len(components)} connected components.")
-        if len(component_label) != len(components):
-            raise ValueError(f"Length of graph components {len(components)} "
-                             f"does not match number of component labels {len(component_label)}.")
-
-        # Order connected components in order of component labels
-        # e.g. component_labels = [7, 4, 1, 11] and len_c = [600, 400, 300, 55]
-        # get re-ordered to [300, 400, 600, 55]
-        # TODO: Find more robust way to sort components
-        components_sorted = [
-            c[1] for _, c in sorted(zip(sorted(range(len(component_label)), key=lambda i: component_label[i]),
-                                        sorted(zip(len_c, components), key=lambda x: x[0], reverse=True)))]
-
-        # Connect nodes of neighboring components that are closest together
-        for num in range(0, len(components_sorted) - 1):
-            min_dist = float("inf")
-            closest_pair = None
-
-            # Compare only nodes between two neighboring components
-            for node_a in components_sorted[num]:
-                for node_b in components_sorted[num + 1]:
-                    dist = math.dist(graph.nodes[node_a]["pos"], graph.nodes[node_b]["pos"])
-                    if dist < min_dist:
-                        min_dist = dist
-                        closest_pair = (node_a, node_b)
-            graph.add_edge(closest_pair[0], closest_pair[1], weight=min_dist)
-
-        print("Connect components in order of component labels.")
-
-    start_node, end_node = find_most_distant_nodes(graph)
-
-    # compare y-value to not get into confusion with MoBIE dimensions
-    if graph.nodes[start_node]["pos"][1] > graph.nodes[end_node]["pos"][1]:
-        apex_node = start_node if apex_higher else end_node
-        base_node = end_node if apex_higher else start_node
-    else:
-        apex_node = end_node if apex_higher else start_node
-        base_node = start_node if apex_higher else end_node
-
-    path = nx.shortest_path(graph, source=apex_node, target=base_node)
-    total_distance = nx.path_weight(graph, path, weight="weight")
-    path_pos = [graph.nodes[p]["pos"] for p in path]
-    if not include_gap:
-        # remove distances between components which are larger than the max edge distance
-        total_distance = sum([math.dist(path_pos[num], path_pos[num + 1]) for num in range(len(path_pos) - 1) if
-                              math.dist(path_pos[num], path_pos[num + 1]) <= max_edge_distance])
-    else:
-        total_distance = sum([math.dist(path_pos[num], path_pos[num + 1]) for num in range(len(path_pos) - 1)])
-
-    print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
-    path = moving_average_3d(path_pos, window=3)
-
-    # assign relative distance to points on path
-    path_dict = {}
-    path_dict[0] = {"pos": path_pos[0], "length_fraction": 0}
-    accumulated = 0
-    for num, p in enumerate(path_pos[1:-1]):
-        distance = math.dist(path_pos[num], p)
-        if include_gap or distance <= max_edge_distance:
-            accumulated += distance
-        rel_dist = accumulated / total_distance
-        path_dict[num + 1] = {"pos": p, "length_fraction": rel_dist}
-    path_dict[len(path_pos)] = {"pos": path_pos[-1], "length_fraction": 1}
-
-    return total_distance, path, path_dict
 
 
 def map_frequency(path_dict: dict, animal: str = "mouse", otof: bool = False) -> pd.DataFrame:
@@ -630,41 +931,6 @@ def map_frequency(path_dict: dict, animal: str = "mouse", otof: bool = False) ->
         path_dict[key]["frequency[kHz]"] = var_A * (10 ** (var_a * path_dict[key]["length_fraction"]) - var_k)
 
     return path_dict
-
-
-def get_centers_from_path(
-    path: np.ndarray,
-    total_distance: float,
-    n_blocks: int = 10,
-    offset_blocks: bool = True,
-) -> List[float]:
-    """Get equidistant centers from the central path (not restricted to node location).
-
-    Args:
-        path: Central path through Rosenthal's canal.
-        total_distance: Length of the path.
-        n_blocks: Number of equidistant centers for block creation.
-        offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
-
-    Returns:
-        Equidistant centers.
-    """
-    diffs = np.diff(path, axis=0)
-    seg_lens = np.linalg.norm(diffs, axis=1)
-    cum_len = np.insert(np.cumsum(seg_lens), 0, 0)
-    if offset_blocks:
-        target_s = np.linspace(0, total_distance, n_blocks * 2 + 1)
-        target_s = [s for num, s in enumerate(target_s) if num % 2 == 1]
-    else:
-        target_s = np.linspace(0, total_distance, n_blocks)
-    try:
-        f = interp1d(cum_len, path, axis=0)  # fill_value="extrapolate"
-        centers = f(target_s)
-    except ValueError:
-        print("Using extrapolation to fill values.")
-        f = interp1d(cum_len, path, axis=0, fill_value="extrapolate")
-        centers = f(target_s)
-    return centers
 
 
 def get_centers_from_path_dict(
@@ -746,6 +1012,15 @@ def node_dict_from_path_dict(
     return node_dict
 
 
+def _centroids_per_component(table: pd.DataFrame, component_label: List[int]) -> List[np.ndarray]:
+    """Split the centroids of a segmentation table into one array per component label."""
+    centroids_components = []
+    for label in component_label:
+        subset = table[table["component_labels"] == label]
+        centroids_components.append(list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"])))
+    return centroids_components
+
+
 def equidistant_centers(
     table: pd.DataFrame,
     component_label: List[int] = [1],
@@ -753,6 +1028,7 @@ def equidistant_centers(
     n_blocks: int = 10,
     offset_blocks: bool = True,
     include_gap: bool = False,
+    path_method: Optional[str] = None,
 ) -> np.ndarray:
     """Find equidistant centers within the central path of the Rosenthal's canal.
 
@@ -763,27 +1039,15 @@ def equidistant_centers(
         n_blocks: Number of equidistant centers for block creation.
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
         include_gap: Include the distance between different components for calculating the run length.
+        path_method: Method used to find the central path. The default of the cell type is used if None.
 
     Returns:
         Equidistant centers as float values
     """
-    # subset of centroids for given component label(s)
-    new_subset = table[table["component_labels"].isin(component_label)]
-    centroids = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
-
-    centroids_components = []
-    for label in component_label:
-        subset = table[table["component_labels"] == label]
-        subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-        centroids_components.append(subset_centroids)
-
-    if cell_type == "ihc":
-        total_distance, path, path_dict = measure_run_length_ihcs(
-            centroids, centroids_components, component_label=component_label, include_gap=include_gap,
-        )
-    else:
-        total_distance, path, path_dict = measure_run_length_sgns(centroids_components, include_gap=include_gap)
-
+    centroids_components = _centroids_per_component(table, component_label)
+    _, _, path_dict = measure_run_length(
+        centroids_components, path_method=_resolve_path_method(cell_type, path_method), include_gap=include_gap,
+    )
     return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
 
 
@@ -799,6 +1063,7 @@ def tonotopic_mapping(
     include_gap: bool = False,
     ambiguous_margin: float = 200.0,
     min_flow_length: float = 600.0,
+    path_method: Optional[str] = None,
 ) -> pd.DataFrame:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
@@ -813,11 +1078,13 @@ def tonotopic_mapping(
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
         central_path_df: Dataframe featuring the spots for the central path through the segmentation.
         include_gap: Include the distance between different components for calculating the run length.
-        ambiguous_margin: For SGNs, fall back to flow-based component linking (instead of closest endpoint
+        ambiguous_margin: Fall back to flow-based component linking (instead of closest endpoint
             distance) when the two closest candidate distances for a junction are within this many µm of
-            each other. See `measure_run_length_sgns`.
-        min_flow_length: For SGNs, minimal arc length (µm) both components of a junction must have for the
-            flow-based fallback to be used. See `measure_run_length_sgns`.
+            each other. See `_order_components`.
+        min_flow_length: Minimal arc length (µm) both components of a junction must have for the
+            flow-based fallback to be used. See `_order_components`.
+        path_method: Method used to find the central path. The default of the cell type is used if None.
+            See `CENTRAL_PATH_METHODS`.
 
     Returns:
         Table with tonotopic label for cells.
@@ -831,32 +1098,12 @@ def tonotopic_mapping(
         component_mapping = component_label
 
     if central_path_df is None:
-
-        if cell_type in ["ihc", "IHC"]:
-            centroids_components = []
-            for label in component_mapping:
-                subset = table[table["component_labels"] == label]
-                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-                centroids_components.append(subset_centroids)
-
-            total_distance, _, path_dict = measure_run_length_ihcs(
-                centroids, centroids_components, component_label=component_label, apex_higher=apex_higher,
-                include_gap=include_gap,
-            )
-
-        elif cell_type in ["sgn", "SGN"]:
-            centroids_components = []
-            for label in component_mapping:
-                subset = table[table["component_labels"] == label]
-                subset_centroids = list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"]))
-                centroids_components.append(subset_centroids)
-            total_distance, _, path_dict = measure_run_length_sgns(
-                centroids_components, apex_higher=apex_higher,
-                include_gap=include_gap, ambiguous_margin=ambiguous_margin, min_flow_length=min_flow_length,
-            )
-
-        else:
-            raise ValueError(f"Unrecognized cell type: {cell_type}. Choose either 'sgn' or 'ihc'.")
+        centroids_components = _centroids_per_component(table, component_mapping)
+        total_distance, _, path_dict = measure_run_length(
+            centroids_components, path_method=_resolve_path_method(cell_type, path_method),
+            apex_higher=apex_higher, include_gap=include_gap,
+            ambiguous_margin=ambiguous_margin, min_flow_length=min_flow_length,
+        )
 
         for key, items in path_dict.items():
             path_dict[key]["length[µm]"] = items["length_fraction"] * total_distance
@@ -906,6 +1153,7 @@ def tonotopic_mapping_single(
     component_mapping: Optional[List[int]] = None,
     central_spots_path: Optional[str] = None,
     include_gap: bool = False,
+    path_method: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -933,6 +1181,8 @@ def tonotopic_mapping_single(
         component_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         central_spots_path: Provide table featuring spots for central path through segmentation for tonotopic mapping.
         include_gap: Include the distance between different components for calculating the run length.
+        path_method: Method used to find the central path. The default of the cell type is used if None.
+            Use "edt" to reproduce the mapping of the CochleaNet paper. See `CENTRAL_PATH_METHODS`.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -976,6 +1226,7 @@ def tonotopic_mapping_single(
                                                    apex_higher=apex_higher,
                                                    central_path_df=central_path_df,
                                                    include_gap=include_gap,
+                                                   path_method=path_method,
                                                    otof=otof)
 
         table.to_csv(out_path, sep="\t", index=False)
@@ -992,6 +1243,7 @@ def equidistant_centers_single(
     component_list: List[int] = [1],
     offset_blocks: bool = True,
     include_gap: bool = False,
+    path_method: Optional[str] = None,
     s3: bool = False,
     s3_credentials: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
@@ -1010,6 +1262,8 @@ def equidistant_centers_single(
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
         include_gap: Include the distance between different components for calculating the run length.
             Use the same value as for the tonotopic mapping to keep the centers consistent with the table.
+        path_method: Method used to find the central path. The default of the cell type is used if None.
+            It is deliberately not written back into the parameter file.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -1059,7 +1313,7 @@ def equidistant_centers_single(
 
     centers = equidistant_centers(
         table, component_label=component_list, cell_type=cell_type,
-        n_blocks=n_blocks, offset_blocks=offset_blocks, include_gap=include_gap,
+        n_blocks=n_blocks, offset_blocks=offset_blocks, include_gap=include_gap, path_method=path_method,
     )
     centers = [[round(c) for c in center] for center in centers]
 
@@ -1122,13 +1376,6 @@ def equidistant_centers_json_wrapper(
             s3=s3,
             **{**kwargs, **entry, **(overrides or {})},
         )
-
-
-def _load_json_as_list(ddict_path: str) -> List[dict]:
-    with open(ddict_path, "r") as f:
-        data = json.loads(f.read())
-    # ensure the result is always a list
-    return data if isinstance(data, list) else [data]
 
 
 def tonotopic_mapping_json_wrapper(

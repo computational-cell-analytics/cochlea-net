@@ -3,8 +3,8 @@
 import argparse
 
 from .label_components import label_components_json_wrapper, label_components_single
-from .cochlea_mapping import (equidistant_centers_json_wrapper, equidistant_centers_single,
-                              tonotopic_mapping_json_wrapper)
+from .cochlea_mapping import (CENTRAL_PATH_METHODS, equidistant_centers_json_wrapper,
+                              equidistant_centers_single, tonotopic_mapping_json_wrapper)
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
@@ -38,6 +38,10 @@ def equidistant_centers():
     parser.add_argument("--include_gap", action="store_true",
                         help="Include the distance between different components for calculating the run length. "
                         "Use the same setting as for the tonotopic mapping of the cochlea.")
+    parser.add_argument("--path_method", type=str, default=None, choices=sorted(CENTRAL_PATH_METHODS),
+                        help="Method for finding the central path through the segmentation. "
+                        "Default: 'edt_refined' for sgn, 'graph' for ihc. "
+                        "'edt' is the method that was used for the CochleaNet paper.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -56,6 +60,7 @@ def equidistant_centers():
         cell_type=args.cell_type,
         component_list=args.components,
         include_gap=args.include_gap,
+        path_method=args.path_method,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
@@ -372,6 +377,10 @@ def tonotopic_mapping():
     )
     parser.add_argument("--include_gap", action="store_true",
                         help="Include gaps between components for calculating the length of the central path.")
+    parser.add_argument("--path_method", type=str, default=None, choices=sorted(CENTRAL_PATH_METHODS),
+                        help="Method for finding the central path through the segmentation. "
+                        "Default: 'edt_refined' for sgn, 'graph' for ihc. "
+                        "'edt' is the method that was used for the CochleaNet paper.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -398,6 +407,7 @@ def tonotopic_mapping():
         cell_type=args.cell_type,
         component_list=args.components,
         include_gap=args.include_gap,
+        path_method=args.path_method,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
