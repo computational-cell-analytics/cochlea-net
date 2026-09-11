@@ -235,9 +235,21 @@ def _central_path_downscaled(centroids: np.ndarray, scale_factor: int) -> Option
     Returns:
         Path in voxel coordinates, or None if the component is not connected at this factor.
     """
+    # downscaled_centroids places a centroid at floor(coordinate / scale_factor) and sizes the
+    # volume from the maximum, so a negative coordinate would silently wrap to the far end.
+    if np.asarray(centroids).min() < 0:
+        raise ValueError("Centroids must have non-negative coordinates for the volumetric path methods.")
+
     mask = downscaled_centroids(centroids, scale_factor=scale_factor, downsample_mode="capped")
     mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
     mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
+    if not mask.any():
+        # The closing erodes with a 3x3x3 element, which empties a volume that is flat along one
+        # axis. A planar set of centroids therefore has no volumetric central path.
+        raise ValueError(
+            f"The downscaled volume is empty at a scale factor of {scale_factor} µm. The centroids "
+            f"are likely flat along one axis, which the volumetric path methods cannot handle."
+        )
     start_voxel, end_voxel = _principal_axis_endpoints(mask)
     return central_path_edt_graph(mask, start_voxel, end_voxel)
 
