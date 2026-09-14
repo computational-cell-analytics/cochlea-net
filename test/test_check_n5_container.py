@@ -9,6 +9,13 @@ from contextlib import redirect_stdout
 import numpy as np
 import z5py
 
+# z5py 2 reads the n5 chunk header without validating it, so a corrupted chunk corrupts the heap
+# and takes the whole interpreter down with SIGSEGV or SIGABRT instead of raising. z5py 3, which
+# environment.yaml requires, raises "invalid n5 chunk: truncated header". Skip the two tests that
+# feed it a corrupted chunk when the environment is older, so one stale env cannot kill the run.
+_Z5PY_VALIDATES_CHUNKS = int(z5py.__version__.split(".")[0]) >= 3
+_NEEDS_Z5PY_3 = "z5py < 3 segfaults on a corrupted n5 chunk instead of raising"
+
 SCRIPT_PATH = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "check_n5_container.py"
 )
@@ -69,6 +76,7 @@ class TestCheckN5Container(unittest.TestCase):
         self.assertTrue(any("attributes.json" in p for p in problems), msg=output)
         self.assertTrue(any("does not point to an array" in p for p in problems), msg=output)
 
+    @unittest.skipUnless(_Z5PY_VALIDATES_CHUNKS, _NEEDS_Z5PY_3)
     def test_truncated_chunk(self):
         with open(self._chunk_files()[0], "w"):
             pass
@@ -102,6 +110,7 @@ class TestCheckN5Container(unittest.TestCase):
         """A root key must not resolve to the filesystem root."""
         self.assertEqual(self.script._node_dir(self.path, "/"), self.path)
 
+    @unittest.skipUnless(_Z5PY_VALIDATES_CHUNKS, _NEEDS_Z5PY_3)
     def test_unreadable_chunk(self):
         with open(self._chunk_files()[0], "wb") as f:
             f.write(b"not a valid n5 chunk")

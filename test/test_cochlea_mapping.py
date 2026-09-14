@@ -191,12 +191,35 @@ class TestPathMethodRegistry(unittest.TestCase):
         self.assertEqual(stream.getvalue(), "")
 
 
+# Measured on Linux before the two run-length functions were unified. Do not update these to make
+# a change pass: 'edt' exists to reproduce published results.
+REFERENCE_TOTAL = 2254.2010466280785
+REFERENCE_MID_FRACTION = 0.4965957564441733
+REFERENCE_N_NODES = 299
+
+# The EDT shortest path is tie-degenerate: the edge weights are 1 / (1e-3 + min(dt)) and the dt
+# values are square roots of small integers, so many weights are exactly equal and many routes tie
+# to within a few ulp. Which route Dijkstra returns is therefore decided by the last bits, which
+# differ on arm64. Perturbing every weight by one ulp moves the total by up to 0.03 % on this
+# fixture and 0.1 % on a real cochlea, and macOS CI lands 0.027 % below the value above. 0.5 % is
+# wide enough for that and far below any change worth catching.
+TOTAL_TOLERANCE = 0.005
+
+
 class TestEdtReproducesPublishedPaths(unittest.TestCase):
     """The 'edt' method must keep reproducing the paths used for the CochleaNet paper.
 
-    The values below were measured before the two run-length functions were unified. Do not
-    update them to make a change pass: 'edt' exists to reproduce published results, and any
-    change to these numbers invalidates the tables that were derived with it.
+    The exact run length is **not** a cross-platform invariant, for the reason given above
+    `TOTAL_TOLERANCE`, so it is asserted within a tolerance. The assertions that do hold bit-exactly
+    carry the real guarantee:
+
+    - the int64 dtype is what guards the truncation quirk of `component_paths_edt`; removing the
+      truncation changes the dtype immediately, and shifts the run length by only 0.3 %;
+    - the node count, the consecutive keys and the bounds of the length fractions are unaffected by
+      the tie, because a different route has the same number of hops.
+
+    Byte-identity against the published tables is checked by hand against the real segmentation
+    tables, which cannot live in CI. See the branch notes.
     """
 
     def setUp(self):
@@ -205,24 +228,30 @@ class TestEdtReproducesPublishedPaths(unittest.TestCase):
         self.total, self.path_dict = measure_run_length(self.points, path_method="edt")
 
     def test_total_distance_is_unchanged(self):
-        self.assertAlmostEqual(self.total, 2254.2010466280785, places=9)
+        self.assertAlmostEqual(self.total, REFERENCE_TOTAL, delta=TOTAL_TOLERANCE * REFERENCE_TOTAL)
 
     def test_path_keeps_the_integer_quantization(self):
         # The smoothed path is truncated to whole µm. See component_paths_edt.
         from flamingo_tools.postprocessing.cochlea_mapping import CENTRAL_PATH_METHODS
         path = CENTRAL_PATH_METHODS["edt"](self.points)[0]
         self.assertEqual(path.dtype, np.int64)
-        self.assertEqual(len(path), 299)
+        self.assertEqual(len(path), REFERENCE_N_NODES)
 
     def test_length_fractions_are_unchanged(self):
         fractions = np.array([self.path_dict[key]["length_fraction"] for key in sorted(self.path_dict)])
         self.assertEqual(fractions[0], 0.0)
         self.assertEqual(fractions[-1], 1.0)
-        self.assertAlmostEqual(fractions[len(fractions) // 2], 0.4965957564441733, places=12)
+        self.assertAlmostEqual(fractions[len(fractions) // 2], REFERENCE_MID_FRACTION, delta=TOTAL_TOLERANCE)
         self.assertTrue(np.all(np.diff(fractions) >= 0))
 
     def test_path_dict_keys_are_consecutive(self):
         self.assertEqual(sorted(self.path_dict), list(range(len(self.path_dict))))
+
+    def test_tolerance_admits_the_measured_platform_spread(self):
+        """The bound has to admit the macOS value and still reject a real algorithmic change."""
+        bound = TOTAL_TOLERANCE * REFERENCE_TOTAL
+        self.assertLess(abs(2253.590453058356 - REFERENCE_TOTAL), bound)   # macOS CI
+        self.assertGreater(abs(1.03 * REFERENCE_TOTAL - REFERENCE_TOTAL), bound)
 
 
 class TestRefinedCentralPath(unittest.TestCase):

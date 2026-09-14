@@ -320,8 +320,16 @@ def component_paths_edt(
     is the inverse of the smaller of the two distance transform values it connects, so a step
     deep inside the structure is cheaper than one near its surface.
 
-    This method reproduces the central path used for the CochleaNet paper. Two details are kept
-    for that reason and must not be "cleaned up":
+    This method reproduces the central path used for the CochleaNet paper, on a given platform and
+    library stack. The reproduction is not bit-exact across platforms: the shortest path is
+    tie-degenerate, because the edge weights are 1 / (1e-3 + min(dt)) and the distance transform
+    yields square roots of small integers, so many weights are exactly equal and many routes tie to
+    within a few ulp. The last bits of the weights then decide the route, and they differ between
+    x86-64 and arm64. Perturbing every weight by one ulp moves the run length by up to 0.1 % on a
+    real cochlea. Do not "fix" the tie-breaking: a deterministic rule would change the output on
+    the platform the published tables were computed on.
+
+    Two further details are kept for the same reason and must not be cleaned up either:
 
     - `scale_factor` is deliberately not reset between components. A component that is not
       connected at the current factor raises the factor for every component after it.
