@@ -1,3 +1,41 @@
+"""Tonotopic mapping of a cochlea along the central path through its segmentation.
+
+Every instance of a segmentation is assigned a position along the cochlea, from which the
+Greenwood function gives a frequency. The position comes from a central path that runs through
+the segmented structure: Rosenthal's canal for SGNs, the row of inner hair cells for IHCs.
+
+`measure_run_length` is the single entry point. It runs one central path method per connected
+component, then links, orients and measures the components with code that is shared by every
+method:
+
+    CENTRAL_PATH_METHODS[path_method]  ->  _order_components  ->  _orient_apex_base
+                                       ->  _total_distance    ->  _path_dict_from_components
+
+Adding a central path method
+----------------------------
+A method is one function plus one entry in `CENTRAL_PATH_METHODS`. The contract is:
+
+    def component_paths_<name>(centroids_components, apex_higher=True, **kwargs)
+            -> List[np.ndarray]
+
+- `centroids_components` holds the cell centroids of one component per entry, in µm, with the
+  coordinates in `(x, y, z)` table order — the order of the `anchor_x/y/z` columns, which is the
+  reverse of the `(Z, Y, X)` order used for image arrays. Everything in this module works in
+  table order, including the downscaled volumes of the methods that rasterize.
+- Return one ordered path per component, **in the order of the input**, in the same units and
+  axis order. The shared steps assume that neighboring entries of the list are neighbors in the
+  cochlea; ordering them is the caller's job.
+- The returned path is final. `measure_run_length` never smooths, so any smoothing a method wants
+  is its own responsibility.
+- A method receives the whole list, not one component at a time, because a method may carry state
+  across components: `component_paths_edt` raises its downscaling factor for every component that
+  follows a disconnected one, and `component_paths_graph` derives one edge threshold from all
+  components together.
+- `apex_higher` is passed to every method and may be ignored. `component_paths_graph` needs it
+  because an unweighted shortest path is not symmetric in its source and target.
+
+`DEFAULT_PATH_METHOD` picks the method for a cell type when the caller names none.
+"""
 import json
 import math
 import os
@@ -47,11 +85,12 @@ def central_path_table_to_path_dict(central_path_df):
     return path_dict
 
 
-def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -> Tuple[float, float]:
-    """Find the most distant nodes in a graph.
+def find_most_distant_nodes(G: nx.classes.graph.Graph, weight: str = 'weight') -> Tuple[int, int]:
+    """Find the two nodes of a graph that are farthest apart.
 
     Args:
         G: Input graph.
+        weight: Edge attribute used as the distance. Pass None to count hops instead.
 
     Returns:
         Node 1.
@@ -124,7 +163,8 @@ def moving_average_3d(path: np.ndarray, window: int = 3) -> np.ndarray:
         window: half-window size; actual window = 2*window + 1.
 
     Returns:
-        smoothed path: ndarray of same shape.
+        Smoothed path of the same shape, always float64. Callers that need whole µm have to cast,
+        which `component_paths_edt` does deliberately.
     """
     if not isinstance(path, np.ndarray):
         path = np.array(path)
@@ -210,11 +250,13 @@ def _principal_axis_endpoints(mask: np.ndarray) -> Tuple[Tuple[int, ...], Tuple[
     """Find the two extreme voxels of a binary mask along its principal axis.
 
     Args:
-        mask: Binary mask of the volume.
+        mask: Binary mask of the volume, with its axes in the order of the centroids it was
+            built from, i.e. (x, y, z).
 
     Returns:
-        Start voxel.
-        End voxel.
+        Voxel at the lower end of the principal axis.
+        Voxel at the upper end. Which of the two is the apex is decided later, by
+        `_orient_apex_base`.
     """
     pts = np.argwhere(mask == 1)
     c_mean = pts.mean(axis=0)
@@ -229,14 +271,21 @@ def _central_path_downscaled(centroids: np.ndarray, scale_factor: int) -> Option
     """Find the central path of one component in a downscaled binary volume.
 
     Args:
-        centroids: Centroids of one component, ndarray of shape (N, 3).
+        centroids: Centroids of one component in µm, shape (N, 3), in (x, y, z) order.
         scale_factor: Downscaling factor. One voxel of the mask spans this many µm.
 
     Returns:
-        Path in voxel coordinates, or None if the component is not connected at this factor.
+        Path in voxel coordinates, with the axes in the same (x, y, z) order as the centroids,
+        or None if the component is not connected at this factor. Note that
+        `central_path_edt_graph`, which produces it, names its axes z, y, x; the names do not
+        match this module's order, but both sides use the same axes, so the result is consistent.
+
+    Raises:
+        ValueError: If a coordinate is negative, or if the downscaled volume comes out empty.
     """
-    # downscaled_centroids places a centroid at floor(coordinate / scale_factor) and sizes the
-    # volume from the maximum, so a negative coordinate would silently wrap to the far end.
+    # downscaled_centroids places a centroid at int(coordinate / scale_factor), which truncates
+    # toward zero, and sizes the volume from the maximum. A negative coordinate would therefore
+    # index from the end of the array and silently land at the far side of the volume.
     if np.asarray(centroids).min() < 0:
         raise ValueError("Centroids must have non-negative coordinates for the volumetric path methods.")
 
@@ -244,11 +293,13 @@ def _central_path_downscaled(centroids: np.ndarray, scale_factor: int) -> Option
     mask = binary_dilation(mask, np.ones((3, 3, 3)), iterations=1)
     mask = binary_closing(mask, np.ones((3, 3, 3)), iterations=1)
     if not mask.any():
-        # The closing erodes with a 3x3x3 element, which empties a volume that is flat along one
-        # axis. A planar set of centroids therefore has no volumetric central path.
+        # The closing erodes with a 3x3x3 element and a zero border value, so it empties any
+        # volume whose downscaled extent is a single voxel along one axis. Centroids that lie in
+        # an axis-aligned plane hit this; an oblique plane usually survives the dilation.
         raise ValueError(
-            f"The downscaled volume is empty at a scale factor of {scale_factor} µm. The centroids "
-            f"are likely flat along one axis, which the volumetric path methods cannot handle."
+            f"The downscaled volume is empty at a scale factor of {scale_factor} µm per voxel. "
+            f"The centroids are probably flat along one axis, which the volumetric path methods "
+            f"cannot handle."
         )
     start_voxel, end_voxel = _principal_axis_endpoints(mask)
     return central_path_edt_graph(mask, start_voxel, end_voxel)
@@ -265,8 +316,9 @@ def component_paths_edt(
 
     For each component the centroids are rasterized into a binary volume of `scale_factor` µm
     voxels, the volume is dilated and closed, and a path is traced between the two extremes of
-    the principal axis. The path follows the medial axis because the edge weights of the graph
-    are the inverse distance transform.
+    the principal axis. The path is pulled toward the medial axis because the weight of an edge
+    is the inverse of the smaller of the two distance transform values it connects, so a step
+    deep inside the structure is cheaper than one near its surface.
 
     This method reproduces the central path used for the CochleaNet paper. Two details are kept
     for that reason and must not be "cleaned up":
@@ -275,17 +327,23 @@ def component_paths_edt(
       connected at the current factor raises the factor for every component after it.
     - The smoothed path is truncated to whole µm. The original implementation allocated the
       output of the moving average with the integer dtype of the up-scaled path, so every
-      coordinate was truncated. Removing the truncation shifts the run length by about 0.2 %.
+      coordinate was truncated. Removing the truncation shortens the run length by about 0.3 %
+      (measured 0.29 to 0.33 % on four local cochleae).
 
     Args:
         centroids_components: List of centroids per component, each of shape (N, 3).
         apex_higher: Unused. Part of the shared method signature.
         scale_factor: Downscaling factor for the binary volume.
-        smooth_window: Half-window of the moving average filter.
+        smooth_window: Half-window of the moving average filter, which spans 2 * window + 1 nodes.
         quantize: Truncate the smoothed path to whole µm. Set to False for a refined path.
 
     Returns:
-        One ordered path per component, in the order of the input.
+        One ordered path per component, in the order of the input, in µm and in (x, y, z) order.
+        The node spacing is set by `scale_factor`. The dtype is int64 when `quantize` is set and
+        float64 otherwise.
+
+    Raises:
+        ValueError: If no downscaling factor up to 100 µm per voxel connects a component.
     """
     paths = []
     for centroids in centroids_components:
@@ -304,7 +362,7 @@ def component_paths_edt(
     return paths
 
 
-def _arc_length(path: np.ndarray) -> np.ndarray:
+def arc_length(path: np.ndarray) -> np.ndarray:
     """Cumulative arc length of an ordered path, shape (N,)."""
     segments = np.linalg.norm(np.diff(path, axis=0), axis=1)
     return np.concatenate([[0.0], np.cumsum(segments)])
@@ -315,14 +373,19 @@ def resample_path(path: np.ndarray, spacing: float) -> np.ndarray:
 
     Args:
         path: Ordered array of 3D positions, shape (N, 3).
-        spacing: Target distance between two consecutive samples in µm.
+        spacing: Target distance between two consecutive samples in µm. The samples are evenly
+            spaced, but the spacing that comes out is the path length divided by a whole number
+            of intervals, so it only approximates this value.
 
     Returns:
-        Resampled path of shape (M, 3).
+        Resampled path of shape (M, 3). A path with fewer than two distinct positions is returned
+        unchanged, without resampling.
     """
     path = np.asarray(path, dtype=float)
-    cum_len = _arc_length(path)
-    # interp1d needs a strictly increasing x. A quantized path does contain repeated nodes.
+    if len(path) < 2:
+        return path
+    cum_len = arc_length(path)
+    # interp1d needs a strictly increasing x, and a quantized path can hold repeated nodes.
     keep = np.concatenate([[True], np.diff(cum_len) > 1e-9])
     path, cum_len = path[keep], cum_len[keep]
     if len(path) < 2 or cum_len[-1] <= 0:
@@ -331,10 +394,11 @@ def resample_path(path: np.ndarray, spacing: float) -> np.ndarray:
     return interp1d(cum_len, path, axis=0)(np.linspace(0.0, cum_len[-1], n_samples))
 
 
-def _tangents(samples: np.ndarray, window: float, spacing: float) -> np.ndarray:
+def path_tangents(samples: np.ndarray, window: float, spacing: float) -> np.ndarray:
     """Unit tangent at every sample, from a central difference over a fixed physical window.
 
-    Clipping the indices makes the two terminal samples degrade to a one-sided difference.
+    The indices are clipped at both ends, so the outermost `window / (2 * spacing)` samples use a
+    shortened window and the two terminal samples use a one-sided difference.
 
     Args:
         samples: Path sampled at uniform arc length, shape (N, 3).
@@ -342,35 +406,51 @@ def _tangents(samples: np.ndarray, window: float, spacing: float) -> np.ndarray:
         spacing: Arc-length spacing of the samples in µm.
 
     Returns:
-        Unit tangents of shape (N, 3).
+        Unit tangents of shape (N, 3). A sample whose window collapses to zero length falls back
+        to the step toward the next sample, so the result is a unit vector for any path that
+        `resample_path` produced.
     """
     half = max(int(round(window / (2 * spacing))), 1)
     index = np.arange(len(samples))
-    tangents = samples[np.clip(index + half, 0, len(samples) - 1)] - samples[np.clip(index - half, 0, len(samples) - 1)]
+    forward = samples[np.clip(index + half, 0, len(samples) - 1)]
+    backward = samples[np.clip(index - half, 0, len(samples) - 1)]
+    tangents = forward - backward
     norms = np.linalg.norm(tangents, axis=1, keepdims=True)
-    return tangents / np.where(norms > 0, norms, 1.0)
+    # A path that doubles back on itself over the window gives a zero difference. Fall back to the
+    # step to the next sample, which is non-zero for any path that resample_path produced.
+    degenerate = (norms <= 0).ravel()
+    if degenerate.any():
+        step = np.diff(samples, axis=0, append=samples[-1:] * 2 - samples[-2:-1])
+        tangents[degenerate] = step[degenerate]
+        norms = np.linalg.norm(tangents, axis=1, keepdims=True)
+    return np.divide(tangents, norms, out=np.zeros_like(tangents), where=norms > 0)
 
 
-def _plane_basis(tangents: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
+def plane_basis(tangents: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
     """Orthonormal basis of the plane perpendicular to every tangent.
 
     Args:
-        tangents: Unit tangents of shape (N, 3).
+        tangents: Unit tangents of shape (N, 3), in (x, y, z) order like everything else in this
+            module.
 
     Returns:
         First basis vector per tangent, shape (N, 3).
-        Second basis vector per tangent, shape (N, 3).
+        Second basis vector per tangent, shape (N, 3). Both are unit length and perpendicular to
+        each other and to the tangent. A zero tangent yields zero vectors rather than NaN.
     """
     helper = np.tile(np.array([0.0, 0.0, 1.0]), (len(tangents), 1))
     # A helper parallel to the tangent gives a zero cross product. Swap it well before that,
     # so the angle between tangent and helper always stays above 25 degrees.
     helper[np.abs(tangents[:, 2]) > 0.9] = np.array([1.0, 0.0, 0.0])
     first = np.cross(tangents, helper)
-    first /= np.linalg.norm(first, axis=1, keepdims=True)
+    # A degenerate tangent (see path_tangents) leaves a zero cross product, which would divide into
+    # NaN and silently poison the cross-section of that sample.
+    norms = np.linalg.norm(first, axis=1, keepdims=True)
+    first = np.divide(first, norms, out=np.zeros_like(first), where=norms > 0)
     return first, np.cross(tangents, first)
 
 
-def _hull_area_centroid(points: np.ndarray) -> np.ndarray:
+def hull_area_centroid(points: np.ndarray) -> np.ndarray:
     """Area centroid of the convex hull of a set of 2D points.
 
     The area centroid is used instead of the mean of the points because the SGN density varies
@@ -381,7 +461,11 @@ def _hull_area_centroid(points: np.ndarray) -> np.ndarray:
         points: Points of shape (N, 2).
 
     Returns:
-        Centroid of shape (2,).
+        Centroid of shape (2,). It falls back to the mean of the points for fewer than three
+        points and when the hull is degenerate or cannot be built — that is, to the very quantity
+        the area centroid exists to avoid. Callers that care should keep enough points in a
+        cross-section that the fallback does not trigger; `refine_central_path` uses
+        `min_cross_section_points` for that.
     """
     if len(points) < 3:
         return points.mean(axis=0)
@@ -416,40 +500,53 @@ def refine_central_path(
 ) -> np.ndarray:
     """Recentre a central path on the area centroids of the cross-sections of the canal.
 
-    Every sample of the path is moved to the area centroid of the convex hull of the cells in a
-    slab perpendicular to the local path direction. Each cell is first assigned to its closest
-    sample. This assignment, not the radial cutoff, is what keeps the neighboring turn of the
-    spiral out of a cross-section: the turns of Rosenthal's canal approach each other to about
-    235 µm, which is close to the diameter of the canal itself, so no fixed radius can separate
-    them.
+    Each sample of the path is moved, within the plane perpendicular to the local path direction,
+    to the area centroid of the convex hull of the cells around it. Its position along the path is
+    not changed. A sample with fewer than `min_cross_section_points` cells keeps the position of
+    the initial guess.
+
+    Every cell is assigned to its closest sample before a cross-section is built. That assignment
+    is what keeps the neighboring turn of the spiral out of a cross-section, and it needs no
+    threshold that would have to be tuned per cochlea; `max_radius` only trims stragglers.
+    Measured on a synthetic pair of turns, the refinement is unaffected down to a separation of
+    200 µm between the two axes and breaks down at 150 µm, where the path is pulled about 70 µm
+    off course (see `test_neighboring_turn_of_the_spiral_is_kept_out`).
 
     Args:
         path: Initial guess of the central path, shape (N, 3), in µm.
         centroids: Centroids of the component, shape (M, 3), in µm.
         sample_spacing: Arc-length spacing of the path samples in µm.
         tangent_window: Length of the window used to estimate the local direction in µm.
-        slab_half_thickness: Half thickness of the cross-section slab along the tangent in µm.
-        max_radius: Cells farther than this from the sample are ignored in µm.
-        min_cross_section_points: Minimal number of cells needed to move a sample.
+        slab_half_thickness: Half thickness in µm of the cross-section slab along the tangent,
+            which is what bounds the distance of a cell along the path.
+        max_radius: Maximal distance in µm of a cell from the sample *within the cross-section
+            plane*. The distance along the tangent is bounded by `slab_half_thickness` instead.
+        min_cross_section_points: Minimal number of cells needed to move a sample. A sample with
+            fewer keeps the position of the initial guess.
         n_iterations: Maximal number of refinement passes.
         convergence_tol: Stop once the 95th percentile of the correction is below this, in µm.
         smooth_length: Length of the moving average window along the path in µm.
-        output_spacing: Arc-length spacing of the returned path in µm. None keeps the samples.
+        output_spacing: Arc-length spacing of the returned path in µm. None returns the path at
+            `sample_spacing`. The default matches the node spacing of `component_paths_edt`, so
+            the resulting `path_dict` keeps a comparable resolution.
 
     Returns:
-        The refined path.
+        The refined path, resampled to `output_spacing`. It is shorter than the input on a real
+        cochlea, by a few percent, because the initial guess wanders; see
+        `component_paths_edt_refined` for what that means downstream.
     """
     centroids = np.asarray(centroids, dtype=float)
     samples = resample_path(path, sample_spacing)
     if len(samples) < 3:
-        return samples
+        # Too short to estimate a direction. Return the initial guess at the requested spacing.
+        return resample_path(samples, output_spacing) if output_spacing is not None else samples
 
     n_neighbor_bins = int(np.ceil(slab_half_thickness / sample_spacing)) + 1
     smooth_window = max(int(round(smooth_length / (2.0 * sample_spacing))), 1)
 
     for _ in range(n_iterations):
-        tangents = _tangents(samples, tangent_window, sample_spacing)
-        first, second = _plane_basis(tangents)
+        tangents = path_tangents(samples, tangent_window, sample_spacing)
+        first, second = plane_basis(tangents)
 
         _, assignment = cKDTree(samples).query(centroids, workers=-1)
         order = np.argsort(assignment, kind="stable")
@@ -475,14 +572,23 @@ def refine_central_path(
                 # Too few cells to trust the hull. Keep the initial guess for this sample.
                 continue
 
-            center = _hull_area_centroid(in_plane[keep])
+            center = hull_area_centroid(in_plane[keep])
             refined[i] = samples[i] + center[0] * first[i] + center[1] * second[i]
 
         correction = np.linalg.norm(refined - samples, axis=1)
-        samples = resample_path(moving_average_3d(refined, window=smooth_window), sample_spacing)
+        smoothed = moving_average_3d(refined, window=smooth_window)
+        # moving_average_3d pads with the edge value, which pulls both terminal nodes inward by
+        # sample_spacing * w(w+1) / (2(2w+1)). resample_path then pins the shortened ends, so the
+        # loss would accumulate over the passes and make the run length depend on the number of
+        # passes. Keep the endpoints the refinement itself produced.
+        smoothed[0], smoothed[-1] = refined[0], refined[-1]
+        samples = resample_path(smoothed, sample_spacing)
+        # Only the samples that actually moved say anything about convergence. A sample that was
+        # skipped for too few cells contributes a correction of exactly 0.
+        moved = correction[correction > 0]
         # The correction plateaus at the noise of the hull centroid itself, so the tolerance has
         # to sit above that floor and the number of passes has to stay capped.
-        if np.percentile(correction, 95) < convergence_tol:
+        if moved.size == 0 or np.percentile(moved, 95) < convergence_tol:
             break
 
     if output_spacing is not None:
@@ -500,9 +606,20 @@ def component_paths_edt_refined(
     """Find one central path per component, then recentre it on the cross-sections of the canal.
 
     The first step is `component_paths_edt`, without the truncation to whole µm. The second step
-    is `refine_central_path`, which moves every sample to the area centroid of the convex hull of
-    the cells around it. Measured against the area centroids of held-out cells, this reduces the
-    offset of the path from a median of about 20 µm to about 5 µm.
+    is `refine_central_path`, which recentres every sample on the area centroid of the convex hull
+    of the cells around it.
+
+    Measured with `scripts/validation/central_path/compare_path_methods.py` over 171 components of
+    155 local cochleae, building each path from one half of the cells and measuring on the other
+    half, the offset of the path from the area centroid of its own cross-section drops from a
+    median of 14.8 µm to 4.3 µm, and the 95th percentile of the curvature drops from 21.6 /mm to
+    8.3 /mm. The refined path improved 169 of the 171 components; both exceptions come from the
+    anisotropic LaVision acquisition, whose 3 µm z-sampling makes a cross-section sparse.
+
+    The refined path is shorter than the `edt` path by a median of 3 % (range -8 % to +37 %; the
+    outlier is a cochlea whose `edt` path was 60 µm off centre and too short). `length[µm]`,
+    `length_fraction` and the mapped `frequency[kHz]` therefore all differ between the two
+    methods, and results from the two must not be mixed within one analysis.
 
     Args:
         centroids_components: List of centroids per component, each of shape (N, 3).
@@ -522,7 +639,20 @@ def component_paths_edt_refined(
 
 
 def _auto_max_edge_distance(centroids_components: List[np.ndarray]) -> int:
-    """Smallest edge distance that connects every component, rounded up to whole µm."""
+    """Edge distance that makes every component connected on its own.
+
+    Each component needs a threshold of at least its largest minimum-spanning-tree edge to become
+    one connected graph. The largest of those over all components is used for all of them, so that
+    every component is built with the same rule. This says nothing about connecting the components
+    to each other, which `_order_components` does geometrically instead.
+
+    Args:
+        centroids_components: List of centroids per component, each of shape (N, 3), in µm.
+
+    Returns:
+        The threshold in whole µm. `round(x + 0.5)` is kept from the original implementation: it
+        is neither a ceiling nor plain rounding, but changing it would move the IHC run lengths.
+    """
     max_edge_distance = max(minimal_connection_distance(c) for c in centroids_components)
     return round(max_edge_distance + 0.5)
 
@@ -531,11 +661,13 @@ def _component_graph(centroids: np.ndarray, max_edge_distance: float) -> nx.Grap
     """Build a graph of one component, with an edge between every pair closer than a threshold.
 
     Args:
-        centroids: Centroids of one component, shape (N, 3).
-        max_edge_distance: Maximal distance between two nodes that get an edge, in µm.
+        centroids: Centroids of one component, shape (N, 3), in µm.
+        max_edge_distance: Two nodes get an edge when they are this far apart or closer, in µm.
 
     Returns:
-        The graph, with the position of each node stored as the node attribute 'pos'.
+        The graph. Each node is keyed by its index into `centroids` and carries its position as
+        the node attribute 'pos'. Each edge carries its length as the attribute 'weight', which
+        `find_most_distant_nodes` uses to pick the endpoints of the path.
     """
     graph = nx.Graph()
     for index, position in enumerate(centroids):
@@ -556,23 +688,37 @@ def component_paths_graph(
     """Find one path per component through the centroids themselves.
 
     This is the method for IHCs, which form a single row of cells. The centroids are therefore
-    already the central path and no volumetric estimate is needed. Each component is turned into
-    a graph of its centroids and the path is the shortest path between the two most distant nodes.
+    already the central path and no volumetric estimate is needed. Each component is turned into a
+    graph of its centroids, and its path runs between the two nodes that are farthest apart.
 
-    The shortest path is deliberately unweighted, which reproduces the paths used for the
+    Two different metrics meet here, and the difference matters. The endpoints come from
+    `find_most_distant_nodes`, which uses a **weighted** all-pairs Dijkstra, i.e. geometric
+    distance. The path between them is then an **unweighted** shortest path, i.e. the one with the
+    fewest hops. The unweighted path is deliberate: it reproduces the paths used for the
     CochleaNet paper. Passing `weight="weight"` would give the geometric shortest path and lower
-    the reported IHC run lengths by about 1 %.
+    the reported IHC run lengths by 0.4 to 1.7 % on the local cochleae.
+
+    Each component is traced over its own full extent. The implementation this replaced merged all
+    components into one graph and bridged them with a single edge, so a component only contributed
+    the section between the two nodes that bridged it to its neighbors. Run lengths of cochleae
+    with several components are therefore larger than they were before.
 
     Args:
         centroids_components: List of centroids per component, each of shape (N, 3).
         apex_higher: Apex is the node with the higher y-value if True. Only used to pick the
             source and the target of the shortest path, which are not interchangeable for an
             unweighted path.
-        max_edge_distance: Maximal distance between two nodes that get an edge, in µm. Derived
-            from all components if None.
+        max_edge_distance: Two nodes get an edge when they are this far apart or closer, in µm.
+            Derived from all components with `_auto_max_edge_distance` if None.
 
     Returns:
-        One ordered path per component, in the order of the input.
+        One ordered path per component, in the order of the input, in µm and in (x, y, z) order.
+        The nodes are cell centroids, so the spacing follows the spacing of the cells.
+
+    Raises:
+        ValueError: If a component is not connected at `max_edge_distance`. The implementation
+            this replaced bridged such a split silently; name the pieces as separate entries of
+            the component list instead.
     """
     if max_edge_distance is None:
         max_edge_distance = _auto_max_edge_distance(centroids_components)
@@ -603,12 +749,15 @@ def component_paths_graph(
     return paths
 
 
+# The central path methods, keyed by the name that reaches the CLI and the parameter files.
+# See the module docstring for the contract a method has to satisfy.
 CENTRAL_PATH_METHODS = {
     "edt": component_paths_edt,
     "edt_refined": component_paths_edt_refined,
     "graph": component_paths_graph,
 }
 
+# Used when a caller names no method. 'edt' stays available to reproduce the CochleaNet paper.
 DEFAULT_PATH_METHOD = {"sgn": "edt_refined", "ihc": "graph"}
 
 # Transitional notice. The default central path method for SGNs changed from 'edt' to
@@ -626,18 +775,27 @@ _DEFAULT_METHOD_NOTICE = {
 def _resolve_path_method(cell_type: str, path_method: Optional[str] = None) -> str:
     """Resolve the central path method for a cell type.
 
+    The cell type is validated whether or not a method is given. Resolving to the default prints
+    a one-off notice, because the default for SGNs changed from 'edt' to 'edt_refined'.
+
     Args:
         cell_type: Cell type of the segmentation. Either 'sgn' or 'ihc', in any case.
-        path_method: Explicit method. The default of the cell type is used if None.
+        path_method: Explicit method, a key of `CENTRAL_PATH_METHODS`. The default of the cell
+            type is used if None.
 
     Returns:
         Name of the method, a key of `CENTRAL_PATH_METHODS`.
+
+    Raises:
+        ValueError: If the cell type or the method is not recognized.
     """
+    # The cell type is validated even when a method is given, so that a typo is caught rather
+    # than silently mapping a cochlea with the wrong kind of segmentation.
+    if str(cell_type).lower() not in DEFAULT_PATH_METHOD:
+        raise ValueError(f"Unrecognized cell type: {cell_type}. Choose either 'sgn' or 'ihc'.")
+
     if path_method is None:
-        cell_type = str(cell_type).lower()
-        if cell_type not in DEFAULT_PATH_METHOD:
-            raise ValueError(f"Unrecognized cell type: {cell_type}. Choose either 'sgn' or 'ihc'.")
-        path_method = DEFAULT_PATH_METHOD[cell_type]
+        path_method = DEFAULT_PATH_METHOD[str(cell_type).lower()]
         if path_method in _DEFAULT_METHOD_NOTICE:
             print(_DEFAULT_METHOD_NOTICE[path_method])
     elif path_method not in CENTRAL_PATH_METHODS:
@@ -654,14 +812,17 @@ def _resolve_ambiguous_junction(
 ) -> int:
     """Pick between two candidate endpoint pairs of a junction by flow alignment.
 
+    The flow score is discounted by how much farther a candidate is than the closer of the two,
+    so distance still has a say. See `_combined_score`.
+
     Args:
         path_a: Path of the first component.
         path_b: Path of the second component.
         candidates: The two candidate (end of a, end of b) pairs.
-        distances: Distance of each candidate pair.
+        distances: Distance of each candidate pair in µm, in the same order.
 
     Returns:
-        Index of the winning candidate.
+        Index into `candidates` of the winning pair, 0 or 1. A tie goes to the first.
     """
     min_distance = min(distances)
     scores = [
@@ -693,12 +854,13 @@ def _order_components(
     unrelated to the true direction of the canal, and closest distance is the better default.
 
     Args:
-        paths: One ordered path per component.
+        paths: One ordered path per component. The list is modified in place.
         ambiguous_margin: Margin in µm below which a junction counts as ambiguous.
-        min_flow_length: Minimal arc length in µm of both components for the fallback.
+        min_flow_length: Minimal arc length in µm that both components of a junction need for the
+            flow-based fallback to be used.
 
     Returns:
-        The paths, flipped where needed.
+        The same list object, with the paths flipped where needed.
     """
     if len(paths) <= 1:
         return paths
@@ -782,10 +944,13 @@ def _path_dict_from_components(paths: List[np.ndarray], total_distance: float) -
 
     Args:
         paths: One ordered path per component, ordered from apex to base or the other way round.
-        total_distance: Total arc length of all components.
+        total_distance: Total arc length of all components in µm. Must be greater than zero.
 
     Returns:
-        Dictionary of the nodes, keyed by a consecutive index.
+        Dictionary of the nodes, keyed by a consecutive index starting at 0. Each value holds
+        'pos', the position as an array of shape (3,), and 'length_fraction', the position along
+        the cochlea in [0, 1]. `path_dict_to_central_path_table` additionally expects 'length[µm]'
+        and 'frequency[kHz]', which the caller adds.
     """
     path_dict = {}
     accumulated = 0
@@ -808,13 +973,13 @@ def _path_dict_from_components(paths: List[np.ndarray], total_distance: float) -
 
 def measure_run_length(
     centroids_components: List[np.ndarray],
-    path_method: str = "edt",
+    path_method: str,
     apex_higher: bool = True,
     include_gap: bool = False,
     ambiguous_margin: float = 200.0,
     min_flow_length: float = 600.0,
     method_kwargs: Optional[dict] = None,
-) -> Tuple[float, np.ndarray, dict]:
+) -> Tuple[float, dict]:
     """Measure the run length of a segmentation along the central path through the cochlea.
 
     The list of centroids has to be in the order of neighboring components. The steps are:
@@ -823,24 +988,29 @@ def measure_run_length(
        selected with `path_method`. See `CENTRAL_PATH_METHODS`.
     2) Flip the paths so that consecutive components connect end to start, see `_order_components`.
     3) Assign the apex and the base position, see `_orient_apex_base`.
-    4) Measure the run length of every node, skipping the space between separate components.
-    5) Concatenate the individual paths to form the total path.
+    4) Measure the run length of every node. The space between two components is skipped unless
+       `include_gap` is set, in which case the components are joined into one path first.
 
     Args:
-        centroids_components: List of centroids per component, each of shape (N, 3).
-        path_method: Method used to find the central path of a component.
+        centroids_components: List of centroids per component, each of shape (N, 3), in µm and in
+            (x, y, z) order. Neighboring entries have to be neighbors in the cochlea.
+        path_method: Key of `CENTRAL_PATH_METHODS`. There is deliberately no default here, because
+            the default depends on the cell type; `_resolve_path_method` applies
+            `DEFAULT_PATH_METHOD` for callers that work from a cell type.
         apex_higher: Apex is set to the node with the higher y-value if True.
         include_gap: Include the distance between different components in the run length.
         ambiguous_margin: If the two smallest candidate endpoint distances of a junction are
             within this many µm of each other, fall back to flow-based matching.
         min_flow_length: Minimal arc length in µm that both components of a junction must have
             for the flow-based fallback. Below this, closest distance is used.
-        method_kwargs: Extra arguments for the central path method.
+        method_kwargs: Extra arguments for the central path method. What is accepted depends on
+            the method: `scale_factor` and `smooth_window` for 'edt', those plus every argument of
+            `refine_central_path` for 'edt_refined', and `max_edge_distance` for 'graph'.
 
     Returns:
-        Total distance of the path.
-        Path as an ndarray of positions.
-        A dictionary containing the position and the length fraction of each node of the path.
+        Total distance of the path in µm.
+        A dictionary of the nodes of the path, keyed by a consecutive index, each holding 'pos'
+        and 'length_fraction'. `tonotopic_mapping` adds 'length[µm]' and 'frequency[kHz]'.
     """
     if path_method not in CENTRAL_PATH_METHODS:
         raise ValueError(f"Unrecognized path method: {path_method}. "
@@ -860,8 +1030,7 @@ def measure_run_length(
     total_distance = _total_distance(paths)
     print(f"The total path has length {round(total_distance)} µm. Gaps between components included: {include_gap}.")
 
-    path_dict = _path_dict_from_components(paths, total_distance)
-    return total_distance, np.concatenate(paths, axis=0), path_dict
+    return total_distance, _path_dict_from_components(paths, total_distance)
 
 
 def minimal_connection_distance(points):
@@ -890,19 +1059,20 @@ def minimal_connection_distance(points):
     return max_edge
 
 
-def map_frequency(path_dict: dict, animal: str = "mouse", otof: bool = False) -> pd.DataFrame:
+def map_frequency(path_dict: dict, animal: str = "mouse", otof: bool = False) -> dict:
     """Map the frequency range of SGNs in the cochlea
     using Greenwood function f(x) = A * (10 **(ax) - K).
     Values for humans: a=2.1, k=0.88, A = 165.4 [kHz].
     For mice: fit values between minimal (1kHz) and maximal (80kHz) values
 
     Args:
-        table: Dataframe containing the segmentation.
+        path_dict: Dictionary of the nodes of the central path, each holding 'length_fraction'.
         animal: Select the Greenwood function parameters specific to a species. Either "mouse" or "gerbil".
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+            Only has an effect together with animal="mouse".
 
     Returns:
-        Dataframe containing frequency in an additional column 'frequency[kHz]'.
+        The same dictionary, with 'frequency[kHz]' added to every node.
     """
     if otof and animal == "mouse":
         # freq_min = 4.84 kHz
@@ -949,7 +1119,7 @@ def get_centers_from_path_dict(
     path_dict: dict,
     n_blocks: int = 10,
     offset_blocks: bool = True,
-) -> List[float]:
+) -> List[np.ndarray]:
     """Get equidistant centers from a dictionary of nodes on the central path.
 
     Args:
@@ -1024,8 +1194,12 @@ def node_dict_from_path_dict(
     return node_dict
 
 
-def _centroids_per_component(table: pd.DataFrame, component_label: List[int]) -> List[np.ndarray]:
-    """Split the centroids of a segmentation table into one array per component label."""
+def _centroids_per_component(table: pd.DataFrame, component_label: List[int]) -> List[List[tuple]]:
+    """Split the centroids of a segmentation table into one list of (x, y, z) per component label.
+
+    The order of `component_label` is kept, because it is the order in which the components are
+    linked along the cochlea.
+    """
     centroids_components = []
     for label in component_label:
         subset = table[table["component_labels"] == label]
@@ -1041,7 +1215,7 @@ def equidistant_centers(
     offset_blocks: bool = True,
     include_gap: bool = False,
     path_method: Optional[str] = None,
-) -> np.ndarray:
+) -> List[np.ndarray]:
     """Find equidistant centers within the central path of the Rosenthal's canal.
 
     Args:
@@ -1054,10 +1228,11 @@ def equidistant_centers(
         path_method: Method used to find the central path. The default of the cell type is used if None.
 
     Returns:
-        Equidistant centers as float values
+        One position per block, taken from the nodes of the central path. The dtype follows the
+        path method, so it is int64 for 'edt' and float64 for the others.
     """
     centroids_components = _centroids_per_component(table, component_label)
-    _, _, path_dict = measure_run_length(
+    _, path_dict = measure_run_length(
         centroids_components, path_method=_resolve_path_method(cell_type, path_method), include_gap=include_gap,
     )
     return get_centers_from_path_dict(path_dict, n_blocks=n_blocks, offset_blocks=offset_blocks)
@@ -1076,14 +1251,14 @@ def tonotopic_mapping(
     ambiguous_margin: float = 200.0,
     min_flow_length: float = 600.0,
     path_method: Optional[str] = None,
-) -> pd.DataFrame:
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
     """Tonotopic mapping of SGNs or IHCs by supplying a table with component labels.
     The mapping assigns a tonotopic label to each instance according to the position along the length of the cochlea.
 
     Args:
         table: Dataframe of segmentation table.
         component_label: List of component labels to evaluate.
-        components_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
+        component_mapping: Components to use for tonotopic mapping. Ignore components torn parallel to main canal.
         cell_type: Cell type of segmentation.
         animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
         apex_higher: Flag for identifying apex and base. Apex is set to node with higher y-value if True.
@@ -1099,7 +1274,9 @@ def tonotopic_mapping(
             See `CENTRAL_PATH_METHODS`.
 
     Returns:
-        Table with tonotopic label for cells.
+        The table, with the columns 'offset', 'length_fraction', 'length[µm]' and 'frequency[kHz]'
+        added for every instance in `component_label`.
+        The central path as a table of spots, which can be stored and passed back in.
     """
     # subset of centroids for given component label(s)
     new_subset = table[table["component_labels"].isin(component_label)]
@@ -1111,7 +1288,7 @@ def tonotopic_mapping(
 
     if central_path_df is None:
         centroids_components = _centroids_per_component(table, component_mapping)
-        total_distance, _, path_dict = measure_run_length(
+        total_distance, path_dict = measure_run_length(
             centroids_components, path_method=_resolve_path_method(cell_type, path_method),
             apex_higher=apex_higher, include_gap=include_gap,
             ambiguous_margin=ambiguous_margin, min_flow_length=min_flow_length,
@@ -1183,7 +1360,8 @@ def tonotopic_mapping_single(
 
     Args:
         table_path: File path to segmentation table.
-        out_path: Output path to segmentation table with new column "component_labels".
+        out_path: Output path for the segmentation table, which gains the columns "offset",
+            "length_fraction", "length[µm]" and "frequency[kHz]".
         force_overwrite: Forcefully overwrite existing output path.
         cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
         animal: Animal for species specific frequency mapping. Either "mouse" or "gerbil".
@@ -1267,15 +1445,17 @@ def equidistant_centers_single(
 
     Args:
         table_path: File path to segmentation table.
-        output_path: Output path to JSON file with center coordinates.
+        output_path: Output path to JSON file with center coordinates. An existing file is updated
+            in place rather than overwritten.
+        n_blocks: Number of equidistant centers to compute.
         cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
-        force_overwrite: Forcefully overwrite existing output path.
         component_list: List of components. Can be passed to obtain the number of instances within the component list.
         offset_blocks: Centers are shifted by half a length if True. Avoid centers at the start/end of the path.
         include_gap: Include the distance between different components for calculating the run length.
             Use the same value as for the tonotopic mapping to keep the centers consistent with the table.
-        path_method: Method used to find the central path. The default of the cell type is used if None.
-            It is deliberately not written back into the parameter file.
+        path_method: Method used to find the central path. The default of the cell type is used if
+            None. The resolved name is written into the parameter file, because the centers depend
+            on it just as they depend on include_gap.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
@@ -1296,6 +1476,10 @@ def equidistant_centers_single(
         table_path = os.path.realpath(table_path)
         table = pd.read_csv(table_path, sep="\t")
 
+    # Record the resolved method rather than None: the crop centers depend on it, exactly as they
+    # depend on include_gap, so the file has to say which method produced them.
+    path_method = _resolve_path_method(cell_type, path_method)
+
     if os.path.isfile(output_path):
         print(f"Updating parameters in {output_path}.")
         with open(output_path, "r") as f:
@@ -1313,6 +1497,7 @@ def equidistant_centers_single(
         target["cell_type"] = cell_type
         target["component_list"] = component_list
         target["include_gap"] = include_gap
+        target["path_method"] = path_method
 
     else:
         dic = {}
@@ -1322,6 +1507,7 @@ def equidistant_centers_single(
         target["cell_type"] = cell_type
         target["component_list"] = component_list
         target["include_gap"] = include_gap
+        target["path_method"] = path_method
 
     centers = equidistant_centers(
         table, component_label=component_list, cell_type=cell_type,
@@ -1407,15 +1593,19 @@ def tonotopic_mapping_json_wrapper(
     and the explicit setting of parameters.
 
     Args:
-        output_path: Output path to segmentation table with new column "component_labels".
-        table_path: File path to segmentation table.
+        out_path: Output path for the mapped segmentation table, or a directory when the JSON file
+            holds several entries.
+        table_path: File path to segmentation table. Ignored when json_file is given.
         json_file: JSON file containing parameters for tonotopic mapping.
         central_spots_path: Provide table featuring spots for central path through segmentation for tonotopic mapping.
-        force: Forcefully overwrite existing output path.
+        force_overwrite: Forcefully overwrite existing output path.
         animal: Animal specifier for species specific frequency mapping. Either "mouse" or "gerbil".
+            Derived from the cochlea name for every entry of a JSON file.
         otof: Use mapping by *Mueller, Hearing Research 202 (2005) 63-73* for OTOF cochleae.
+            Derived from the cochlea name for every entry of a JSON file.
         s3: Use data path of S3 bucket for segmentation table.
         mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
+        kwargs: Passed to `tonotopic_mapping_single`. A value recorded in the JSON file wins.
     """
     if json_file is None:
         tonotopic_mapping_single(table_path, out_path=out_path, animal=animal, otof=otof,

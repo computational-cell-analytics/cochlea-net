@@ -202,15 +202,17 @@ class TestEdtReproducesPublishedPaths(unittest.TestCase):
     def setUp(self):
         from flamingo_tools.postprocessing.cochlea_mapping import measure_run_length
         self.points = [list(map(tuple, _make_tube()))]
-        self.total, self.path, self.path_dict = measure_run_length(self.points, path_method="edt")
+        self.total, self.path_dict = measure_run_length(self.points, path_method="edt")
 
     def test_total_distance_is_unchanged(self):
         self.assertAlmostEqual(self.total, 2254.2010466280785, places=9)
 
     def test_path_keeps_the_integer_quantization(self):
         # The smoothed path is truncated to whole µm. See component_paths_edt.
-        self.assertEqual(self.path.dtype, np.int64)
-        self.assertEqual(len(self.path), 299)
+        from flamingo_tools.postprocessing.cochlea_mapping import CENTRAL_PATH_METHODS
+        path = CENTRAL_PATH_METHODS["edt"](self.points)[0]
+        self.assertEqual(path.dtype, np.int64)
+        self.assertEqual(len(path), 299)
 
     def test_length_fractions_are_unchanged(self):
         fractions = np.array([self.path_dict[key]["length_fraction"] for key in sorted(self.path_dict)])
@@ -238,7 +240,7 @@ class TestRefinedCentralPath(unittest.TestCase):
 
     def test_hull_centroid_is_not_biased_by_the_cell_density(self):
         """A plain mean of the points follows the density, the hull area centroid follows the shape."""
-        from flamingo_tools.postprocessing.cochlea_mapping import _hull_area_centroid
+        from flamingo_tools.postprocessing.cochlea_mapping import hull_area_centroid
         rng = np.random.default_rng(1)
         hull_bias, mean_bias = [], []
         for _ in range(50):
@@ -248,39 +250,70 @@ class TestRefinedCentralPath(unittest.TestCase):
             # Linear density gradient across the cross-section.
             keep = rng.random(len(points)) < (1 + 0.8 * points[:, 0] / 60.0) / 1.8
             points = points[keep][:200]
-            hull_bias.append(_hull_area_centroid(points)[0])
+            hull_bias.append(hull_area_centroid(points)[0])
             mean_bias.append(points.mean(axis=0)[0])
 
         self.assertGreater(np.mean(mean_bias), 9.0)
         self.assertLess(abs(np.mean(hull_bias)), 5.0)
 
     def test_neighboring_turn_of_the_spiral_is_kept_out(self):
-        """A cross-section must not pick up cells from the turn of the spiral next to it."""
+        """The refined path must not be pulled toward the turn of the spiral next to it.
+
+        This exercises the production selection end to end: the same path is refined once with
+        only its own cells and once with the cells of a neighboring turn added. If a cross-section
+        picked up cells from that turn, the two results would differ.
+        """
+        from flamingo_tools.postprocessing.cochlea_mapping import refine_central_path, resample_path
+        own = _make_tube(n_points=3000, turns=0.9, seed=2)
+        # 200 µm between the two axes is the tightest separation the method tolerates; at 150 µm
+        # the turns merge and the path is pulled about 70 µm off course.
+        neighbor = _make_tube(n_points=3000, turns=0.9, seed=3) + np.array([0.0, 0.0, 200.0])
+        axis = resample_path(_tube_axis(np.linspace(0, 2 * np.pi * 0.9, 400)), 20.0)
+
+        alone = refine_central_path(axis, own)
+        with_neighbor = refine_central_path(axis, np.concatenate([own, neighbor]))
+
+        self.assertEqual(len(alone), len(with_neighbor))
+        np.testing.assert_allclose(alone, with_neighbor, atol=1e-9)
+
+    def test_refinement_does_not_erode_the_endpoints(self):
+        """A pass must not shorten the path, or the run length would depend on the pass count.
+
+        The moving average pads with the edge value, which pulls both terminal nodes inward.
+        Resampling then pins the shortened ends, so the loss would accumulate over the passes.
+        """
+        from flamingo_tools.postprocessing.cochlea_mapping import arc_length, refine_central_path
+        # A straight path through a uniform cylinder: the refinement is a geometric no-op, so any
+        # change in length is an artefact of the smoothing.
+        straight = np.stack([np.linspace(0, 3000, 151), np.zeros(151), np.zeros(151)], axis=1)
+        rng = np.random.default_rng(0)
+        along = rng.random(40000) * 3000
+        around = rng.random(40000) * 2 * np.pi
+        radius = 60.0 * np.sqrt(rng.random(40000))
+        cells = np.stack([along, radius * np.cos(around), radius * np.sin(around)], axis=1)
+
+        for n_iterations in (1, 3, 5):
+            refined = refine_central_path(straight, cells, n_iterations=n_iterations, convergence_tol=0.0)
+            self.assertAlmostEqual(arc_length(refined)[-1], 3000.0, delta=1.0)
+
+    def test_degenerate_tangent_does_not_produce_nan(self):
+        """A path that doubles back must not turn into NaN tangents or NaN positions."""
         from flamingo_tools.postprocessing.cochlea_mapping import (
-            _plane_basis, _tangents, resample_path,
+            plane_basis, path_tangents, refine_central_path,
         )
-        from scipy.spatial import cKDTree
-        first_turn = _make_tube(n_points=3000, turns=0.9, seed=2)
-        # A second turn, 250 µm away along z, which is close to the diameter of the canal.
-        second_turn = _make_tube(n_points=3000, turns=0.9, seed=3) + np.array([0.0, 0.0, 250.0])
+        doubling_back = np.array([[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [20.0, 0.0, 0.0],
+                                  [10.0, 0.0, 0.0], [0.0, 0.0, 0.0]])
+        tangents = path_tangents(doubling_back, window=40.0, spacing=10.0)
+        first, second = plane_basis(tangents)
+        self.assertTrue(np.isfinite(tangents).all())
+        self.assertTrue(np.isfinite(first).all() and np.isfinite(second).all())
 
-        samples = resample_path(_tube_axis(np.linspace(0, 2 * np.pi * 0.9, 400)), 20.0)
-        tangents = _tangents(samples, 100.0, 20.0)
-        basis_first, basis_second = _plane_basis(tangents)
-        both = np.concatenate([first_turn, second_turn])
-        from_second = np.concatenate([np.zeros(len(first_turn), bool), np.ones(len(second_turn), bool)])
-        _, assignment = cKDTree(samples).query(both)
+        # A genuinely zero tangent must still not divide into NaN.
+        first, second = plane_basis(np.array([[1.0, 0.0, 0.0], [0.0, 0.0, 0.0]]))
+        self.assertTrue(np.isfinite(first).all() and np.isfinite(second).all())
 
-        contaminated = 0
-        for index in range(len(samples)):
-            selected = assignment == index
-            if selected.sum() < 12:
-                continue
-            relative = both[selected] - samples[index]
-            in_plane = np.stack([relative @ basis_first[index], relative @ basis_second[index]], axis=1)
-            keep = (np.abs(relative @ tangents[index]) <= 40.0) & ((in_plane ** 2).sum(axis=1) <= 120.0 ** 2)
-            contaminated += int((from_second[selected] & keep).sum())
-        self.assertEqual(contaminated, 0)
+        cells = np.random.default_rng(0).normal(size=(500, 3)) * 5 + np.array([10.0, 0.0, 0.0])
+        self.assertTrue(np.isfinite(refine_central_path(doubling_back, cells)).all())
 
 
 class TestSharedPathSteps(unittest.TestCase):
@@ -290,8 +323,8 @@ class TestSharedPathSteps(unittest.TestCase):
         table, _, _ = _make_arc_table()
         components = _centroids_per_component(table, [1, 2, 3])
 
-        without_gap, _, path_dict = measure_run_length(components, path_method="graph")
-        with_gap, _, _ = measure_run_length(components, path_method="graph", include_gap=True)
+        without_gap, path_dict = measure_run_length(components, path_method="graph")
+        with_gap, _ = measure_run_length(components, path_method="graph", include_gap=True)
 
         # 60, 40 and 20 points per component at a spacing of 10 µm along the arc.
         self.assertAlmostEqual(without_gap, (59 + 39 + 19) * 10.0, delta=5.0)

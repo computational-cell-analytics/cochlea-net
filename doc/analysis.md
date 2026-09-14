@@ -76,8 +76,16 @@ The central path through the segmentation is found with the method given by `--p
 SGNs default to `edt_refined`, which recentres the path on the cross-sections of Rosenthal's canal.
 IHCs default to `graph`, which follows the row of cells directly.
 Use `--path_method edt` to reproduce the mapping used for the CochleaNet paper.
-The refined path is a few percent shorter than the `edt` path, so the run length and the mapped
-frequency of a cochlea differ between the two methods and must not be mixed within one analysis.
+
+The refined path is shorter than the `edt` path by a median of 3 % across the local cochleae,
+and individual cochleae range from 8 % shorter to 37 % longer.
+The run length and the mapped frequency therefore differ between the two methods.
+Map a whole cohort with one method; do not mix results from both in one analysis.
+
+Run lengths of IHC segmentations that consist of several components also changed.
+Every component in the component list is now measured over its full extent.
+Previously only the section between the nodes that joined a component to its neighbours was counted,
+which under-reported the run length, in one case by a factor of two.
 
 ## Intensity annotation
 

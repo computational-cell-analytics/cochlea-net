@@ -1,10 +1,13 @@
 """Compare central path methods without a manual reference.
 
 There is no manual annotation of the central line of Rosenthal's canal, so the methods are
-compared with measures that only need the segmentation itself. To keep the comparison honest,
-the path is built from one half of the cells and every measure is taken on the other half, with
-a slab thickness that differs from the one the refinement uses. A method therefore cannot win by
-fitting the cells it is scored on.
+compared with measures that only need the segmentation itself. The path is built from one half of
+the cells and every measure is taken on the other half, with a slab thickness that differs from
+the one the refinement uses, so no method can win by fitting the cells it is scored on.
+
+Read the measures with one caveat in mind: `residual` is the quantity `edt_refined` optimizes, so
+it is fair only as an out-of-sample check, not as independent evidence. `imbalance`, `clearance`,
+`curvature` and `length drift` are independent of that objective and carry the real weight.
 
 Measures, per cross-section perpendicular to the local path direction:
 
@@ -16,8 +19,9 @@ Measures, per cross-section perpendicular to the local path direction:
 
 Measures per path:
 
-- curvature: the cochlear spiral has a radius of curvature of at least about 150 µm, so a value
-  above roughly 7 /mm is not anatomical and indicates voxel staircase noise.
+- curvature: a working assumption is that the axis of the cochlear spiral bends no tighter than a
+  radius of about 150 µm, i.e. 7 /mm. Values far above that indicate voxel staircase noise rather
+  than anatomy. Treat the threshold as a rule of thumb, not a measured constant.
 - length drift: the change in arc length when the path is resampled. A smooth curve is
   resample-invariant, a staircase is not.
 
@@ -36,7 +40,7 @@ import pandas as pd
 from scipy.spatial import ConvexHull, cKDTree
 
 from flamingo_tools.postprocessing.cochlea_mapping import (
-    CENTRAL_PATH_METHODS, _arc_length, _hull_area_centroid, _plane_basis, _tangents, resample_path,
+    CENTRAL_PATH_METHODS, arc_length, hull_area_centroid, path_tangents, plane_basis, resample_path,
 )
 
 # Deliberately different from the defaults of refine_central_path.
@@ -49,8 +53,8 @@ MIN_EVAL_POINTS = 12
 def cross_sections(path, centroids):
     """Yield the in-plane offsets of the cells of every cross-section that holds enough cells."""
     samples = resample_path(path, EVAL_SPACING)
-    tangents = _tangents(samples, 100.0, EVAL_SPACING)
-    first, second = _plane_basis(tangents)
+    tangents = path_tangents(samples, 100.0, EVAL_SPACING)
+    first, second = plane_basis(tangents)
     _, assignment = cKDTree(samples).query(centroids, workers=-1)
     order = np.argsort(assignment, kind="stable")
     index = np.arange(len(samples))
@@ -73,10 +77,11 @@ def cross_sections(path, centroids):
 
 def measure(path, centroids):
     """Measure how central a path runs through a set of cells."""
-    residual, imbalance, clearance, outside, n_sections = [], [], [], 0, 0
+    residual, imbalance, clearance = [], [], []
+    outside, n_sections, n_hulls = 0, 0, 0
     for points in cross_sections(path, centroids):
         n_sections += 1
-        residual.append(float(np.linalg.norm(_hull_area_centroid(points))))
+        residual.append(float(np.linalg.norm(hull_area_centroid(points))))
         radius = np.linalg.norm(points, axis=1)
         good = radius > 1e-9
         if good.any():
@@ -85,13 +90,14 @@ def measure(path, centroids):
             hull = ConvexHull(points)
         except Exception:
             continue
+        n_hulls += 1
         edge_distance = -float(hull.equations[:, 2].max())
         equivalent_radius = float(np.sqrt(hull.volume / np.pi))
         outside += int(edge_distance <= 0)
         if equivalent_radius > 0:
             clearance.append(edge_distance / equivalent_radius)
 
-    resampled = [float(_arc_length(resample_path(path, spacing))[-1]) for spacing in (5.0, 10.0, 20.0, 40.0)]
+    resampled = [float(arc_length(resample_path(path, spacing))[-1]) for spacing in (5.0, 10.0, 20.0, 40.0)]
     steps = np.diff(resample_path(path, EVAL_SPACING), axis=0)
     norms = np.linalg.norm(steps, axis=1)
     good = (norms[:-1] > 0) & (norms[1:] > 0)
@@ -104,9 +110,11 @@ def measure(path, centroids):
         "residual_p90": float(np.percentile(residual, 90)) if residual else float("nan"),
         "imbalance_median": float(np.median(imbalance)) if imbalance else float("nan"),
         "clearance_median": float(np.median(clearance)) if clearance else float("nan"),
-        "outside_fraction": outside / n_sections if n_sections else float("nan"),
-        "length": float(_arc_length(path)[-1]),
-        "length_drift": (max(resampled) - min(resampled)) / float(np.mean(resampled)),
+        # Divided by the sections that produced a hull, which is what 'outside' counts.
+        "outside_fraction": outside / n_hulls if n_hulls else float("nan"),
+        "length": float(arc_length(path)[-1]),
+        "length_drift": ((max(resampled) - min(resampled)) / float(np.mean(resampled))
+                         if np.mean(resampled) > 0 else float("nan")),
         "curvature_p95": float(np.percentile(curvature, 95)) if len(curvature) else float("nan"),
     }
 
@@ -135,7 +143,9 @@ def main():
                         help="Skip components with fewer cells.")
     args = parser.parse_args()
 
-    warnings.filterwarnings("ignore")
+    # Qhull is noisy on near-degenerate cross-sections. Everything else stays visible, so that a
+    # NaN or a divide-by-zero in the geometry is not hidden by the tool meant to catch it.
+    warnings.filterwarnings("ignore", category=UserWarning)
     rows = []
     for table_path in sorted(glob.glob(os.path.join(args.table_dir, "*.tsv"))):
         cochlea = os.path.basename(table_path)[:-4]

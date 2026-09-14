@@ -684,7 +684,7 @@ def _compute_path_from_table(
         subset = table[table["component_labels"] == label]
         centroids_components.append(list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"])))
 
-    total_distance, _, path_dict = measure_run_length(centroids_components, path_method="graph")
+    total_distance, path_dict = measure_run_length(centroids_components, path_method="graph")
     return total_distance, path_dict
 
 
