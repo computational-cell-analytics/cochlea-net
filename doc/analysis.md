@@ -68,9 +68,24 @@ The tonotopic mapping command is quite similar to the component labeling command
 Specifically, the animal type must be specified because the parameters of the Greenwood function, which is used for frequency mapping, differ between mice and gerbils.
 If the segmentation consists of multiple connected components, they must be in the same consecutive order as in the cochlear volume.
 ```bash
-flamingo_tools.tonotopic_mapping --input M_AMD_N162_L_v4b.tsv --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --animal mouse --max_edge_distance 70  -c 4 1 5 --force
+flamingo_tools.tonotopic_mapping --input M_AMD_N162_L_v4b.tsv --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --animal mouse -c 4 1 5 --force
 ```
 We can use the table we created after labeling the components as the input because the function only adds new columns without changing the existing ones.
+
+The central path through the segmentation is found with the method given by `--path_method`.
+SGNs default to `edt_refined`, which recentres the path on the cross-sections of Rosenthal's canal.
+IHCs default to `graph`, which follows the row of cells directly.
+Use `--path_method edt` to reproduce the mapping used for the CochleaNet paper.
+
+The refined path is shorter than the `edt` path by a median of 3 % across the local cochleae,
+and individual cochleae range from 8 % shorter to 37 % longer.
+The run length and the mapped frequency therefore differ between the two methods.
+Map a whole cohort with one method; do not mix results from both in one analysis.
+
+Run lengths of IHC segmentations that consist of several components also changed.
+Every component in the component list is now measured over its full extent.
+Previously only the section between the nodes that joined a component to its neighbours was counted,
+which under-reported the run length, in one case by a factor of two.
 
 ## Intensity annotation
 

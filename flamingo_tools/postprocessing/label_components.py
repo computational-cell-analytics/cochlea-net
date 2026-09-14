@@ -675,21 +675,16 @@ def _compute_path_from_table(
         component_list: Component labels to include in the path computation.
 
     Returns:
-        Total path length in µm and the raw path_dict from measure_run_length_ihcs.
+        Total path length in µm and the raw path_dict from measure_run_length.
     """
-    from flamingo_tools.postprocessing.cochlea_mapping import measure_run_length_ihcs
-
-    new_subset = table[table["component_labels"].isin(component_list)]
-    centroids = list(zip(new_subset["anchor_x"], new_subset["anchor_y"], new_subset["anchor_z"]))
+    from flamingo_tools.postprocessing.cochlea_mapping import measure_run_length
 
     centroids_components = []
     for label in component_list:
         subset = table[table["component_labels"] == label]
         centroids_components.append(list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"])))
 
-    total_distance, _, path_dict = measure_run_length_ihcs(
-        centroids, centroids_components, component_label=component_list
-    )
+    total_distance, path_dict = measure_run_length(centroids_components, path_method="graph")
     return total_distance, path_dict
 
 
@@ -705,7 +700,7 @@ def filter_ihc_by_path_deviation(
     point on the central path are assigned component_labels = 0 (background).
 
     The central path is either loaded from path_file (if provided and exists) or
-    computed on-the-fly via measure_run_length_ihcs.
+    computed on-the-fly via measure_run_length.
 
     Args:
         table: Segmentation table with a 'component_labels' column.

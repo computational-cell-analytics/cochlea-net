@@ -176,10 +176,12 @@ def report_environment(path):
     problems = []
     print("Reader environment:")
     print(f"  python {sys.version.split()[0]}")
+    versions = {}
     for name in ("z5py", "zarr", "elf"):
         try:
             module = importlib.import_module(name)
-            print(f"  {name} {getattr(module, '__version__', 'unknown version')}")
+            versions[name] = getattr(module, "__version__", None)
+            print(f"  {name} {versions[name] or 'unknown version'}")
         except ImportError as e:
             print(f"  {name} is not importable ({e})")
 
@@ -193,10 +195,15 @@ def report_environment(path):
     if constructor is None:
         problems.append(f"elf.io.open_file cannot open '{extension}'. Install z5py.")
     elif extension == ".n5" and "z5py" not in f"{constructor}":
-        problems.append(
-            f"elf.io.open_file routes '{extension}' to {constructor}. zarr 3 cannot read n5. "
-            "Install z5py and update python-elf."
-        )
+        # zarr 2 reads n5 through N5Store, so routing to zarr is only a problem from zarr 3 on.
+        zarr_version = versions.get("zarr")
+        major = int(zarr_version.split(".")[0]) if zarr_version and zarr_version[0].isdigit() else None
+        if major is None or major >= 3:
+            seen = f"zarr {zarr_version}" if zarr_version else "the installed zarr"
+            problems.append(
+                f"elf.io.open_file routes '{extension}' to {constructor}, and {seen} cannot read "
+                "n5. Install z5py and update python-elf."
+            )
     return problems
 
 
