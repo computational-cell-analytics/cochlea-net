@@ -13,7 +13,7 @@ from bioimage_cpp.utils import Blocking
 
 from elf.io import open_file
 from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.s3_utils import (default_table_path, get_s3_path, MOBIE_FOLDER,
+from flamingo_tools.s3_utils import (default_table_path, read_table, MOBIE_FOLDER,
                                      table_name_prefix)
 from scipy.ndimage import distance_transform_edt, binary_dilation, binary_closing
 from scipy.sparse import csr_matrix
@@ -869,13 +869,10 @@ def label_components_single(
     if os.path.isdir(out_path):
         raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
 
-    if s3:
-        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
-                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
-    else:
-        table = pd.read_csv(table_path, sep="\t")
+    table = read_table(
+        table_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     # overwrite input file
     if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:

@@ -8,8 +8,9 @@ import os
 import warnings
 from shutil import which
 from subprocess import run
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Union
 
+import pandas as pd
 import s3fs
 import zarr
 
@@ -225,6 +226,72 @@ def get_s3_path(
         raise RuntimeError(f"Unsupported zarr version {zarr_major_version}")
 
     return s3_path, s3_filesystem
+
+
+def resolve_path(
+    path: Optional[Union[str, Store]],
+    from_s3: Union[bool, str, None] = False,
+    bucket_name: Optional[str] = None,
+    service_endpoint: Optional[str] = None,
+    credential_file: Optional[str] = None,
+) -> Optional[Union[str, Store]]:
+    """Resolve a path against the S3 bucket, or return it unchanged.
+
+    This wraps `get_s3_path` with the check that every caller repeats. A path of None passes
+    through, so an optional input needs no guard of its own.
+
+    Args:
+        path: The path to resolve. It is relative to the bucket when `from_s3` is set.
+        from_s3: Whether to read this path from the bucket. The slurm entry points take their
+            arguments from the environment, so the strings "", "0", "false" and "no" are
+            accepted as off.
+        bucket_name: S3 bucket name.
+        service_endpoint: S3 service endpoint.
+        credential_file: Credential file containing access key and secret key.
+
+    Returns:
+        The S3 store for the path, or the path unchanged.
+    """
+    if isinstance(from_s3, str):
+        from_s3 = from_s3.strip().lower() not in ("", "0", "false", "no")
+    if path is None or not from_s3:
+        return path
+    s3_path, _ = get_s3_path(
+        path, bucket_name=bucket_name, service_endpoint=service_endpoint,
+        credential_file=credential_file,
+    )
+    return s3_path
+
+
+def read_table(
+    table_path: str,
+    s3: Union[bool, str, None] = False,
+    bucket_name: Optional[str] = None,
+    service_endpoint: Optional[str] = None,
+    credential_file: Optional[str] = None,
+) -> pd.DataFrame:
+    """Read a TSV table from the S3 bucket or from the local file system.
+
+    Args:
+        table_path: The path to the table. It is relative to the bucket when `s3` is set.
+        s3: Whether to read the table from the bucket. Strings are read as in `resolve_path`.
+        bucket_name: S3 bucket name.
+        service_endpoint: S3 service endpoint.
+        credential_file: Credential file containing access key and secret key.
+
+    Returns:
+        The table.
+    """
+    if isinstance(s3, str):
+        s3 = s3.strip().lower() not in ("", "0", "false", "no")
+    if not s3:
+        return pd.read_csv(table_path, sep="\t")
+    tsv_path, fs = get_s3_path(
+        table_path, bucket_name=bucket_name,
+        service_endpoint=service_endpoint, credential_file=credential_file,
+    )
+    with fs.open(tsv_path, "r") as f:
+        return pd.read_csv(f, sep="\t")
 
 
 def read_s3_credentials(credential_file: str) -> Tuple[str, str]:

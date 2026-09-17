@@ -198,6 +198,12 @@ about 97 % of the blocks. The synapses are matched to the IHCs within `MAX_DISTA
 this discards no detection that survives that filter. Without a segmentation the prediction falls
 back to the full volume, and the first step warns about it.
 
+Data on the S3 bucket is reached through `s3_input` and `s3_mask`, the same two flags the CLI has.
+They are independent, so a local image can be combined with a segmentation on the bucket. Pass
+`s3_input` to the first two steps, and `s3_mask` to the first and the third; the prediction array
+has no `s3_mask` because it reads the mask from `mask.zarr` in the output folder. The jobs that
+read from the bucket need `#SBATCH --constraint=inet`.
+
 ```bash
 MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
 MASK_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/IHC_v4b.ome.zarr"

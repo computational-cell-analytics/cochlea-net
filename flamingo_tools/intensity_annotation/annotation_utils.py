@@ -5,7 +5,6 @@ from typing import Dict, List, Optional
 import imageio.v3 as imageio
 import napari
 import numpy as np
-import pandas as pd
 
 import matplotlib.pyplot as plt
 import seaborn as sns
@@ -17,7 +16,7 @@ from elf.parallel.distance_transform import distance_transform
 from elf.parallel.seeded_watershed import seeded_watershed
 
 from flamingo_tools.measurements import get_object_measures_from_table
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import get_s3_path, read_table
 
 
 class HistogramWidget(QWidget):
@@ -175,12 +174,10 @@ def annotation_napari(
         raise ValueError("No measurement tables were given.")
 
     def _load_table(path):
-        if s3:
-            table_path_s3, fs = get_s3_path(path, bucket_name=s3_bucket_name,
-                                            service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-            with fs.open(table_path_s3, "r") as f:
-                return pd.read_csv(f, sep="\t")
-        return pd.read_csv(path, sep="\t")
+        return read_table(
+            path, s3, bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+        )
 
     seg = imageio.imread(seg_file)
     all_statistics = {

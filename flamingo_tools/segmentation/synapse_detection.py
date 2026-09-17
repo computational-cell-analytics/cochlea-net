@@ -419,7 +419,8 @@ def run_synapse_prediction_preprocess_slurm(
     dilation_iterations: int = 4,
     voxel_size: Union[float, Tuple[float, float, float]] = (0.38, 0.38, 0.38),
     max_distance: float = 3.0,
-    s3: Optional[str] = None,
+    s3_input: Optional[str] = None,
+    s3_mask: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
     s3_credentials: Optional[str] = None,
@@ -447,18 +448,23 @@ def run_synapse_prediction_preprocess_slurm(
         voxel_size: The voxel size of the data in micrometer, to report the dilation in
             physical units.
         max_distance: The matching distance the mask has to cover, see `_check_mask_dilation`.
-        s3: Flag for accessing data stored on S3 bucket.
+        s3_input: Flag for reading the image channel from the S3 bucket.
+        s3_mask: Flag for reading the IHC segmentation from the S3 bucket. It is independent of
+            `s3_input`, so a local image can be combined with a segmentation on the bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
         s3_credentials: File path to credentials for S3 bucket.
     """
     os.makedirs(output_folder, exist_ok=True)
 
-    if s3 is not None:
-        input_path, _ = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
-        )
+    input_path = s3_utils.resolve_path(
+        input_path, s3_input, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
+    mask_path = s3_utils.resolve_path(
+        mask_path, s3_mask, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     if mask_path is None:
         warnings.warn(
@@ -489,7 +495,7 @@ def run_synapse_prediction_slurm(
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
     prediction_instances: int = 1,
-    s3: Optional[str] = None,
+    s3_input: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
     s3_credentials: Optional[str] = None,
@@ -509,7 +515,9 @@ def run_synapse_prediction_slurm(
         halo: The halo (= block overlap) to use for prediction.
         prediction_instances: Number of instances for parallel prediction.
             This must match the size of the slurm array.
-        s3: Flag for accessing data stored on S3 bucket.
+        s3_input: Flag for reading the image channel from the S3 bucket. There is no `s3_mask`
+            here: this stage reads the mask from 'mask.zarr' in the output folder, not from the
+            IHC segmentation.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
         s3_credentials: File path to credentials for S3 bucket.
@@ -527,11 +535,10 @@ def run_synapse_prediction_slurm(
             "The size of the slurm array and 'prediction_instances' must match."
         )
 
-    if s3 is not None:
-        input_path, _ = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
-        )
+    input_path = s3_utils.resolve_path(
+        input_path, s3_input, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     # Get the pre-computed mean and standard deviation of the full volume from the JSON file.
     mean, std = _load_mean_std(output_folder)
@@ -554,6 +561,10 @@ def run_synapse_detection_slurm(
     mask_key: str = "s0",
     max_distance: float = 3.0,
     force_overwrite: bool = False,
+    s3_mask: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    s3_credentials: Optional[str] = None,
 ) -> None:
     """Detect the synapse markers in a finished prediction.
 
@@ -574,10 +585,18 @@ def run_synapse_detection_slurm(
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
         force_overwrite: Recompute the detections even when the table already exists. Set this
             whenever the prediction was rewritten, so that a stale table is not served.
+        s3_mask: Flag for reading the IHC segmentation from the S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+        s3_credentials: File path to credentials for S3 bucket.
     """
     voxel_size = _normalize_voxel_size(voxel_size)
     threshold = float(threshold)
     n_threads = None if n_threads is None else int(n_threads)
+    mask_path = s3_utils.resolve_path(
+        mask_path, s3_mask, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     prediction_path = os.path.join(output_folder, "predictions.zarr")
     detection_path = os.path.join(output_folder, "synapse_detection.tsv")
@@ -613,6 +632,11 @@ def marker_detection(
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
     n_threads: Optional[int] = None,
+    s3_input: Optional[str] = None,
+    s3_mask: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    s3_credentials: Optional[str] = None,
 ) -> None:
     """Run the three stages of synapse detection in a single job.
 
@@ -638,8 +662,25 @@ def marker_detection(
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
         n_threads: The number of threads for peak detection and flow correction.
+        s3_input: Flag for reading the image channel from the S3 bucket.
+        s3_mask: Flag for reading the IHC segmentation from the S3 bucket. It is independent of
+            `s3_input`, so a local image can be combined with a segmentation on the bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+        s3_credentials: File path to credentials for S3 bucket.
     """
     voxel_size = _normalize_voxel_size(voxel_size)
+
+    # Resolve both paths here, once. The stages below are then given the stores directly, so
+    # that none of them looks up an already resolved path a second time.
+    input_path = s3_utils.resolve_path(
+        input_path, s3_input, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
+    mask_path = s3_utils.resolve_path(
+        mask_path, s3_mask, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     # Skipping an existing prediction is valid for this single-job path only, where one process
     # writes every block. See run_synapse_prediction_slurm.

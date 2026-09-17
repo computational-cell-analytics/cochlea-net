@@ -417,13 +417,11 @@ def compute_object_measures(
     # First, we load the pre-computed segmentation table from MoBIE.
     if segmentation_table_path is None:
         table = None
-    elif s3:
-        seg_table, fs = s3_utils.get_s3_path(segmentation_table_path, bucket_name=s3_bucket_name,
-                                             service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(seg_table, "r") as f:
-            table = pd.read_csv(f, sep="\t")
     else:
-        table = pd.read_csv(segmentation_table_path, sep="\t")
+        table = s3_utils.read_table(
+            segmentation_table_path, s3, bucket_name=s3_bucket_name,
+            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+        )
 
     # filter table with largest component
     if len(component_list) != 0 and "component_labels" in table.columns:

@@ -775,11 +775,10 @@ def run_unet_prediction_preprocess_slurm(
         s3_credentials: File path to credentials for S3 bucket.
         seg_class: Specifier for exclusion criterias for mask generation.
     """
-    if s3 is not None:
-        input_path, fs = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
-        )
+    input_path = s3_utils.resolve_path(
+        input_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     if isinstance(absolute_threshold, str):
         try:
@@ -837,11 +836,10 @@ def run_unet_prediction_slurm(
         scale = float(scale)
     slurm_task_id = os.environ.get("SLURM_ARRAY_TASK_ID")
 
-    if s3 is not None:
-        input_path, fs = s3_utils.get_s3_path(
-            input_path, bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
-        )
+    input_path = s3_utils.resolve_path(
+        input_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     if slurm_task_id is not None:
         slurm_task_id = int(slurm_task_id)

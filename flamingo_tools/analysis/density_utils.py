@@ -13,7 +13,7 @@ from skimage.measure import regionprops
 
 from flamingo_tools.analysis.seg_table_utils import filter_table
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER, get_s3_path
+from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER, read_table
 from flamingo_tools.json_util import export_dictionary_as_json
 
 REFERENCE_PRESETS = {
@@ -1072,17 +1072,10 @@ def calc_sgn_density(
         except ValueError:
             positions_list.append(p)
 
-    if s3:
-        tsv_path, fs = get_s3_path(
-            table_path,
-            credential_file=s3_credentials,
-            bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint,
-        )
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
-    else:
-        table = pd.read_csv(table_path, sep="\t")
+    table = read_table(
+        table_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     # Resolve voxel size.
     if len(voxel_size) == 1:
