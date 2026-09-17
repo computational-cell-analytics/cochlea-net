@@ -4,7 +4,7 @@ from typing import List, Optional, Tuple
 import numpy as np
 import pandas as pd
 
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import read_table
 
 
 def insert_coordinate(
@@ -148,13 +148,10 @@ def insert_coordinates_to_central_path(
         s3_bucket_name:
         s3_service_endpoint:
     """
-    if s3:
-        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
-                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
-    else:
-        table = pd.read_csv(table_path, sep="\t")
+    table = read_table(
+        table_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     for coord in coordinates:
         optimal_pos = find_optimal_point_for_insert(table, coord)

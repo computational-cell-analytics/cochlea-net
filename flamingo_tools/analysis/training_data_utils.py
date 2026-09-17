@@ -12,7 +12,7 @@ from scipy.ndimage import find_objects
 from scipy.ndimage import label as label_structures
 from tqdm import tqdm
 
-from flamingo_tools.s3_utils import default_table_path, get_s3_path
+from flamingo_tools.s3_utils import default_table_path, read_table
 
 # Columns that add_metadata_to_crop_table derives from the annotation crops.
 CROP_TABLE_COLUMNS = [
@@ -412,9 +412,7 @@ def export_crop_centers(
 
     image_channel.append(segmentation_channel)
     seg_table_s3 = default_table_path(cochlea, segmentation_channel, s3=True)
-    tsv_path, fs = get_s3_path(seg_table_s3)
-    with fs.open(tsv_path, "r") as f:
-        df = pd.read_csv(f, sep="\t")
+    df = read_table(seg_table_s3, s3=True)
 
     crop_size = [i * 2 for i in halo_size]
     total_centers, total_length_fractions = find_crop_centers_ihc(df, component_labels, crop_size=crop_size)

@@ -5,7 +5,7 @@ from typing import List, Optional, Tuple
 import pandas as pd
 
 from flamingo_tools.json_util import export_dictionary_as_json
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import read_table
 
 
 def closest_row_to_value(
@@ -61,17 +61,10 @@ def print_table_info(
     Returns:
         List of (label_id, (x, y, z)) tuples, one per entry in `values`.
     """
-    if s3:
-        tsv_path, fs = get_s3_path(
-            table_path,
-            bucket_name=s3_bucket_name,
-            service_endpoint=s3_service_endpoint,
-            credential_file=s3_credentials,
-        )
-        with fs.open(tsv_path, "r") as f:
-            df = pd.read_csv(f, sep="\t")
-    else:
-        df = pd.read_csv(table_path, sep="\t")
+    df = read_table(
+        table_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     if component_list is not None:
         df = filter_table(df, column_subset=component_list)
@@ -183,19 +176,9 @@ def add_object_measures_to_table(
         else:
             output_path = table_seg_path
 
-    if s3_seg:
-        tsv_path, fs = get_s3_path(table_seg_path)
-        with fs.open(tsv_path, "r") as f:
-            table_seg = pd.read_csv(f, sep="\t")
-    else:
-        table_seg = pd.read_csv(table_seg_path, sep="\t")
+    table_seg = read_table(table_seg_path, s3_seg)
 
-    if s3_meas:
-        tsv_path, fs = get_s3_path(table_meas_path)
-        with fs.open(tsv_path, "r") as f:
-            table_meas = pd.read_csv(f, sep="\t")
-    else:
-        table_meas = pd.read_csv(table_meas_path, sep="\t")
+    table_meas = read_table(table_meas_path, s3_meas)
 
     base_name = os.path.basename(table_meas_path).split(".")[0]
     meas_content = base_name.split("_")
@@ -244,12 +227,7 @@ def create_main_table(
     if os.path.realpath(input_path) == os.path.realpath(output_path):
         raise ValueError(f"Input path {input_path} and {output_path} are identical.")
 
-    if s3_seg:
-        tsv_path, fs = get_s3_path(input_path)
-        with fs.open(tsv_path, "r") as f:
-            df = pd.read_csv(f, sep="\t")
-    else:
-        df = pd.read_csv(input_path, sep="\t")
+    df = read_table(input_path, s3_seg)
 
     df = filter_table(df, column_subset=component_list)
 
@@ -262,12 +240,7 @@ def create_main_table(
 
     if meas_tables is not None:
         for table_meas_path in meas_tables:
-            if s3_meas:
-                tsv_path, fs = get_s3_path(table_meas_path)
-                with fs.open(tsv_path, "r") as f:
-                    table_meas = pd.read_csv(f, sep="\t")
-            else:
-                table_meas = pd.read_csv(table_meas_path, sep="\t")
+            table_meas = read_table(table_meas_path, s3_meas)
 
             base_name = os.path.basename(table_meas_path).split(".")[0]
             meas_content = base_name.split("_")
@@ -312,19 +285,9 @@ def add_column_from_ref(
         s3_ref: File path to reference table is on S3 bucket.
         s3_target: File path to target table is on S3 bucket.
     """
-    if s3_ref:
-        tsv_path, fs = get_s3_path(ref_path)
-        with fs.open(tsv_path, "r") as f:
-            df_ref = pd.read_csv(f, sep="\t")
-    else:
-        df_ref = pd.read_csv(ref_path, sep="\t")
+    df_ref = read_table(ref_path, s3_ref)
 
-    if s3_target:
-        tsv_path, fs = get_s3_path(target_path)
-        with fs.open(tsv_path, "r") as f:
-            df_target = pd.read_csv(f, sep="\t")
-    else:
-        df_target = pd.read_csv(target_path, sep="\t")
+    df_target = read_table(target_path, s3_target)
 
     if s3_target and output_path is None:
         raise ValueError("Copying to S3 bucket not yet supported. Provide an output path using --output.")

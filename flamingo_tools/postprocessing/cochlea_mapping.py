@@ -51,7 +51,7 @@ from scipy.spatial import cKDTree, ConvexHull
 
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
 from flamingo_tools.json_util import load_processing_params, STEP_KEYS
-from flamingo_tools.s3_utils import (default_table_path, get_s3_path, MOBIE_FOLDER,
+from flamingo_tools.s3_utils import (default_table_path, read_table, MOBIE_FOLDER,
                                      table_name_prefix)
 
 
@@ -1396,13 +1396,10 @@ def tonotopic_mapping_single(
     if os.path.isdir(out_path):
         raise ValueError(f"Output path {out_path} is a directory. Provide a path to a single output file.")
 
-    if s3:
-        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
-                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
-    else:
-        table = pd.read_csv(table_path, sep="\t")
+    table = read_table(
+        table_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     if central_spots_path is not None and os.path.isfile(central_spots_path):
         central_path_df = pd.read_csv(central_spots_path, sep="\t")
@@ -1475,14 +1472,12 @@ def equidistant_centers_single(
     if output_path is None:
         raise ValueError("Set an output path for the JSON dictionary.")
 
-    if s3:
-        tsv_path, fs = get_s3_path(table_path, bucket_name=s3_bucket_name,
-                                   service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
-        with fs.open(tsv_path, "r") as f:
-            table = pd.read_csv(f, sep="\t")
-    else:
+    if not s3:
         table_path = os.path.realpath(table_path)
-        table = pd.read_csv(table_path, sep="\t")
+    table = read_table(
+        table_path, s3, bucket_name=s3_bucket_name,
+        service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
     # Record the resolved method rather than None: the crop centers depend on it, exactly as they
     # depend on include_gap, so the file has to say which method produced them.

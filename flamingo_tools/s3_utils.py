@@ -10,6 +10,7 @@ from shutil import which
 from subprocess import run
 from typing import Optional, Tuple, Union
 
+import pandas as pd
 import s3fs
 import zarr
 
@@ -260,6 +261,37 @@ def resolve_path(
         credential_file=credential_file,
     )
     return s3_path
+
+
+def read_table(
+    table_path: str,
+    s3: Union[bool, str, None] = False,
+    bucket_name: Optional[str] = None,
+    service_endpoint: Optional[str] = None,
+    credential_file: Optional[str] = None,
+) -> pd.DataFrame:
+    """Read a TSV table from the S3 bucket or from the local file system.
+
+    Args:
+        table_path: The path to the table. It is relative to the bucket when `s3` is set.
+        s3: Whether to read the table from the bucket. Strings are read as in `resolve_path`.
+        bucket_name: S3 bucket name.
+        service_endpoint: S3 service endpoint.
+        credential_file: Credential file containing access key and secret key.
+
+    Returns:
+        The table.
+    """
+    if isinstance(s3, str):
+        s3 = s3.strip().lower() not in ("", "0", "false", "no")
+    if not s3:
+        return pd.read_csv(table_path, sep="\t")
+    tsv_path, fs = get_s3_path(
+        table_path, bucket_name=bucket_name,
+        service_endpoint=service_endpoint, credential_file=credential_file,
+    )
+    with fs.open(tsv_path, "r") as f:
+        return pd.read_csv(f, sep="\t")
 
 
 def read_s3_credentials(credential_file: str) -> Tuple[str, str]:
