@@ -64,7 +64,7 @@ class TestSegmentationCLI(unittest.TestCase):
 
             result = subprocess.run([
                 "flamingo_tools.run_detection", "-i", data_path, "-o", output_folder,
-                "-c", model_path,
+                "-c", model_path, "--threshold", "0.4", "--dilation_iterations", "4",
             ], capture_output=True, text=True)
             self.assertEqual(
                 result.returncode, 0,
