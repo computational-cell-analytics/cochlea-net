@@ -519,5 +519,122 @@ class TestMaskFallback(unittest.TestCase):
             _check_mask_dilation((64, 64, 64), (4, 4, 4), 4, voxel_size, max_distance)
 
 
+class TestS3Resolution(unittest.TestCase):
+    """The stages resolve the image and the IHC segmentation against the bucket independently.
+
+    There is no S3 fixture in the suite, so 'get_s3_path' is patched and only the plumbing is
+    checked: which path reaches the bucket lookup, and how often.
+    """
+
+    def _create_input(self, tmp_dir):
+        import z5py
+
+        data_path = os.path.join(tmp_dir, "data.n5")
+        rng = np.random.default_rng(0)
+        with z5py.File(data_path, "a") as f:
+            f.create_dataset("data", data=rng.integers(0, 255, size=(16, 16, 16)), chunks=(8, 8, 8))
+        return data_path, "data"
+
+    def _patch_get_s3_path(self, resolved):
+        """Patch the bucket lookup and record the paths it is asked for."""
+        from unittest import mock
+        import flamingo_tools.s3_utils as s3_utils
+
+        calls = []
+
+        def fake(input_path, bucket_name=None, service_endpoint=None, credential_file=None):
+            calls.append(input_path)
+            return resolved, None
+
+        return calls, mock.patch.object(s3_utils, "get_s3_path", fake)
+
+    def test_resolve_path_passes_through(self):
+        from flamingo_tools.s3_utils import resolve_path
+
+        self.assertIsNone(resolve_path(None, True))
+        self.assertEqual(resolve_path("p", False), "p")
+        self.assertEqual(resolve_path("p", None), "p")
+        # The slurm entry points read their flags from the environment as strings.
+        for off in ("", "  ", "0", "false", "FALSE", "no"):
+            self.assertEqual(resolve_path("p", off), "p", msg=off)
+
+    def test_preprocess_resolves_the_mask_only(self):
+        """The production case: a local image with the IHC segmentation on the bucket."""
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_preprocess_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key = self._create_input(tmp_dir)
+            seg = np.zeros((8, 8, 8), dtype="uint16")
+            seg[3:5, 3:5, 3:5] = 1
+            mask_path = os.path.join(tmp_dir, "ihc.zarr")
+            zarr.open(mask_path, mode="w").create_array("s4", data=seg)
+
+            calls, patch = self._patch_get_s3_path(mask_path)
+            with patch:
+                run_synapse_prediction_preprocess_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), input_key=data_key,
+                    mask_path="cochlea/images/ome-zarr/IHC.ome.zarr", s3_mask="1",
+                )
+
+        self.assertEqual(calls, ["cochlea/images/ome-zarr/IHC.ome.zarr"])
+
+    def test_preprocess_resolves_nothing_without_the_flags(self):
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_preprocess_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path, data_key = self._create_input(tmp_dir)
+            calls, patch = self._patch_get_s3_path(None)
+            with patch, warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                run_synapse_prediction_preprocess_slurm(
+                    data_path, os.path.join(tmp_dir, "out"), input_key=data_key,
+                )
+
+        self.assertEqual(calls, [])
+
+    def test_detection_stage_resolves_the_mask(self):
+        from unittest import mock
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_detection_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calls, patch = self._patch_get_s3_path("resolved-store")
+            # Stop after the resolution; the prediction and the matching are covered elsewhere.
+            with patch, mock.patch(
+                "flamingo_tools.segmentation.synapse_detection.synapse_detection_from_prediction",
+                side_effect=RuntimeError("stop"),
+            ):
+                with self.assertRaises(RuntimeError):
+                    run_synapse_detection_slurm(
+                        tmp_dir, mask_path="cochlea/images/ome-zarr/IHC.ome.zarr",
+                        mask_key="s0", s3_mask="1",
+                    )
+
+        self.assertEqual(calls, ["cochlea/images/ome-zarr/IHC.ome.zarr"])
+
+    def test_marker_detection_resolves_each_path_once(self):
+        """The stages must be handed the stores, never asked to resolve them again."""
+        from unittest import mock
+        from flamingo_tools.segmentation.synapse_detection import marker_detection
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            calls, patch = self._patch_get_s3_path("resolved-store")
+            with patch, mock.patch(
+                "flamingo_tools.segmentation.synapse_detection.build_ihc_mask",
+                side_effect=RuntimeError("stop"),
+            ):
+                with self.assertRaises(RuntimeError):
+                    marker_detection(
+                        "cochlea/images/ome-zarr/CTBP2.ome.zarr", "s0",
+                        "cochlea/images/ome-zarr/IHC.ome.zarr",
+                        os.path.join(tmp_dir, "out"), "model.pt",
+                        s3_input="1", s3_mask="1",
+                    )
+
+        self.assertEqual(calls, [
+            "cochlea/images/ome-zarr/CTBP2.ome.zarr",
+            "cochlea/images/ome-zarr/IHC.ome.zarr",
+        ])
+
+
 if __name__ == "__main__":
     unittest.main()

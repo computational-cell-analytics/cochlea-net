@@ -5,7 +5,6 @@ import argparse
 from .unet_prediction import run_unet_prediction
 from .synapse_detection import marker_detection
 from ..model_utils import get_model_path, get_default_segmentation_settings
-from .. import s3_utils
 
 
 def _get_model_path(model_type, checkpoint_path=None):
@@ -203,24 +202,18 @@ def run_detection():
     if args.model_type not in detection_models:
         raise ValueError(f"Unknown model: {args.model_type}. Choose one of {detection_models}.")
 
-    # The image data and the mask are resolved independently, so that the image can be read from
-    # a local file while the segmentation is read from the bucket.
-    def resolve(path, from_s3):
-        if path is None or not from_s3:
-            return path
-        s3_path, _ = s3_utils.get_s3_path(
-            path, bucket_name=args.s3_bucket_name,
-            service_endpoint=args.s3_service_endpoint, credential_file=args.s3_credentials,
-        )
-        return s3_path
-
     model_path = _get_model_path(args.model_type, args.checkpoint_path)
     marker_detection(
-        input_path=resolve(args.input_path, args.s3_input), input_key=args.input_key,
+        input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
-        mask_path=resolve(args.mask_path, args.s3_mask),
+        mask_path=args.mask_path,
         mask_input_key=args.mask_input_key, mask_key=args.mask_key,
         dilation_iterations=args.dilation_iterations,
         max_distance=args.max_distance, voxel_size=args.voxel_size,
         threshold=args.threshold,
+        # The image and the segmentation are resolved independently, so the image can be read
+        # from a local file while the segmentation is read from the bucket.
+        s3_input=args.s3_input, s3_mask=args.s3_mask,
+        s3_bucket_name=args.s3_bucket_name, s3_service_endpoint=args.s3_service_endpoint,
+        s3_credentials=args.s3_credentials,
     )
