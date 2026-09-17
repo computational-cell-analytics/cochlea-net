@@ -1,6 +1,7 @@
 import os
 import tempfile
 import unittest
+import warnings
 
 import numpy as np
 import pandas as pd
@@ -193,6 +194,7 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
         import z5py
         from torch_em.model import UNet3d
 
+        torch.manual_seed(0)
         model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
         model_path = os.path.join(tmp_dir, "model.pt")
         torch.save(model, model_path)
@@ -206,7 +208,7 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
     def test_array_prediction_matches_single_job(self):
         from elf.io import open_file
         from flamingo_tools.segmentation.synapse_detection import (
-            run_prediction, run_synapse_prediction_preprocess_slurm, run_synapse_prediction_slurm,
+            marker_detection, run_synapse_prediction_preprocess_slurm, run_synapse_prediction_slurm,
         )
 
         block_shape, halo = (16, 16, 16), (4, 4, 4)
@@ -215,9 +217,12 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
 
             single_folder = os.path.join(tmp_dir, "single")
             os.makedirs(single_folder)
-            run_prediction(
-                data_path, data_key, single_folder, model_path, block_shape=block_shape, halo=halo,
-            )
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore")
+                marker_detection(
+                    data_path, data_key, None, single_folder, model_path,
+                    block_shape=block_shape, halo=halo,
+                )
 
             array_folder = os.path.join(tmp_dir, "array")
             run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
@@ -288,6 +293,7 @@ class TestMaskKeys(unittest.TestCase):
         import z5py
         from torch_em.model import UNet3d
 
+        torch.manual_seed(0)
         model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
         model_path = os.path.join(tmp_dir, "model.pt")
         torch.save(model, model_path)
@@ -348,7 +354,7 @@ class TestMaskKeys(unittest.TestCase):
         self.assertEqual(params["mask_key"].default, "s0")
 
 
-class TestRunPredictionMask(unittest.TestCase):
+class TestPredictionMask(unittest.TestCase):
     """An optional IHC segmentation restricts the inference to the region around the IHCs."""
 
     shape = (32, 64, 64)
@@ -358,6 +364,7 @@ class TestRunPredictionMask(unittest.TestCase):
         import z5py
         from torch_em.model import UNet3d
 
+        torch.manual_seed(0)
         model = UNet3d(in_channels=1, out_channels=5, initial_features=4, depth=2)
         model_path = os.path.join(tmp_dir, "model.pt")
         torch.save(model, model_path)
@@ -368,26 +375,35 @@ class TestRunPredictionMask(unittest.TestCase):
             f.create_dataset("data", data=rng.integers(0, 255, size=self.shape), chunks=(16, 16, 16))
         return data_path, "data", model_path
 
+    def _create_mask(self, tmp_dir):
+        """An IHC segmentation with a full-resolution s0 and a 4x downscaled s4 level."""
+        full = np.zeros(self.shape, dtype="uint16")
+        full[12:20, 24:40, 24:40] = 7
+        mask_path = os.path.join(tmp_dir, "ihc.zarr")
+        f = zarr.open(mask_path, mode="w")
+        f.create_array("s0", data=full)
+        f.create_array("s4", data=full[::4, ::4, ::4].copy())
+        return mask_path
+
     def _run(self, tmp_dir, name, mask_path, input_):
         from elf.io import open_file
-        from flamingo_tools.segmentation.synapse_detection import run_prediction
+        from flamingo_tools.segmentation.synapse_detection import marker_detection
 
         data_path, data_key, model_path = input_
         output_folder = os.path.join(tmp_dir, name)
-        run_prediction(
-            data_path, data_key, output_folder, model_path,
-            block_shape=(16, 16, 16), halo=(4, 4, 4), mask_path=mask_path, mask_input_key="s4",
-        )
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore")
+            marker_detection(
+                data_path, data_key, mask_path, output_folder, model_path,
+                block_shape=(16, 16, 16), halo=(4, 4, 4),
+                mask_input_key="s4", mask_key="s0", max_distance=8.0,
+            )
         with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
             return output_folder, f["prediction"][:]
 
     def test_mask_restricts_the_prediction(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
-            low = np.zeros(tuple(s // 4 for s in self.shape), dtype="uint16")
-            low[3:5, 6:10, 6:10] = 7
-            mask_path = os.path.join(tmp_dir, "ihc.zarr")
-            zarr.open(mask_path, mode="w").create_array("s4", data=low)
-
+            mask_path = self._create_mask(tmp_dir)
             input_ = self._create_input(tmp_dir)
             unmasked_folder, unmasked = self._run(tmp_dir, "unmasked", None, input_)
             masked_folder, masked = self._run(tmp_dir, "masked", mask_path, input_)
@@ -398,6 +414,109 @@ class TestRunPredictionMask(unittest.TestCase):
             # The masked run leaves the blocks outside the IHC region untouched.
             self.assertGreater(np.abs(masked).sum(), 0)
             self.assertLess((np.abs(masked) > 0).sum(), (np.abs(unmasked) > 0).sum())
+
+    def test_stale_table_does_not_skip_the_prediction(self):
+        """A leftover table from a partial run must not suppress the inference.
+
+        This is the failure that let a truncated cochlea pass as finished: the prediction was
+        skipped because the table existed, and the peaks were detected in a partial volume.
+        """
+        import shutil
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            mask_path = self._create_mask(tmp_dir)
+            input_ = self._create_input(tmp_dir)
+            output_folder, _ = self._run(tmp_dir, "run", mask_path, input_)
+
+            detection_path = os.path.join(output_folder, "synapse_detection.tsv")
+            self.assertTrue(os.path.exists(detection_path))
+            stale_id = 999999
+            pd.DataFrame({"spot_id": [stale_id], "x": [-1.0], "y": [-1.0], "z": [-1.0]}).to_csv(
+                detection_path, index=False, sep="\t"
+            )
+            shutil.rmtree(os.path.join(output_folder, "predictions.zarr"))
+
+            self._run(tmp_dir, "run", mask_path, input_)
+            self.assertTrue(os.path.exists(os.path.join(output_folder, "predictions.zarr")))
+            # The table is derived from the new prediction, not read back from the stale file.
+            self.assertNotIn(stale_id, pd.read_csv(detection_path, sep="\t").spot_id.values)
+
+
+class TestMaskFallback(unittest.TestCase):
+    """Prediction on the dilated IHC segmentation is the standard, the full volume a fallback."""
+
+    def test_detection_stage_takes_mask_key(self):
+        """The full-resolution key for matching must not be named after the inference mask."""
+        import inspect
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_detection_slurm
+
+        params = inspect.signature(run_synapse_detection_slurm).parameters
+        self.assertEqual(params["mask_key"].default, "s0")
+        self.assertNotIn("mask_input_key", params)
+
+    def test_preprocess_warns_without_segmentation(self):
+        import z5py
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_preprocess_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path = os.path.join(tmp_dir, "data.n5")
+            rng = np.random.default_rng(0)
+            with z5py.File(data_path, "a") as f:
+                f.create_dataset("data", data=rng.integers(0, 255, size=(16, 16, 16)), chunks=(8, 8, 8))
+
+            output_folder = os.path.join(tmp_dir, "out")
+            with self.assertWarns(UserWarning):
+                run_synapse_prediction_preprocess_slurm(data_path, output_folder, input_key="data")
+
+            self.assertFalse(os.path.exists(os.path.join(output_folder, "mask.zarr")))
+            self.assertTrue(os.path.isfile(os.path.join(output_folder, "mean_std.json")))
+
+    def test_dilation_iterations_match_the_cube(self):
+        """Four iterations of a 3x3x3 structure are the previous single 9x9x9 pass."""
+        from scipy.ndimage import binary_dilation
+        from flamingo_tools.segmentation.synapse_detection import build_ihc_mask
+
+        seg = np.zeros((24, 24, 24), dtype="uint16")
+        seg[10:14, 10:14, 10:14] = 3
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            seg_path = os.path.join(tmp_dir, "ihc.zarr")
+            zarr.open(seg_path, mode="w").create_array("s4", data=seg)
+
+            output_folder = os.path.join(tmp_dir, "out")
+            shape = build_ihc_mask(seg_path, output_folder, mask_input_key="s4", dilation_iterations=4)
+            mask = zarr.open(os.path.join(output_folder, "mask.zarr"), mode="r")["mask"][:]
+
+        self.assertEqual(shape, seg.shape)
+        expected = binary_dilation(seg, structure=np.ones((9, 9, 9))).astype("uint8")
+        self.assertTrue(np.array_equal(mask, expected))
+
+    def test_no_dilation_keeps_the_segmentation_footprint(self):
+        """scipy dilates to convergence for 'iterations' < 1, which would mask the whole volume."""
+        from flamingo_tools.segmentation.synapse_detection import build_ihc_mask
+
+        seg = np.zeros((24, 24, 24), dtype="uint16")
+        seg[10:14, 10:14, 10:14] = 3
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            seg_path = os.path.join(tmp_dir, "ihc.zarr")
+            zarr.open(seg_path, mode="w").create_array("s4", data=seg)
+
+            output_folder = os.path.join(tmp_dir, "out")
+            build_ihc_mask(seg_path, output_folder, mask_input_key="s4", dilation_iterations=0)
+            mask = zarr.open(os.path.join(output_folder, "mask.zarr"), mode="r")["mask"][:]
+
+        self.assertTrue(np.array_equal(mask, (seg != 0).astype("uint8")))
+
+    def test_warns_when_the_dilation_is_below_the_matching_distance(self):
+        from flamingo_tools.segmentation.synapse_detection import _check_mask_dilation
+
+        voxel_size, max_distance = (0.38, 0.38, 0.38), 3.0
+        # A mask built at the full resolution: 4 iterations are 1.5 micrometer, too tight.
+        with self.assertWarns(UserWarning):
+            _check_mask_dilation((64, 64, 64), (64, 64, 64), 4, voxel_size, max_distance)
+        # A mask built at s4: 4 iterations are 24 micrometer.
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            _check_mask_dilation((64, 64, 64), (4, 4, 4), 4, voxel_size, max_distance)
 
 
 if __name__ == "__main__":
