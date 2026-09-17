@@ -2,7 +2,7 @@
 
 The point of this script is to quantify what the whole-cochlea runs actually do, so every
 parameter that the production entry point (`flamingo_tools.segmentation.synapse_detection.
-marker_detection`, driven by scripts/synapse_marker_detection/marker_detection.py) fixes is
+marker_detection`, driven by the `flamingo_tools.run_detection` CLI) fixes is
 mirrored here:
 
   * peak detection threshold 0.5, the value hard-coded in every whole-cochlea caller,

@@ -23,12 +23,13 @@ For ribbon synapse detection run:
 - apply_synapse_template.sbatch
 - detect_synapse_peaks_template.sbatch
 
-Pass an IHC segmentation to the first step to restrict the prediction to the region around the
-IHCs, and to the third step to also write the detections matched to the IHCs.
+Pass the IHC segmentation to the first step, which restricts the prediction to the dilated IHC
+region, and to the third step, which matches the detections to the IHCs. This is the standard
+case: on a full cochlea the mask removes about 97 % of the prediction blocks. Without a
+segmentation the prediction falls back to the full volume and the detections are not matched.
 
-To run the detection as a single job instead, without splitting up the prediction:
-- detect_synapse_template.sbatch, without an associated IHC segmentation
-- detect_synapse_marker_template.sbatch, with an associated IHC segmentation
+To run all three steps as a single job instead, without splitting up the prediction:
+- detect_synapse_template.sbatch, with the IHC segmentation as its fourth argument
 
 After this, run the following to add detections to MoBIE and upload to S3:
 - templates_transfer/mobie_spots_template.sbatch
