@@ -5,6 +5,7 @@ import argparse
 from .unet_prediction import run_unet_prediction
 from .synapse_detection import marker_detection
 from ..model_utils import get_model_path, get_default_segmentation_settings
+from .. import s3_utils
 
 
 def _get_model_path(model_type, checkpoint_path=None):
@@ -106,7 +107,7 @@ def run_segmentation():
     run_unet_prediction(
         input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
-        min_size=args.min_size, use_mask=args.disable_masking,
+        min_size=args.min_size, use_mask=not args.disable_masking,
         **segmentation_kwargs,
     )
 
@@ -120,6 +121,9 @@ def run_detection():
         description="Detect spot intensity signals in volumetric light microscopy data. "
         "This function supports the detection of synapses in high-resolution light-microscopy data. "
         "It also supports custom models via the (optional) argument '--checkpoint_path' ('-c'). "
+        "The standard case is to pass an IHC segmentation via '--mask_path': the inference then "
+        "runs only on the region around the IHCs, and the detections are matched to them. "
+        "Without it the inference runs on the full volume and the detections are not matched."
     )
     parser.add_argument(
         "-i", "--input_path", required=True,
@@ -132,7 +136,7 @@ def run_detection():
     )
     parser.add_argument(
         "-o", "--output_folder", required=True,
-        help="The output folder where the detectio result and intermediates are stored. "
+        help="The output folder where the detection result and intermediates are stored. "
         "The result is stored in the file 'synapse_detection.tsv'. "
         "In case detections are assigned to segmentation masks and filtered (via '--mask_path' and '--mask_key'), "
         "the corresponding results are stored in 'synapse_detection_filtered.tsv'."
@@ -147,9 +151,10 @@ def run_detection():
     )
     parser.add_argument(
         "--mask_path",
-        help="Path to a segmentation mask to use for assigning and filtering the detected synapses (optional). "
-        "If given, each detected synapse will be assigned to the closest object in the segmentation and "
-        "synapses that are more distant than 'max_distance' will be removed from the result."
+        help="Path to a segmentation mask to use for assigning and filtering the detected synapses. "
+        "Each detected synapse will be assigned to the closest object in the segmentation and "
+        "synapses that are more distant than 'max_distance' will be removed from the result. "
+        "Without it the inference runs on the full volume, which is a lot more expensive."
     )
     parser.add_argument(
         "--mask_input_key", default="s4",
@@ -162,6 +167,11 @@ def run_detection():
         "segmented cells. Refers to an internal data path, see '--input_key' ('-k') for details."
     )
     parser.add_argument(
+        "--dilation_iterations", type=int, default=4,
+        help="The number of dilation steps applied to the mask, in voxels of '--mask_input_key'. "
+        "The mask must extend at least 'max_distance' beyond the segmented cells."
+    )
+    parser.add_argument(
         "--max_distance", type=float, default=3.0,
         help="The maximal distance (in microns) for matching synapses to segmented cells. "
         "Synapses with a larger distance will be filtered from the result."
@@ -170,14 +180,47 @@ def run_detection():
         "-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38"
     )
+    parser.add_argument(
+        "--threshold", type=float, default=0.5, help="Threshold for peak detection."
+    )
+
+    parser.add_argument("--s3_input", action="store_true", help="Read the image data from the S3 bucket.")
+    parser.add_argument("--s3_mask", action="store_true", help="Read the segmentation mask from the S3 bucket.")
+    parser.add_argument(
+        "--s3_credentials", default=None,
+        help="Input file containing S3 credentials. "
+        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported."
+    )
+    parser.add_argument(
+        "--s3_bucket_name", default=None, help="S3 bucket name. Optional if BUCKET_NAME was exported."
+    )
+    parser.add_argument(
+        "--s3_service_endpoint", default=None,
+        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported."
+    )
+
     args = parser.parse_args()
     if args.model_type not in detection_models:
         raise ValueError(f"Unknown model: {args.model_type}. Choose one of {detection_models}.")
 
+    # The image data and the mask are resolved independently, so that the image can be read from
+    # a local file while the segmentation is read from the bucket.
+    def resolve(path, from_s3):
+        if path is None or not from_s3:
+            return path
+        s3_path, _ = s3_utils.get_s3_path(
+            path, bucket_name=args.s3_bucket_name,
+            service_endpoint=args.s3_service_endpoint, credential_file=args.s3_credentials,
+        )
+        return s3_path
+
     model_path = _get_model_path(args.model_type, args.checkpoint_path)
     marker_detection(
-        input_path=args.input_path, input_key=args.input_key,
+        input_path=resolve(args.input_path, args.s3_input), input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
-        mask_path=args.mask_path, mask_input_key=args.mask_input_key, mask_key=args.mask_key,
+        mask_path=resolve(args.mask_path, args.s3_mask),
+        mask_input_key=args.mask_input_key, mask_key=args.mask_key,
+        dilation_iterations=args.dilation_iterations,
         max_distance=args.max_distance, voxel_size=args.voxel_size,
+        threshold=args.threshold,
     )

@@ -34,6 +34,9 @@ export INPUT_KEY
 export OUTPUT_FOLDER
 export MASK_PATH
 export MASK_INPUT_KEY="s4"
+# Dilation of the IHC mask, in voxels of MASK_INPUT_KEY. 4 voxels of 's4' are 24 micrometer,
+# which has to stay above the MAX_DISTANCE used for matching in the detection step.
+export DILATION_ITERATIONS=4
 
 if ! [[ -f $OUTPUT_FOLDER ]] ; then
 	mkdir -p "$OUTPUT_FOLDER"
@@ -50,6 +53,7 @@ cmd_array=(	'import sys,os;'
 	'input_key=os.environ["INPUT_KEY"],'
 	'output_folder=os.environ["OUTPUT_FOLDER"],'
 	'mask_path=os.environ.get("MASK_PATH") or None,'
-	'mask_input_key=os.environ["MASK_INPUT_KEY"])')
+	'mask_input_key=os.environ["MASK_INPUT_KEY"],'
+	'dilation_iterations=os.environ["DILATION_ITERATIONS"])')
 cmd="${cmd_array[*]}"
 python -c "$cmd"

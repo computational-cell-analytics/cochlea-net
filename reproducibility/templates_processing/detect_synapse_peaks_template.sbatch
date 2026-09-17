@@ -31,12 +31,12 @@ export SCRIPT_DIR=$SCRIPT_REPO/scripts
 OUTPUT_FOLDER=$1
 # optional: IHC segmentation at full resolution, for matching and filtering the detections
 MASK_PATH=$2
-# key to the IHC segmentation, e.g. s0
-MASK_INPUT_KEY=$3
+# key to the IHC segmentation at full resolution, e.g. s0
+MASK_KEY=${3:-s0}
 
 export OUTPUT_FOLDER
 export MASK_PATH
-export MASK_INPUT_KEY
+export MASK_KEY
 export VOXEL_SIZE="0.38 0.38 0.38"
 export THRESHOLD=0.5
 export MAX_DISTANCE=3.0
@@ -50,7 +50,7 @@ cmd_array=(	'import sys,os;'
 	'synapse_detection.run_synapse_detection_slurm(output_folder=os.environ["OUTPUT_FOLDER"],'
 	'voxel_size=os.environ["VOXEL_SIZE"],threshold=os.environ["THRESHOLD"],'
 	'mask_path=os.environ.get("MASK_PATH") or None,'
-	'mask_input_key=os.environ.get("MASK_INPUT_KEY") or None,'
+	'mask_key=os.environ["MASK_KEY"],'
 	'max_distance=os.environ["MAX_DISTANCE"])')
 cmd="${cmd_array[*]}"
 python -c "$cmd"

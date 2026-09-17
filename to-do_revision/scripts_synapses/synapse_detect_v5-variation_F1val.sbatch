@@ -45,11 +45,11 @@ for name in  "${CROP_NAMES[@]}" ; do
 	echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
 	echo "MODEL $MODEL"
 
-	python ~/flamingo-tools/scripts/synapse_marker_detection/run_prediction.py \
-		--input $INPUT_PATH \
+	flamingo_tools.run_detection \
+		--input_path $INPUT_PATH \
 		--input_key $INPUT_KEY \
 		--output_folder $OUTPUT_FOLDER \
-		--model $MODEL
+		--checkpoint_path $MODEL
 done
 
 OUTPUT_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/val_synapses/v5-f2"
@@ -66,11 +66,11 @@ for name in  "${CROP_NAMES[@]}" ; do
 	echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
 	echo "MODEL $MODEL"
 
-	python ~/flamingo-tools/scripts/synapse_marker_detection/run_prediction.py \
-		--input $INPUT_PATH \
+	flamingo_tools.run_detection \
+		--input_path $INPUT_PATH \
 		--input_key $INPUT_KEY \
 		--output_folder $OUTPUT_FOLDER \
-		--model $MODEL
+		--checkpoint_path $MODEL
 done
 
 OUTPUT_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/val_synapses/v5-f3"
@@ -87,11 +87,11 @@ for name in  "${CROP_NAMES[@]}" ; do
 	echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
 	echo "MODEL $MODEL"
 
-	python ~/flamingo-tools/scripts/synapse_marker_detection/run_prediction.py \
-		--input $INPUT_PATH \
+	flamingo_tools.run_detection \
+		--input_path $INPUT_PATH \
 		--input_key $INPUT_KEY \
 		--output_folder $OUTPUT_FOLDER \
-		--model $MODEL
+		--checkpoint_path $MODEL
 done
 
 OUTPUT_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/val_synapses/v5-f4"
@@ -108,10 +108,10 @@ for name in  "${CROP_NAMES[@]}" ; do
 	echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
 	echo "MODEL $MODEL"
 
-	python ~/flamingo-tools/scripts/synapse_marker_detection/run_prediction.py \
-		--input $INPUT_PATH \
+	flamingo_tools.run_detection \
+		--input_path $INPUT_PATH \
 		--input_key $INPUT_KEY \
 		--output_folder $OUTPUT_FOLDER \
-		--model $MODEL
+		--checkpoint_path $MODEL
 done
 

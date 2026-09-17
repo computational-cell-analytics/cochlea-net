@@ -1,8 +1,12 @@
 """Detection of ribbon synapses from a CtBP2 stain.
 
-Parallelization over multiple slurm tasks is only possible by calling functions directly.
-Functions for the parallelization end with '_slurm' and divide the process into
-preprocessing, prediction, and detection.
+The pipeline has three stages, which each run as a separate slurm job and whose names end
+with '_slurm': pre-processing (CPU), prediction (GPU array), and detection (CPU).
+'marker_detection' runs all three in a single process. Parallelization over multiple slurm
+tasks is only possible by calling the stage functions directly.
+
+The standard case predicts on the dilated IHC segmentation. The prediction falls back to the
+full volume when no segmentation is given.
 """
 import json
 import os
@@ -245,9 +249,7 @@ def synapse_detection_from_prediction(
         prediction_key: Input key for prediction.
         voxel_size: The voxel size of the data in micrometer.
         force_overwrite: Forcefully overwrite output detection.
-        threshold: Absolute heatmap threshold for peak detection. If None, the
-            threshold is loaded from cache or determined via gridsearch on the
-            validation set used during training (requires *model_path*).
+        threshold: Absolute heatmap threshold for peak detection.
         n_threads: The number of threads for peak detection and flow correction.
         save_no_flow: Whether to additionally save the un-corrected peak detections
             (before sub-voxel flow correction) to a sibling file next to
@@ -286,7 +288,8 @@ def build_ihc_mask(
     mask_path: str,
     output_folder: str,
     mask_input_key: str = "s4",
-) -> None:
+    dilation_iterations: int = 4,
+) -> Tuple[int, ...]:
     """Derive the prediction mask from an IHC segmentation.
 
     The segmentation is read at a low scale level, binarized and dilated. The result is
@@ -295,24 +298,83 @@ def build_ihc_mask(
     later on, so restricting inference to the dilated IHC region discards no detection
     that survives that filter.
 
+    The mask only decides which prediction blocks run, and one voxel of the segmentation at
+    's4' already spans 16 voxels per axis of the prediction grid. A finer scale level adds no
+    selectivity. The dilation is what keeps the signal from being clipped at the mask border,
+    and it also absorbs the rounding of the nearest-neighbor upsampling in `prediction_impl`.
+
     Args:
         mask_path: Path to the IHC segmentation.
         output_folder: Output folder for synapse segmentation and marker detection.
         mask_input_key: Key to the undersampled IHC segmentation.
+        dilation_iterations: The number of dilation steps, in voxels of `mask_input_key`.
+            The default of 4 is 64 voxels of the full resolution for the default key 's4'.
+            Set it to 0 to use the segmentation itself as the mask.
+
+    Returns:
+        The shape of the mask, so that the caller can convert `dilation_iterations` to micrometer.
     """
     output_file = os.path.join(output_folder, "mask.zarr")
     mask_key = "mask"
-    if os.path.exists(output_file) and mask_key in zarr.open(output_file, mode="r"):
-        print(f"Skipping mask creation. {output_file} already exists.")
-        return
+    if os.path.exists(output_file):
+        f_in = zarr.open(output_file, mode="r")
+        if mask_key in f_in:
+            print(f"Skipping mask creation. {output_file} already exists.")
+            return tuple(f_in[mask_key].shape)
 
     segmentation = read_image_data(mask_path, mask_input_key)
     # binary_dilation casts its input to bool, so the label ids act as foreground directly.
-    dilated = binary_dilation(segmentation, structure=np.ones((9, 9, 9))).astype("uint8")
+    dilation_iterations = int(dilation_iterations)
+    if dilation_iterations < 1:
+        # scipy dilates until the result stops changing for 'iterations' < 1, which would fill
+        # the whole volume. Here a non-positive count means no dilation at all.
+        dilated = (np.asarray(segmentation) != 0).astype("uint8")
+    else:
+        # Iterating a 3x3x3 structure gives the same result as a single pass with a (2n+1)^3
+        # cube, at a fraction of the cost per voxel.
+        dilated = binary_dilation(
+            segmentation, structure=np.ones((3, 3, 3)), iterations=dilation_iterations
+        ).astype("uint8")
 
     os.makedirs(output_folder, exist_ok=True)
     f_out = zarr.open(output_file, mode="w")
     f_out.create_array(mask_key, data=dilated, compressors=zarr.codecs.GzipCodec())
+    return tuple(dilated.shape)
+
+
+def _check_mask_dilation(image_shape, mask_shape, dilation_iterations, voxel_size, max_distance):
+    """Warn if the dilated mask is too tight to hold every synapse within `max_distance`.
+
+    The dilation is applied in voxels of the downscaled segmentation, so its physical size
+    depends on `mask_input_key`. At 's4' the default is generous, at 's0' the same number of
+    iterations would be smaller than `max_distance` and would clip detections.
+    """
+    # The mask is upsampled to the image shape, so one mask voxel spans this many image voxels.
+    scale = [im / ma for im, ma in zip(image_shape, mask_shape)]
+    # voxel_size is (x, y, z), the shapes are (z, y, x).
+    margins = [dilation_iterations * sc * vs for sc, vs in zip(scale, tuple(voxel_size)[::-1])]
+    print("Mask dilation in micrometer (z, y, x): " + ", ".join(f"{m:.1f}" for m in margins))
+    if min(margins) < max_distance:
+        warnings.warn(
+            f"The mask is dilated by only {min(margins):.1f} micrometer, which is less than the "
+            f"matching distance of {max_distance} micrometer. Synapses near the border of an IHC "
+            "may fall outside of the mask and never be predicted. Increase 'dilation_iterations' "
+            "or use a more downscaled 'mask_input_key'.",
+            stacklevel=2,
+        )
+
+
+def _load_mean_std(output_folder: str) -> Tuple[float, float]:
+    """Read the normalization values written by the pre-processing step."""
+    mean_std_file = os.path.join(output_folder, "mean_std.json")
+    if not os.path.isfile(mean_std_file):
+        raise ValueError(
+            f"{mean_std_file} does not exist. Run 'run_synapse_prediction_preprocess_slurm' first, "
+            "so that all array tasks normalize the input identically."
+        )
+    with open(mean_std_file) as f:
+        values = json.load(f)
+    return float(values["mean"]), float(values["std"])
 
 
 def _predict_synapses(
@@ -339,137 +401,12 @@ def _predict_synapses(
     )
 
 
-def run_prediction(
-    input_path: str,
-    input_key: str,
-    output_folder: str,
-    model_path: str,
-    block_shape: Optional[Tuple[int, int, int]] = None,
-    halo: Optional[Tuple[int, int, int]] = None,
-    voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
-    threshold: float = 0.5,
-    n_threads: Optional[int] = None,
-    mask_path: Optional[str] = None,
-    mask_input_key: str = "s4",
-):
-    """Run prediction for synapse detection.
-
-    Args:
-        input_path: Input path to image channel for synapse detection.
-        input_key: Input key for resolution of image channel.
-        output_folder: Output folder for synapse segmentation and marker detection.
-        model_path: Path to model for synapse detection.
-        block_shape: The block-shape for running the prediction.
-        halo: The halo (= block overlap) to use for prediction.
-        voxel_size: The voxel size of the data in micrometer.
-        threshold: Threshold for peak detection.
-        n_threads: The number of threads for peak detection and flow correction.
-        mask_path: Path to an IHC segmentation used to restrict the prediction to the region
-            around the IHCs. By default the prediction runs on the full volume. The detections
-            are not matched to the IHCs here, see `marker_detection` for that.
-        mask_input_key: Key to the undersampled IHC segmentation used for the mask.
-    """
-    voxel_size = _normalize_voxel_size(voxel_size)
-
-    if mask_path is not None:
-        build_ihc_mask(mask_path, output_folder, mask_input_key=mask_input_key)
-
-    # Skip existing prediction, which is saved in output_folder/predictions.zarr.
-    # The check only tests that the dataset exists, not that every block was written, so it
-    # is valid for this single-job path alone. See run_synapse_prediction_slurm.
-    output_path = os.path.join(output_folder, "predictions.zarr")
-    prediction_key = "prediction"
-    skip_prediction = os.path.exists(output_path) and prediction_key in zarr.open(output_path, mode="r")
-
-    if not skip_prediction:
-        _predict_synapses(input_path, input_key, output_folder, model_path, block_shape, halo)
-
-    detection_path = os.path.join(output_folder, "synapse_detection.tsv")
-    synapse_detection_from_prediction(
-        output_path, detection_path,
-        prediction_key=prediction_key,
-        voxel_size=voxel_size,
-        threshold=threshold,
-        n_threads=n_threads,
-    )
-
-
-def marker_detection(
-    input_path: str,
-    input_key: str,
-    mask_path: Optional[str],
-    output_folder: str,
-    model_path: str,
-    mask_input_key: str = "s4",
-    mask_key: str = "s0",
-    max_distance: float = 3,
-    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
-    threshold: float = 0.5,
-):
-    """Streamlined workflow for marker detection, mapping, and filtering.
-
-    The IHC segmentation is read twice, at two different resolutions: at `mask_input_key` to
-    build the mask that restricts the inference, and at `mask_key` to match the detections to
-    the IHCs. The image data and the segmentation therefore have independent keys.
-
-    Args:
-        input_path: Input path to image channel for synapse detection.
-        input_key: Input key for resolution of image channel.
-        mask_path: Path to IHC segmentation used to mask input.
-        output_folder: Output folder for synapse segmentation and marker detection.
-        model_path: Path to model for synapse detection.
-        mask_input_key: Key to undersampled IHC segmentation for masking input for synapse detection.
-        mask_key: Key to the IHC segmentation at full resolution, for matching the detections.
-        max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
-        voxel_size: The voxel size of the data in micrometer.
-        threshold: Threshold for peak detection.
-    """
-    voxel_size = _normalize_voxel_size(voxel_size)
-
-    # 1.) Determine mask for inference based on the IHC segmentation.
-    if mask_path is not None:
-        build_ihc_mask(mask_path, output_folder, mask_input_key=mask_input_key)
-
-    # 2.) Run inference and detection of maxima.
-
-    # Skip existing prediction, which is saved in output_folder/predictions.zarr
-    skip_prediction = False
-    output_path = os.path.join(output_folder, "predictions.zarr")
-    prediction_key = "prediction"
-    if os.path.exists(output_path) and prediction_key in zarr.open(output_path, mode="r"):
-        skip_prediction = True
-
-    # skip prediction if post-processed output exists
-    detection_path = os.path.join(output_folder, "synapse_detection.tsv")
-    if os.path.exists(detection_path):
-        skip_prediction = True
-
-    if not skip_prediction:
-        _predict_synapses(input_path, input_key, output_folder, model_path, block_shape=None, halo=None)
-
-    detections = synapse_detection_from_prediction(
-        output_path, detection_path, prediction_key=prediction_key,
-        voxel_size=voxel_size, threshold=threshold,
-    )
-
-    # 3.) Map the detections to IHC and filter them based on a distance criterion.
-    # Use the function 'map_and_filter_detections' from above.
-    if mask_path is not None:
-        segmentation = read_image_data(mask_path, mask_key)
-        detections_filtered = map_and_filter_detections(
-            segmentation=segmentation,
-            detections=detections,
-            max_distance=max_distance,
-            voxel_size=voxel_size,
-        )
-
-        # Save the result in MoBIE compatible format.
-        detection_path = os.path.join(output_folder, "synapse_detection_filtered.tsv")
-        detections_filtered.to_csv(detection_path, index=False, sep="\t")
-
-
 #
-# ---Workflow for parallel synapse detection using slurm---
+# ---The three stages of synapse detection---
+#
+# Each stage can run as a separate slurm job. The state passes through the output folder:
+# 'mask.zarr' and 'mean_std.json' from the pre-processing, 'predictions.zarr' from the
+# prediction array, and the detection tables from the last stage.
 #
 
 
@@ -479,25 +416,37 @@ def run_synapse_prediction_preprocess_slurm(
     input_key: Optional[str] = None,
     mask_path: Optional[str] = None,
     mask_input_key: str = "s4",
+    dilation_iterations: int = 4,
+    voxel_size: Union[float, Tuple[float, float, float]] = (0.38, 0.38, 0.38),
+    max_distance: float = 3.0,
     s3: Optional[str] = None,
     s3_bucket_name: Optional[str] = None,
     s3_service_endpoint: Optional[str] = None,
     s3_credentials: Optional[str] = None,
 ) -> None:
-    """Pre-processing for the parallel synapse prediction.
+    """Pre-processing for the synapse prediction.
 
-    This is the first of three steps. It runs as a single job before the prediction array.
-    The optional mask is stored in 'mask.zarr' in the output folder. The mean and standard
-    deviation are stored in 'mean_std.json'. Every array task must use the same values, and
-    recomputing them per task would read the full volume once per task.
+    This is the first of three steps. It runs as a single CPU job before the prediction array.
+    The mask derived from the IHC segmentation is stored in 'mask.zarr' in the output folder.
+    The mean and standard deviation are stored in 'mean_std.json'. Every array task must use
+    the same values, and recomputing them per task would read the full volume once per task.
+
+    The standard case is to pass an IHC segmentation as `mask_path`. The prediction then runs
+    only on the blocks around the IHCs, which is a small fraction of the volume. Without a
+    segmentation the prediction falls back to the full volume.
 
     Args:
         input_path: Input path to image channel for synapse detection.
         output_folder: Output folder for synapse segmentation and marker detection.
         input_key: Input key for resolution of the image channel.
         mask_path: Path to an IHC segmentation used to restrict the prediction.
-            By default the prediction runs on the full volume.
+            Without it the prediction runs on the full volume.
         mask_input_key: Key to the undersampled IHC segmentation.
+        dilation_iterations: The number of dilation steps for the mask, in voxels of
+            `mask_input_key`.
+        voxel_size: The voxel size of the data in micrometer, to report the dilation in
+            physical units.
+        max_distance: The matching distance the mask has to cover, see `_check_mask_dilation`.
         s3: Flag for accessing data stored on S3 bucket.
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
@@ -511,8 +460,22 @@ def run_synapse_prediction_preprocess_slurm(
             service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
         )
 
-    if mask_path is not None:
-        build_ihc_mask(mask_path, output_folder, mask_input_key=mask_input_key)
+    if mask_path is None:
+        warnings.warn(
+            "No IHC segmentation was given. The prediction falls back to the full volume and the "
+            "detections are not matched to IHCs. Pass 'mask_path' to restrict the inference to the "
+            "region around the IHCs, which is the standard case.",
+            stacklevel=2,
+        )
+    else:
+        mask_shape = build_ihc_mask(
+            mask_path, output_folder, mask_input_key=mask_input_key,
+            dilation_iterations=int(dilation_iterations),
+        )
+        _check_mask_dilation(
+            read_image_data(input_path, input_key).shape, mask_shape, int(dilation_iterations),
+            _normalize_voxel_size(voxel_size), float(max_distance),
+        )
 
     if not os.path.isfile(os.path.join(output_folder, "mean_std.json")):
         calc_mean_and_std(input_path, input_key, output_folder)
@@ -571,16 +534,7 @@ def run_synapse_prediction_slurm(
         )
 
     # Get the pre-computed mean and standard deviation of the full volume from the JSON file.
-    mean_std_file = os.path.join(output_folder, "mean_std.json")
-    if os.path.isfile(mean_std_file):
-        with open(mean_std_file) as f:
-            values = json.load(f)
-        mean, std = float(values["mean"]), float(values["std"])
-    else:
-        raise ValueError(
-            f"{mean_std_file} does not exist. Run 'run_synapse_prediction_preprocess_slurm' first, so that all "
-            "array tasks normalize the input identically."
-        )
+    mean, std = _load_mean_std(output_folder)
 
     # No skip check on the existing prediction here: the dataset is created by whichever task
     # starts first, so skipping on its existence would leave the other tasks' blocks empty.
@@ -597,8 +551,9 @@ def run_synapse_detection_slurm(
     threshold: float = 0.5,
     n_threads: Optional[int] = None,
     mask_path: Optional[str] = None,
-    mask_input_key: Optional[str] = None,
+    mask_key: str = "s0",
     max_distance: float = 3.0,
+    force_overwrite: bool = False,
 ) -> None:
     """Detect the synapse markers in a finished prediction.
 
@@ -610,12 +565,15 @@ def run_synapse_detection_slurm(
             It must contain the 'predictions.zarr' written by the prediction array.
         voxel_size: The voxel size of the data in micrometer.
         threshold: Threshold for peak detection.
-        n_threads: The number of threads for peak detection and flow correction.
-            By default it is derived from the number of cores available to the job.
+        n_threads: The number of threads for peak detection, flow correction, and the matching
+            to the IHCs. By default it is derived from the number of cores available to the job.
         mask_path: Path to an IHC segmentation. If given, the detections are matched to the
             IHCs and filtered by 'max_distance'.
-        mask_input_key: Key to the IHC segmentation at full resolution.
+        mask_key: Key to the IHC segmentation at full resolution. The matching needs the
+            highest resolution available, unlike the mask that restricts the inference.
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
+        force_overwrite: Recompute the detections even when the table already exists. Set this
+            whenever the prediction was rewritten, so that a stale table is not served.
     """
     voxel_size = _normalize_voxel_size(voxel_size)
     threshold = float(threshold)
@@ -626,14 +584,91 @@ def run_synapse_detection_slurm(
     detections = synapse_detection_from_prediction(
         prediction_path, detection_path, prediction_key="prediction",
         voxel_size=voxel_size, threshold=threshold, n_threads=n_threads,
+        force_overwrite=force_overwrite,
     )
 
     if mask_path is not None:
-        segmentation = read_image_data(mask_path, mask_input_key)
+        segmentation = read_image_data(mask_path, mask_key)
         detections_filtered = map_and_filter_detections(
             segmentation=segmentation, detections=detections,
-            max_distance=float(max_distance), voxel_size=voxel_size,
+            max_distance=float(max_distance), voxel_size=voxel_size, n_threads=n_threads,
         )
         detections_filtered.to_csv(
             os.path.join(output_folder, "synapse_detection_filtered.tsv"), index=False, sep="\t"
         )
+
+
+def marker_detection(
+    input_path: str,
+    input_key: Optional[str],
+    mask_path: Optional[str],
+    output_folder: str,
+    model_path: str,
+    mask_input_key: str = "s4",
+    mask_key: str = "s0",
+    dilation_iterations: int = 4,
+    max_distance: float = 3.0,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
+    threshold: float = 0.5,
+    block_shape: Optional[Tuple[int, int, int]] = None,
+    halo: Optional[Tuple[int, int, int]] = None,
+    n_threads: Optional[int] = None,
+) -> None:
+    """Run the three stages of synapse detection in a single job.
+
+    Use the stage functions directly to spread the prediction over a slurm array.
+
+    The IHC segmentation is read twice, at two different resolutions: at `mask_input_key` to
+    build the mask that restricts the inference, and at `mask_key` to match the detections to
+    the IHCs. The image data and the segmentation therefore have independent keys.
+
+    Args:
+        input_path: Input path to image channel for synapse detection.
+        input_key: Input key for resolution of image channel.
+        mask_path: Path to IHC segmentation used to mask the input and to match the detections.
+            Without it the prediction runs on the full volume and the detections are not matched.
+        output_folder: Output folder for synapse segmentation and marker detection.
+        model_path: Path to model for synapse detection.
+        mask_input_key: Key to undersampled IHC segmentation for masking input for synapse detection.
+        mask_key: Key to the IHC segmentation at full resolution, for matching the detections.
+        dilation_iterations: The number of dilation steps for the mask, in voxels of `mask_input_key`.
+        max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
+        voxel_size: The voxel size of the data in micrometer.
+        threshold: Threshold for peak detection.
+        block_shape: The block-shape for running the prediction.
+        halo: The halo (= block overlap) to use for prediction.
+        n_threads: The number of threads for peak detection and flow correction.
+    """
+    voxel_size = _normalize_voxel_size(voxel_size)
+
+    # Skipping an existing prediction is valid for this single-job path only, where one process
+    # writes every block. See run_synapse_prediction_slurm.
+    output_path = os.path.join(output_folder, "predictions.zarr")
+    predicted = not (os.path.exists(output_path) and "prediction" in zarr.open(output_path, mode="r"))
+
+    if predicted:
+        # 1.) Build the mask from the IHC segmentation and compute the normalization values.
+        # Both only feed the inference, so they are skipped with it.
+        run_synapse_prediction_preprocess_slurm(
+            input_path, output_folder, input_key=input_key,
+            mask_path=mask_path, mask_input_key=mask_input_key,
+            dilation_iterations=dilation_iterations,
+            voxel_size=voxel_size, max_distance=max_distance,
+        )
+
+        # 2.) Run the inference.
+        mean, std = _load_mean_std(output_folder)
+        _predict_synapses(
+            input_path, input_key, output_folder, model_path, block_shape, halo,
+            mean=mean, std=std,
+        )
+    else:
+        print(f"Skipping prediction. {output_path} already exists.")
+
+    # 3.) Detect the maxima, and match them to the IHCs when a segmentation is given.
+    # A fresh prediction invalidates an existing table, so it is always recomputed with it.
+    run_synapse_detection_slurm(
+        output_folder, voxel_size=voxel_size, threshold=threshold, n_threads=n_threads,
+        mask_path=mask_path, mask_key=mask_key, max_distance=max_distance,
+        force_overwrite=predicted,
+    )

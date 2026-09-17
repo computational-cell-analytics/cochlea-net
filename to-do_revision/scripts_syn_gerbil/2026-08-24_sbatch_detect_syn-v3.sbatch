@@ -47,6 +47,6 @@ run_synapse_detection_slurm(
     voxel_size=os.environ["VOXEL_SIZE"],
     threshold=os.environ["THRESHOLD"],
     mask_path=os.environ["MASK"],
-    mask_input_key=os.environ["MASK_FULL_KEY"],
+    mask_key=os.environ["MASK_FULL_KEY"],
     max_distance=os.environ["MAX_DISTANCE"],
 )'

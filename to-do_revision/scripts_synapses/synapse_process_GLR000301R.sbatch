@@ -65,13 +65,13 @@ if [ ! -d "$OUTPUT_FOLDER" ] ; then
 	mkdir -p "$OUTPUT_FOLDER"
 fi
 
-python $SCRIPT_DIR/synapse_marker_detection/marker_detection.py \
-	--input $INPUT_PATH \
+flamingo_tools.run_detection \
+	--input_path $INPUT_PATH \
 	--input_key $INPUT_KEY \
 	--output_folder $OUTPUT_FOLDER \
-	--mask $MASK_PATH \
+	--mask_path $MASK_PATH \
 	--mask_input_key $MASK_INPUT_KEY \
 	--mask_key $MASK_KEY \
-	--model $MODEL \
+	--checkpoint_path $MODEL \
 	--max_distance $MAX_DISTANCE \
 	--s3_mask
