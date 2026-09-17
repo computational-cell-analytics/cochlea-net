@@ -106,7 +106,7 @@ def run_segmentation():
     run_unet_prediction(
         input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
-        min_size=args.min_size, use_mask=args.disable_masking,
+        min_size=args.min_size, use_mask=not args.disable_masking,
         **segmentation_kwargs,
     )
 
