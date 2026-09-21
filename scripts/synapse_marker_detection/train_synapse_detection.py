@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-import sys
 from glob import glob
 
 import torch
@@ -9,15 +8,9 @@ from sklearn.model_selection import train_test_split
 from flamingo_tools.synapse_detection.detection_dataset import (
     CsvHeatmapFlowTransform,
     CsvHeatmapTransform,
-    DetectionDataset,
     MinPointSampler,
 )
-
-CZII_REPOSITORY = "/user/pape41/u12086/Work/my_projects/czii-protein-challenge"
-sys.path.insert(0, CZII_REPOSITORY)
-sys.path.insert(0, os.path.join(CZII_REPOSITORY, "detection"))
-
-from utils.training.training import supervised_training  # noqa
+from flamingo_tools.synapse_detection.training import DetectionLoss, supervised_training
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 ROOT_SYNAPSE_DATA = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data")
@@ -26,7 +19,8 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
-    use_flow=False, sampler_name=None, n_iterations=int(1e5),
+    use_flow=False, sampler_name=None, n_iterations=int(1e5), save_root=SAVE_ROOT,
+    legacy_recipe=False,
 ):
     if model_suffix is None:
         model_suffix = version
@@ -48,15 +42,12 @@ def train(
     if use_flow:
         out_channels = 5
         label_transform = CsvHeatmapFlowTransform(sigma=1, eps=1e-5)
-        # Keep the combined heatmap and flow loss of supervised_training.
-        loss_kwargs = {}
     else:
         out_channels = 1
         label_transform = CsvHeatmapTransform(sigma=1, eps=1e-5)
-        # The combined loss takes the MSE over the empty slice pred[:, 1:] for a single output
-        # channel, which returns nan. Pass the loss through a dict so that the script does not
-        # depend on importing CombinedLoss from the upstream repository.
-        loss_kwargs = {"loss_fn": torch.nn.MSELoss(reduction="mean")}
+    loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
+    # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel.
+    metric = torch.nn.MSELoss(reduction="mean") if legacy_recipe else None
 
     image_dir = os.path.join(root_data_dir, version, "images")
     label_dir = os.path.join(root_data_dir, version, "labels")
@@ -70,14 +61,12 @@ def train(
         image_paths, label_paths, test_size=val_sample_size, random_state=random_state,
     )
 
-    # We need to give the paths for the test loader, although it's never used.
-    test_paths, test_label_paths = val_paths, val_label_paths
-
     train_val_dic = {
         "train": [os.path.splitext(os.path.basename(f))[0] for f in train_paths],
         "val": [os.path.splitext(os.path.basename(f))[0] for f in val_paths],
         "flow": use_flow,
         "sampler": sampler_name,
+        "legacy_recipe": legacy_recipe,
     }
 
     with open(json_path, "w") as f:
@@ -87,10 +76,7 @@ def train(
     print(len(train_paths), "tomograms for training")
     print(len(val_paths), "tomograms for validation")
     print(f"{out_channels} output channels, flow: {use_flow}, sampler: {sampler_name}")
-
-    patch_shape = [40, 112, 112]
-    batch_size = 32
-    check = False
+    print(f"Legacy recipe: {legacy_recipe}")
 
     supervised_training(
         name=model_name,
@@ -99,26 +85,19 @@ def train(
         val_paths=val_paths,
         val_label_paths=val_label_paths,
         raw_key="raw",
-        patch_shape=patch_shape, batch_size=batch_size,
-        check=check,
+        patch_shape=[40, 112, 112],
+        batch_size=32,
         lr=1e-4,
         n_iterations=n_iterations,
         out_channels=out_channels,
-        augmentations=None,
         label_transform=label_transform,
-        eps=1e-5,
-        sigma=1,
-        lower_bound=None,
-        upper_bound=None,
-        test_paths=test_paths,
-        test_label_paths=test_label_paths,
-        save_root=SAVE_ROOT,
-        dataset_class=DetectionDataset,
+        loss=loss,
+        metric=metric,
+        save_root=save_root,
         n_samples_train=3200,
         n_samples_val=160,
         sampler=sampler,
         num_workers=8,
-        **loss_kwargs,
     )
 
 
@@ -135,12 +114,19 @@ def main():
                         help="Custom suffix for model name. Default: Same as version.")
     parser.add_argument("--use_flow", action="store_true",
                         help="Train the 4 stereographic flow channels in addition to the heatmap. "
-                             "Default: train the heatmap only, as for synapse_detection_v3.")
+                             "Default: train the heatmap only, the output layout of "
+                             "synapse_detection_v3.")
     parser.add_argument("--sampler", type=str, default=None, choices=["none", "minpoint"],
                         help="Sampler to reject patches with too few points. "
                              "Default: minpoint with --use_flow, none without.")
     parser.add_argument("-n", "--n_iterations", type=int, default=int(1e5),
                         help="Number of training iterations. Default: 100000.")
+    parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
+                        help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
+    parser.add_argument("--legacy_recipe", action="store_true",
+                        help="Reproduce the validation metric of synapse_detection_v3 and v5: an "
+                             "unweighted mean squared error over all output channels. Required to "
+                             "retrain those models.")
 
     args = parser.parse_args()
     train(
@@ -151,6 +137,8 @@ def main():
         use_flow=args.use_flow,
         sampler_name=args.sampler,
         n_iterations=args.n_iterations,
+        save_root=args.save_root,
+        legacy_recipe=args.legacy_recipe,
     )
 
 
