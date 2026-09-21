@@ -167,22 +167,37 @@ once the loss is masked.
 full `raw` array, which is what `prediction_impl` does for a volume. One difference remains: at
 inference the statistics are computed inside the IHC mask, during training over the whole crop.
 
-**Retraining v3 or v5.** Pass `--legacy_recipe`. It restores the two deltas that otherwise make
-the old recipes unreachable: the raw input stays unnormalized, and the validation metric goes
-back to an unweighted mean squared error over every output channel, which is what selected
-`best.pt` for v5. It cannot be combined with `--mask_radius`, because that metric cannot read a
-masked target. The archived scripts in `scripts_synapses/` need the flag added.
+**Retraining v3 or v5.** Pass `--legacy_recipe`. It restores the three deltas that otherwise make
+the old recipes unreachable: the raw input stays unnormalized, the validation metric goes back to
+an unweighted mean squared error over every output channel, which is what selected `best.pt` for
+v5, and the validation patches are redrawn on every epoch. It cannot be combined with
+`--mask_radius`, because that metric cannot read a masked target. The archived scripts in
+`scripts_synapses/` need the flag added.
 
 **Comparing the next runs.** The logged loss and metric change scale twice, through the masked
 mean and through the normalization. They are not comparable to the v3, v5 or v6-1 numbers. Score
 models with `scripts/validation/synapses/run_evaluation.py`, and train a fresh unmasked baseline
 with the same code rather than comparing against the shipped models.
 
-**Still open: recommendation 2.** The validation patches are still redrawn on every access, and
-the masked metric additionally divides by a mask size that varies with the patches drawn. That
-makes `best.pt` selection noisier than before, not less noisy, and it also feeds
-`ReduceLROnPlateau`. A fixed validation patch set and a detection-level metric remain the right
-fix; until then, treat `best.pt` as one candidate and score it against `latest.pt`.
+**Recommendation 2, first half: the validation patch set is fixed.** `DetectionDataset` takes a
+`patch_seed`, and the bounding box for a given index is a pure function of `(patch_seed, index)`,
+so the same index gives the same patch in every epoch and in every data loader worker. The
+training script derives the seed from `--random_state`, the same number that already fixes the
+train and validation split, so the validation data is reproducible across runs as well. The
+validation loader also stops shuffling: the trainer averages the metric over batches and the
+masked loss normalizes within a batch, so a fixed patch set alone would not give a fixed metric.
+Measured on a synthetic stand-in at the production validation size, 160 patches in batches of
+32, scored against a fixed prediction so that only the patch draw moves: the metric spread over
+six passes was **15 % of its mean** before the change and exactly zero after it. The noise does
+not average away with `n_samples_val`, because the reported value is a mean over only five
+batches and each batch is normalized by its own mask size.
+
+**Still open: the detection-level metric.** The other half of recommendation 2 is not done. The
+metric remains a voxelwise masked mean squared error, so `best.pt` is now stable but still a
+proxy for detection F1, and the seed study already showed that validation loss does not rank
+detectors (Spearman rho 0.39, p = 0.38). Keep scoring candidates with
+`scripts/validation/synapses/run_evaluation.py`, and keep comparing `best.pt` against
+`latest.pt`.
 
 **Not used: the IHC channel.** 21 of the 29 v5/v6 crops do carry a `raw_ihc` array, so a real
 IHC-derived loss mask is possible for most of them. The label-derived mask is used instead

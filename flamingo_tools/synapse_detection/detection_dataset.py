@@ -27,13 +27,15 @@ class MinPointSampler:
         self.min_points = min_points
         self.p_reject = p_reject
 
-    def __call__(self, x: np.ndarray, y: np.ndarray) -> bool:
+    def __call__(self, x: np.ndarray, y: np.ndarray, rng=np.random) -> bool:
         """Check the sample.
 
         Args:
             x: The raw data.
             y: The label data as returned by the label transform (heatmap, or multi-channel
                heatmap+flow array with shape (C, Z, Y, X)).
+            rng: The generator for the rejection draw. Pass a seeded generator to make the
+                decision reproducible. The default uses the global numpy generator.
 
         Returns:
             Whether to accept this sample.
@@ -42,7 +44,7 @@ class MinPointSampler:
         n_points = len(peak_local_max(heatmap, min_distance=2, threshold_rel=0.3))
         if n_points > self.min_points:
             return True
-        return np.random.rand() > self.p_reject
+        return rng.random() > self.p_reject
 
 
 class CsvHeatmapTransform:
@@ -195,6 +197,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         sampler=None,
         eps=1e-8,
         sigma=None,
+        patch_seed=None,
     ):
         self.raw_path = raw_path
         self.label_path = label_path
@@ -212,6 +215,9 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.label_transform2 = label_transform2
         self.transform = transform
         self.sampler = sampler
+        # Makes the patch for a given index reproducible, for the validation set. Leave it unset
+        # for training, where every access should see a new patch.
+        self.patch_seed = patch_seed
 
         self.dtype = dtype
         self.label_dtype = label_dtype
@@ -238,22 +244,22 @@ class DetectionDataset(torch.utils.data.Dataset):
     def ndim(self):
         return self._ndim
 
-    def _sample_bounding_box(self):
+    def _sample_bounding_box(self, rng):
         if any(sh < psh for sh, psh in zip(self.shape, self.patch_shape)):
             raise NotImplementedError(
                 f"Image padding is not supported yet. Data shape {self.shape}, patch shape {self.patch_shape}"
             )
         bb_start = [
-            np.random.randint(0, max(1, sh - psh - 2 * self.halo))
+            rng.integers(0, max(1, sh - psh - 2 * self.halo))
             for sh, psh in zip(self.shape, self.patch_shape)
         ]
         return tuple(slice(start, start + psh) for start, psh in zip(bb_start, self.patch_shape))
 
-    def _get_desired_raw_and_labels(self):
+    def _get_desired_raw_and_labels(self, rng):
         raw = zarr.open(self.raw_path, mode="r")[self.raw_key]
         have_raw_channels = raw.ndim == 4
 
-        bb = self._sample_bounding_box()
+        bb = self._sample_bounding_box(rng)
 
         # Extend the patch bounding box with halo on each side, clamped to the volume.
         bb_for_loading = tuple(
@@ -294,12 +300,16 @@ class DetectionDataset(torch.utils.data.Dataset):
         return raw_patch, labels
 
     def _get_sample(self, index):
-        raw, labels = self._get_desired_raw_and_labels()
+        # With a patch seed the patch is a pure function of (patch_seed, index), so the same
+        # index gives the same patch in every epoch and in every data loader worker. Without one
+        # every access draws a new patch, which is what training wants.
+        rng = np.random.default_rng(None if self.patch_seed is None else (self.patch_seed, index))
+        raw, labels = self._get_desired_raw_and_labels(rng)
 
         if self.sampler is not None:
             sample_id = 0
-            while not self.sampler(raw, labels):
-                raw, labels = self._get_desired_raw_and_labels()
+            while not self.sampler(raw, labels, rng):
+                raw, labels = self._get_desired_raw_and_labels(rng)
                 sample_id += 1
                 if sample_id > self.max_sampling_attempts:
                     raise RuntimeError(
