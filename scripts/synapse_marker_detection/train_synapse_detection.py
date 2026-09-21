@@ -60,8 +60,12 @@ def train(
         label_transform = CsvHeatmapTransform(sigma=1, eps=1e-5, mask_radius=mask_radius)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0, masked=mask_radius is not None)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
-    # and they trained on unnormalized input. The legacy recipe restores both together.
+    # they trained on unnormalized input, and they redrew the validation patches on every epoch.
+    # The legacy recipe restores all three together.
     metric = torch.nn.MSELoss(reduction="mean") if legacy_recipe else None
+    # The same number that fixes the train / validation split also fixes the patches inside the
+    # validation crops, so that the metric selecting best.pt is scored on the same data.
+    val_patch_seed = None if legacy_recipe else random_state
 
     image_dir = os.path.join(root_data_dir, version, "images")
     label_dir = os.path.join(root_data_dir, version, "labels")
@@ -82,6 +86,7 @@ def train(
         "sampler": sampler_name,
         "mask_radius": mask_radius,
         "legacy_recipe": legacy_recipe,
+        "val_patch_seed": val_patch_seed,
     }
 
     with open(json_path, "w") as f:
@@ -109,6 +114,7 @@ def train(
         loss=loss,
         metric=metric,
         normalize_raw=not legacy_recipe,
+        val_patch_seed=val_patch_seed,
         save_root=save_root,
         n_samples_train=3200,
         n_samples_val=160,
@@ -147,8 +153,9 @@ def main():
     parser.add_argument("--legacy_recipe", action="store_true",
                         help="Reproduce the training recipe of synapse_detection_v3 and v5: no raw "
                              "normalization, and an unweighted mean squared error over all output "
-                             "channels as the validation metric. Required to retrain those models. "
-                             "Cannot be combined with --mask_radius.")
+                             "channels as the validation metric, and validation patches that are "
+                             "redrawn on every epoch. Required to retrain those models. Cannot be "
+                             "combined with --mask_radius.")
 
     args = parser.parse_args()
     train(

@@ -115,21 +115,26 @@ def _crop_standardization(raw_path, raw_key):
 
 def _get_loader(
     raw_paths, label_paths, raw_key, patch_shape, batch_size, num_workers,
-    label_transform, sampler, n_samples, normalize_raw,
+    label_transform, sampler, n_samples, normalize_raw, patch_seed=None,
 ):
     datasets = [
         DetectionDataset(
             raw_path=raw_path, raw_key=raw_key, label_path=label_path, patch_shape=patch_shape,
             raw_transform=_crop_standardization(raw_path, raw_key) if normalize_raw else None,
             label_transform=label_transform, sampler=sampler, n_samples=n_samples_dataset,
+            # Offset per crop, so that two crops do not draw the same patch positions.
+            patch_seed=None if patch_seed is None else patch_seed + index,
         )
-        for raw_path, label_path, n_samples_dataset
-        in zip(raw_paths, label_paths, _samples_per_dataset(n_samples, len(raw_paths)))
+        for index, (raw_path, label_path, n_samples_dataset)
+        in enumerate(zip(raw_paths, label_paths, _samples_per_dataset(n_samples, len(raw_paths))))
     ]
+    # Fixed patches only give a reproducible metric when the batches are fixed too: the trainer
+    # averages the metric over batches, and the masked loss normalizes within a batch.
+    shuffle = patch_seed is None
     loader = DataLoader(
-        ConcatDataset(*datasets), batch_size=batch_size, shuffle=True, num_workers=num_workers
+        ConcatDataset(*datasets), batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
     )
-    loader.shuffle = True
+    loader.shuffle = shuffle
     return loader
 
 
@@ -154,6 +159,7 @@ def supervised_training(
     num_workers: int = 8,
     metric: Optional[nn.Module] = None,
     normalize_raw: bool = True,
+    val_patch_seed: Optional[int] = None,
 ) -> None:
     """Train the synapse detection model.
 
@@ -180,13 +186,18 @@ def supervised_training(
         metric: The validation metric, which selects 'best.pt'. By default the loss is reused.
         normalize_raw: Whether to standardize each crop with its own mean and standard deviation.
             Switch it off only to reproduce the training of v3 and v5, which never normalized.
+        val_patch_seed: Seed that fixes the validation patches, so that every epoch is scored on
+            the same data. Without it the validation set is redrawn at random on every epoch and
+            the metric that selects 'best.pt' carries that noise.
     """
     loader_kwargs = dict(
         raw_key=raw_key, patch_shape=patch_shape, batch_size=batch_size, num_workers=num_workers,
         label_transform=label_transform, sampler=sampler, normalize_raw=normalize_raw,
     )
     train_loader = _get_loader(train_paths, train_label_paths, n_samples=n_samples_train, **loader_kwargs)
-    val_loader = _get_loader(val_paths, val_label_paths, n_samples=n_samples_val, **loader_kwargs)
+    val_loader = _get_loader(
+        val_paths, val_label_paths, n_samples=n_samples_val, patch_seed=val_patch_seed, **loader_kwargs
+    )
 
     model = get_3d_model(in_channels=1, out_channels=out_channels)
 

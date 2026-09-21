@@ -14,10 +14,11 @@ run so that the train/val split stays *fixed*; without it the default derives fr
 suffix and would resample the split, confounding seed noise with split noise.
 
 **The commands below need `--legacy_recipe` since 2026-09-21.** The training moved into
-`flamingo_tools/synapse_detection/training.py` and gained two changes that apply to every run
-without flags: the raw input is standardized per crop, and the validation metric is the weighted
-combined loss instead of an unweighted mean squared error over all channels. `--legacy_recipe`
-restores both, and is required to reproduce the recipe of any model listed here. See
+`flamingo_tools/synapse_detection/training.py` and gained three changes that apply to every run
+without flags: the raw input is standardized per crop, the validation metric is the weighted
+combined loss instead of an unweighted mean squared error over all channels, and the validation
+patches are fixed instead of redrawn every epoch. `--legacy_recipe` restores all three, and is
+required to reproduce the recipe of any model listed here. See
 [`../synapses.md`](../synapses.md).
 
 ## The runs
