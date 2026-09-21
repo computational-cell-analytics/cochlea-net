@@ -122,10 +122,10 @@ consequential, but random validation sampling is an independent problem.
 
 Before interpreting another seed comparison, the training setup should:
 
-1. add an explicit and identical training/inference raw normalization;
+1. add an explicit and identical training/inference raw normalization; **done, see below**
 2. use a fixed validation patch set and a detection-level validation metric;
 3. mark regions outside the exhaustively annotated/IHC-valid region as *ignore*, rather than as
-   background in the loss;
+   background in the loss; **done, see below**
 4. run a quick ablation without the three `m78l_*_cr-ctbp2` volumes, followed by a proper masked
    training run that retains their valid annotations;
 5. apply the existing checkpoints at the confirmed candidate coordinates and test whether the
@@ -135,6 +135,58 @@ An IHC-derived mask can be used only for the training loss, so this test does no
 channel as network input at inference time. If the IHC channel is intended to be a model input
 instead, its availability and stain-dependent behavior must first be resolved for all training and
 production volumes.
+
+#### Implemented: masked loss and raw normalization (2026-09-21)
+
+Recommendations 1 and 3 are implemented. The training no longer imports
+czii-protein-challenge; the model, the loaders, the loss and the trainer live in
+`flamingo_tools/synapse_detection/training.py`.
+
+**Loss mask.** `train_synapse_detection.py --mask_radius R` marks a cube of half width `R`
+voxels around every annotation. `CsvHeatmapTransform` appends the mask as the last target
+channel, and `DetectionLoss` restricts both the training loss and the validation metric to it.
+Use `--mask_radius 16`, which is about 12 um at 0.38 um/voxel and stays well below the 40 voxel
+radius that defines a spatially distant candidate above.
+
+`mask_radius` also raises the label transform halo to at least `R`, so `DetectionDataset` loads
+the annotations up to `R` voxels beyond the patch. Target and mask are then built from the same
+points. Without that, an annotation just in front of the patch would contribute its cube to the
+mask but no Gaussian to the target, and the loss would be told to drive a real synapse to zero.
+
+The mask covers 5 % of a crop at the median for `R = 16`, but training patches are not sampled
+uniformly. Measured over 48 patches from eight v5 crops with `MinPointSampler`, the mask covers
+**30 % of a patch at the median** and 8 % of the patches have an empty mask. Each annotation
+therefore keeps a large amount of genuine negative context, and only the distant unannotated
+CTBP2 spots lose their supervision.
+
+`MinPointSampler` becomes the default whenever a mask radius is given. Only 31 % of uniformly
+sampled patches contain an annotation, and a patch without one contributes no gradient at all
+once the loss is masked.
+
+**Raw normalization.** Each crop is standardized with the mean and standard deviation of its
+full `raw` array, which is what `prediction_impl` does for a volume. One difference remains: at
+inference the statistics are computed inside the IHC mask, during training over the whole crop.
+
+**Retraining v3 or v5.** Pass `--legacy_recipe`. It restores the two deltas that otherwise make
+the old recipes unreachable: the raw input stays unnormalized, and the validation metric goes
+back to an unweighted mean squared error over every output channel, which is what selected
+`best.pt` for v5. It cannot be combined with `--mask_radius`, because that metric cannot read a
+masked target. The archived scripts in `scripts_synapses/` need the flag added.
+
+**Comparing the next runs.** The logged loss and metric change scale twice, through the masked
+mean and through the normalization. They are not comparable to the v3, v5 or v6-1 numbers. Score
+models with `scripts/validation/synapses/run_evaluation.py`, and train a fresh unmasked baseline
+with the same code rather than comparing against the shipped models.
+
+**Still open: recommendation 2.** The validation patches are still redrawn on every access, and
+the masked metric additionally divides by a mask size that varies with the patches drawn. That
+makes `best.pt` selection noisier than before, not less noisy, and it also feeds
+`ReduceLROnPlateau`. A fixed validation patch set and a detection-level metric remain the right
+fix; until then, treat `best.pt` as one candidate and score it against `latest.pt`.
+
+**Not used: the IHC channel.** 21 of the 29 v5/v6 crops do carry a `raw_ihc` array, so a real
+IHC-derived loss mask is possible for most of them. The label-derived mask is used instead
+because it is uniform over all crops and independent of the stain.
 
 ## Network application
 Potentially relevant for a new synapse network.

@@ -13,6 +13,13 @@ own — that is the variability being measured. `--random_state 42` is passed ex
 run so that the train/val split stays *fixed*; without it the default derives from the model
 suffix and would resample the split, confounding seed noise with split noise.
 
+**The commands below need `--legacy_recipe` since 2026-09-21.** The training moved into
+`flamingo_tools/synapse_detection/training.py` and gained two changes that apply to every run
+without flags: the raw input is standardized per crop, and the validation metric is the weighted
+combined loss instead of an unweighted mean squared error over all channels. `--legacy_recipe`
+restores both, and is required to reproduce the recipe of any model listed here. See
+[`../synapses.md`](../synapses.md).
+
 ## The runs
 
 `v3-1` … `v3-4` are byte-identical except for `-m`: four seed replicates at the full 100,000
