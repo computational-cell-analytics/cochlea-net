@@ -5,14 +5,19 @@ was imported through a hard-coded path into another user's home directory and co
 not be pinned or changed from here.
 """
 
+import multiprocessing as mp
+from functools import partial
 from typing import Callable, Optional, Sequence
 
 import torch
 import torch.nn as nn
 import torch_em
+import zarr
+from elf import parallel
 from torch.utils.data import DataLoader
 from torch_em.data.concat_dataset import ConcatDataset
 from torch_em.model import AnisotropicUNet
+from torch_em.transform.raw import standardize
 
 from .detection_dataset import DetectionDataset
 
@@ -72,13 +77,28 @@ def _samples_per_dataset(n_samples, n_datasets):
     return [per_dataset + 1 if i < remainder else per_dataset for i in range(n_datasets)]
 
 
+def _crop_standardization(raw_path, raw_key):
+    """Standardize with the statistics of the full crop.
+
+    `elf.parallel.mean_and_std` is the function that computes the statistics at inference, in
+    `unet_prediction.calc_mean_and_std` and in `prediction_impl`. There they are taken inside the
+    IHC mask, here over the complete crop.
+    """
+    raw = zarr.open(raw_path, mode="r")[raw_key]
+    mean, std = parallel.mean_and_std(raw, n_threads=min(16, mp.cpu_count()))
+    if std == 0:
+        raise ValueError(f"The image data in {raw_path}:{raw_key} is constant and cannot be standardized.")
+    return partial(standardize, mean=float(mean), std=float(std))
+
+
 def _get_loader(
     raw_paths, label_paths, raw_key, patch_shape, batch_size, num_workers,
-    label_transform, sampler, n_samples,
+    label_transform, sampler, n_samples, normalize_raw,
 ):
     datasets = [
         DetectionDataset(
             raw_path=raw_path, raw_key=raw_key, label_path=label_path, patch_shape=patch_shape,
+            raw_transform=_crop_standardization(raw_path, raw_key) if normalize_raw else None,
             label_transform=label_transform, sampler=sampler, n_samples=n_samples_dataset,
         )
         for raw_path, label_path, n_samples_dataset
@@ -111,6 +131,7 @@ def supervised_training(
     sampler: Optional[Callable] = None,
     num_workers: int = 8,
     metric: Optional[nn.Module] = None,
+    normalize_raw: bool = True,
 ) -> None:
     """Train the synapse detection model.
 
@@ -135,10 +156,12 @@ def supervised_training(
         sampler: The sampler for rejecting patches with too few annotations.
         num_workers: The number of data loader workers.
         metric: The validation metric, which selects 'best.pt'. By default the loss is reused.
+        normalize_raw: Whether to standardize each crop with its own mean and standard deviation.
+            Switch it off only to reproduce the training of v3 and v5, which never normalized.
     """
     loader_kwargs = dict(
         raw_key=raw_key, patch_shape=patch_shape, batch_size=batch_size, num_workers=num_workers,
-        label_transform=label_transform, sampler=sampler,
+        label_transform=label_transform, sampler=sampler, normalize_raw=normalize_raw,
     )
     train_loader = _get_loader(train_paths, train_label_paths, n_samples=n_samples_train, **loader_kwargs)
     val_loader = _get_loader(val_paths, val_label_paths, n_samples=n_samples_val, **loader_kwargs)
