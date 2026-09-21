@@ -161,9 +161,6 @@ class DetectionDataset(torch.utils.data.Dataset):
         sampler=None,
         eps=1e-8,
         sigma=None,
-        lower_bound=None,
-        upper_bound=None,
-        **kwargs,
     ):
         self.raw_path = raw_path
         self.label_path = label_path
@@ -174,8 +171,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.patch_shape = patch_shape
 
         self.raw_transform = raw_transform
-        # The upstream loader always supplies a label transform. Fall back to the plain heatmap
-        # target when the dataset is constructed directly.
+        # `sigma` and `eps` only feed this fallback, for a dataset constructed without a transform.
         if label_transform is None:
             label_transform = CsvHeatmapTransform(sigma, eps)
         self.label_transform = label_transform
@@ -185,10 +181,6 @@ class DetectionDataset(torch.utils.data.Dataset):
 
         self.dtype = dtype
         self.label_dtype = label_dtype
-
-        # Accepted because the upstream loader always passes them; the label transform owns them.
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
 
         # Buffer added around each sampled patch before calling the label transform. The label
         # transform declares how much context it needs; only the flow computation needs any.
@@ -257,10 +249,8 @@ class DetectionDataset(torch.utils.data.Dataset):
         else:
             raw_patch = raw_patch[slices_crop]
 
-        # The label transform is the label loader (e.g. HeatmapFlowTransform from the upstream
-        # czii-protein-challenge repo). It receives the path and bounding box and returns an array
-        # covering bb_for_loading; we then crop the halo back out. The upstream transforms return
-        # (Z, Y, X) for a plain heatmap and (C, Z, Y, X) with flow.
+        # The label transform is the label loader. It receives the path and bounding box and
+        # returns an array covering bb_for_loading; we then crop the halo back out.
         labels = self.label_transform(self.label_path, self.shape, bb_for_loading, bb_for_loading)
         if labels.ndim == 4:
             labels = labels[(slice(None),) + slices_crop]

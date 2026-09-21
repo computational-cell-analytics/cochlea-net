@@ -5,8 +5,10 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
+import torch
 import zarr
 from skimage.filters import gaussian
+from torch.nn.functional import mse_loss
 
 from flamingo_tools.synapse_detection.detection_dataset import (
     CsvHeatmapFlowTransform,
@@ -14,6 +16,7 @@ from flamingo_tools.synapse_detection.detection_dataset import (
     DetectionDataset,
     MinPointSampler,
 )
+from flamingo_tools.synapse_detection.training import DetectionLoss, _samples_per_dataset
 
 try:
     import spotiflow  # noqa
@@ -209,6 +212,48 @@ class TestDetectionDataset(unittest.TestCase):
 
             self.assertEqual(flow_labels.shape, (5, *self.patch_shape))
             self.assertTrue(np.array_equal(flow_labels[0], heatmap_labels[0]))
+
+
+class TestDetectionLoss(unittest.TestCase):
+    shape = (2, 4, 8, 8)
+
+    def setUp(self):
+        torch.manual_seed(0)
+
+    def _sample(self, n_channels):
+        return torch.rand(self.shape[0], n_channels, *self.shape[1:])
+
+    def test_heatmap_only_matches_mse(self):
+        prediction, target = self._sample(1), self._sample(1)
+        # A single output channel must not touch the empty flow slice, which would give nan.
+        self.assertAlmostEqual(
+            float(DetectionLoss()(prediction, target)), float(mse_loss(prediction, target)), places=6
+        )
+
+    def test_flow_weighting(self):
+        prediction, target = self._sample(5), self._sample(5)
+        expected = (
+            mse_loss(prediction[:, :1], target[:, :1])
+            + 0.1 * mse_loss(prediction[:, 1:], target[:, 1:])
+        )
+        self.assertAlmostEqual(
+            float(DetectionLoss(flow_weight=0.1)(prediction, target)), float(expected), places=6
+        )
+
+
+class TestSamplesPerDataset(unittest.TestCase):
+    def test_distribution(self):
+        self.assertEqual(_samples_per_dataset(None, 3), [None, None, None])
+
+        for n_samples, n_datasets in [(3200, 26), (160, 3), (7, 3), (3, 3)]:
+            split = _samples_per_dataset(n_samples, n_datasets)
+            self.assertEqual(len(split), n_datasets)
+            self.assertEqual(sum(split), n_samples)
+            self.assertLessEqual(max(split) - min(split), 1)
+
+    def test_fewer_samples_than_datasets(self):
+        # The trailing crops get no sample at all and drop out of the epoch.
+        self.assertEqual(_samples_per_dataset(2, 4), [1, 1, 0, 0])
 
 
 if __name__ == "__main__":
