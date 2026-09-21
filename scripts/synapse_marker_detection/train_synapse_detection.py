@@ -46,7 +46,8 @@ def train(
         out_channels = 1
         label_transform = CsvHeatmapTransform(sigma=1, eps=1e-5)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
-    # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel.
+    # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
+    # and they trained on unnormalized input. The legacy recipe restores both together.
     metric = torch.nn.MSELoss(reduction="mean") if legacy_recipe else None
 
     image_dir = os.path.join(root_data_dir, version, "images")
@@ -93,6 +94,7 @@ def train(
         label_transform=label_transform,
         loss=loss,
         metric=metric,
+        normalize_raw=not legacy_recipe,
         save_root=save_root,
         n_samples_train=3200,
         n_samples_val=160,
@@ -124,9 +126,9 @@ def main():
     parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
                         help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
     parser.add_argument("--legacy_recipe", action="store_true",
-                        help="Reproduce the validation metric of synapse_detection_v3 and v5: an "
-                             "unweighted mean squared error over all output channels. Required to "
-                             "retrain those models.")
+                        help="Reproduce the training recipe of synapse_detection_v3 and v5: no raw "
+                             "normalization, and an unweighted mean squared error over all output "
+                             "channels as the validation metric. Required to retrain those models.")
 
     args = parser.parse_args()
     train(
