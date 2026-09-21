@@ -19,9 +19,17 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
-    use_flow=False, sampler_name=None, n_iterations=int(1e5), save_root=SAVE_ROOT,
+    use_flow=False, sampler_name=None, n_iterations=int(1e5), mask_radius=None, save_root=SAVE_ROOT,
     legacy_recipe=False,
 ):
+    if mask_radius is not None and mask_radius < 1:
+        raise ValueError(f"The mask radius must be at least one voxel, got {mask_radius}.")
+    if legacy_recipe and mask_radius is not None:
+        raise ValueError(
+            "--legacy_recipe reproduces the v3 and v5 training, which had no loss mask. Its "
+            "validation metric covers every target channel and cannot read a masked target."
+        )
+
     if model_suffix is None:
         model_suffix = version
         json_path = os.path.join(root_data_dir, version, "train_val_split.json")
@@ -33,19 +41,24 @@ def train(
             random_state = sum([ord(char) for char in model_suffix.lower()])
         print(f"Using random state {random_state}.")
 
-    # The sampler was silently dropped by the czii-protein-challenge version used for v3, so
-    # training without flow reproduces v3 only when no sampler is applied.
+    # A masked loss ignores every patch without annotations, and only 31% of uniformly sampled
+    # patches contain one. Without flow and without a mask the sampler is off, because the
+    # czii-protein-challenge version used for v3 silently dropped it.
     if sampler_name is None:
-        sampler_name = "minpoint" if use_flow else "none"
-    sampler = MinPointSampler(min_points=1, p_reject=0.8) if sampler_name == "minpoint" else None
+        sampler_name = "minpoint" if (use_flow or mask_radius is not None) else "none"
+    # MinPointSampler accepts a patch when n_points > min_points, so the min_points=1 of v5 needs
+    # two annotations. A masked run keeps every patch that has one, because a single annotation
+    # already gives a usable mask.
+    min_points = 0 if mask_radius is not None else 1
+    sampler = MinPointSampler(min_points=min_points, p_reject=0.8) if sampler_name == "minpoint" else None
 
     if use_flow:
         out_channels = 5
-        label_transform = CsvHeatmapFlowTransform(sigma=1, eps=1e-5)
+        label_transform = CsvHeatmapFlowTransform(sigma=1, eps=1e-5, mask_radius=mask_radius)
     else:
         out_channels = 1
-        label_transform = CsvHeatmapTransform(sigma=1, eps=1e-5)
-    loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
+        label_transform = CsvHeatmapTransform(sigma=1, eps=1e-5, mask_radius=mask_radius)
+    loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0, masked=mask_radius is not None)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
     # and they trained on unnormalized input. The legacy recipe restores both together.
     metric = torch.nn.MSELoss(reduction="mean") if legacy_recipe else None
@@ -67,6 +80,7 @@ def train(
         "val": [os.path.splitext(os.path.basename(f))[0] for f in val_paths],
         "flow": use_flow,
         "sampler": sampler_name,
+        "mask_radius": mask_radius,
         "legacy_recipe": legacy_recipe,
     }
 
@@ -77,7 +91,7 @@ def train(
     print(len(train_paths), "tomograms for training")
     print(len(val_paths), "tomograms for validation")
     print(f"{out_channels} output channels, flow: {use_flow}, sampler: {sampler_name}")
-    print(f"Legacy recipe: {legacy_recipe}")
+    print(f"Loss mask radius: {mask_radius}, legacy recipe: {legacy_recipe}")
 
     supervised_training(
         name=model_name,
@@ -120,15 +134,21 @@ def main():
                              "synapse_detection_v3.")
     parser.add_argument("--sampler", type=str, default=None, choices=["none", "minpoint"],
                         help="Sampler to reject patches with too few points. "
-                             "Default: minpoint with --use_flow, none without.")
+                             "Default: minpoint with --use_flow or --mask_radius, none without.")
     parser.add_argument("-n", "--n_iterations", type=int, default=int(1e5),
                         help="Number of training iterations. Default: 100000.")
+    parser.add_argument("--mask_radius", type=int, default=None,
+                        help="Half width in voxels of the cube marked around each annotation. "
+                             "The loss is restricted to these regions, so that unannotated CTBP2 "
+                             "spots outside the IHCs do not count as background. Use 16. "
+                             "Default: no mask, the loss covers the full patch.")
     parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
                         help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
     parser.add_argument("--legacy_recipe", action="store_true",
                         help="Reproduce the training recipe of synapse_detection_v3 and v5: no raw "
                              "normalization, and an unweighted mean squared error over all output "
-                             "channels as the validation metric. Required to retrain those models.")
+                             "channels as the validation metric. Required to retrain those models. "
+                             "Cannot be combined with --mask_radius.")
 
     args = parser.parse_args()
     train(
@@ -139,6 +159,7 @@ def main():
         use_flow=args.use_flow,
         sampler_name=args.sampler,
         n_iterations=args.n_iterations,
+        mask_radius=args.mask_radius,
         save_root=args.save_root,
         legacy_recipe=args.legacy_recipe,
     )

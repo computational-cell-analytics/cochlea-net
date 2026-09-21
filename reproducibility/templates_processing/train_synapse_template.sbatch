@@ -30,6 +30,9 @@ VERSION=$2
 MODEL_SUFFIX=$3
 # Optional random state for the split. Pass 42 to reuse the split of a fixed version.
 RANDOM_STATE=$4
+# Optional half width in voxels of the loss mask around each annotation, e.g. 16. Without it the
+# loss covers the full patch, which also supervises unannotated CTBP2 spots outside the IHCs.
+MASK_RADIUS=$5
 
 cd "$WORK_DIR" || exit
 
@@ -40,6 +43,9 @@ echo "Checkpoint directory: ${WORK_DIR}/checkpoints"
 split_args=()
 if [ -n "$RANDOM_STATE" ]; then
 	split_args+=(-r "$RANDOM_STATE")
+fi
+if [ -n "$MASK_RADIUS" ]; then
+	split_args+=(--mask_radius "$MASK_RADIUS")
 fi
 
 # Trains the heatmap only, the output layout of synapse_detection_v3. Add --use_flow for the

@@ -1,3 +1,5 @@
+from typing import Optional
+
 import numpy as np
 import pandas as pd
 import torch
@@ -53,14 +55,25 @@ class CsvHeatmapTransform:
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
+        mask_radius: Half width (in voxels) of the cube marked around each annotation in the loss
+            mask. If given, the mask is appended as the last channel and the loss is restricted to
+            it, so that unannotated CTBP2 spots outside the IHC region do not count as background.
+            It also raises the halo to at least `mask_radius`.
     """
 
-    # Context that DetectionDataset must load around each patch. Only the flow needs any.
+    # Context that DetectionDataset must load around each patch, before `mask_radius` raises it.
+    # Only the flow and the loss mask need any.
     halo = 0
 
-    def __init__(self, sigma: float, eps: float = 1e-8):
+    def __init__(self, sigma: float, eps: float = 1e-8, mask_radius: Optional[int] = None):
         self.sigma = sigma
         self.eps = eps
+        self.mask_radius = mask_radius
+        # The mask must reach `mask_radius` beyond the patch, and the target has to be built from
+        # the same annotations. Without the halo a cube around an annotation just outside the
+        # patch would be masked in while its Gaussian is missing, which supervises a real synapse
+        # as background. `self.halo` reads the class attribute and shadows it per instance.
+        self.halo = max(self.halo, 0 if mask_radius is None else mask_radius)
 
     @staticmethod
     def _local_points(label_path, bb):
@@ -76,6 +89,23 @@ class CsvHeatmapTransform:
             (points >= offset) & (points < np.array([s.stop for s in bb], dtype=np.float32)), axis=1
         )
         return points[mask] - offset, local_shape
+
+    def _mask(self, local_points, local_shape):
+        mask = np.zeros(local_shape, dtype=np.float32)
+        radius = self.mask_radius
+        for point in np.round(local_points).astype(int):
+            # Both ends are clamped, so that a point in front of the patch gives an empty slice
+            # instead of a negative stop, which numpy would read as an offset from the end.
+            mask[tuple(
+                slice(max(0, coord - radius), max(0, coord + radius + 1)) for coord in point
+            )] = 1
+        return mask
+
+    def _with_mask(self, labels, local_points, local_shape):
+        if self.mask_radius is None:
+            return labels
+        mask = self._mask(local_points, local_shape)[np.newaxis]
+        return np.concatenate([labels, mask], axis=0)
 
     def _heatmap(self, local_points, local_shape):
         heatmap = np.zeros(local_shape, dtype=np.float32)
@@ -94,7 +124,8 @@ class CsvHeatmapTransform:
         # Strip a leading channel slice if present (bb_for_loading may have one).
         bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
         local_points, local_shape = self._local_points(label_path, bb)
-        return self._heatmap(local_points, local_shape)[np.newaxis]
+        heatmap = self._heatmap(local_points, local_shape)
+        return self._with_mask(heatmap[np.newaxis], local_points, local_shape)
 
 
 class CsvHeatmapFlowTransform(CsvHeatmapTransform):
@@ -107,18 +138,20 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
+        mask_radius: Half width (in voxels) of the cube marked around each annotation in the loss
+            mask. If given, the mask is appended as a sixth channel.
     """
 
     # The flow needs points beyond the patch border to be correct close to the border.
     halo = 10
 
-    def __init__(self, sigma: float, eps: float = 1e-8):
+    def __init__(self, sigma: float, eps: float = 1e-8, mask_radius: Optional[int] = None):
         if not _spotiflow_available:
             raise ImportError(
                 "spotiflow is required for flow computation. "
                 'Install it with: pip install "cochlea_net[flow]"'
             )
-        super().__init__(sigma, eps)
+        super().__init__(sigma, eps, mask_radius)
 
     def __call__(self, label_path, shape, bb_labels, bb_for_loading):
         bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
@@ -131,7 +164,8 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
             flow = points_to_flow3d(local_points, local_shape)  # returns (Z', Y', X', 4)
             flow = np.asarray(flow, dtype=np.float32).transpose((3, 0, 1, 2))  # -> (4, Z', Y', X')
 
-        return np.concatenate([heatmap[np.newaxis], flow], axis=0).astype(np.float32)
+        labels = np.concatenate([heatmap[np.newaxis], flow], axis=0).astype(np.float32)
+        return self._with_mask(labels, local_points, local_shape)
 
 
 class DetectionDataset(torch.utils.data.Dataset):
@@ -183,7 +217,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.label_dtype = label_dtype
 
         # Buffer added around each sampled patch before calling the label transform. The label
-        # transform declares how much context it needs; only the flow computation needs any.
+        # transform declares how much context it needs: the flow and the loss mask.
         self.halo = getattr(label_transform, "halo", 10)
 
         f = zarr.open(self.raw_path, mode="r")

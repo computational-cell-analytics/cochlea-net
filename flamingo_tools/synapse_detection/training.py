@@ -31,21 +31,43 @@ class DetectionLoss(nn.Module):
     Args:
         flow_weight: Weight of the flow channels. Keep it at zero for a heatmap-only model, which
             has a single output channel and no flow channels to compare.
+        masked: Whether the target carries a binary loss mask in its last channel. Only voxels
+            inside the mask then contribute to the loss.
     """
-    def __init__(self, flow_weight: float = 0.0):
+    def __init__(self, flow_weight: float = 0.0, masked: bool = False):
         super().__init__()
         self.flow_weight = flow_weight
+        self.masked = masked
         # Read by torch_em.util.get_constructor_arguments when the trainer is serialized.
-        self.init_kwargs = {"flow_weight": flow_weight}
+        self.init_kwargs = {"flow_weight": flow_weight, "masked": masked}
 
     @staticmethod
-    def _mse(prediction, target):
-        return ((prediction - target) ** 2).mean()
+    def _mse(prediction, target, mask):
+        error = (prediction - target) ** 2
+        if mask is None:
+            return error.mean()
+        # Mean over the masked voxels of the whole batch. A patch without annotations has an
+        # empty mask and contributes nothing; the clamp keeps an all-empty batch finite.
+        n_values = mask.sum() * prediction.shape[1]
+        return (error * mask).sum() / n_values.clamp(min=1.0)
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        loss = self._mse(prediction[:, :1], target[:, :1])
+        # Without this a target that carries a mask channel while `masked` is off trains happily
+        # with the mask ignored, which is silent and wrong.
+        expected_channels = prediction.shape[1] + (1 if self.masked else 0)
+        if target.shape[1] != expected_channels:
+            raise ValueError(
+                f"Expected {expected_channels} target channels for a {prediction.shape[1]} channel "
+                f"prediction with masked={self.masked}, got {target.shape[1]}."
+            )
+
+        mask = None
+        if self.masked:
+            mask, target = target[:, -1:], target[:, :-1]
+
+        loss = self._mse(prediction[:, :1], target[:, :1], mask)
         if self.flow_weight:
-            loss = loss + self.flow_weight * self._mse(prediction[:, 1:], target[:, 1:])
+            loss = loss + self.flow_weight * self._mse(prediction[:, 1:], target[:, 1:], mask)
         return loss
 
 
