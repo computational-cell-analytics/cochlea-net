@@ -266,7 +266,9 @@ def main():
     parser.add_argument("-v", "--version", type=str, default=None,
                         help="Use pre-defined directories for a specific network version, e.g. v3, v4, ...")
     parser.add_argument("-p", "--pred_root", type=str, default=None,
-                        help="Directory containing sub-directories with predicted data.")
+                        help="Directory containing sub-directories with predicted data. With "
+                             "--version the version name is appended, so this takes the same "
+                             "directory that was passed to prediction.py --output_root.")
     parser.add_argument("-r", "--ref_root", type=str, default=None, nargs="+",
                         help="Directory containing reference labels in CSV format.")
     parser.add_argument("-c", "--image_root", type=str,
@@ -291,12 +293,14 @@ def main():
         if args.version not in valid_versions:
             raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
 
-        image_root = version_dict[args.version]["image_root"]
-        if args.ref_root is None:
-            ref_roots = [version_dict[args.version]["ref_root"]]
-        else:
-            ref_roots = args.ref_root
-        pred_root = version_dict[args.version]["pred_root"]
+        # The version supplies defaults only, so that an override is never silently dropped.
+        entry = version_dict[args.version]
+        image_root = args.image_root or entry["image_root"]
+        ref_roots = args.ref_root or [entry["ref_root"]]
+        # Appends the version, so that -p takes the same directory as prediction.py -o.
+        pred_root = entry["pred_root"] if args.pred_root is None else os.path.join(
+            args.pred_root, args.version
+        )
 
     else:
         image_root = args.image_root

@@ -306,8 +306,9 @@ def filter_gt(
     gt_files = sorted(glob(os.path.join(gt_root, "*.csv")))
     for ff, gt in zip(input_files, gt_files):
         ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
-        output_folder, fname = os.path.split(gt)
-        output_path = os.path.join(output_folder, fname.replace(".csv", "_filtered.tsv"))
+        # Written below the output root. This used to land next to the source CSV, which writes
+        # into the shared ground truth directory and fails as soon as it is not writable.
+        output_path = os.path.join(output_root, f"{Path(gt).stem}_gt_filtered.tsv")
 
         gt = pd.read_csv(gt)
         gt = gt.rename(columns={"axis-0": "z", "axis-1": "y", "axis-2": "x"})
@@ -400,7 +401,9 @@ def main():
     )
     parser.add_argument(
         "-o", "--output_root", type=str, default=None,
-        help="Output path where the predicted synapses, IHC segmentation and filtered synapses are saved."
+        help="Output path where the predicted synapses, IHC segmentation and filtered synapses are "
+             "saved. With --version the version name is appended, so that one root can hold "
+             "several versions."
     )
     parser.add_argument(
         "--model_synapse", type=str, default=None,
@@ -419,11 +422,6 @@ def main():
     parser.add_argument(
         "--std", type=float, default=None,
         help="Standard deviation for normalization, applied to every crop. See --mean."
-    )
-    parser.add_argument(
-        "--pred_root", type=str, default=None,
-        help="Override the output root of --version, keeping its image and reference roots. "
-             "Useful for writing a normalization variant to a separate directory."
     )
     parser.add_argument(
         "--mean_std_json", type=str, default=None,
@@ -450,14 +448,19 @@ def main():
         valid_versions = list(PREDICTION_DICT.keys())
         if args.version not in valid_versions:
             raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
+        # The version supplies defaults only. Anything given on the command line wins, so that
+        # a registry entry can be reused with one part swapped, and so that an override is never
+        # silently dropped.
         entry = PREDICTION_DICT[args.version]
-        input_root = entry["image_root"]
-        gt_root = entry["ref_root"]
-        output_root = entry["pred_root"] if args.pred_root is None else os.path.join(
-            args.pred_root, args.version
+        input_root = args.input_root or entry["image_root"]
+        gt_root = args.gt_root or entry["ref_root"]
+        # The version name is appended, so one root can hold several versions the way the
+        # registry's own prediction root does.
+        output_root = entry["pred_root"] if args.output_root is None else os.path.join(
+            args.output_root, args.version
         )
-        synapse_model = entry["synapse_model"]
-        ihc_model = entry["ihc_model"]
+        synapse_model = args.model_synapse or entry["synapse_model"]
+        ihc_model = args.model_ihc or entry["ihc_model"]
     else:
         input_root = args.input_root
         gt_root = args.gt_root
