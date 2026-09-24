@@ -41,6 +41,29 @@ which switches to 5 output channels, the combined heatmap+flow loss and `MinPoin
 production settings v6-1 loses 0.163 recall against v3 while v5 gains 0.191 against v6-1, so the
 two effects nearly cancel and neither run separates them alone.
 
+## The 2026-09 pair: v7 and v8
+
+`v7` and `v8` share their training data and both run the recipe introduced on 2026-09-21: the raw
+input standardized per crop, the validation patches fixed by `--random_state`, and `DetectionLoss`
+as loss and as metric. They were launched directly, so there are no sbatch wrappers for them:
+
+```bash
+python $SCRIPT_DIR/train_synapse_detection.py -v v7 --random_state 42 -s $SAVE_ROOT --sampler minpoint
+python $SCRIPT_DIR/train_synapse_detection.py -v v8 --random_state 42 --mask_radius 16 -s $SAVE_ROOT
+```
+
+`v8` is the masked run and `v7` its unmasked counterpart, but **the pair is not a single-variable
+ablation**. `MinPointSampler` accepts a patch when `n_points > min_points`, and the script sets
+`min_points` to 1 without a mask and 0 with one, so `v7` needed two annotations per training
+patch and `v8` only one. Neither is a single step from `v6-1` either, which ran with no sampler,
+no raw normalization and redrawn validation patches.
+
+Four checkpoints are registered for evaluation: `v7` and `v8` are the `best.pt` exports,
+`v7-latest` and `v8-latest` the `latest.pt` ones. The two `best.pt` were selected by different
+metrics, which is why the final checkpoints are scored alongside them. Their predictions are
+filtered against an IHC v11 segmentation, unlike every earlier entry in `synapses.json`; see
+[`../synapses.md`](../synapses.md).
+
 ## What the seed experiment found
 
 Full numbers in [`v3_training_dynamics_report.md`](v3_training_dynamics_report.md), on the six

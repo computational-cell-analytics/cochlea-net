@@ -27,9 +27,15 @@ _IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/ima
 # v3 / v3-1: heatmap-only, 15-crop v3 training data (v3-1 is a second seed).
 # v5 / v6-1: same 29-crop training data; v5 adds the flow channels and the MinPointSampler,
 # v6-1 is heatmap-only. So v5 vs v6-1 isolates the architecture and v3 vs v6-1 the data.
+# v7 / v8: the recipe of 2026-09-21, with the raw input standardized per crop and the validation
+# patches fixed. v7 is unmasked, v8 uses --mask_radius 16. The plain keys are the best.pt exports
+# and '-latest' the latest.pt ones. See prediction.py for why the pair is not a clean ablation.
+# The v7 and v8 predictions are filtered against an IHC v11 segmentation, every earlier entry in
+# synapses.json against v4, so they are only comparable to baselines that were re-predicted.
 _PRODUCTION_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
     "v3-flow-1-best", "v3-flow-1-latest",
+    "v7", "v7-latest", "v8", "v8-latest",
 )
 _LEGACY_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v5-f1", "v5-f2", "v5-f3", "v5-f4",
@@ -53,6 +59,10 @@ LEGACY_SYNAPSE_DICT = _entries(_LEGACY_VERSIONS, _LEGACY_PRED_ROOT)
 # marker_detection() writes 'synapse_detection_filtered.tsv'; the validation script used to write
 # 'filtered_synapse_detection.tsv'. Both are accepted, otherwise whole-cochlea style output would
 # silently fall through to the unfiltered detections.
+# Matching distance in um, shared by the evaluation and the viewer so that what is displayed is
+# what was scored.
+_MATCH_DISTANCE = 3
+
 _DETECTION_FILENAMES = (
     "synapse_detection_filtered.tsv",
     "filtered_synapse_detection.tsv",
@@ -107,6 +117,20 @@ def _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, save_path):
     imageio.imwrite(save_path, arr, compression="zlib")
 
 
+def _read_gt(gt_path, voxel_size):
+    """Read a consensus annotation CSV and return its points in physical coordinates."""
+    # Consensus files also contain unmatched annotations from individual annotators.
+    # These rows are useful for auditing the consensus, but are not part of the
+    # consensus ground truth used to evaluate predictions.
+    gt = pd.read_csv(gt_path, sep=",")
+    if "annotator" in gt.columns:
+        gt = gt.loc[gt["annotator"] == "consensus"].copy()
+
+    for axis in range(3):
+        gt[f"axis-{axis}"] *= voxel_size
+    return gt[["axis-0", "axis-1", "axis-2"]].values
+
+
 def evaluate_synapse_detections(
     pred_path: str,
     gt_path: str,
@@ -128,21 +152,9 @@ def evaluate_synapse_detections(
     fname = os.path.basename(gt_path)
 
     pred = pd.read_csv(pred_path, sep="\t")[["z", "y", "x"]].values
+    gt = _read_gt(gt_path, voxel_size)
 
-    # Consensus files also contain unmatched annotations from individual annotators.
-    # These rows are useful for auditing the consensus, but are not part of the
-    # consensus ground truth used to evaluate predictions.
-    gt = pd.read_csv(gt_path, sep=",")
-    if "annotator" in gt.columns:
-        gt = gt.loc[gt["annotator"] == "consensus"].copy()
-
-    # scale gt to physical coordinates
-    gt["axis-0"] *= voxel_size
-    gt["axis-1"] *= voxel_size
-    gt["axis-2"] *= voxel_size
-    gt = gt[["axis-0", "axis-1", "axis-2"]].values
-
-    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=3)
+    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=_MATCH_DISTANCE)
 
     if match_array_path is not None:
         _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, match_array_path)
@@ -202,14 +214,14 @@ def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, mat
         print(f"Saved results to {output_file}")
 
 
-def visualize_synapse_detections(pred, gt, heatmap_path=None, ctbp2_path=None):
+def visualize_synapse_detections(pred, gt, heatmap_path=None, ctbp2_path=None, voxel_size=0.38):
     import napari
 
     fname = os.path.basename(gt)
 
     pred = pd.read_csv(pred, sep="\t")[["z", "y", "x"]].values
-    gt = pd.read_csv(gt, sep="\t")[["z", "y", "x"]].values
-    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=4)
+    gt = _read_gt(gt, voxel_size)
+    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=_MATCH_DISTANCE)
 
     tps = pred[tps_pred]
     fps = pred[fps]
@@ -259,8 +271,6 @@ def main():
                         help="Directory containing reference labels in CSV format.")
     parser.add_argument("-c", "--image_root", type=str,
                         help="Directory containing image data in ZARR format.")
-    parser.add_argument("--sgn_version", type=str, default="SGN_v2",
-                        help="SGN segmentation version.")
     parser.add_argument("-o", "--output_dir", type=str, default=None,
                         help="Optional directory to save accuracy JSON file (synapses.json).")
     parser.add_argument("--match_array_dir", type=str, default=None,

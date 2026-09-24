@@ -40,7 +40,12 @@ from flamingo_tools.segmentation.synapse_detection import (
 )
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
-_IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v4_cochlea_distance_unet_IHC_supervised_2025-07-14")
+# The IHC segmentation that the detections are filtered against. IHC_v11 is what the rest of the
+# repository treats as current, see reproducibility/README.md for the IHC main line. This replaced
+# 'v4_cochlea_distance_unet_IHC_supervised_2025-07-14' on 2026-09-24, so every entry of
+# reproducibility/model_accuracy/synapses.json written before that date was scored against a
+# v4-derived IHC mask and is not comparable to a run made after it.
+_IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20")
 _SYNAPSE_MODELS_DIR = os.path.join(COCHLEA_DIR, "trained_models/Synapses")
 _TEST_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
 _TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels")
@@ -87,6 +92,25 @@ PREDICTION_DICT = {
     # 'latest' is evaluated alongside it to test whether the selection metric is at fault.
     "v3-flow-1-best": _entry("synapse_detection_model_v3-flow-1-best.pt", "v3-flow-1-best"),
     "v3-flow-1-latest": _entry("synapse_detection_model_v3-flow-1-latest.pt", "v3-flow-1-latest"),
+    # v7 and v8 share their training data and both use the recipe introduced on 2026-09-21: the
+    # raw input is standardized per crop, the validation patches are fixed by --random_state, and
+    # DetectionLoss is used as loss and as metric. Their training losses are therefore on a
+    # different scale from the v3, v5 and v6-1 runs.
+    #
+    # v7 is heatmap-only with no loss mask; v8 adds --mask_radius 16, which restricts the loss to
+    # cubes of 33 voxels around each annotation. v7 is the closest unmasked baseline for v8, but
+    # the pair is not a single-variable ablation: MinPointSampler accepts a patch when
+    # n_points > min_points, and min_points is 1 without a mask and 0 with one, so v7 needed two
+    # annotations per training patch and v8 only one. Neither is a single step from v6-1 either,
+    # which ran with no sampler, no raw normalization and redrawn validation patches.
+    #
+    # The plain keys are the best.pt exports and '-latest' the latest.pt exports. Both are
+    # registered because the two best checkpoints were selected by different metrics, the masked
+    # criterion for v8 and the unmasked one for v7.
+    "v7": _entry("synapse_detection_v7.pt", "v7"),
+    "v7-latest": _entry("synapse_detection_v7-latest.pt", "v7-latest"),
+    "v8": _entry("synapse_detection_v8.pt", "v8"),
+    "v8-latest": _entry("synapse_detection_v8-latest.pt", "v8-latest"),
 }
 
 
@@ -328,7 +352,7 @@ def check_predictions_multi(
     input_files = sorted(glob(os.path.join(input_root, "*.zarr")))
     for ff in input_files:
         ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
-        synapses = os.path.join(output_root, Path(ff).stem, "filtered_synapse_detection.tsv")
+        synapses = os.path.join(output_root, Path(ff).stem, "synapse_detection_filtered.tsv")
         _check_prediction(ff, ihc, synapses)
 
 

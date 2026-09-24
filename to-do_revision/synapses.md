@@ -261,3 +261,33 @@ python scripts/validation/synapses/run_evaluation.py -v v3-4 -o ~/flamingo-tools
 ```
 The accuracy values will be written into `reproducibility/model_accuracy/synapses.json`.
 From there they can be read by `plot_fig2.py`.
+
+### Evaluating v7 and v8, and the IHC v11 switch (2026-09-24)
+
+`v7` and `v8` are the unmasked and masked pair of the 2026-09-21 recipe. Four entries are
+registered, because the two `best.pt` were selected by different metrics, the masked criterion
+for `v8` and the unmasked one for `v7`:
+
+```bash
+for VERSION in v7 v7-latest v8 v8-latest ; do
+	python scripts/validation/synapses/prediction.py -v "$VERSION"
+	python scripts/validation/synapses/run_evaluation.py -v "$VERSION" -o reproducibility/model_accuracy/
+done
+```
+
+`run_evaluation.py` itself has no IHC dependency; it scores whatever
+`synapse_detection_filtered.tsv` the prediction step produced. The IHC segmentation is predicted
+per crop by `prediction.py` from the `raw_ihc` channel, and detections further than 3 um from it
+are dropped.
+
+**That IHC model changed with this evaluation.** `prediction.py` pinned the v4 IHC network and
+now uses `v11_cochlea_distance_unet_IHC_supervised_2026-07-20`, which is the IHC version the rest
+of the repository treats as current. Precision depends on the IHC segmentation, so **all 17
+entries written into `synapses.json` before 2026-09-24 were scored against a v4 mask and are not
+comparable to `v7` and `v8`.** Re-run prediction and evaluation for every baseline the comparison
+needs, at least `v3` as the released model, and `v5` and `v6-1` as the closest recipe
+predecessors. Pass `--model_ihc` to score against the v4 model again.
+
+`v7` and `v8` are also not a single step from `v6-1`: it ran with no sampler, no raw
+normalization and redrawn validation patches. And the pair is not a clean ablation of the mask
+alone, see `to-do_revision/scripts_synapses/README.md`.
