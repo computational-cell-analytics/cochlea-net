@@ -32,10 +32,11 @@ _IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/ima
 # and '-latest' the latest.pt ones. See prediction.py for why the pair is not a clean ablation.
 # The v7 and v8 predictions are filtered against an IHC v11 segmentation, every earlier entry in
 # synapses.json against v4, so they are only comparable to baselines that were re-predicted.
+# v9 is the v7 recipe with the candidate-exclusion mask, see prediction.py.
 _PRODUCTION_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
     "v3-flow-1-best", "v3-flow-1-latest",
-    "v7", "v7-latest", "v8", "v8-latest",
+    "v7", "v7-latest", "v8", "v8-latest", "v9", "v9-latest",
 )
 _LEGACY_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v5-f1", "v5-f2", "v5-f3", "v5-f4",

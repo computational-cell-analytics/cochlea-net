@@ -113,6 +113,10 @@ PREDICTION_DICT = {
     "v7-latest": _entry("synapse_detection_v7-latest.pt", "v7-latest"),
     "v8": _entry("synapse_detection_v8.pt", "v8"),
     "v8-latest": _entry("synapse_detection_v8-latest.pt", "v8-latest"),
+    # The v7 recipe with the candidate-exclusion mask (--ignore_percentile 10) instead of the cube
+    # mask of v8, and v7's sampler, so v9 against v7 is a single-variable ablation.
+    "v9": _entry("synapse_detection_v9.pt", "v9"),
+    "v9-latest": _entry("synapse_detection_v9-latest.pt", "v9-latest"),
 }
 
 
