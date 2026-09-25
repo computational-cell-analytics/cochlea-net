@@ -48,8 +48,13 @@ class TestSynapseModelRegistry(unittest.TestCase):
             self.assertEqual(os.path.basename(entry["pred_root"]), version)
 
     def test_checkpoints_are_distinct(self):
-        models = [entry["synapse_model"] for entry in self.prediction.PREDICTION_DICT.values()]
+        # An '-ihc11' entry rescores its base version against IHC v11, so it shares that model.
+        entries = self.prediction.PREDICTION_DICT
+        models = [entry["synapse_model"] for version, entry in entries.items() if not version.endswith("-ihc11")]
         self.assertEqual(len(set(models)), len(models))
+        for version, entry in entries.items():
+            if version.endswith("-ihc11"):
+                self.assertEqual(entry["synapse_model"], entries[version[:-len("-ihc11")]]["synapse_model"])
 
     def test_one_ihc_model_for_every_version(self):
         # Scores are only comparable across versions when they were filtered against the same IHC
@@ -181,6 +186,19 @@ class TestEvaluationRoots(unittest.TestCase):
             self.assertEqual(results["v7"]["tp"], [len(self.points)])
             self.assertEqual(results["v7"]["fp"], [0])
             self.assertEqual(results["v7"]["fn"], [0])
+
+    def test_existing_entry_needs_overwrite(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            images, refs, preds = self._create_data(tmp_dir, "v7")
+            out_dir = os.path.join(tmp_dir, "accuracy")
+            argv = ["run_evaluation.py", "-v", "v7", "-c", images, "-r", refs, "-p", preds, "-o", out_dir]
+
+            with mock.patch.object(sys, "argv", argv):
+                self.evaluation.main()
+                with self.assertRaises(ValueError):
+                    self.evaluation.main()
+            with mock.patch.object(sys, "argv", argv + ["--overwrite"]):
+                self.evaluation.main()
 
 
 if __name__ == "__main__":

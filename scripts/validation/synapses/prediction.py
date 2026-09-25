@@ -117,6 +117,11 @@ PREDICTION_DICT = {
     # mask of v8, and v7's sampler, so v9 against v7 is a single-variable ablation.
     "v9": _entry("synapse_detection_v9.pt", "v9"),
     "v9-latest": _entry("synapse_detection_v9-latest.pt", "v9-latest"),
+    # The released baselines scored against the IHC v11 segmentation, for the comparison with v7
+    # and later. The plain 'v3' and 'v5' keys of synapses.json stay on IHC v4, because Figure 2c
+    # and Supplementary Figure 2 compare them with other IHC v4 entries.
+    "v3-ihc11": _entry("synapse_detection_model_v3.pt", "v3-ihc11"),
+    "v5-ihc11": _entry("synapse_detection_model_v5.pt", "v5-ihc11"),
 }
 
 
