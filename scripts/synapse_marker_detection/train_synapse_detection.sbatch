@@ -32,7 +32,11 @@ MODEL_SUFFIX=$3
 RANDOM_STATE=$4
 # Optional half width in voxels of the loss mask around each annotation, e.g. 16. Without it the
 # loss covers the full patch, which also supervises unannotated CTBP2 spots outside the IHCs.
+# This cube mask failed for v8, see to-do_revision/synapses.md. Prefer IGNORE_PERCENTILE.
 MASK_RADIUS=$5
+# Optional percentile, e.g. 10, that excludes the unannotated CTBP2 spots from the loss and keeps
+# every other voxel supervised (--ignore_percentile). Pass "" as MASK_RADIUS to use it alone.
+IGNORE_PERCENTILE=$6
 
 cd "$WORK_DIR" || exit
 
@@ -46,6 +50,9 @@ if [ -n "$RANDOM_STATE" ]; then
 fi
 if [ -n "$MASK_RADIUS" ]; then
 	split_args+=(--mask_radius "$MASK_RADIUS")
+fi
+if [ -n "$IGNORE_PERCENTILE" ]; then
+	split_args+=(--ignore_percentile "$IGNORE_PERCENTILE")
 fi
 
 # Trains the heatmap only, the output layout of synapse_detection_v3. Add --use_flow for the

@@ -11,10 +11,12 @@ from skimage.filters import gaussian
 from torch.nn.functional import mse_loss
 
 from flamingo_tools.synapse_detection.detection_dataset import (
+    IGNORE_RADIUS,
     CsvHeatmapFlowTransform,
     CsvHeatmapTransform,
     DetectionDataset,
     MinPointSampler,
+    find_unannotated_candidates,
 )
 from flamingo_tools.synapse_detection.training import DetectionLoss, _samples_per_dataset
 
@@ -387,6 +389,58 @@ class TestDetectionDataset(unittest.TestCase):
             self.assertEqual(
                 starts.max(axis=0).tolist(), [sh - psh for sh, psh in zip(self.shape, self.patch_shape)]
             )
+
+    def test_find_unannotated_candidates(self):
+        rng = np.random.default_rng(0)
+        raw = rng.integers(0, 5, (32, 64, 64)).astype("float32")
+        annotated = np.array([[8, 10, 10], [8, 40, 40], [20, 20, 50]], dtype="float32")
+        bright = np.array([[20, 50, 12], [25, 12, 30]])
+        dim = np.array([[12, 30, 20]])
+        # The annotated synapses spread in brightness, so the 10th percentile lies below the
+        # bright candidates.
+        for point, value in zip(annotated.astype(int), (800, 1000, 1200)):
+            raw[tuple(point)] = value
+        for point in bright:
+            raw[tuple(point)] = 1000
+        raw[tuple(dim[0])] = 100
+
+        candidates = find_unannotated_candidates(raw, annotated, percentile=10)
+        self.assertEqual(sorted(candidates.astype(int).tolist()), sorted(bright.tolist()))
+
+        # Without annotations there is nothing to calibrate the threshold on.
+        self.assertEqual(find_unannotated_candidates(raw, np.zeros((0, 3)), percentile=10).shape, (0, 3))
+
+    def test_mask_ignores_candidates(self):
+        annotation = (20.0, 50.0, 60.0)
+        far = (30.0, 90.0, 30.0)
+        # Two voxels from the annotation, so its cube overlaps the annotation's cube.
+        near = (20.0, 50.0, 62.0)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, _ = self._create_data(tmp_dir)
+            label_path = os.path.join(tmp_dir, "single.csv")
+            pd.DataFrame([annotation], columns=["axis-0", "axis-1", "axis-2"]).to_csv(label_path, index=False)
+            ignore_points = {label_path: np.array([far, near], dtype="float32")}
+            transform = CsvHeatmapTransform(sigma=1, eps=1e-5, ignore_points=ignore_points)
+            self.assertEqual(transform.halo, IGNORE_RADIUS)
+
+            unmasked = CsvHeatmapTransform(sigma=1, eps=1e-5)(label_path, self.shape, self.bb, self.bb)
+            heatmap, mask = transform(label_path, self.shape, self.bb, self.bb)
+            self.assertTrue(np.array_equal(heatmap, unmasked[0]))
+
+            def local(point):
+                return tuple(int(coord) - axis.start for coord, axis in zip(point, self.bb))
+
+            width = 2 * IGNORE_RADIUS + 1
+            # The whole cube around the far candidate, and the part of the near candidate's cube
+            # outside the annotation's cube, which is two planes of the cube.
+            self.assertEqual(int((mask == 0).sum()), width ** 3 + 2 * width ** 2)
+            self.assertEqual(mask[local(far)], 0)
+            self.assertEqual(mask[local(near)], 1)
+            self.assertTrue(np.all(mask[heatmap > 0.04] == 1))
+
+            ds = self._make_dataset(raw_path, label_path, transform)
+            self.assertEqual(ds.halo, IGNORE_RADIUS)
+            self.assertEqual(tuple(ds[0][1].shape), (2, *self.patch_shape))
 
     def test_flow_transform_with_mask(self):
         module = "flamingo_tools.synapse_detection.detection_dataset"
