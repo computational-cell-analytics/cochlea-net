@@ -32,11 +32,13 @@ _IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/ima
 # and '-latest' the latest.pt ones. See prediction.py for why the pair is not a clean ablation.
 # The v7 and v8 predictions are filtered against an IHC v11 segmentation, every earlier entry in
 # synapses.json against v4, so they are only comparable to baselines that were re-predicted.
+# Those are 'v3-ihc11' and 'v5-ihc11'; the plain 'v3' and 'v5' entries stay on IHC v4.
 # v9 is the v7 recipe with the candidate-exclusion mask, see prediction.py.
 _PRODUCTION_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
     "v3-flow-1-best", "v3-flow-1-latest",
     "v7", "v7-latest", "v8", "v8-latest", "v9", "v9-latest",
+    "v3-ihc11", "v5-ihc11",
 )
 _LEGACY_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v5-f1", "v5-f2", "v5-f3", "v5-f4",
@@ -165,7 +167,23 @@ def evaluate_synapse_detections(
     })
 
 
-def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, match_array_dir=None):
+def _existing_keys(output_file):
+    if output_file is None or not os.path.isfile(output_file):
+        return {}
+    with open(output_file, "r") as f:
+        return json.load(f)
+
+
+def run_evaluation(
+    pred_files, gt_files, output_file=None, version_key=None, match_array_dir=None, overwrite=False,
+):
+    # A silent overwrite once replaced the IHC v4 'v3' entry that Figure 2c compares with other
+    # IHC v4 entries by an IHC v11 score.
+    if version_key in _existing_keys(output_file) and not overwrite:
+        raise ValueError(
+            f"{output_file} already has an entry '{version_key}'. Pass --overwrite to replace it."
+        )
+
     results = []
     for pred, gt in zip(pred_files, gt_files):
         match_array_path = None
@@ -192,11 +210,7 @@ def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, mat
     print("F1-Score:", f1_score)
 
     if output_file is not None and version_key is not None:
-        data = {}
-        if os.path.isfile(output_file):
-            with open(output_file, "r") as f:
-                data = json.load(f)
-
+        data = _existing_keys(output_file)
         data[version_key] = {
             "crops": results["name"].tolist(),
             "tp": [int(v) for v in results["tp"].tolist()],
@@ -279,6 +293,9 @@ def main():
     parser.add_argument("--match_array_dir", type=str, default=None,
                         help="Optional directory to save per-crop uint8 TIF arrays marking "
                              "TP (1), FP (2), and FN (3) synapse positions.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Replace an existing entry of synapses.json. Without it an existing "
+                             "entry is an error.")
     parser.add_argument("--visualize", action="store_true")
     parser.add_argument("--legacy", action="store_true",
                         help="Evaluate the older predictions in predictions/val_synapses/<version> "
@@ -339,7 +356,7 @@ def main():
             run_evaluation(
                 pred_files, gt_files,
                 output_file=output_file, version_key=version_key,
-                match_array_dir=args.match_array_dir,
+                match_array_dir=args.match_array_dir, overwrite=args.overwrite,
             )
 
 

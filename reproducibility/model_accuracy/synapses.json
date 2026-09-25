@@ -627,5 +627,227 @@
 		"precision": 0.967,
 		"recall": 0.746,
 		"f1-score": 0.842
+	},
+	"v7": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			164,
+			55,
+			179,
+			155,
+			175,
+			190
+		],
+		"fp": [
+			5,
+			0,
+			8,
+			4,
+			7,
+			4
+		],
+		"fn": [
+			35,
+			27,
+			38,
+			39,
+			33,
+			59
+		],
+		"precision": 0.97,
+		"recall": 0.799,
+		"f1-score": 0.876
+	},
+	"v7-latest": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			167,
+			67,
+			179,
+			158,
+			176,
+			189
+		],
+		"fp": [
+			3,
+			0,
+			8,
+			5,
+			6,
+			5
+		],
+		"fn": [
+			32,
+			15,
+			38,
+			36,
+			32,
+			60
+		],
+		"precision": 0.972,
+		"recall": 0.815,
+		"f1-score": 0.886
+	},
+	"v8": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			158,
+			64,
+			188,
+			162,
+			180,
+			193
+		],
+		"fp": [
+			72,
+			140,
+			140,
+			53,
+			98,
+			59
+		],
+		"fn": [
+			41,
+			18,
+			29,
+			32,
+			28,
+			56
+		],
+		"precision": 0.627,
+		"recall": 0.822,
+		"f1-score": 0.712
+	},
+	"v8-latest": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			158,
+			63,
+			184,
+			157,
+			178,
+			189
+		],
+		"fp": [
+			101,
+			157,
+			204,
+			98,
+			84,
+			101
+		],
+		"fn": [
+			41,
+			19,
+			33,
+			37,
+			30,
+			60
+		],
+		"precision": 0.555,
+		"recall": 0.809,
+		"f1-score": 0.658
+	},
+	"v3-ihc11": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			161,
+			62,
+			181,
+			149,
+			173,
+			186
+		],
+		"fp": [
+			2,
+			2,
+			15,
+			4,
+			4,
+			10
+		],
+		"fn": [
+			38,
+			20,
+			36,
+			45,
+			35,
+			63
+		],
+		"precision": 0.961,
+		"recall": 0.794,
+		"f1-score": 0.869
+	},
+	"v5-ihc11": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			168,
+			62,
+			182,
+			160,
+			179,
+			192
+		],
+		"fp": [
+			9,
+			8,
+			3,
+			7,
+			5,
+			5
+		],
+		"fn": [
+			31,
+			20,
+			35,
+			34,
+			29,
+			57
+		],
+		"precision": 0.962,
+		"recall": 0.821,
+		"f1-score": 0.886
 	}
 }
