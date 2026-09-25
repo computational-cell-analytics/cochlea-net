@@ -373,6 +373,21 @@ class TestDetectionDataset(unittest.TestCase):
             self.assertEqual(labels.shape, (2, *self.patch_shape))
             self.assertFalse(labels.any())
 
+    def test_patch_starts_reach_the_far_end(self):
+        # A halo must not keep the patches away from the last voxels of the crop.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            ds = self._make_dataset(
+                raw_path, label_path, CsvHeatmapTransform(sigma=1, eps=1e-5, mask_radius=16)
+            )
+            rng = np.random.default_rng(0)
+            starts = np.array([[s.start for s in ds._sample_bounding_box(rng)] for _ in range(500)])
+
+            self.assertEqual(starts.min(axis=0).tolist(), [0, 0, 0])
+            self.assertEqual(
+                starts.max(axis=0).tolist(), [sh - psh for sh, psh in zip(self.shape, self.patch_shape)]
+            )
+
     def test_flow_transform_with_mask(self):
         module = "flamingo_tools.synapse_detection.detection_dataset"
 

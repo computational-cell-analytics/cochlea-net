@@ -249,10 +249,8 @@ class DetectionDataset(torch.utils.data.Dataset):
             raise NotImplementedError(
                 f"Image padding is not supported yet. Data shape {self.shape}, patch shape {self.patch_shape}"
             )
-        bb_start = [
-            rng.integers(0, max(1, sh - psh - 2 * self.halo))
-            for sh, psh in zip(self.shape, self.patch_shape)
-        ]
+        # The halo needs no margin here: `_get_desired_raw_and_labels` clamps it to the volume.
+        bb_start = [rng.integers(0, sh - psh + 1) for sh, psh in zip(self.shape, self.patch_shape)]
         return tuple(slice(start, start + psh) for start, psh in zip(bb_start, self.patch_shape))
 
     def _get_desired_raw_and_labels(self, rng):
