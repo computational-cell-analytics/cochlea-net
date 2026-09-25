@@ -21,6 +21,7 @@ global values; without them each crop is normalised on its own, which is not wha
 
 import argparse
 import json
+import multiprocessing as mp
 import os
 from glob import glob
 from pathlib import Path
@@ -30,6 +31,7 @@ import numpy as np
 import pandas as pd
 import zarr
 
+from elf import parallel
 from elf.io import open_file
 from flamingo_tools.segmentation.unet_prediction import prediction_impl, run_unet_prediction
 from flamingo_tools.segmentation.synapse_detection import (
@@ -174,11 +176,20 @@ def pred_synapse_impl(
         output_folder: Folder for the prediction and the detections.
         model_path: Path to the synapse detection model.
         mean: Mean used for normalization. Production derives one value for the whole masked
-            cochlea, so pass it here to reproduce that. By default it is computed per crop.
+            cochlea, so pass it here to reproduce that. By default it is computed over the
+            unpadded crop, like the training statistics.
         std: Standard deviation used for normalization, see `mean`.
     """
     input_key = "raw"
     os.makedirs(output_folder, exist_ok=True)
+
+    if mean is None or std is None:
+        # The statistics of the unpadded crop, as in training (`training._crop_standardization`).
+        # Taken over the padded copy, the zero padding lowers the mean and the standard deviation,
+        # which shifts the tissue by 1 to 2 standard deviations for the validation crops.
+        mean, std = parallel.mean_and_std(
+            zarr.open(store=input_path, mode="r")[input_key], n_threads=min(16, mp.cpu_count())
+        )
 
     prediction_path, shape = _padded_input(input_path, input_key, output_folder)
 

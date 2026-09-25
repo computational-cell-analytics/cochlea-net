@@ -103,6 +103,36 @@ class TestPredictionRoots(unittest.TestCase):
         self.assertEqual(recorded["output_root"], "/tmp/out")
 
 
+class TestPredictionNormalization(unittest.TestCase):
+    """The crops are zero-padded for the production block shape; the padding must not enter the
+    normalization statistics, which training takes over the unpadded crop."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.prediction = _load_module("synapse_prediction", os.path.join(VALIDATION_DIR, "prediction.py"))
+
+    def test_statistics_of_the_unpadded_crop(self):
+        import numpy as np
+        import zarr
+
+        raw = np.random.default_rng(0).integers(100, 1000, (10, 20, 20)).astype("uint16")
+        recorded = {}
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            input_path = os.path.join(tmp_dir, "crop.zarr")
+            zarr.open(store=input_path, mode="w").create_array("raw", data=raw)
+
+            module = self.prediction
+            with mock.patch.object(module, "prediction_impl", lambda **kw: recorded.update(kw)), \
+                 mock.patch.object(module, "_get_model_out_channels", lambda path: 1), \
+                 mock.patch.object(module, "synapse_detection_from_prediction"), \
+                 mock.patch.object(module, "_drop_padding_detections"):
+                module.pred_synapse_impl(input_path, os.path.join(tmp_dir, "out"), "model.pt")
+
+        self.assertNotEqual(recorded["input_path"], input_path)
+        self.assertAlmostEqual(recorded["mean"], float(raw.mean()), places=3)
+        self.assertAlmostEqual(recorded["std"], float(raw.std()), places=3)
+
+
 class TestEvaluationRoots(unittest.TestCase):
     """-p must take the same directory that prediction.py was given as -o."""
 
