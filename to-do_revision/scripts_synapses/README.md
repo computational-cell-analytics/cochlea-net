@@ -13,7 +13,7 @@ own — that is the variability being measured. `--random_state 42` is passed ex
 run so that the train/val split stays *fixed*; without it the default derives from the model
 suffix and would resample the split, confounding seed noise with split noise.
 
-**The commands below need `--legacy_recipe` since 2026-09-21.** The training moved into
+**The runs below need `--legacy_recipe` since 2026-09-21, and their scripts pass it.** The training moved into
 `flamingo_tools/synapse_detection/training.py` and gained three changes that apply to every run
 without flags: the raw input is standardized per crop, the validation metric is the weighted
 combined loss instead of an unweighted mean squared error over all channels, and the validation
@@ -64,6 +64,21 @@ metrics, which is why the final checkpoints are scored alongside them. Their pre
 filtered against an IHC v11 segmentation, unlike every earlier entry in `synapses.json`; see
 [`../synapses.md`](../synapses.md).
 
+**v8 failed.** Its precision fell from 0.97 to 0.63 at almost the same recall. The cube mask
+removes the supervision at the borders of the zero regions and in the dim tissue, and v8 fires
+there. `v9` repeats `v7` with the candidate-exclusion mask instead, which ignores only small
+cubes around the unannotated CTBP2 spots:
+
+```bash
+python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $SAVE_ROOT \
+    --sampler minpoint --ignore_percentile 10
+```
+
+The 2026-09-24 scores of v7 and v8 are superseded: the validation normalization included the
+zero padding, and the patch sampling never reached the last `2 * halo + 1` voxels of a crop.
+`synapse_detect_ihc11_F1val.sbatch` scores them again. The diagnosis is in
+[`../synapses.md`](../synapses.md), section "v7 against v8".
+
 ## What the seed experiment found
 
 Full numbers in [`v3_training_dynamics_report.md`](v3_training_dynamics_report.md), on the six
@@ -96,6 +111,8 @@ prediction, because a silent CPU fallback is about 50x slower and never finishes
 | `train_synapse_v3-5.sbatch` … `v3-7` | The same at 10k iterations, on cheaper queues |
 | `train_synapse_v3-flow-1.sbatch` | v3 data with the v5 recipe (`--use_flow`) |
 | `train_synapse_v6-1.sbatch` | v6 data with the v3 recipe |
+| `train_synapse_v9.sbatch` | v7 with the candidate-exclusion mask |
+| `synapse_detect_ihc11_F1val.sbatch` | Score the baselines, v7 and v8 against IHC v11, with the fixed normalization |
 | `synapse_detect_v5-variation_F1val.sbatch` | Run the four v5 fold models over the six test crops |
 | `synapse_process_GLR000301R.sbatch` | Single-job prediction + detection + IHC matching, G301R |
 | `synapse_process_GLR000302R.sbatch` | The same for G302R |

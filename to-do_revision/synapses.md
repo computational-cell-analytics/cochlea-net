@@ -6,14 +6,10 @@ Since PR `#133` the synapse detection network is trained without flow per defaul
 The training data is located in separate `images` and `labels` directories, so the training/validation split has to be reproducible. The random state `--random_state 42` has to be passed for training the networks to test the variation to ensure the same split.
 An example script for training `synapses_v3-1` is `train_synapse_v3-1.sbatch`.
 
-A new synapse network v6 or its variation could be trained by substituting the function call with
-```bash
-# train synapse network v6
-python $SCRIPT_DIR/train_synapse_detection.py -v v6 --random_state 42
-# train synapse network v6-1
-python $SCRIPT_DIR/train_synapse_detection.py -v v6 -m v6-1 --random_state 42
-```
-The training data is already prepared in `/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v6` and is identical to the `v5` one.
+The training commands of every run so far are in `scripts_synapses/`. The runs before v7 need
+`--legacy_recipe`, and their scripts pass it. The `v6` training data in
+`/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v6`
+is identical to the `v5` data.
 
 ### Training-data and loss diagnostics (2026-08-27)
 
@@ -122,14 +118,20 @@ consequential, but random validation sampling is an independent problem.
 
 Before interpreting another seed comparison, the training setup should:
 
-1. add an explicit and identical training/inference raw normalization; **done, see below**
-2. use a fixed validation patch set and a detection-level validation metric;
+1. add an explicit and identical training/inference raw normalization; **done in training on
+   2026-09-21. The validation inference included the zero padding until 2026-09-25, see
+   "v7 against v8" below. Production still uses different statistics.**
+2. use a fixed validation patch set and a detection-level validation metric; **the fixed patch
+   set is done. The detection-level metric is still open.**
 3. mark regions outside the exhaustively annotated/IHC-valid region as *ignore*, rather than as
-   background in the loss; **done, see below**
+   background in the loss; **done as the cube mask of v8, which failed. Replaced by the
+   candidate-exclusion mask of v9, see "v7 against v8" below.**
 4. run a quick ablation without the three `m78l_*_cr-ctbp2` volumes, followed by a proper masked
-   training run that retains their valid annotations;
-5. apply the existing checkpoints at the confirmed candidate coordinates and test whether the
-   lowest-loss seeds suppress both off-target candidates and annotated synapses.
+   training run that retains their valid annotations; **the ablation is optional: v7 against v8
+   shows that the unannotated spots do not limit the recall. v9 is the masked run.**
+5. ~~apply the existing checkpoints at the confirmed candidate coordinates and test whether the
+   lowest-loss seeds suppress both off-target candidates and annotated synapses.~~ **Obsolete:
+   v7 against v8 tests the mechanism more directly.**
 
 An IHC-derived mask can be used only for the training loss, so this test does not require an IHC
 channel as network input at inference time. If the IHC channel is intended to be a model input
@@ -146,7 +148,8 @@ czii-protein-challenge; the model, the loaders, the loss and the trainer live in
 voxels around every annotation. `CsvHeatmapTransform` appends the mask as the last target
 channel, and `DetectionLoss` restricts both the training loss and the validation metric to it.
 Use `--mask_radius 16`, which is about 12 um at 0.38 um/voxel and stays well below the 40 voxel
-radius that defines a spatially distant candidate above.
+radius that defines a spatially distant candidate above. **v8 is this run, and it failed. Do not
+use the cube mask for new runs, see "v7 against v8" below.**
 
 `mask_radius` also raises the label transform halo to at least `R`, so `DetectionDataset` loads
 the annotations up to `R` voxels beyond the patch. Target and mask are then built from the same
@@ -172,7 +175,7 @@ the old recipes unreachable: the raw input stays unnormalized, the validation me
 an unweighted mean squared error over every output channel, which is what selected `best.pt` for
 v5, and the validation patches are redrawn on every epoch. It cannot be combined with
 `--mask_radius`, because that metric cannot read a masked target. The archived scripts in
-`scripts_synapses/` need the flag added.
+`scripts_synapses/` pass the flag.
 
 **Comparing the next runs.** The logged loss and metric change scale twice, through the masked
 mean and through the normalization. They are not comparable to the v3, v5 or v6-1 numbers. Score
@@ -207,8 +210,8 @@ because it is uniform over all crops and independent of the stain.
 Potentially relevant for a new synapse network.
 An example script for cochlea `G_LR_000302_R` is `synapse_process_GLR000302R.sbatch`.
 The volume can be masked based on an IHC segmentation, which can be local or on the S3 bucket.
-The mask may cut off potential synapses because its size is currently limited to the extension of the IHC segmentation.
-Future updates may improve this by dilating the mask before applying the network.
+`build_ihc_mask` dilates the segmentation by 4 voxels at `s4`, which is 64 voxels at full
+resolution, so the mask does not cut off synapses at the border of the IHC segmentation.
 
 **Prefer the three-stage slurm workflow over `marker_detection` for a whole cochlea.**
 `synapse_process_GLR000302R.sbatch` runs prediction, peak detection and matching in one 10 h
@@ -227,7 +230,6 @@ before applying the network to a new cochlea.
 
 * transfer synapse detection to MoBIE
 * transfer to S3 bucket
-* check content of `flamingo_tools/postprocessing./synapse_per_ihc_utils.py` (probably already updated)
 
 ### Calculate synapses near IHC components
 This script reads the information of `synapse_per_ihc_utils.py`:
@@ -249,18 +251,9 @@ rclone copyto "$COCHLEA"_v11_syn-per-ihc.tsv cochlea-lightsheet:cochlea-lightshe
 
 ## Network variation
 
-The script `synapse_detect_v5-variation_F1val.sbatch` was used to apply the synapse network `v5` for the validation.
-The script has to be adapted once the variation scripts for v3 have been trained.
-Afterwards, the accuracy can be calculated using
-
-```bash
-python scripts/validation/synapses/run_evaluation.py -v v3-1 -o ~/flamingo-tools/reproducibility/model_accuracy/
-python scripts/validation/synapses/run_evaluation.py -v v3-2 -o ~/flamingo-tools/reproducibility/model_accuracy/
-python scripts/validation/synapses/run_evaluation.py -v v3-3 -o ~/flamingo-tools/reproducibility/model_accuracy/
-python scripts/validation/synapses/run_evaluation.py -v v3-4 -o ~/flamingo-tools/reproducibility/model_accuracy/
-```
-The accuracy values will be written into `reproducibility/model_accuracy/synapses.json`.
-From there they can be read by `plot_fig2.py`.
+The v3 seed replicates are trained and scored, see `scripts_synapses/README.md` and
+`scripts_synapses/v3_training_dynamics_report.md`. `plot_fig2.py` reads their accuracy from
+`reproducibility/model_accuracy/synapses.json`. These entries were scored against IHC v4.
 
 ### Evaluating v7 and v8, and the IHC v11 switch (2026-09-24)
 
@@ -275,6 +268,8 @@ for VERSION in v7 v7-latest v8 v8-latest ; do
 done
 ```
 
+The cluster job for the rerun of 2026-09-25 is `scripts_synapses/synapse_detect_ihc11_F1val.sbatch`.
+
 `run_evaluation.py` itself has no IHC dependency; it scores whatever
 `synapse_detection_filtered.tsv` the prediction step produced. The IHC segmentation is predicted
 per crop by `prediction.py` from the `raw_ihc` channel, and detections further than 3 um from it
@@ -285,9 +280,88 @@ now uses `v11_cochlea_distance_unet_IHC_supervised_2026-07-20`, which is the IHC
 of the repository treats as current. Precision depends on the IHC segmentation, so **all 17
 entries written into `synapses.json` before 2026-09-24 were scored against a v4 mask and are not
 comparable to `v7` and `v8`.** Re-run prediction and evaluation for every baseline the comparison
-needs, at least `v3` as the released model, and `v5` and `v6-1` as the closest recipe
-predecessors. Pass `--model_ihc` to score against the v4 model again.
+needs. Pass `--model_ihc` to score against the v4 model again.
+
+The rescored baselines have their own keys, `v3-ihc11` and `v5-ihc11`. The plain `v3` and `v5`
+entries stay on IHC v4, because Figure 2c and Supplementary Figure 2 compare them with other
+IHC v4 entries. A first rescore overwrote `v3`, which mixed the two eras in Figure 2c. Since
+then, `run_evaluation.py` refuses to replace an existing entry without `--overwrite`. `v6-1` is
+still open: it has no entry in `synapses.json` yet.
 
 `v7` and `v8` are also not a single step from `v6-1`: it ran with no sampler, no raw
 normalization and redrawn validation patches. And the pair is not a clean ablation of the mask
 alone, see `to-do_revision/scripts_synapses/README.md`.
+
+### v7 against v8, and the candidate-exclusion mask (2026-09-25)
+
+The numbers below come from the 2026-09-24 predictions in `production_2026-09-24/`. The
+per-crop figures were matched against the IHC-filtered consensus points, so they differ
+slightly from `synapses.json`.
+
+**v8 collapses in precision, not in recall.** Summed over the six test crops, v8 finds 945 true
+positives against 918 for v7, but it produces 562 false positives against 28.
+
+| Evidence | v7 | v8 |
+|---|---|---|
+| Peaks before the IHC filter | 1,012 | 3,146 (v8-latest: 4,491) |
+| 99th percentile of the heatmap | 0.008–0.011 | 0.055–0.086 |
+| Heatmap value at a false positive, median | 1.0–1.5 | 0.68–0.80 |
+| Distance from a false positive to the nearest annotation, median | 2–8 um | 19–64 um |
+| False positives within 10 voxels of a zero-valued voxel | 0–50 % | 34–94 %, 76 % or more in four crops |
+| False positives within 3 um of a single-annotator point | 22 / 33 | 27 / 569 |
+| Best F1 of a threshold sweep over the detections | 0.872 at 0.5 | 0.826 at 1.0 |
+
+1. **The cube mask removes the negative supervision far from the annotations.** For five of the six test
+   crops, 35–78 % of the crop is zero, from the reslicing. The borders between tissue and zero
+   and the dim tissue are never inside a cube, so v8 never learned to predict zero there. Most
+   false positives lie on these borders. Removing the detections within 5 voxels of a zero
+   voxel raises v8 precision to 0.89 and leaves v7 at 0.97.
+2. **The other v8 false positives are the unannotated CTBP2 spots.** There are 116 against 29
+   for v7. Their median raw intensity is 771, against 1,148 at the true positives, and 68 % lie
+   outside the IHC but within the 3 um filter distance. The mask worked as intended, but the
+   IHC filter does not remove spots close to the IHC.
+3. **The mask did not buy recall.** At matched precision, v8 has the lower recall: 0.735 at
+   precision 0.94 (threshold 1.25), against 0.795 at precision 0.965 for v7. The v7 false
+   positives are mostly points that one annotator marked, so v7 is close to the annotation
+   ceiling. The hypothesis that the unannotated spots suppress recall is not supported.
+4. **The masked metric could not see the failure.** It ignores every voxel outside the cubes,
+   so `best.pt` of v8 was selected blind to the false positives, and `latest.pt` is worse again.
+   The fixed validation patches do not help here: a masked recipe needs a detection-level
+   metric, or a mask that covers almost all of the patch.
+
+**Fixed: the validation normalization.** `prediction.py` pads every crop with zeros to a
+multiple of the production block shape, and `prediction_impl` took the mean and standard
+deviation over the padded volume. The median tissue voxel became +1.0 to +2.1 standard deviations, against
+−0.2 to +1.1 with the statistics of the unpadded crop that training uses, and the standard
+deviation was 1.2–2.1× too small. This affected every version, not only v8. `prediction.py`
+now computes the statistics on the unpadded crop. All 2026-09-24 entries must be predicted
+again. Production still differs from training: it takes the statistics inside the IHC mask of
+the cochlea, while training takes them over the whole crop, zero regions included.
+
+**Fixed: the patch sampling.** `DetectionDataset._sample_bounding_box` drew the patch start
+from `[0, shape - patch_shape - 2 * halo)`, although the halo is clamped when the patch is
+loaded. The last `2 * halo + 1` voxels of every axis never reached training: 33 for v8, 21 for
+the flow models such as v5, and 1 for v7.
+
+**v9: the candidate-exclusion mask.** `--ignore_percentile P` keeps the loss on every voxel
+except a cube of half width 3 voxels around each unannotated CTBP2 candidate. A candidate is a
+local maximum of the smoothed crop that is more than 4 voxels from every annotation and at
+least as bright as the `P`th percentile of the maxima at the annotations
+(`find_unannotated_candidates`). The cube around an annotation always stays supervised. On the
+six test crops, `P = 10` gives 11 to 55 candidates per crop, which ignore at most 0.3 % of the
+tissue. The `m78l_*_cr-ctbp2` training crops are expected to give far more, so check the counts
+that the training prints. v9 keeps the data, the split, the validation patches and the sampler
+of v7, so the mask is the only difference:
+
+```bash
+python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $SAVE_ROOT \
+    --sampler minpoint --ignore_percentile 10
+```
+
+`scripts_synapses/train_synapse_v9.sbatch` runs it. Register the exports as
+`synapse_detection_v9.pt` and `synapse_detection_v9-latest.pt`, and add `v9 v9-latest` to the
+version loop of `synapse_detect_ihc11_F1val.sbatch`. v9 is a success if it keeps the precision
+of v7 and gains recall.
+
+The ignore mask cannot suppress an unannotated spot close to the IHC either (point 2). If v9
+shows the same false-positive class, the IHC filter distance is the next place to look.
