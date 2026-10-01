@@ -79,6 +79,39 @@ def _get_model_out_channels(model_path):
     return obj.state_dict()["out_conv.bias"].shape[0]
 
 
+def pad_to_block_shape(input_path: str, input_key: str, output_folder: str) -> Tuple[str, Tuple[int, ...]]:
+    """Zero-pad a crop up to a multiple of the production block shape.
+
+    `prediction_impl` hands the U-Net blocks of `block_shape + 2 * halo`, whose shape has to be
+    divisible by the U-Net's downsampling factors. A whole cochlea satisfies this because it is
+    far larger than one block, but the validation and training crops are not, so the production
+    block shape fails on them without padding. The padded region predicts as background, and
+    the caller must drop any detection that lands in it.
+
+    Args:
+        input_path: Path to the crop in ZARR format.
+        input_key: Key of the image data inside the crop.
+        output_folder: Folder to write the padded copy into.
+
+    Returns:
+        The path to the padded copy and the shape of the original, unpadded data.
+    """
+    raw = np.asarray(zarr.open(store=input_path, mode="r")[input_key][:])
+    shape = raw.shape
+    target = tuple(int(np.ceil(s / b) * b) for s, b in zip(shape, _PREDICTION_BLOCK_SHAPE))
+    if target == shape:
+        return input_path, shape
+
+    padded_path = os.path.join(output_folder, "padded_input.zarr")
+    if not os.path.exists(padded_path):
+        padded = np.zeros(target, dtype=raw.dtype)
+        padded[: shape[0], : shape[1], : shape[2]] = raw
+        f = zarr.open(store=padded_path, mode="w")
+        f.create_array(input_key, data=padded, chunks=(64, 128, 128))
+    print(f"Padded {tuple(shape)} to {target} for the production block shape.")
+    return padded_path, shape
+
+
 def _detection_block_shape(chunks):
     """Return the smallest multiple of *chunks* that fits into the block voxel budget."""
     block = list(chunks)
@@ -238,6 +271,7 @@ def synapse_detection_from_prediction(
     threshold: float = 0.5,
     n_threads: Optional[int] = None,
     save_no_flow: bool = False,
+    min_distance: int = 2,
 ) -> pd.DataFrame:
     """Run synapse detection for prediction.
 
@@ -255,6 +289,8 @@ def synapse_detection_from_prediction(
             (before sub-voxel flow correction) to a sibling file next to
             *detection_path*, named `<name>_no-flow<ext>`. Written only when
             *detection_path* is (re)computed, not when it is loaded from cache.
+        min_distance: Minimum distance in voxels between two detected peaks. Two adjacent
+            synapses closer than this merge into one detection.
 
     Returns:
         The detections in MoBIE compatible format, with coordinates in micrometer.
@@ -267,7 +303,7 @@ def synapse_detection_from_prediction(
         # Use the spatial chunk shape (drop the leading channel dim for multi-channel predictions).
         det_block_shape = block_shape or _detection_block_shape(pred.chunks[-3:])
         coords, no_flow_coords = _flow_corrected_detections(
-            pred, min_distance=2, threshold_abs=threshold,
+            pred, min_distance=min_distance, threshold_abs=threshold,
             block_shape=det_block_shape, n_threads=n_threads,
         )
         detections = _to_mobie_format(coords, voxel_size)

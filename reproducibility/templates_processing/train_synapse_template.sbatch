@@ -30,6 +30,13 @@ VERSION=$2
 MODEL_SUFFIX=$3
 # Optional random state for the split. Pass 42 to reuse the split of a fixed version.
 RANDOM_STATE=$4
+# Optional half width in voxels of the loss mask around each annotation, e.g. 16. Without it the
+# loss covers the full patch, which also supervises unannotated CTBP2 spots outside the IHCs.
+# This cube mask failed for v8, see to-do_revision/synapses.md. Prefer IGNORE_PERCENTILE.
+MASK_RADIUS=$5
+# Optional percentile, e.g. 10, that excludes the unannotated CTBP2 spots from the loss and keeps
+# every other voxel supervised (--ignore_percentile). Pass "" as MASK_RADIUS to use it alone.
+IGNORE_PERCENTILE=$6
 
 cd "$WORK_DIR" || exit
 
@@ -41,9 +48,16 @@ split_args=()
 if [ -n "$RANDOM_STATE" ]; then
 	split_args+=(-r "$RANDOM_STATE")
 fi
+if [ -n "$MASK_RADIUS" ]; then
+	split_args+=(--mask_radius "$MASK_RADIUS")
+fi
+if [ -n "$IGNORE_PERCENTILE" ]; then
+	split_args+=(--ignore_percentile "$IGNORE_PERCENTILE")
+fi
 
-# Trains the heatmap only, as for synapse_detection_v3. Add --use_flow for the 5 channel
-# heatmap and flow training of synapse_detection_v5, and --sampler to override the default
-# sampler of the selected mode.
+# Trains the heatmap only, the output layout of synapse_detection_v3. Add --use_flow for the
+# 5 channel heatmap and flow training of synapse_detection_v5, and --sampler to override the
+# default sampler of the selected mode. To retrain v3 or v5 themselves, add --legacy_recipe:
+# the runs before 2026-09-21 had no raw normalization and a different validation metric.
 python "$SCRIPT_REPO"/scripts/synapse_marker_detection/train_synapse_detection.py \
 	-v "$VERSION" -m "$MODEL_SUFFIX" "${split_args[@]}"

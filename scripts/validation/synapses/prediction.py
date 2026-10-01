@@ -5,42 +5,44 @@ parameter that the production entry point (`flamingo_tools.segmentation.synapse_
 marker_detection`, driven by the `flamingo_tools.run_detection` CLI) fixes is
 mirrored here:
 
-  * peak detection threshold 0.5, the value hard-coded in every whole-cochlea caller,
+  * peak detection at threshold 0.5 and `min_distance` 2, the values of every whole-cochlea
+    caller,
   * the production prediction block shape / halo,
   * `output_channels` taken from the model rather than assumed to be 1,
-  * IHC matching at the production `max_distance`,
-  * one mean/std for the whole volume, optionally supplied from a real cochlea.
+  * IHC matching at the production `max_distance`.
 
-Two of these need care on crops. The production block shape only tiles volumes much larger than
-one block, so the crops are zero-padded (see `_padded_input`). And production derives a single
-mean/std from the whole masked cochlea and applies it everywhere, whereas a per-crop mean/std
-rescales each crop independently -- the crops differ by more than 4x in mean intensity, so the
-two are not interchangeable when the detection threshold is absolute. Pass --mean/--std to use
-global values; without them each crop is normalised on its own, which is not what production does.
+The production block shape only tiles volumes much larger than one block, so the crops are
+zero-padded (see `pad_to_block_shape`). The normalization needs no mirroring: the network starts with
+an InstanceNorm on its input, so every block is standardized inside the network, and a global
+mean and standard deviation change the prediction by about 2e-5.
 """
 
 import argparse
-import json
 import os
 from glob import glob
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
-import zarr
 
 from elf.io import open_file
 from flamingo_tools.segmentation.unet_prediction import prediction_impl, run_unet_prediction
 from flamingo_tools.segmentation.synapse_detection import (
     synapse_detection_from_prediction,
     _get_model_out_channels,
+    pad_to_block_shape,
     _PREDICTION_BLOCK_SHAPE,
     _PREDICTION_HALO,
 )
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
-_IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v4_cochlea_distance_unet_IHC_supervised_2025-07-14")
+# The IHC segmentation that the detections are filtered against. IHC_v11 is what the rest of the
+# repository treats as current, see reproducibility/README.md for the IHC main line. This replaced
+# 'v4_cochlea_distance_unet_IHC_supervised_2025-07-14' on 2026-09-24, so every entry of
+# reproducibility/model_accuracy/synapses.json written before that date was scored against a
+# v4-derived IHC mask and is not comparable to a run made after it.
+_IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20")
 _SYNAPSE_MODELS_DIR = os.path.join(COCHLEA_DIR, "trained_models/Synapses")
 _TEST_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
 _TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels")
@@ -48,6 +50,10 @@ VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
 # Production values, kept in one place so a pipeline change is easy to mirror.
 PRODUCTION_THRESHOLD = 0.5  # detect_synapse_peaks_template.sbatch and the marker_detection default.
+# synapse_detection_from_prediction default. Two synapses closer than this merge into one peak,
+# which is most of the missed annotations; select another value with
+# flamingo_tools/synapse_detection/gridsearch.py on the validation crops, not on these.
+PRODUCTION_MIN_DISTANCE = 2
 PRODUCTION_MAX_DISTANCE = 3.0  # marker_detection() default; callers have also used 5, 8 and 20.
 
 # Predictions produced with the production settings live under their own root. The predictions
@@ -87,44 +93,40 @@ PREDICTION_DICT = {
     # 'latest' is evaluated alongside it to test whether the selection metric is at fault.
     "v3-flow-1-best": _entry("synapse_detection_model_v3-flow-1-best.pt", "v3-flow-1-best"),
     "v3-flow-1-latest": _entry("synapse_detection_model_v3-flow-1-latest.pt", "v3-flow-1-latest"),
+    # v7 and v8 share their training data and both use the recipe introduced on 2026-09-21: the
+    # raw input is standardized per crop (a no-op for this network), the validation patches are
+    # fixed by --random_state, and DetectionLoss is used as loss and as metric. The masked loss of
+    # v8 is on a different scale from the v3, v5 and v6-1 runs.
+    #
+    # v7 is heatmap-only with no loss mask; v8 adds --mask_radius 16, which restricts the loss to
+    # cubes of 33 voxels around each annotation. v7 is the closest unmasked baseline for v8, but
+    # the pair is not a single-variable ablation: MinPointSampler accepts a patch when
+    # n_points > min_points, and min_points is 1 without a mask and 0 with one, so v7 needed two
+    # annotations per training patch and v8 only one. Neither is a single step from v6-1 either,
+    # which ran with no sampler and redrawn validation patches.
+    #
+    # The plain keys are the best.pt exports and '-latest' the latest.pt exports. Both are
+    # registered because the two best checkpoints were selected by different metrics, the masked
+    # criterion for v8 and the unmasked one for v7.
+    "v7": _entry("synapse_detection_v7.pt", "v7"),
+    "v7-latest": _entry("synapse_detection_v7-latest.pt", "v7-latest"),
+    "v8": _entry("synapse_detection_v8.pt", "v8"),
+    "v8-latest": _entry("synapse_detection_v8-latest.pt", "v8-latest"),
+    # The v7 recipe with the candidate-exclusion mask (--ignore_percentile 10) instead of the cube
+    # mask of v8, and v7's sampler. The mask is the only intended difference to v7; v9 was trained
+    # after the patch sampling fix, so its fixed validation patches are other draws.
+    "v9": _entry("synapse_detection_v9.pt", "v9"),
+    "v9-latest": _entry("synapse_detection_v9-latest.pt", "v9-latest"),
+    # The released baselines scored against the IHC v11 segmentation, for the comparison with v7
+    # and later. The plain 'v3' and 'v5' keys of synapses.json stay on IHC v4, because Figure 2c
+    # and Supplementary Figure 2 compare them with other IHC v4 entries.
+    "v3-ihc11": _entry("synapse_detection_model_v3.pt", "v3-ihc11"),
+    "v5-ihc11": _entry("synapse_detection_model_v5.pt", "v5-ihc11"),
 }
 
 
-def _padded_input(input_path: str, input_key: str, output_folder: str) -> Tuple[str, Tuple[int, ...]]:
-    """Zero-pad a validation crop up to a multiple of the production block shape.
-
-    `prediction_impl` hands the U-Net blocks of `block_shape + 2 * halo`, whose shape has to be
-    divisible by the U-Net's downsampling factors. A whole cochlea satisfies this because it is
-    far larger than one block, but the validation crops are not, so the production block shape
-    fails on them without padding. The padded region predicts as background and any detection
-    landing in it is dropped afterwards.
-
-    Args:
-        input_path: Path to the crop in ZARR format.
-        input_key: Key of the image data inside the crop.
-        output_folder: Folder to write the padded copy into.
-
-    Returns:
-        The path to the padded copy and the shape of the original, unpadded data.
-    """
-    raw = np.asarray(zarr.open(store=input_path, mode="r")[input_key][:])
-    shape = raw.shape
-    target = tuple(int(np.ceil(s / b) * b) for s, b in zip(shape, _PREDICTION_BLOCK_SHAPE))
-    if target == shape:
-        return input_path, shape
-
-    padded_path = os.path.join(output_folder, "padded_input.zarr")
-    if not os.path.exists(padded_path):
-        padded = np.zeros(target, dtype=raw.dtype)
-        padded[: shape[0], : shape[1], : shape[2]] = raw
-        f = zarr.open(store=padded_path, mode="w")
-        f.create_array(input_key, data=padded, chunks=(64, 128, 128))
-    print(f"Padded {tuple(shape)} to {target} for the production block shape.")
-    return padded_path, shape
-
-
 def _drop_padding_detections(detection_path: str, shape: Tuple[int, ...]) -> None:
-    """Remove detections that fall inside the zero padding added by `_padded_input`."""
+    """Remove detections that fall inside the zero padding added by `pad_to_block_shape`."""
     limits = [s * vs for s, vs in zip(shape, VOXEL_SIZE)]
     for path in (detection_path, detection_path.replace(".tsv", "_no-flow.tsv")):
         if not os.path.isfile(path):
@@ -140,8 +142,8 @@ def pred_synapse_impl(
     input_path: str,
     output_folder: str,
     model_path: str,
-    mean: Optional[float] = None,
-    std: Optional[float] = None,
+    threshold: float = PRODUCTION_THRESHOLD,
+    min_distance: int = PRODUCTION_MIN_DISTANCE,
 ):
     """Predict synapses for a single file using the production settings.
 
@@ -149,14 +151,13 @@ def pred_synapse_impl(
         input_path: Path to the image data.
         output_folder: Folder for the prediction and the detections.
         model_path: Path to the synapse detection model.
-        mean: Mean used for normalization. Production derives one value for the whole masked
-            cochlea, so pass it here to reproduce that. By default it is computed per crop.
-        std: Standard deviation used for normalization, see `mean`.
+        threshold: Absolute heatmap threshold for the peak detection.
+        min_distance: Minimum distance in voxels between two detected peaks.
     """
     input_key = "raw"
     os.makedirs(output_folder, exist_ok=True)
 
-    prediction_path, shape = _padded_input(input_path, input_key, output_folder)
+    prediction_path, shape = pad_to_block_shape(input_path, input_key, output_folder)
 
     prediction_impl(
         input_path=prediction_path, input_key=input_key, output_folder=output_folder,
@@ -165,7 +166,6 @@ def pred_synapse_impl(
         apply_postprocessing=False,
         # A flow model has five output channels; assuming one silently discards the flow.
         output_channels=_get_model_out_channels(model_path),
-        mean=mean, std=std,
     )
 
     output_path = os.path.join(output_folder, "predictions.zarr")
@@ -176,23 +176,17 @@ def pred_synapse_impl(
     synapse_detection_from_prediction(
         output_path, detection_path,
         prediction_key="prediction",
-        threshold=PRODUCTION_THRESHOLD,
+        threshold=threshold,
+        min_distance=min_distance,
         save_no_flow=True,
     )
     _drop_padding_detections(detection_path, shape)
 
 
-def predict_synapses(
-    input_root: str,
-    output_root: str,
-    model_path: str,
-    mean: Optional[float] = None,
-    std: Optional[float] = None,
-):
+def predict_synapses(input_root: str, output_root: str, model_path: str, **detection_kwargs):
     """Predict synapses for multiple files in an input directory.
 
-    `mean` and `std` are passed through to `pred_synapse_impl`; a single pair applied to every
-    crop is what the whole-cochlea runs do.
+    `detection_kwargs` are passed to `pred_synapse_impl`.
     """
     files = sorted(glob(os.path.join(input_root, "*.zarr")))
     for ff in files:
@@ -202,7 +196,7 @@ def predict_synapses(
             continue
         else:
             print("Predicting synapses in", ff)
-        pred_synapse_impl(ff, output_folder, model_path, mean=mean, std=std)
+        pred_synapse_impl(ff, output_folder, model_path, **detection_kwargs)
 
 
 def pred_ihc_impl(
@@ -282,8 +276,9 @@ def filter_gt(
     gt_files = sorted(glob(os.path.join(gt_root, "*.csv")))
     for ff, gt in zip(input_files, gt_files):
         ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
-        output_folder, fname = os.path.split(gt)
-        output_path = os.path.join(output_folder, fname.replace(".csv", "_filtered.tsv"))
+        # Written below the output root. This used to land next to the source CSV, which writes
+        # into the shared ground truth directory and fails as soon as it is not writable.
+        output_path = os.path.join(output_root, f"{Path(gt).stem}_gt_filtered.tsv")
 
         gt = pd.read_csv(gt)
         gt = gt.rename(columns={"axis-0": "z", "axis-1": "y", "axis-2": "x"})
@@ -328,7 +323,7 @@ def check_predictions_multi(
     input_files = sorted(glob(os.path.join(input_root, "*.zarr")))
     for ff in input_files:
         ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
-        synapses = os.path.join(output_root, Path(ff).stem, "filtered_synapse_detection.tsv")
+        synapses = os.path.join(output_root, Path(ff).stem, "synapse_detection_filtered.tsv")
         _check_prediction(ff, ihc, synapses)
 
 
@@ -338,8 +333,8 @@ def process_everything(
     output_root: str,
     synapse_model_path: str,
     ihc_model_path: str,
-    mean: Optional[float] = None,
-    std: Optional[float] = None,
+    threshold: float = PRODUCTION_THRESHOLD,
+    min_distance: int = PRODUCTION_MIN_DISTANCE,
 ):
     """Process images for validation of synapse detection.
 
@@ -349,10 +344,12 @@ def process_everything(
         output_root: Output path where the predicted synapses, IHC segmentation and filtered synapses are saved.
         synapse_model_path: File path to synapse detection model.
         ihc_model_path: File path to IHC segmentation model.
-        mean: Mean for normalization, applied to every crop. See `pred_synapse_impl`.
-        std: Standard deviation for normalization, applied to every crop.
+        threshold: Absolute heatmap threshold for the peak detection.
+        min_distance: Minimum distance in voxels between two detected peaks.
     """
-    predict_synapses(input_root, output_root, synapse_model_path, mean=mean, std=std)
+    predict_synapses(
+        input_root, output_root, synapse_model_path, threshold=threshold, min_distance=min_distance
+    )
     predict_ihcs(input_root, output_root, ihc_model_path)
     filter_synapses(input_root, output_root)
     filter_gt(input_root, gt_root, output_root)
@@ -376,7 +373,9 @@ def main():
     )
     parser.add_argument(
         "-o", "--output_root", type=str, default=None,
-        help="Output path where the predicted synapses, IHC segmentation and filtered synapses are saved."
+        help="Output path where the predicted synapses, IHC segmentation and filtered synapses are "
+             "saved. With --version the version name is appended, so that one root can hold "
+             "several versions."
     )
     parser.add_argument(
         "--model_synapse", type=str, default=None,
@@ -387,53 +386,35 @@ def main():
         help="File path to model for IHC segmentation."
     )
     parser.add_argument(
-        "--mean", type=float, default=None,
-        help="Mean for normalization, applied to every crop. Production derives a single value "
-             "for the whole masked cochlea, so pass it here to reproduce production. "
-             "By default each crop is normalized on its own, which production does not do."
+        "--threshold", type=float, default=PRODUCTION_THRESHOLD,
+        help=f"Absolute heatmap threshold for the peak detection. Default: {PRODUCTION_THRESHOLD}."
     )
     parser.add_argument(
-        "--std", type=float, default=None,
-        help="Standard deviation for normalization, applied to every crop. See --mean."
-    )
-    parser.add_argument(
-        "--pred_root", type=str, default=None,
-        help="Override the output root of --version, keeping its image and reference roots. "
-             "Useful for writing a normalization variant to a separate directory."
-    )
-    parser.add_argument(
-        "--mean_std_json", type=str, default=None,
-        help="JSON file with 'mean' and 'std' entries, as written by a whole-cochlea "
-             "normalization run. Takes precedence over --mean/--std."
+        "--min_distance", type=int, default=PRODUCTION_MIN_DISTANCE,
+        help="Minimum distance in voxels between two detected peaks. Default: "
+             f"{PRODUCTION_MIN_DISTANCE}. Run a changed setting without --version into its own "
+             "output root, so that run_evaluation.py -p stores it under the folder name."
     )
 
     args = parser.parse_args()
-
-    mean, std = args.mean, args.std
-    if args.mean_std_json is not None:
-        with open(args.mean_std_json) as f:
-            mean_std = json.load(f)
-        mean, std = float(mean_std["mean"]), float(mean_std["std"])
-    if (mean is None) != (std is None):
-        raise ValueError("Pass both --mean and --std, or neither.")
-    if mean is None:
-        print("No mean/std given: normalizing each crop on its own. This is NOT the production "
-              "behavior, which applies one mean/std derived from the whole masked cochlea.")
-    else:
-        print(f"Using the production normalization for every crop: mean={mean}, std={std}")
 
     if args.version is not None:
         valid_versions = list(PREDICTION_DICT.keys())
         if args.version not in valid_versions:
             raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
+        # The version supplies defaults only. Anything given on the command line wins, so that
+        # a registry entry can be reused with one part swapped, and so that an override is never
+        # silently dropped.
         entry = PREDICTION_DICT[args.version]
-        input_root = entry["image_root"]
-        gt_root = entry["ref_root"]
-        output_root = entry["pred_root"] if args.pred_root is None else os.path.join(
-            args.pred_root, args.version
+        input_root = args.input_root or entry["image_root"]
+        gt_root = args.gt_root or entry["ref_root"]
+        # The version name is appended, so one root can hold several versions the way the
+        # registry's own prediction root does.
+        output_root = entry["pred_root"] if args.output_root is None else os.path.join(
+            args.output_root, args.version
         )
-        synapse_model = entry["synapse_model"]
-        ihc_model = entry["ihc_model"]
+        synapse_model = args.model_synapse or entry["synapse_model"]
+        ihc_model = args.model_ihc or entry["ihc_model"]
     else:
         input_root = args.input_root
         gt_root = args.gt_root
@@ -447,8 +428,8 @@ def main():
         output_root=output_root,
         synapse_model_path=synapse_model,
         ihc_model_path=ihc_model,
-        mean=mean,
-        std=std,
+        threshold=args.threshold,
+        min_distance=args.min_distance,
     )
 
 
