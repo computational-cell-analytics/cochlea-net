@@ -849,5 +849,79 @@
 		"precision": 0.962,
 		"recall": 0.821,
 		"f1-score": 0.886
+	},
+	"v9": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			164,
+			60,
+			169,
+			158,
+			176,
+			185
+		],
+		"fp": [
+			7,
+			2,
+			5,
+			3,
+			3,
+			4
+		],
+		"fn": [
+			35,
+			22,
+			48,
+			36,
+			32,
+			64
+		],
+		"precision": 0.974,
+		"recall": 0.794,
+		"f1-score": 0.875
+	},
+	"v9-latest": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			162,
+			60,
+			169,
+			158,
+			176,
+			185
+		],
+		"fp": [
+			7,
+			2,
+			4,
+			4,
+			3,
+			4
+		],
+		"fn": [
+			37,
+			22,
+			48,
+			36,
+			32,
+			64
+		],
+		"precision": 0.974,
+		"recall": 0.792,
+		"f1-score": 0.874
 	}
 }
