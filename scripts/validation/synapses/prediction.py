@@ -5,7 +5,8 @@ parameter that the production entry point (`flamingo_tools.segmentation.synapse_
 marker_detection`, driven by the `flamingo_tools.run_detection` CLI) fixes is
 mirrored here:
 
-  * peak detection threshold 0.5, the value hard-coded in every whole-cochlea caller,
+  * peak detection at threshold 0.5 and `min_distance` 2, the values of every whole-cochlea
+    caller,
   * the production prediction block shape / halo,
   * `output_channels` taken from the model rather than assumed to be 1,
   * IHC matching at the production `max_distance`.
@@ -49,6 +50,10 @@ VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
 # Production values, kept in one place so a pipeline change is easy to mirror.
 PRODUCTION_THRESHOLD = 0.5  # detect_synapse_peaks_template.sbatch and the marker_detection default.
+# synapse_detection_from_prediction default. Two synapses closer than this merge into one peak,
+# which is most of the missed annotations; select another value with
+# flamingo_tools/synapse_detection/gridsearch.py on the validation crops, not on these.
+PRODUCTION_MIN_DISTANCE = 2
 PRODUCTION_MAX_DISTANCE = 3.0  # marker_detection() default; callers have also used 5, 8 and 20.
 
 # Predictions produced with the production settings live under their own root. The predictions
@@ -165,13 +170,21 @@ def _drop_padding_detections(detection_path: str, shape: Tuple[int, ...]) -> Non
         det[keep].to_csv(path, index=False, sep="\t")
 
 
-def pred_synapse_impl(input_path: str, output_folder: str, model_path: str):
+def pred_synapse_impl(
+    input_path: str,
+    output_folder: str,
+    model_path: str,
+    threshold: float = PRODUCTION_THRESHOLD,
+    min_distance: int = PRODUCTION_MIN_DISTANCE,
+):
     """Predict synapses for a single file using the production settings.
 
     Args:
         input_path: Path to the image data.
         output_folder: Folder for the prediction and the detections.
         model_path: Path to the synapse detection model.
+        threshold: Absolute heatmap threshold for the peak detection.
+        min_distance: Minimum distance in voxels between two detected peaks.
     """
     input_key = "raw"
     os.makedirs(output_folder, exist_ok=True)
@@ -195,14 +208,17 @@ def pred_synapse_impl(input_path: str, output_folder: str, model_path: str):
     synapse_detection_from_prediction(
         output_path, detection_path,
         prediction_key="prediction",
-        threshold=PRODUCTION_THRESHOLD,
+        threshold=threshold,
+        min_distance=min_distance,
         save_no_flow=True,
     )
     _drop_padding_detections(detection_path, shape)
 
 
-def predict_synapses(input_root: str, output_root: str, model_path: str):
+def predict_synapses(input_root: str, output_root: str, model_path: str, **detection_kwargs):
     """Predict synapses for multiple files in an input directory.
+
+    `detection_kwargs` are passed to `pred_synapse_impl`.
     """
     files = sorted(glob(os.path.join(input_root, "*.zarr")))
     for ff in files:
@@ -212,7 +228,7 @@ def predict_synapses(input_root: str, output_root: str, model_path: str):
             continue
         else:
             print("Predicting synapses in", ff)
-        pred_synapse_impl(ff, output_folder, model_path)
+        pred_synapse_impl(ff, output_folder, model_path, **detection_kwargs)
 
 
 def pred_ihc_impl(
@@ -349,6 +365,8 @@ def process_everything(
     output_root: str,
     synapse_model_path: str,
     ihc_model_path: str,
+    threshold: float = PRODUCTION_THRESHOLD,
+    min_distance: int = PRODUCTION_MIN_DISTANCE,
 ):
     """Process images for validation of synapse detection.
 
@@ -358,8 +376,12 @@ def process_everything(
         output_root: Output path where the predicted synapses, IHC segmentation and filtered synapses are saved.
         synapse_model_path: File path to synapse detection model.
         ihc_model_path: File path to IHC segmentation model.
+        threshold: Absolute heatmap threshold for the peak detection.
+        min_distance: Minimum distance in voxels between two detected peaks.
     """
-    predict_synapses(input_root, output_root, synapse_model_path)
+    predict_synapses(
+        input_root, output_root, synapse_model_path, threshold=threshold, min_distance=min_distance
+    )
     predict_ihcs(input_root, output_root, ihc_model_path)
     filter_synapses(input_root, output_root)
     filter_gt(input_root, gt_root, output_root)
@@ -395,6 +417,16 @@ def main():
         "--model_ihc", type=str, default=None,
         help="File path to model for IHC segmentation."
     )
+    parser.add_argument(
+        "--threshold", type=float, default=PRODUCTION_THRESHOLD,
+        help=f"Absolute heatmap threshold for the peak detection. Default: {PRODUCTION_THRESHOLD}."
+    )
+    parser.add_argument(
+        "--min_distance", type=int, default=PRODUCTION_MIN_DISTANCE,
+        help="Minimum distance in voxels between two detected peaks. Default: "
+             f"{PRODUCTION_MIN_DISTANCE}. Run a changed setting without --version into its own "
+             "output root, so that run_evaluation.py -p stores it under the folder name."
+    )
 
     args = parser.parse_args()
 
@@ -428,6 +460,8 @@ def main():
         output_root=output_root,
         synapse_model_path=synapse_model,
         ihc_model_path=ihc_model,
+        threshold=args.threshold,
+        min_distance=args.min_distance,
     )
 
 

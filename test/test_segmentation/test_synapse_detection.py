@@ -138,6 +138,33 @@ class TestFlowCorrection(unittest.TestCase):
             self.assertFalse(os.path.exists(no_flow_path))
 
 
+class TestMinDistance(unittest.TestCase):
+    def test_min_distance_separates_adjacent_peaks(self):
+        from flamingo_tools.segmentation.synapse_detection import synapse_detection_from_prediction
+
+        heatmap = np.zeros((16, 32, 32), dtype="float32")
+        # Two adjacent synapses two voxels apart, the case behind most of the missed annotations.
+        heatmap[8, 16, 14] = 2.0
+        heatmap[8, 16, 16] = 1.5
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prediction_path = os.path.join(tmp_dir, "predictions.zarr")
+            zarr.open(store=prediction_path, mode="w").create_array(
+                "prediction", data=heatmap, chunks=(16, 32, 32)
+            )
+
+            counts = {}
+            for min_distance in (1, 2):
+                detection_path = os.path.join(tmp_dir, f"detections_{min_distance}.tsv")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    detections = synapse_detection_from_prediction(
+                        prediction_path, detection_path, threshold=0.5, min_distance=min_distance,
+                    )
+                counts[min_distance] = len(detections)
+
+        self.assertEqual(counts, {1: 2, 2: 1})
+
+
 class TestDetectionBlockShape(unittest.TestCase):
     def test_block_shape(self):
         from flamingo_tools.segmentation.synapse_detection import (

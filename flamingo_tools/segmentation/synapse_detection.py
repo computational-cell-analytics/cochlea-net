@@ -238,6 +238,7 @@ def synapse_detection_from_prediction(
     threshold: float = 0.5,
     n_threads: Optional[int] = None,
     save_no_flow: bool = False,
+    min_distance: int = 2,
 ) -> pd.DataFrame:
     """Run synapse detection for prediction.
 
@@ -255,6 +256,8 @@ def synapse_detection_from_prediction(
             (before sub-voxel flow correction) to a sibling file next to
             *detection_path*, named `<name>_no-flow<ext>`. Written only when
             *detection_path* is (re)computed, not when it is loaded from cache.
+        min_distance: Minimum distance in voxels between two detected peaks. Two adjacent
+            synapses closer than this merge into one detection.
 
     Returns:
         The detections in MoBIE compatible format, with coordinates in micrometer.
@@ -267,7 +270,7 @@ def synapse_detection_from_prediction(
         # Use the spatial chunk shape (drop the leading channel dim for multi-channel predictions).
         det_block_shape = block_shape or _detection_block_shape(pred.chunks[-3:])
         coords, no_flow_coords = _flow_corrected_detections(
-            pred, min_distance=2, threshold_abs=threshold,
+            pred, min_distance=min_distance, threshold_abs=threshold,
             block_shape=det_block_shape, n_threads=n_threads,
         )
         detections = _to_mobie_format(coords, voxel_size)
