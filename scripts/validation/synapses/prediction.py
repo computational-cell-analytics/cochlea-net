@@ -12,7 +12,7 @@ mirrored here:
   * IHC matching at the production `max_distance`.
 
 The production block shape only tiles volumes much larger than one block, so the crops are
-zero-padded (see `_padded_input`). The normalization needs no mirroring: the network starts with
+zero-padded (see `pad_to_block_shape`). The normalization needs no mirroring: the network starts with
 an InstanceNorm on its input, so every block is standardized inside the network, and a global
 mean and standard deviation change the prediction by about 2e-5.
 """
@@ -25,13 +25,13 @@ from typing import Tuple
 
 import numpy as np
 import pandas as pd
-import zarr
 
 from elf.io import open_file
 from flamingo_tools.segmentation.unet_prediction import prediction_impl, run_unet_prediction
 from flamingo_tools.segmentation.synapse_detection import (
     synapse_detection_from_prediction,
     _get_model_out_channels,
+    pad_to_block_shape,
     _PREDICTION_BLOCK_SHAPE,
     _PREDICTION_HALO,
 )
@@ -124,41 +124,8 @@ PREDICTION_DICT = {
 }
 
 
-def _padded_input(input_path: str, input_key: str, output_folder: str) -> Tuple[str, Tuple[int, ...]]:
-    """Zero-pad a validation crop up to a multiple of the production block shape.
-
-    `prediction_impl` hands the U-Net blocks of `block_shape + 2 * halo`, whose shape has to be
-    divisible by the U-Net's downsampling factors. A whole cochlea satisfies this because it is
-    far larger than one block, but the validation crops are not, so the production block shape
-    fails on them without padding. The padded region predicts as background and any detection
-    landing in it is dropped afterwards.
-
-    Args:
-        input_path: Path to the crop in ZARR format.
-        input_key: Key of the image data inside the crop.
-        output_folder: Folder to write the padded copy into.
-
-    Returns:
-        The path to the padded copy and the shape of the original, unpadded data.
-    """
-    raw = np.asarray(zarr.open(store=input_path, mode="r")[input_key][:])
-    shape = raw.shape
-    target = tuple(int(np.ceil(s / b) * b) for s, b in zip(shape, _PREDICTION_BLOCK_SHAPE))
-    if target == shape:
-        return input_path, shape
-
-    padded_path = os.path.join(output_folder, "padded_input.zarr")
-    if not os.path.exists(padded_path):
-        padded = np.zeros(target, dtype=raw.dtype)
-        padded[: shape[0], : shape[1], : shape[2]] = raw
-        f = zarr.open(store=padded_path, mode="w")
-        f.create_array(input_key, data=padded, chunks=(64, 128, 128))
-    print(f"Padded {tuple(shape)} to {target} for the production block shape.")
-    return padded_path, shape
-
-
 def _drop_padding_detections(detection_path: str, shape: Tuple[int, ...]) -> None:
-    """Remove detections that fall inside the zero padding added by `_padded_input`."""
+    """Remove detections that fall inside the zero padding added by `pad_to_block_shape`."""
     limits = [s * vs for s, vs in zip(shape, VOXEL_SIZE)]
     for path in (detection_path, detection_path.replace(".tsv", "_no-flow.tsv")):
         if not os.path.isfile(path):
@@ -189,7 +156,7 @@ def pred_synapse_impl(
     input_key = "raw"
     os.makedirs(output_folder, exist_ok=True)
 
-    prediction_path, shape = _padded_input(input_path, input_key, output_folder)
+    prediction_path, shape = pad_to_block_shape(input_path, input_key, output_folder)
 
     prediction_impl(
         input_path=prediction_path, input_key=input_key, output_folder=output_folder,
