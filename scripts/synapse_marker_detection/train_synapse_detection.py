@@ -23,8 +23,12 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
     use_flow=False, sampler_name=None, n_iterations=int(1e5), mask_radius=None, save_root=SAVE_ROOT,
-    legacy_recipe=False, ignore_percentile=None,
+    legacy_recipe=False, ignore_percentile=None, sigma=1.0,
 ):
+    if use_flow and sigma != 1:
+        # The flow correction at inference assumes the target sigma (_HEATMAP_FLOW_SIGMA = 1 in
+        # flamingo_tools/segmentation/synapse_detection.py) and would shift every detection.
+        raise ValueError(f"The flow targets need sigma 1, got {sigma}.")
     if mask_radius is not None and mask_radius < 1:
         raise ValueError(f"The mask radius must be at least one voxel, got {mask_radius}.")
     masked = mask_radius is not None or ignore_percentile is not None
@@ -81,7 +85,7 @@ def train(
 
     transform_class = CsvHeatmapFlowTransform if use_flow else CsvHeatmapTransform
     out_channels = 5 if use_flow else 1
-    label_transform = transform_class(sigma=1, eps=1e-5, mask_radius=mask_radius, ignore_points=ignore_points)
+    label_transform = transform_class(sigma=sigma, eps=1e-5, mask_radius=mask_radius, ignore_points=ignore_points)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0, masked=masked)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
     # they trained on unnormalized input, and they redrew the validation patches on every epoch.
@@ -102,6 +106,7 @@ def train(
         "sampler": sampler_name,
         "mask_radius": mask_radius,
         "ignore_percentile": ignore_percentile,
+        "sigma": sigma,
         "legacy_recipe": legacy_recipe,
         "val_patch_seed": val_patch_seed,
     }
@@ -166,6 +171,11 @@ def main():
                              "The loss is restricted to these regions, so that unannotated CTBP2 "
                              "spots outside the IHCs do not count as background. Use 16. "
                              "Default: no mask, the loss covers the full patch.")
+    parser.add_argument("--sigma", type=float, default=1.0,
+                        help="Standard deviation in voxels of the Gaussian target around each "
+                             "annotation. A smaller value keeps adjacent synapses apart in the "
+                             "target. Default: 1, the value of every model so far. Only 1 works "
+                             "with --use_flow.")
     parser.add_argument("--ignore_percentile", type=float, default=None,
                         help="Exclude the unannotated CTBP2 spots from the loss: the local maxima "
                              "further than 4 voxels from every annotation and at least as bright as "
@@ -193,6 +203,7 @@ def main():
         save_root=args.save_root,
         legacy_recipe=args.legacy_recipe,
         ignore_percentile=args.ignore_percentile,
+        sigma=args.sigma,
     )
 
 
