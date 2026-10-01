@@ -46,6 +46,16 @@ def _model_from_checkpoint(ckpt):
     return model
 
 
+def _load_model(model_path, device=None):
+    """Load a torch_em checkpoint folder, a model file, or a trainer checkpoint file."""
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if os.path.isdir(model_path):
+            return load_model(model_path, device=device)
+        obj = torch.load(model_path, weights_only=False, map_location=device)
+    return _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
+
+
 class SelectChannel(SimpleTransformationWrapper):
     """Wrapper to select a chanel from an array-like dataset object.
 
@@ -162,13 +172,7 @@ def prediction_impl(
     else:
         num_prefetch_workers = int(num_prefetch_workers)
     batch_size = int(batch_size)
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if os.path.isdir(model_path):
-            model = load_model(model_path)
-        else:
-            obj = torch.load(model_path, weights_only=False)
-            model = _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
+    model = _load_model(model_path)
 
     input_ = read_image_data(input_path, input_key)
 
