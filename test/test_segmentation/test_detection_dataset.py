@@ -18,7 +18,7 @@ from flamingo_tools.synapse_detection.detection_dataset import (
     MinPointSampler,
     find_unannotated_candidates,
 )
-from flamingo_tools.synapse_detection.training import DetectionLoss, _samples_per_dataset
+from flamingo_tools.synapse_detection.training import DetectionLoss, _samples_per_dataset, get_3d_model
 
 try:
     import spotiflow  # noqa
@@ -571,6 +571,23 @@ class TestSamplesPerDataset(unittest.TestCase):
     def test_fewer_samples_than_datasets(self):
         # The trailing crops get no sample at all and drop out of the epoch.
         self.assertEqual(_samples_per_dataset(2, 4), [1, 1, 0, 0])
+
+
+class TestModelNormalization(unittest.TestCase):
+    def test_global_normalization_is_a_no_op(self):
+        """The U-Net standardizes its own input, so a global mean and std change nothing.
+
+        The training and the validation rely on this: neither mirrors the statistics of the
+        production run. If the first layer stops being an InstanceNorm, this test fails, and the
+        normalization has to match between training and inference again.
+        """
+        torch.manual_seed(0)
+        model = get_3d_model(in_channels=1, out_channels=1).eval()
+        raw = torch.rand(1, 1, 16, 64, 64) * 4000
+        with torch.no_grad():
+            unnormalized = model(raw)
+            standardized = model((raw - 167.0) / 303.0)
+        self.assertLess(float((unnormalized - standardized).abs().max()), 1e-3)
 
 
 if __name__ == "__main__":
