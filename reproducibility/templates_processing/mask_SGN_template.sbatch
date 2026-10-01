@@ -29,7 +29,7 @@ export DATA
 export INPUT_KEY
 export OUTPUT_FOLDER
 
-export SEG_CLASS="ihc"
+export SEG_CLASS="sgn"
 
 if ! [[ -f $OUTPUT_FOLDER ]] ; then
 	mkdir -p "$OUTPUT_FOLDER"
