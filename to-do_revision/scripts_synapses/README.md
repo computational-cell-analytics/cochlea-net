@@ -44,8 +44,8 @@ two effects nearly cancel and neither run separates them alone.
 ## The 2026-09 pair: v7 and v8
 
 `v7` and `v8` share their training data and both run the recipe introduced on 2026-09-21: the raw
-input standardized per crop, the validation patches fixed by `--random_state`, and `DetectionLoss`
-as loss and as metric. They were launched directly, so there are no sbatch wrappers for them:
+input standardized per crop (a no-op, because the network standardizes its own input), the
+validation patches fixed by `--random_state`, and `DetectionLoss` as loss and as metric. They were launched directly, so there are no sbatch wrappers for them:
 
 ```bash
 python $SCRIPT_DIR/train_synapse_detection.py -v v7 --random_state 42 -s $SAVE_ROOT --sampler minpoint
@@ -55,8 +55,8 @@ python $SCRIPT_DIR/train_synapse_detection.py -v v8 --random_state 42 --mask_rad
 `v8` is the masked run and `v7` its unmasked counterpart, but **the pair is not a single-variable
 ablation**. `MinPointSampler` accepts a patch when `n_points > min_points`, and the script sets
 `min_points` to 1 without a mask and 0 with one, so `v7` needed two annotations per training
-patch and `v8` only one. Neither is a single step from `v6-1` either, which ran with no sampler,
-no raw normalization and redrawn validation patches.
+patch and `v8` only one. Neither is a single step from `v6-1` either, which ran with no sampler
+and redrawn validation patches.
 
 Four checkpoints are registered for evaluation: `v7` and `v8` are the `best.pt` exports,
 `v7-latest` and `v8-latest` the `latest.pt` ones. The two `best.pt` were selected by different
@@ -74,10 +74,15 @@ python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $
     --sampler minpoint --ignore_percentile 10
 ```
 
-The 2026-09-24 scores of v7 and v8 are superseded: the validation normalization included the
-zero padding, and the patch sampling never reached the last `2 * halo + 1` voxels of a crop.
-`synapse_detect_ihc11_F1val.sbatch` scores them again. The diagnosis is in
+`synapse_detect_ihc11_F1val.sbatch` scored them again on 2026-09-25 and reproduced the
+2026-09-24 detections. The zero padding shifted the normalization statistics, but the network
+standardizes its own input, so the shift had no effect. The diagnosis is in
 [`../synapses.md`](../synapses.md), section "v7 against v8".
+
+**v9 gave no gain either** (F1 0.875 against 0.876 for v7). Recall is limited by adjacent
+synapses that merge into one peak, not by the supervision of unannotated spots, see
+"v9 and the recall limit". The v7 recipe stays the standard. The settings of every version are
+in the table "Settings of every model version" in the same file.
 
 ## What the seed experiment found
 

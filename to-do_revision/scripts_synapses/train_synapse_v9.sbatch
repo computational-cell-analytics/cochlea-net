@@ -21,8 +21,9 @@ echo "Current node: ${SLURM_NODELIST}"
 export SCRIPT_DIR=/user/schilling40/u15000/flamingo-tools/scripts/synapse_marker_detection
 SAVE_ROOT=/mnt/lustre-grete/usr/u15000/checkpoints
 
-# v7 with the candidate-exclusion mask. Data, split, validation patches and sampler are those of v7,
-# so the mask is the only difference. Check the printed candidate count per crop before the
+# v7 with the candidate-exclusion mask. Data, split and sampler are those of v7, so the mask is the
+# only intended difference. The validation patches are other draws, because the patch sampling
+# changed after v7 was trained. Check the printed candidate count per crop before the
 # training starts: the m78l_*_cr-ctbp2 crops are expected to have far more than the others.
 python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $SAVE_ROOT \
     --sampler minpoint --ignore_percentile 10
