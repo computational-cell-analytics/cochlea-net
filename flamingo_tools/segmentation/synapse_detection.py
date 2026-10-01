@@ -8,7 +8,6 @@ tasks is only possible by calling the stage functions directly.
 The standard case predicts on the dilated IHC segmentation. The prediction falls back to the
 full volume when no segmentation is given.
 """
-import json
 import os
 import warnings
 from concurrent import futures
@@ -24,7 +23,7 @@ from elf.parallel.local_maxima import find_local_maxima
 from elf.parallel.distance_transform import map_points_to_objects
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.segmentation.unet_prediction import (
-    _available_cpus, calc_mean_and_std, prediction_impl, SelectChannel,
+    _available_cpus, _load_mean_std, prediction_impl, SelectChannel,
 )
 import flamingo_tools.s3_utils as s3_utils
 
@@ -364,19 +363,6 @@ def _check_mask_dilation(image_shape, mask_shape, dilation_iterations, voxel_siz
         )
 
 
-def _load_mean_std(output_folder: str) -> Tuple[float, float]:
-    """Read the normalization values written by the pre-processing step."""
-    mean_std_file = os.path.join(output_folder, "mean_std.json")
-    if not os.path.isfile(mean_std_file):
-        raise ValueError(
-            f"{mean_std_file} does not exist. Run 'run_synapse_prediction_preprocess_slurm' first, "
-            "so that all array tasks normalize the input identically."
-        )
-    with open(mean_std_file) as f:
-        values = json.load(f)
-    return float(values["mean"]), float(values["std"])
-
-
 def _predict_synapses(
     input_path, input_key, output_folder, model_path, block_shape, halo,
     prediction_instances=1, slurm_task_id=0, mean=None, std=None,
@@ -405,8 +391,8 @@ def _predict_synapses(
 # ---The three stages of synapse detection---
 #
 # Each stage can run as a separate slurm job. The state passes through the output folder:
-# 'mask.zarr' and 'mean_std.json' from the pre-processing, 'predictions.zarr' from the
-# prediction array, and the detection tables from the last stage.
+# 'mask.zarr' from the pre-processing, 'predictions.zarr' from the prediction array, and the
+# detection tables from the last stage.
 #
 
 
@@ -429,8 +415,6 @@ def run_synapse_prediction_preprocess_slurm(
 
     This is the first of three steps. It runs as a single CPU job before the prediction array.
     The mask derived from the IHC segmentation is stored in 'mask.zarr' in the output folder.
-    The mean and standard deviation are stored in 'mean_std.json'. Every array task must use
-    the same values, and recomputing them per task would read the full volume once per task.
 
     The standard case is to pass an IHC segmentation as `mask_path`. The prediction then runs
     only on the blocks around the IHCs, which is a small fraction of the volume. Without a
@@ -482,9 +466,6 @@ def run_synapse_prediction_preprocess_slurm(
             read_image_data(input_path, input_key).shape, mask_shape, int(dilation_iterations),
             _normalize_voxel_size(voxel_size), float(max_distance),
         )
-
-    if not os.path.isfile(os.path.join(output_folder, "mean_std.json")):
-        calc_mean_and_std(input_path, input_key, output_folder)
 
 
 def run_synapse_prediction_slurm(
@@ -540,7 +521,6 @@ def run_synapse_prediction_slurm(
         service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
     )
 
-    # Get the pre-computed mean and standard deviation of the full volume from the JSON file.
     mean, std = _load_mean_std(output_folder)
 
     # No skip check on the existing prediction here: the dataset is created by whichever task
@@ -688,8 +668,8 @@ def marker_detection(
     predicted = not (os.path.exists(output_path) and "prediction" in zarr.open(output_path, mode="r"))
 
     if predicted:
-        # 1.) Build the mask from the IHC segmentation and compute the normalization values.
-        # Both only feed the inference, so they are skipped with it.
+        # 1.) Build the mask from the IHC segmentation. It only feeds the inference, so it is
+        # skipped with it.
         run_synapse_prediction_preprocess_slurm(
             input_path, output_folder, input_key=input_key,
             mask_path=mask_path, mask_input_key=mask_input_key,

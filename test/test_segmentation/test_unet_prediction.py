@@ -255,13 +255,11 @@ class TestPredictionInstances(unittest.TestCase):
     def _predict(self, data_path, data_key, model_path, output_folder, prediction_instances):
         from flamingo_tools.segmentation.unet_prediction import prediction_impl
 
-        # A fixed mean and std, so that the tasks cannot disagree on the normalization.
         for task_id in range(prediction_instances):
             prediction_impl(
                 data_path, data_key, output_folder, model_path, scale=None,
                 block_shape=self.block_shape, halo=self.halo,
                 prediction_instances=prediction_instances, slurm_task_id=task_id,
-                mean=127.0, std=73.0,
             )
         with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
             return f["prediction"][:]

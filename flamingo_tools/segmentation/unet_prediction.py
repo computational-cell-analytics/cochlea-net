@@ -171,7 +171,6 @@ def prediction_impl(
             model = _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
 
     input_ = read_image_data(input_path, input_key)
-    chunks = getattr(input_, "chunks", (64, 64, 64))
 
     if output_folder is None:
         image_mask = mask
@@ -199,26 +198,23 @@ def prediction_impl(
         input_ = ResizedVolume(input_, shape=new_shape, order=3)
         image_mask = ResizedVolume(image_mask, new_shape, order=0)
 
+    # The first layer of the U-Nets is an InstanceNorm3d, which standardizes every block by its
+    # own statistics. A global mean and std cancel out, so the default passes the raw values.
+    # A given mean and std are a legacy option, to reproduce older predictions bit for bit.
     if mean is None or std is None:
-        # Compute the global mean and standard deviation.
-        n_threads = min(16, mp.cpu_count())
-        mean, std = parallel.mean_and_std(
-            input_, block_shape=tuple([2 * i for i in chunks]), n_threads=n_threads, verbose=True,
-            mask=image_mask
-        )
-    # Coerce to Python floats: a numpy scalar would make the normalization below run in
-    # float64 and round differently than the values read back from 'mean_std.json'. The
-    # single-job and the slurm-array workflow must produce the same prediction.
-    mean, std = float(mean), float(std)
-    print("Mean and standard deviation computed for the full volume:")
-    print(mean, std)
+        def preprocess(raw):
+            return raw.astype("float32")
+    else:
+        # Coerce to Python floats: a numpy scalar would make the normalization below run in
+        # float64 and round differently than the values read back from 'mean_std.json'.
+        mean, std = float(mean), float(std)
+        print(f"Normalize with the mean {mean} and the standard deviation {std}.")
 
-    # Preprocess with fixed mean and standard deviation.
-    def preprocess(raw):
-        raw = raw.astype("float32")
-        raw -= mean
-        raw /= std
-        return raw
+        def preprocess(raw):
+            raw = raw.astype("float32")
+            raw -= mean
+            raw /= std
+            return raw
 
     if apply_postprocessing:
         # Smooth the distance prediction channel.
@@ -635,7 +631,11 @@ def distance_watershed_implementation(
 def calc_mean_and_std(input_path: str, input_key: str, output_folder: str) -> None:
     """Calculate mean and standard deviation of the input volume.
 
-    The parameters are saved in 'mean_std.json' in the output folder.
+    The parameters are saved in 'mean_std.json' in the output folder. This is a legacy option:
+    the prediction no longer needs them, because the U-Nets standardize every block in their
+    first layer. The prediction stages use an existing 'mean_std.json', which reproduces an
+    older prediction bit for bit. Call this after the mask is created, because the statistics
+    are computed inside 'mask.zarr'.
 
     Args:
         input_path: The file path to the image data.
@@ -664,6 +664,19 @@ def calc_mean_and_std(input_path: str, input_key: str, output_folder: str) -> No
     ddict = {"mean": float(mean), "std": float(std)}
     with open(json_file, "w") as f:
         json.dump(ddict, f)
+
+
+def _load_mean_std(output_folder: str) -> Tuple[Optional[float], Optional[float]]:
+    """Read the legacy normalization values, see `calc_mean_and_std`.
+
+    Without 'mean_std.json' the prediction uses the raw values.
+    """
+    mean_std_file = os.path.join(output_folder, "mean_std.json")
+    if not os.path.isfile(mean_std_file):
+        return None, None
+    with open(mean_std_file) as f:
+        values = json.load(f)
+    return float(values["mean"]), float(values["std"])
 
 
 def run_unet_prediction(
@@ -762,8 +775,6 @@ def run_unet_prediction_preprocess_slurm(
 ) -> None:
     """Pre-processing for the parallel prediction with U-Net models.
     Masks are stored in mask.zarr in the output folder.
-    The mean and standard deviation are precomputed for later usage during prediction
-    and stored in a JSON file within the output folder as mean_std.json.
 
     Args:
         input_path: The path to the input data.
@@ -789,9 +800,6 @@ def run_unet_prediction_preprocess_slurm(
 
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
         find_mask(input_path, input_key, output_folder, seg_class=seg_class, absolute_threshold=absolute_threshold)
-
-    if not os.path.isfile(os.path.join(output_folder, "mean_std.json")):
-        calc_mean_and_std(input_path, input_key, output_folder)
 
 
 def run_unet_prediction_slurm(
@@ -849,15 +857,7 @@ def run_unet_prediction_slurm(
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
         find_mask(input_path, input_key, output_folder)
 
-    # get pre-computed mean and standard deviation of full volume from JSON file
-    if os.path.isfile(os.path.join(output_folder, "mean_std.json")):
-        with open(os.path.join(output_folder, "mean_std.json")) as f:
-            d = json.load(f)
-            mean = float(d["mean"])
-            std = float(d["std"])
-    else:
-        mean = None
-        std = None
+    mean, std = _load_mean_std(output_folder)
 
     prediction_impl(
         input_path, input_key, output_folder, model_path, scale, block_shape, halo,

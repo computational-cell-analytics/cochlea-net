@@ -226,7 +226,7 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
 
             array_folder = os.path.join(tmp_dir, "array")
             run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
-            self.assertTrue(os.path.isfile(os.path.join(array_folder, "mean_std.json")))
+            self.assertFalse(os.path.exists(os.path.join(array_folder, "mean_std.json")))
 
             for task_id in range(self.prediction_instances):
                 os.environ["SLURM_ARRAY_TASK_ID"] = str(task_id)
@@ -243,7 +243,7 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
 
             self.assertEqual(expected.shape, (5,) + self.shape)
             self.assertGreater(np.abs(actual).sum(), 0)
-            # Bit-identical: the tasks share the cached mean/std and cover disjoint blocks.
+            # Bit-identical: the tasks cover disjoint blocks.
             self.assertTrue(np.array_equal(expected, actual))
 
     def test_requires_array_task_id(self):
@@ -257,18 +257,32 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
                     prediction_instances=self.prediction_instances,
                 )
 
-    def test_requires_preprocessing(self):
-        """Without mean_std.json the tasks would normalize differently, so this must fail loudly."""
+    def test_legacy_mean_std_is_used_and_has_no_effect(self):
+        """A 'mean_std.json' of an older run is applied, and the first InstanceNorm cancels it."""
+        import json
+        from elf.io import open_file
         from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             data_path, data_key, model_path = self._create_input(tmp_dir)
+            legacy_folder = os.path.join(tmp_dir, "legacy")
+            os.makedirs(legacy_folder)
+            with open(os.path.join(legacy_folder, "mean_std.json"), "w") as f:
+                json.dump({"mean": 127.0, "std": 73.0}, f)
+
+            predictions = []
             os.environ["SLURM_ARRAY_TASK_ID"] = "0"
-            with self.assertRaises(ValueError):
+            for folder in (os.path.join(tmp_dir, "default"), legacy_folder):
                 run_synapse_prediction_slurm(
-                    data_path, os.path.join(tmp_dir, "out"), model_path, input_key=data_key,
-                    prediction_instances=self.prediction_instances,
+                    data_path, folder, model_path, input_key=data_key,
+                    block_shape=(16, 16, 16), halo=(4, 4, 4),
                 )
+                with open_file(os.path.join(folder, "predictions.zarr"), "r") as f:
+                    predictions.append(f["prediction"][:])
+
+            default, legacy = predictions
+            self.assertFalse(np.array_equal(default, legacy))
+            np.testing.assert_allclose(legacy, default, atol=1e-4 * np.abs(default).max())
 
     def test_rejects_task_id_beyond_instances(self):
         from flamingo_tools.segmentation.synapse_detection import run_synapse_prediction_slurm
@@ -469,7 +483,7 @@ class TestMaskFallback(unittest.TestCase):
                 run_synapse_prediction_preprocess_slurm(data_path, output_folder, input_key="data")
 
             self.assertFalse(os.path.exists(os.path.join(output_folder, "mask.zarr")))
-            self.assertTrue(os.path.isfile(os.path.join(output_folder, "mean_std.json")))
+            self.assertFalse(os.path.exists(os.path.join(output_folder, "mean_std.json")))
 
     def test_dilation_iterations_match_the_cube(self):
         """Four iterations of a 3x3x3 structure are the previous single 9x9x9 pass."""
