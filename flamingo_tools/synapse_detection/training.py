@@ -102,9 +102,8 @@ def _samples_per_dataset(n_samples, n_datasets):
 def _crop_standardization(raw_path, raw_key):
     """Standardize with the statistics of the full crop.
 
-    `elf.parallel.mean_and_std` is the function that computes the statistics at inference, in
-    `unet_prediction.calc_mean_and_std` and in `prediction_impl`. There they are taken inside the
-    IHC mask, here over the complete crop.
+    The U-Net starts with an InstanceNorm on its input, so this changes the output by about 2e-5
+    only (`TestModelNormalization`). It stays because it is part of the recorded v7 to v9 recipe.
     """
     raw = zarr.open(raw_path, mode="r")[raw_key]
     mean, std = parallel.mean_and_std(raw, n_threads=min(16, mp.cpu_count()))
@@ -185,7 +184,8 @@ def supervised_training(
         num_workers: The number of data loader workers.
         metric: The validation metric, which selects 'best.pt'. By default the loss is reused.
         normalize_raw: Whether to standardize each crop with its own mean and standard deviation.
-            Switch it off only to reproduce the training of v3 and v5, which never normalized.
+            Switch it off only to reproduce the training of v3 and v5. Neither setting changes the
+            output of this network, see `_crop_standardization`.
         val_patch_seed: Seed that fixes the validation patches, so that every epoch is scored on
             the same data. Without it the validation set is redrawn at random on every epoch and
             the metric that selects 'best.pt' carries that noise.

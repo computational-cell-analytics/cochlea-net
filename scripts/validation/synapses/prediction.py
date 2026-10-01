@@ -94,16 +94,16 @@ PREDICTION_DICT = {
     "v3-flow-1-best": _entry("synapse_detection_model_v3-flow-1-best.pt", "v3-flow-1-best"),
     "v3-flow-1-latest": _entry("synapse_detection_model_v3-flow-1-latest.pt", "v3-flow-1-latest"),
     # v7 and v8 share their training data and both use the recipe introduced on 2026-09-21: the
-    # raw input is standardized per crop, the validation patches are fixed by --random_state, and
-    # DetectionLoss is used as loss and as metric. Their training losses are therefore on a
-    # different scale from the v3, v5 and v6-1 runs.
+    # raw input is standardized per crop (a no-op for this network), the validation patches are
+    # fixed by --random_state, and DetectionLoss is used as loss and as metric. The masked loss of
+    # v8 is on a different scale from the v3, v5 and v6-1 runs.
     #
     # v7 is heatmap-only with no loss mask; v8 adds --mask_radius 16, which restricts the loss to
     # cubes of 33 voxels around each annotation. v7 is the closest unmasked baseline for v8, but
     # the pair is not a single-variable ablation: MinPointSampler accepts a patch when
     # n_points > min_points, and min_points is 1 without a mask and 0 with one, so v7 needed two
     # annotations per training patch and v8 only one. Neither is a single step from v6-1 either,
-    # which ran with no sampler, no raw normalization and redrawn validation patches.
+    # which ran with no sampler and redrawn validation patches.
     #
     # The plain keys are the best.pt exports and '-latest' the latest.pt exports. Both are
     # registered because the two best checkpoints were selected by different metrics, the masked
@@ -113,7 +113,8 @@ PREDICTION_DICT = {
     "v8": _entry("synapse_detection_v8.pt", "v8"),
     "v8-latest": _entry("synapse_detection_v8-latest.pt", "v8-latest"),
     # The v7 recipe with the candidate-exclusion mask (--ignore_percentile 10) instead of the cube
-    # mask of v8, and v7's sampler, so v9 against v7 is a single-variable ablation.
+    # mask of v8, and v7's sampler. The mask is the only intended difference to v7; v9 was trained
+    # after the patch sampling fix, so its fixed validation patches are other draws.
     "v9": _entry("synapse_detection_v9.pt", "v9"),
     "v9-latest": _entry("synapse_detection_v9-latest.pt", "v9-latest"),
     # The released baselines scored against the IHC v11 segmentation, for the comparison with v7

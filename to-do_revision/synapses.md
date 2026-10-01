@@ -95,6 +95,13 @@ as v3-1 and v3-2. This is a plausible mechanism, not yet a causal checkpoint-lev
 
 #### Critical independent bug: raw input is not normalized
 
+**Correction (2026-10-01): this is not a bug for this network.** The U-Net starts with an
+InstanceNorm on its raw input (`ConvBlock3d` is norm, convolution, ReLU), so every training patch
+and every prediction block is standardized inside the network. A global mean and standard
+deviation change the output by about 2e-5, and the mix of `uint8` and `uint16` crops does not
+matter. `TestModelNormalization` in `test/test_segmentation/test_detection_dataset.py` pins this.
+The text below is the original 2026-08-27 diagnosis.
+
 **The current v3-style training path does not normalize the raw input and must be fixed before
 the next training run.** `supervised_training` sets `raw_transform=None`. The local
 `DetectionDataset` stores this value unchanged and only applies a transform when it is not
@@ -119,8 +126,8 @@ consequential, but random validation sampling is an independent problem.
 Before interpreting another seed comparison, the training setup should:
 
 1. add an explicit and identical training/inference raw normalization; **done in training on
-   2026-09-21. The validation inference included the zero padding until 2026-09-25, see
-   "v7 against v8" below. Production still uses different statistics.**
+   2026-09-21, but not needed: the network standardizes its own input, see the correction
+   above. Training, validation and production need no common statistics.**
 2. use a fixed validation patch set and a detection-level validation metric; **the fixed patch
    set is done. The detection-level metric is still open.**
 3. mark regions outside the exhaustively annotated/IHC-valid region as *ignore*, rather than as
@@ -167,8 +174,8 @@ sampled patches contain an annotation, and a patch without one contributes no gr
 once the loss is masked.
 
 **Raw normalization.** Each crop is standardized with the mean and standard deviation of its
-full `raw` array, which is what `prediction_impl` does for a volume. One difference remains: at
-inference the statistics are computed inside the IHC mask, during training over the whole crop.
+full `raw` array. This has no effect on the network output, see the correction above. It stays
+because it is part of the recorded v7, v8 and v9 recipe.
 
 **Retraining v3 or v5.** Pass `--legacy_recipe`. It restores the three deltas that otherwise make
 the old recipes unreachable: the raw input stays unnormalized, the validation metric goes back to
@@ -177,8 +184,8 @@ v5, and the validation patches are redrawn on every epoch. It cannot be combined
 `--mask_radius`, because that metric cannot read a masked target. The archived scripts in
 `scripts_synapses/` pass the flag.
 
-**Comparing the next runs.** The logged loss and metric change scale twice, through the masked
-mean and through the normalization. They are not comparable to the v3, v5 or v6-1 numbers. Score
+**Comparing the next runs.** The logged loss and metric change scale through the masked mean.
+They are not comparable to the v3, v5 or v6-1 numbers. Score
 models with `scripts/validation/synapses/run_evaluation.py`, and train a fresh unmasked baseline
 with the same code rather than comparing against the shipped models.
 
@@ -288,8 +295,8 @@ IHC v4 entries. A first rescore overwrote `v3`, which mixed the two eras in Figu
 then, `run_evaluation.py` refuses to replace an existing entry without `--overwrite`. `v6-1` is
 still open: it has no entry in `synapses.json` yet.
 
-`v7` and `v8` are also not a single step from `v6-1`: it ran with no sampler, no raw
-normalization and redrawn validation patches. And the pair is not a clean ablation of the mask
+`v7` and `v8` are also not a single step from `v6-1`: it ran with no sampler and redrawn
+validation patches. Its missing raw normalization makes no difference. And the pair is not a clean ablation of the mask
 alone, see `to-do_revision/scripts_synapses/README.md`.
 
 ### v7 against v8, and the candidate-exclusion mask (2026-09-25)
@@ -329,14 +336,13 @@ positives against 918 for v7, but it produces 562 false positives against 28.
    The fixed validation patches do not help here: a masked recipe needs a detection-level
    metric, or a mask that covers almost all of the patch.
 
-**Fixed: the validation normalization.** `prediction.py` pads every crop with zeros to a
-multiple of the production block shape, and `prediction_impl` took the mean and standard
-deviation over the padded volume. The median tissue voxel became +1.0 to +2.1 standard deviations, against
-−0.2 to +1.1 with the statistics of the unpadded crop that training uses, and the standard
-deviation was 1.2–2.1× too small. This affected every version, not only v8. `prediction.py`
-now computes the statistics on the unpadded crop. All 2026-09-24 entries must be predicted
-again. Production still differs from training: it takes the statistics inside the IHC mask of
-the cochlea, while training takes them over the whole crop, zero regions included.
+**Withdrawn on 2026-10-01: the validation normalization.** `prediction.py` pads every crop with
+zeros to a multiple of the production block shape, and `prediction_impl` takes the mean and
+standard deviation over the padded volume. That shifts the statistics, but the network
+standardizes every block itself, so the shift has no effect. The 2026-09-25 rescoring with the
+statistics of the unpadded crop reproduced the 2026-09-24 detections: v7 identical, v8 within
+one detection per crop. The fix is reverted, and `prediction.py` no longer takes `--mean` and
+`--std`.
 
 **Fixed: the patch sampling.** `DetectionDataset._sample_bounding_box` drew the patch start
 from `[0, shape - patch_shape - 2 * halo)`, although the halo is clamped when the patch is
@@ -350,8 +356,9 @@ least as bright as the `P`th percentile of the maxima at the annotations
 (`find_unannotated_candidates`). The cube around an annotation always stays supervised. On the
 six test crops, `P = 10` gives 11 to 55 candidates per crop, which ignore at most 0.3 % of the
 tissue. The `m78l_*_cr-ctbp2` training crops are expected to give far more, so check the counts
-that the training prints. v9 keeps the data, the split, the validation patches and the sampler
-of v7, so the mask is the only difference:
+that the training prints. v9 keeps the data, the split and the sampler of v7. It was trained after
+the patch sampling fix, so its fixed validation patches are other random draws than those of v7,
+and its patches reach one more voxel per axis. The mask is the only intended difference:
 
 ```bash
 python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $SAVE_ROOT \
@@ -365,3 +372,131 @@ of v7 and gains recall.
 
 The ignore mask cannot suppress an unannotated spot close to the IHC either (point 2). If v9
 shows the same false-positive class, the IHC filter distance is the next place to look.
+
+### v9 and the recall limit (2026-10-01)
+
+| Entry | Precision | Recall | F1 | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|---:|
+| `v3-ihc11` | 0.961 | 0.794 | 0.869 | 912 | 37 | 237 |
+| `v5-ihc11` | 0.962 | 0.821 | 0.886 | 943 | 37 | 206 |
+| `v7` | 0.970 | 0.799 | 0.876 | 918 | 28 | 231 |
+| `v7-latest` | 0.972 | 0.815 | 0.886 | 936 | 27 | 213 |
+| `v9` | 0.974 | 0.794 | 0.875 | 912 | 24 | 237 |
+| `v9-latest` | 0.974 | 0.792 | 0.874 | 910 | 24 | 239 |
+
+**v9 gives no gain.** All six entries lie within the seed spread of one recipe: the v3 seeds
+range from F1 0.782 to 0.872, with an SD of 0.016 to 0.031. So no entry is significantly better
+than another.
+
+**Neither error type depends on the IHC context.** The precision is at the annotation ceiling:
+most v7 false positives are points that one annotator marked, see "v7 against v8". The recall
+is limited by adjacent synapses that the detector merges into one peak. For the 193 false
+negatives of `v7-latest`, matched against the IHC-filtered consensus points:
+
+- 94 % have a detection within 3 um, which the matching assigned to a neighbouring annotation;
+- the nearest other consensus point is closer than 1.5 um for 115, at 1.5 to 2 um for 54, at
+  2 to 3 um for 18, and further for 6;
+- 179 have a heatmap value of at least 0.5 within 4 voxels, so the network responds, but with
+  one peak for two synapses;
+- the IHC filter removes none of them. 26 of the 1,149 consensus points (2.3 %) lie further
+  than 3 um from the IHC segmentation and cannot be found.
+
+Adjacent synapses are common: 42 % of the consensus points have a neighbour within 2 um. Of
+the 126 pairs closer than 1.5 um, both points are found for 11, one for 101 and none for 14. A
+consensus point needs two annotators within 2 um (`consensus_annotations.py`), so the pairs are
+real. An IHC channel as a second input, or an IHC-derived loss weight, cannot separate them.
+
+**Recommendation: keep the v7 recipe as the standard.** That is heatmap only, the
+`MinPointSampler` and the fixed validation patches, without a loss mask. `v7-latest` has the
+best F1 of the new runs, equal to `v5-ihc11`, without the flow channels. The loss of v7 is the
+heatmap mean squared error of v3, and its raw normalization is a no-op. So against `v6-1`, v7
+changes the sampler and the validation patches. That v7 reaches the recall of v5 suggests that
+the gain of v5 over `v6-1` came from the sampler and not from the flow. Two checks are open:
+`v6-1` has no IHC v11 score, and that the `v7` data folder equals the v5/v6 data is not shown.
+
+**A free gain: `min_distance` 1 instead of 2.** The peak detection suppresses every peak within
+`min_distance` voxels of a higher one. Detected again with the production code on the existing
+heatmaps, against the IHC-filtered consensus points:
+
+| Entry | `min_distance` 2 (P / R / F1) | `min_distance` 1 (P / R / F1) |
+|---|---|---|
+| `v7-latest` | 0.966 / 0.809 / 0.881 | 0.961 / 0.836 / 0.894 |
+| `v7` | 0.965 / 0.795 / 0.872 | 0.961 / 0.818 / 0.884 |
+
+These values come from the test crops, so they must not select the setting. Select the
+threshold and `min_distance` on the validation crops of the training run, then score the result
+once on the test crops under a key of its own:
+
+```bash
+ROOT=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet
+MODEL=$ROOT/trained_models/Synapses/synapse_detection_v7-latest.pt
+python -m flamingo_tools.synapse_detection.gridsearch -m $MODEL \
+    -s $ROOT/training_data/synapses/training_data/v7/train_val_split.json
+# With the selected values, here min_distance 1 and threshold 0.5:
+OUT=$ROOT/predictions/val_synapses/production_2026-10-01/v7-latest_md1
+python scripts/validation/synapses/prediction.py -o $OUT --min_distance 1 --threshold 0.5 \
+    -i $ROOT/training_data/synapses/test_data/v5/images -g $ROOT/training_data/synapses/test_data/v5/labels \
+    --model_synapse $MODEL --model_ihc $ROOT/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20
+python scripts/validation/synapses/run_evaluation.py -p $OUT -o reproducibility/model_accuracy/ \
+    -c $ROOT/training_data/synapses/test_data/v5/images \
+    -r $ROOT/AnnotatedImageCrops/Synapses_2026-04/consensus_annotation
+```
+
+`run_evaluation.py` without `--version` stores the result under the folder name,
+`v7-latest_md1`. The whole-cochlea entry points still detect with `min_distance` 2. Pass the
+option on to them once the validation selects another value.
+
+**Idea for v10: a narrower target.** For two annotations 3 voxels (1.1 um) apart, the sigma-1
+target falls only to 73 % of the peak between them, and the trained heatmap merges such pairs.
+With sigma 0.7 it falls to 38 %. `--sigma` exists, but v10 is not trained:
+
+```bash
+python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v10 --random_state 42 -s $SAVE_ROOT \
+    --sampler minpoint --sigma 0.7
+```
+
+A narrower target has fewer positive voxels, which can lower the recall instead. Score v10 at
+the `min_distance` that its own validation selects.
+
+### Settings of every model version
+
+Common to every run: patch shape 40 × 112 × 112, batch size 32, learning rate 1e-4, 3,200
+training and 160 validation samples per epoch, no augmentation, a Gaussian target of sigma 1
+voxel and peak 4, and three validation crops. The `synapses.json` entries of the production
+pipeline use threshold 0.5, `min_distance` 2, the IHC filter at 3 um and matching at 3 um on the
+six consensus test crops.
+
+| Version | Data | Output | Loss / validation metric | Sampler | Loss mask | Validation patches | Iterations | Export | Evaluation |
+|---|---|---|---|---|---|---|---|---|---|
+| v3 | `v3`, 15 crops | heatmap | MSE / MSE | none (passed, but dropped by the old upstream) | none | redrawn | 1e5 | not recorded | `v3`: production, IHC v4 (legacy pipeline: threshold 1.3); `v3-ihc11`: IHC v11 |
+| v3_05t | v3 checkpoint | | | | | | | | old per-version pipeline at threshold 0.5 |
+| v3-1 … v3-4 | `v3` | heatmap | MSE / MSE | none | none | redrawn | 1e5 | `best.pt` (epochs 750, 380, 848, 134) | production, IHC v4 |
+| v3-3-best | v3-3 | | | | | | | `best.pt`, epoch 848 | production, IHC v4 |
+| v3-5, v3-6, v3-7 | `v3` | heatmap | MSE / MSE | none | none | redrawn | 1e4 | v3-5: epoch 71 (`v3-5-epoch71`); v3-6: best, epoch 99; v3-7: best, epoch 43 | production, IHC v4; v3-7 not scored |
+| v3-flow-1 | `v3` | heatmap + flow | MSE + 0.1 flow / MSE over 5 channels | `MinPointSampler(1)` | none | redrawn | 1e5 | best and latest | not scored |
+| v4 | `v4`, 20 crops | heatmap + flow | upstream, not recorded in detail | `MinPointSampler(1)`, probably applied | none | redrawn | 1e5 | not recorded | legacy pipeline, IHC v4, never rescored |
+| v5 | `v5`, 29 crops | heatmap + flow | MSE + 0.1 flow / MSE over 5 channels | `MinPointSampler(1)`; last 21 voxels per axis not trained | none | redrawn | 1e5 | `best.pt` | `v5`: legacy pipeline at 0.5, IHC v4; `v5-ihc11`: production, IHC v11 |
+| v5_05t | v5 checkpoint | | | | | | | | old per-version pipeline at threshold 0.5 |
+| v5-f0 … v5-f4 | `v5`, split not recorded | heatmap + flow | as v5 | as v5 | none | redrawn | 1e5 | not recorded | `run_detection` at 0.5, IHC v4; v5-f0 has the counts of v5 |
+| v6-1 | `v6` = v5 data | heatmap | MSE / MSE | none | none | redrawn | 1e5 | not recorded | not scored |
+| v7 | `v7` | heatmap | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10 | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v10 (idea) | `v7` | heatmap | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 1e5 | | target sigma 0.7 |
+
+`MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
+probability 0.2. v7 to v9 standardize the raw input, which is a no-op for this network; whether
+the earlier runs did is irrelevant for the same reason. Gaps and conflicts in the record:
+
+- The v3 split is 13/2 in the original 2025-06-15 script and 12/3 in the later notes.
+- The v4 training date and its export are not recorded, and v4 was never rescored with the
+  production settings.
+- `v5_05t` (F1 0.888) and `v5` (0.871) are both at threshold 0.5. The cause of the difference is
+  not recorded.
+- The plain `v3-3` export (0.851) is not documented. `v3-3-best` is the epoch 848 `best.pt`.
+- The command that retrained v5-f1 to v5-f4 with a fixed `--random_state` is not recorded.
+- The thresholds behind `v5_f1val_threshold` and `v5_train_threshold` in
+  `plot_supp_fig2.py` are not recorded.
+- That the `v7` and `v8` data folders equal the v5/v6 data is stated, but not shown.
+- `v6-1` has no score.
+
