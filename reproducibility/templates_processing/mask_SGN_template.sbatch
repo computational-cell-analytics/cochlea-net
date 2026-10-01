@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mean-std-SGN
+#SBATCH --job-name=mask-SGN
 #SBATCH -t 01:00:00             # usually takes ~20 min
 
 #SBATCH -p standard96s:shared         # the partition

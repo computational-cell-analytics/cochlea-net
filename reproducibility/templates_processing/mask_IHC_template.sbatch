@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mean-std-IHC
+#SBATCH --job-name=mask-IHC
 #SBATCH -t 01:00:00             # usually takes ~20 min
 
 #SBATCH -p standard96s:shared         # the partition

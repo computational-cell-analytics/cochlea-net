@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mean-std-synapse
+#SBATCH --job-name=mask-synapse
 #SBATCH -t 01:00:00
 
 #SBATCH -p standard96s:shared         # the partition

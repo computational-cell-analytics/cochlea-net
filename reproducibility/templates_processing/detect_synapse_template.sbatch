@@ -12,7 +12,7 @@
 #SBATCH --constraint=inet		# for downloading models
 
 # Runs the whole synapse detection as a single job. To split the prediction over a slurm array
-# instead, use mean_std_synapse_template.sbatch, apply_synapse_template.sbatch and
+# instead, use mask_synapse_template.sbatch, apply_synapse_template.sbatch and
 # detect_synapse_peaks_template.sbatch.
 
 source ~/.bashrc
