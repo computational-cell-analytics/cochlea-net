@@ -1,6 +1,6 @@
 #!/bin/bash
-#SBATCH --job-name=mean-std-synapse
-#SBATCH -t 01:00:00
+#SBATCH --job-name=mask-IHC
+#SBATCH -t 01:00:00             # usually takes ~20 min
 
 #SBATCH -p standard96s:shared         # the partition
 #SBATCH -A nim00007
@@ -20,23 +20,18 @@ cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
 
 export SCRIPT_DIR=$SCRIPT_REPO/scripts
 
-# CTBP2 channel, e.g. CTBP2.ome.zarr or setup2/timepoint0/s0 of a fused n5
+# data in n5 format, e.g. GEK11L_PV_GFP_01_fused.n5
 DATA=$1
-# channel in n5 folder, e.g. setup2/timepoint0/s0
+# channel in n5 folder, e.g. setup0/timepoint0/s0
 INPUT_KEY=$2
 # output folder
 OUTPUT_FOLDER=$3
-# optional: IHC segmentation used to restrict the prediction to the region around the IHCs
-MASK_PATH=$4
 
 export DATA
 export INPUT_KEY
 export OUTPUT_FOLDER
-export MASK_PATH
-export MASK_INPUT_KEY="s4"
-# Dilation of the IHC mask, in voxels of MASK_INPUT_KEY. 4 voxels of 's4' are 24 micrometer,
-# which has to stay above the MAX_DISTANCE used for matching in the detection step.
-export DILATION_ITERATIONS=4
+
+export SEG_CLASS="ihc"
 
 if ! [[ -f $OUTPUT_FOLDER ]] ; then
 	mkdir -p "$OUTPUT_FOLDER"
@@ -44,16 +39,12 @@ fi
 
 echo "Input data: ${DATA}"
 echo "Output directory: ${OUTPUT_FOLDER}"
-echo "Mask: ${MASK_PATH:-none}"
 
 cmd_array=(	'import sys,os;'
 	'sys.path.insert(0,os.environ["SCRIPT_DIR"]);'
-	'import synapse_detection;'
-	'synapse_detection.run_synapse_prediction_preprocess_slurm(input_path=os.environ["DATA"],'
+	'import unet_prediction;'
+	'unet_prediction.run_unet_prediction_preprocess_slurm(input_path=os.environ["DATA"],'
 	'input_key=os.environ["INPUT_KEY"],'
-	'output_folder=os.environ["OUTPUT_FOLDER"],'
-	'mask_path=os.environ.get("MASK_PATH") or None,'
-	'mask_input_key=os.environ["MASK_INPUT_KEY"],'
-	'dilation_iterations=os.environ["DILATION_ITERATIONS"])')
+	'output_folder=os.environ["OUTPUT_FOLDER"],seg_class=os.environ["SEG_CLASS"])')
 cmd="${cmd_array[*]}"
 python -c "$cmd"

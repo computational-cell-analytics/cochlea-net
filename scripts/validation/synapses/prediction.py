@@ -9,22 +9,17 @@ mirrored here:
   * the production prediction block shape / halo,
   * `output_channels` taken from the model rather than assumed to be 1,
   * IHC matching at the production `max_distance`,
-  * one mean/std for the whole volume, optionally supplied from a real cochlea.
+  * the raw input intensities, which the first InstanceNorm of the U-Net standardizes per block.
 
-Two of these need care on crops. The production block shape only tiles volumes much larger than
-one block, so the crops are zero-padded (see `_padded_input`). And production derives a single
-mean/std from the whole masked cochlea and applies it everywhere, whereas a per-crop mean/std
-rescales each crop independently -- the crops differ by more than 4x in mean intensity, so the
-two are not interchangeable when the detection threshold is absolute. Pass --mean/--std to use
-global values; without them each crop is normalised on its own, which is not what production does.
+The production block shape only tiles volumes much larger than one block, so the crops are
+zero-padded (see `_padded_input`).
 """
 
 import argparse
-import json
 import os
 from glob import glob
 from pathlib import Path
-from typing import Optional, Tuple
+from typing import Tuple
 
 import numpy as np
 import pandas as pd
@@ -140,8 +135,6 @@ def pred_synapse_impl(
     input_path: str,
     output_folder: str,
     model_path: str,
-    mean: Optional[float] = None,
-    std: Optional[float] = None,
 ):
     """Predict synapses for a single file using the production settings.
 
@@ -149,9 +142,6 @@ def pred_synapse_impl(
         input_path: Path to the image data.
         output_folder: Folder for the prediction and the detections.
         model_path: Path to the synapse detection model.
-        mean: Mean used for normalization. Production derives one value for the whole masked
-            cochlea, so pass it here to reproduce that. By default it is computed per crop.
-        std: Standard deviation used for normalization, see `mean`.
     """
     input_key = "raw"
     os.makedirs(output_folder, exist_ok=True)
@@ -165,7 +155,6 @@ def pred_synapse_impl(
         apply_postprocessing=False,
         # A flow model has five output channels; assuming one silently discards the flow.
         output_channels=_get_model_out_channels(model_path),
-        mean=mean, std=std,
     )
 
     output_path = os.path.join(output_folder, "predictions.zarr")
@@ -186,14 +175,8 @@ def predict_synapses(
     input_root: str,
     output_root: str,
     model_path: str,
-    mean: Optional[float] = None,
-    std: Optional[float] = None,
 ):
-    """Predict synapses for multiple files in an input directory.
-
-    `mean` and `std` are passed through to `pred_synapse_impl`; a single pair applied to every
-    crop is what the whole-cochlea runs do.
-    """
+    """Predict synapses for multiple files in an input directory."""
     files = sorted(glob(os.path.join(input_root, "*.zarr")))
     for ff in files:
         output_folder = os.path.join(output_root, Path(ff).stem)
@@ -202,7 +185,7 @@ def predict_synapses(
             continue
         else:
             print("Predicting synapses in", ff)
-        pred_synapse_impl(ff, output_folder, model_path, mean=mean, std=std)
+        pred_synapse_impl(ff, output_folder, model_path)
 
 
 def pred_ihc_impl(
@@ -338,8 +321,6 @@ def process_everything(
     output_root: str,
     synapse_model_path: str,
     ihc_model_path: str,
-    mean: Optional[float] = None,
-    std: Optional[float] = None,
 ):
     """Process images for validation of synapse detection.
 
@@ -349,10 +330,8 @@ def process_everything(
         output_root: Output path where the predicted synapses, IHC segmentation and filtered synapses are saved.
         synapse_model_path: File path to synapse detection model.
         ihc_model_path: File path to IHC segmentation model.
-        mean: Mean for normalization, applied to every crop. See `pred_synapse_impl`.
-        std: Standard deviation for normalization, applied to every crop.
     """
-    predict_synapses(input_root, output_root, synapse_model_path, mean=mean, std=std)
+    predict_synapses(input_root, output_root, synapse_model_path)
     predict_ihcs(input_root, output_root, ihc_model_path)
     filter_synapses(input_root, output_root)
     filter_gt(input_root, gt_root, output_root)
@@ -387,40 +366,12 @@ def main():
         help="File path to model for IHC segmentation."
     )
     parser.add_argument(
-        "--mean", type=float, default=None,
-        help="Mean for normalization, applied to every crop. Production derives a single value "
-             "for the whole masked cochlea, so pass it here to reproduce production. "
-             "By default each crop is normalized on its own, which production does not do."
-    )
-    parser.add_argument(
-        "--std", type=float, default=None,
-        help="Standard deviation for normalization, applied to every crop. See --mean."
-    )
-    parser.add_argument(
         "--pred_root", type=str, default=None,
         help="Override the output root of --version, keeping its image and reference roots. "
-             "Useful for writing a normalization variant to a separate directory."
-    )
-    parser.add_argument(
-        "--mean_std_json", type=str, default=None,
-        help="JSON file with 'mean' and 'std' entries, as written by a whole-cochlea "
-             "normalization run. Takes precedence over --mean/--std."
+             "Useful for writing a variant to a separate directory."
     )
 
     args = parser.parse_args()
-
-    mean, std = args.mean, args.std
-    if args.mean_std_json is not None:
-        with open(args.mean_std_json) as f:
-            mean_std = json.load(f)
-        mean, std = float(mean_std["mean"]), float(mean_std["std"])
-    if (mean is None) != (std is None):
-        raise ValueError("Pass both --mean and --std, or neither.")
-    if mean is None:
-        print("No mean/std given: normalizing each crop on its own. This is NOT the production "
-              "behavior, which applies one mean/std derived from the whole masked cochlea.")
-    else:
-        print(f"Using the production normalization for every crop: mean={mean}, std={std}")
 
     if args.version is not None:
         valid_versions = list(PREDICTION_DICT.keys())
@@ -447,8 +398,6 @@ def main():
         output_root=output_root,
         synapse_model_path=synapse_model,
         ihc_model_path=ihc_model,
-        mean=mean,
-        std=std,
     )
 
 

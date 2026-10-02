@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=mean-std-IHC
+#SBATCH --job-name=mask-SGN
 #SBATCH -t 01:00:00             # usually takes ~20 min
 
 #SBATCH -p standard96s:shared         # the partition
@@ -9,8 +9,6 @@
 
 source ~/.bashrc
 micromamba activate flamingo13
-
-# Run the script
 
 # get path to flamingo_tools repository based on the location of this script, only works for calling bash script directly
 #SCRIPT_REPO="$( cd "$( dirname  "$( dirname "$( dirname "$(readlink -f "${BASH_SOURCE[0]}")" )" )" )" >/dev/null 2>&1 && pwd )"
@@ -31,7 +29,7 @@ export DATA
 export INPUT_KEY
 export OUTPUT_FOLDER
 
-export SEG_CLASS="ihc"
+export SEG_CLASS="sgn"
 
 if ! [[ -f $OUTPUT_FOLDER ]] ; then
 	mkdir -p "$OUTPUT_FOLDER"

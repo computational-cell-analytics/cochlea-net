@@ -144,7 +144,7 @@ flamingo_tools.object_measures  --image_paths "$IMAGE_PATH" \
 
 ### Using Slurm
 Because it is more efficient to split the network prediction into multiple jobs, the processing workflow is divided into three steps:
-* Mask the image data based on intensity and calculate the mean and standard deviation of the intensity
+* Mask the image data based on intensity
 * Apply CochleaNet
 * Segment the prediction of CochleaNet
 
@@ -155,8 +155,8 @@ DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L
 INPUT_KEY="setup0/timepoint0/s0"
 OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/SGN_v2"
 
-# --- Masking and calculating mean and standard deviation ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_SGN_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
+# --- Masking ---
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mask_SGN_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
 
 # --- Applying CochleaNet ---
 sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_unet_SGN_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
@@ -177,12 +177,12 @@ sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/process_SGN_template.s
 #### IHC
 ```bash
 SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-# --- Masking and calculating mean and standard deviation ---
+# --- Masking ---
 DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
 INPUT_KEY="setup1/timepoint0/s0"
 OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/IHC_v4b"
-# --- Masking and calculating mean and standard deviation ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_IHC_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
+# --- Masking ---
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mask_IHC_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
 
 # --- Applying CochleaNet ---
 sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_unet_IHC_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
@@ -213,8 +213,8 @@ DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L
 INPUT_KEY="setup2/timepoint0/s0"
 OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/synapses_v5"
 
-# --- Calculating mean and standard deviation ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
+# --- Masking ---
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mask_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
 
 # --- Applying CochleaNet ---
 sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
@@ -234,7 +234,7 @@ about it.
 MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
 MASK_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/IHC_v4b.ome.zarr"
 
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER $MASK_PATH
+sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mask_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER $MASK_PATH
 sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/detect_synapse_peaks_template.sbatch $OUTPUT_FOLDER $MASK_PATH s0
 ```
 

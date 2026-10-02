@@ -36,7 +36,7 @@ export SCRIPT_DIR=$SCRIPT_REPO/scripts
 DATA=$1
 # channel in n5 folder, e.g. setup2/timepoint0/s0
 INPUT_KEY=$2
-# output folder, must already contain mean_std.json from mean_std_synapse_template.sbatch
+# output folder, holds mask.zarr from mask_synapse_template.sbatch if that step got an IHC segmentation
 OUTPUT_FOLDER=$3
 
 # The default v5 model

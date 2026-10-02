@@ -3,12 +3,12 @@
 Implements workflows to segment SGNs or IHCs, and to detect ribbon synapses in slurm.
 
 For SGN segmentation run:
-- mean_std_SGN_template.sbatch
+- mask_SGN_template.sbatch
 - apply_unet_SGN_template.sbatch
 - segment_unet_SGN_template.sbatch
 
 For IHC segmentation run:
-- mean_std_IHC_template.sbatch
+- mask_IHC_template.sbatch
 - apply_unet_IHC_template.sbatch
 - segment_unet_IHC_template.sbatch
 
@@ -19,7 +19,7 @@ After this, run the following to add segmentation to MoBIE, create component lab
 - templates_transfer/s3_seg_template.sh
 
 For ribbon synapse detection run:
-- mean_std_synapse_template.sbatch
+- mask_synapse_template.sbatch
 - apply_synapse_template.sbatch
 - detect_synapse_peaks_template.sbatch
 
