@@ -374,8 +374,15 @@ class TestDetection(unittest.TestCase):
 
     def test_looks_like_n5_remote_disconnect_is_false(self):
         rec = Recorder([([], True, 0)])
-        with patch_run_smbclient(rec):
+        with patch_run_smbclient(rec), mock.patch.object(dtu.time, "sleep"):
             self.assertFalse(smb._looks_like_n5_remote("u", "p", "P/data", "."))
+
+    def test_list_remote_dirs_retries_disconnect(self):
+        ls = ["  setup0   D   0  Mon Jul 21 10:00:00 2025"]
+        rec = Recorder([([], True, 0), (ls, False, 0)])
+        with patch_run_smbclient(rec), mock.patch.object(dtu.time, "sleep"):
+            self.assertEqual(smb.list_remote_dirs("u", "p", "P/n5", "."), ["setup0"])
+        self.assertEqual(len(rec.calls), 2)
 
 
 class TestGenericDownload(unittest.TestCase):

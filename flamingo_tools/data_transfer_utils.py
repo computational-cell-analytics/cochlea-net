@@ -317,10 +317,11 @@ def list_remote_dirs(
     cwd: str,
     local_fallback: Optional[str] = None,
     smb_server: str = SMB_SERVER,
+    retries: int = MAX_RETRIES,
 ) -> list[str]:
     """Return subdirectory names at remote_path via smbclient ls.
-    Falls back to listing local_fallback on disconnect (folder structure is
-    usually present locally after the first drop).
+    Retries a disconnected listing, then falls back to listing local_fallback. The local
+    directory can miss subdirectories that a partial transfer never started.
 
     Args:
         username: GWDG username.
@@ -329,15 +330,22 @@ def list_remote_dirs(
         cwd: Local working directory for the smbclient process.
         local_fallback: Path to local data to check directory structure.
         smb_server: SMB server to connect to.
+        retries: Maximal number of listing attempts.
 
     Returns:
         list of remote directories.
     """
     # Normalise to forward slashes for smbclient
     remote_path = remote_path.replace("\\", "/")
-    lines, had_disconnect, _ = run_smbclient(
-        username, password, [f'cd "{remote_path}"', "ls"], cwd, smb_server=smb_server,
-    )
+    for attempt in range(1, retries + 1):
+        if attempt > 1:
+            print(f"  [retry {attempt}/{retries}] listing {remote_path}")
+            time.sleep(RETRY_DELAY)
+        lines, had_disconnect, _ = run_smbclient(
+            username, password, [f'cd "{remote_path}"', "ls"], cwd, smb_server=smb_server,
+        )
+        if not had_disconnect:
+            break
 
     if had_disconnect and local_fallback and os.path.isdir(local_fallback):
         print(f"  [fallback] listing local directory: {local_fallback}")
@@ -443,7 +451,7 @@ def transfer_path(
 
     commands = [f'cd "{remote_cd}"', "recurse", "prompt", f"mget {mget_target}"]
     return run_with_retry(
-        username, password, commands, local_cwd=local_cwd, label=mget_target,
+        username, password, commands, local_cwd=local_cwd, label=f"{remote_cd}/{mget_target}",
         retries=retries, log_file=log_file, smb_server=smb_server, error_tokens=None,
     )
 
@@ -681,7 +689,7 @@ def upload_path(
         commands = [f'cd "{remote_dir}"', f"put {local_target}"]
 
     return run_with_retry(
-        username, password, commands, local_cwd=local_cwd, label=local_target,
+        username, password, commands, local_cwd=local_cwd, label=f"{remote_dir}/{local_target}",
         retries=retries, log_file=log_file, smb_server=smb_server,
         error_tokens=UPLOAD_ERROR_TOKENS,
     )
