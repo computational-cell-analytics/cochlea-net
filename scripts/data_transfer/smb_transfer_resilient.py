@@ -37,9 +37,7 @@ from typing import Optional
 # the same implementation. Importing them by name keeps them patchable through this module.
 from flamingo_tools.data_transfer_utils import (
     MAX_RETRIES,
-    RETRY_DELAY,
     SMB_SERVER,
-    UKON_OLD,
     UPLOAD_ERROR_TOKENS,
     append_log,
     build_remote_size_map,
@@ -196,11 +194,14 @@ def iterative_n5_transfer(
     log_file: Optional[str] = None,
     smb_server: str = SMB_SERVER,
     setup_filter: Optional[list[str]] = None,
+    min_scale: int = 0,
 ):
     """Phase 2: transfer an N5 dataset setup-by-setup, scale-by-scale.
     For s0, s1, s2, and s3 (highest resolutions) each top-level chunk directory is transferred
     individually so a single disconnect only affects one small piece.
     All other scales are transferred as a single unit.
+    The attributes.json of the root, each setup, timepoint and per-chunk-dir scale is fetched
+    explicitly, because the per-chunk transfer does not include it.
 
     Args:
         username: GWDG username.
@@ -211,6 +212,7 @@ def iterative_n5_transfer(
         log_file: Log file to store files which were not transferred.
         setup_filter: Restrict transfer to these setup(s) (e.g. ["setup0"]). Transfers
             all discovered setups when not given.
+        min_scale: Skip the scale levels below this index, e.g. 2 skips s0 and s1.
 
     """
     # Normalise separators
@@ -218,11 +220,14 @@ def iterative_n5_transfer(
     full_remote = f"{remote_dir}/{n5_name}"
     local_n5 = os.path.join(output_dir, n5_name)
 
+    def fetch_attributes(remote_cd, local_cwd):
+        transfer_path(username, password, remote_cd=remote_cd, mget_target="attributes.json",
+                      local_cwd=local_cwd, log_file=log_file, smb_server=smb_server)
+
     print("\n=== Iterative N5 transfer mode ===")
 
-    # Root attributes.json
     print(f"\n-- {n5_name}/attributes.json")
-    transfer_path(username, password, remote_dir, f"{n5_name}/attributes.json", output_dir, smb_server=smb_server)
+    fetch_attributes(full_remote, local_n5)
 
     # Discover setups
     setups = list_remote_dirs(username, password, full_remote, output_dir,
@@ -249,13 +254,15 @@ def iterative_n5_transfer(
         setup_remote = f"{full_remote}/{setup}"
         tp_remote = f"{setup_remote}/timepoint0"
         tp_local = os.path.join(local_n5, setup, "timepoint0")
+        fetch_attributes(setup_remote, os.path.join(local_n5, setup))
+        fetch_attributes(tp_remote, tp_local)
 
         # Discover scales
         scales = list_remote_dirs(
             username, password, tp_remote, output_dir,
             local_fallback=tp_local, smb_server=smb_server,
         )
-        scale_names = sorted(s for s in scales if re.match(r"^s\d+$", s))
+        scale_names = sorted(s for s in scales if re.match(r"^s\d+$", s) and int(s[1:]) >= min_scale)
         if not scale_names:
             print(f"  [warn] no scale directories found in {setup}/timepoint0")
             continue
@@ -269,6 +276,7 @@ def iterative_n5_transfer(
             if scale in ["s0", "s1", "s2", "s3"]:
                 # Enumerate top-level chunk directories and transfer individually
                 print(f"\n  -- {setup}/timepoint0/{scale}  (per-subdirectory mode)")
+                fetch_attributes(scale_remote, scale_local)
                 subdirs = list_remote_dirs(
                     username, password, scale_remote, output_dir,
                     local_fallback=scale_local, smb_server=smb_server,

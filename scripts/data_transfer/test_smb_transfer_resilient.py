@@ -328,6 +328,28 @@ class TestDownloadUnchanged(unittest.TestCase):
         self.assertEqual(rec.command_lists[0], ['cd "R"', "recurse", "prompt", "mget setup0"])
 
 
+class TestIterativeDownload(unittest.TestCase):
+    def test_min_scale(self):
+        listing = {
+            "P/n5": ["setup0"],
+            "P/n5/setup0/timepoint0": ["s0", "s1", "s2", "s4"],
+            "P/n5/setup0/timepoint0/s2": ["0"],
+        }
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch_both("list_remote_dirs", side_effect=lambda u, p, path, *a, **k: listing[path]), \
+             patch_both("transfer_path") as tp:
+            smb.iterative_n5_transfer("u", "p", "P", "n5", tmp, min_scale=2)
+        fetched = [(c.kwargs["remote_cd"], c.kwargs["mget_target"]) for c in tp.call_args_list]
+        self.assertEqual(fetched, [
+            ("P/n5", "attributes.json"),
+            ("P/n5/setup0", "attributes.json"),
+            ("P/n5/setup0/timepoint0", "attributes.json"),
+            ("P/n5/setup0/timepoint0/s2", "attributes.json"),
+            ("P/n5/setup0/timepoint0/s2", "0"),
+            ("P/n5/setup0/timepoint0", "s4"),
+        ])
+
+
 class TestDetection(unittest.TestCase):
     def test_looks_like_n5_local(self):
         with tempfile.TemporaryDirectory() as tmp:
