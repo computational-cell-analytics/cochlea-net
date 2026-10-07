@@ -192,13 +192,13 @@ class TestPhase1Ingest(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             _make_n5(tmp)
-            rec = Recorder()  # preflight ls + bulk mput both succeed
+            rec = Recorder()  # preflight + bulk mput both succeed
             with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "verify_and_repair_upload"):
                 with self.assertRaises(SystemExit) as cm:
                     smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", None)
         self.assertEqual(cm.exception.code, 0)
-        self.assertIn(['cd "P"', "ls"], rec.command_lists)          # preflight
+        self.assertIn(['cd "P"'], rec.command_lists)          # preflight
         self.assertIn(['cd "P"', "recurse", "prompt", "mput n5"], rec.command_lists)
 
     def test_bulk_filtered(self):

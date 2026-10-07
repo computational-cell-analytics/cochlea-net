@@ -28,7 +28,7 @@ RETRY_DELAY = 5  # seconds
 # multi-GB sequential read exceeds; the man page recommends raising it when requests time out.
 SMB_TIMEOUT = 60  # seconds
 
-# smbclient often exits 0 even when a cd/mput/put failed, so upload success
+# smbclient often exits 0 even when an mput/put failed, so upload success
 # cannot rely on the return code alone. These tokens in the streamed output
 # mark a failed upload unit.
 UPLOAD_ERROR_TOKENS = (
@@ -259,6 +259,11 @@ def run_smbclient(
     """Run smbclient with the given command list; stream output in real time.
     Terminates the process immediately on the first transport failure.
 
+    A leading `cd "<dir>"` command is passed as the -D option instead. After a failed `cd`
+    command, smbclient stays in the share root and runs the remaining commands there; a failed
+    -D ends the session with exit code 1 before any command runs. A session that reaches its
+    final `exit` command always exits 0.
+
     Args:
         username: GWDG username.
         password: GWDG password.
@@ -273,6 +278,9 @@ def run_smbclient(
 
     """
     cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}%{password}", "-t", str(timeout)]
+    if commands and commands[0].startswith("cd "):
+        cmd += ["-D", commands[0][3:].strip().strip('"')]
+        commands = commands[1:]
     cmd_input = "\n".join(commands + ["exit"])
 
     proc = subprocess.Popen(
@@ -547,19 +555,17 @@ def remote_dir_exists(
         smb_server: SMB server to connect to.
 
     Returns:
-        True if the directory exists, False if it is missing, None if the
-        connection dropped before the answer could be determined.
+        True if the directory exists, None if the connection dropped before the answer could be
+        determined, and False otherwise: the path is missing or not a directory, or the login
+        failed.
     """
     remote_path = remote_path.replace("\\", "/")
-    lines, had_disconnect, _ = run_smbclient(
-        username, password, [f'cd "{remote_path}"', "ls"], cwd, smb_server=smb_server,
+    _, had_disconnect, rc = run_smbclient(
+        username, password, [f'cd "{remote_path}"'], cwd, smb_server=smb_server,
     )
     if had_disconnect:
         return None
-    missing_tokens = ("NT_STATUS_OBJECT_NAME_NOT_FOUND", "NT_STATUS_OBJECT_PATH_NOT_FOUND")
-    if any(tok in line for line in lines for tok in missing_tokens):
-        return False
-    return True
+    return rc == 0
 
 
 def ensure_remote_path(
