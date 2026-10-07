@@ -12,9 +12,11 @@ Two independent layers live here:
 
 import errno
 import os
+import pathlib
 import re
 import subprocess
 import time
+import warnings
 
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
@@ -70,6 +72,14 @@ def append_log(log_file: Optional[str], message: str) -> None:
             file.write(f"{message}\n")
     except Exception as e:
         print(f"Error: {e}")
+
+
+def log_size(log_file: Optional[str]) -> int:
+    """Return the size of the log file in bytes, 0 if it does not exist.
+
+    Compare the size before and after a run to find out whether the run logged a failure.
+    """
+    return os.path.getsize(log_file) if log_file and os.path.exists(log_file) else 0
 
 
 #
@@ -574,6 +584,41 @@ def remote_dir_exists(
     if had_disconnect:
         return None
     return rc == 0
+
+
+def normalize_remote_dir(path: str) -> str:
+    """Convert a share path to forward slashes. Call it before the password prompt.
+
+    Warns when the path has no separator: the shell removes every backslash of an unquoted
+    path, so UKON100\\archiv arrives as UKON100archiv.
+    """
+    if "\\" not in path and "/" not in path:
+        warnings.warn(
+            f"The remote path {path!r} has no separator. Put a path with backslashes in "
+            "quotation marks, or use forward slashes."
+        )
+    return pathlib.PureWindowsPath(path).as_posix()
+
+
+def require_remote_dir(
+    username: str,
+    password: str,
+    remote_path: str,
+    cwd: str,
+    smb_server: str = SMB_SERVER,
+    hint: str = "",
+) -> None:
+    """Stop the program before any transfer when remote_path cannot be opened on the share.
+
+    A dropped connection leaves the answer open; the per-unit retries handle it then.
+    """
+    if remote_dir_exists(username, password, remote_path, cwd, smb_server=smb_server) is False:
+        raise SystemExit(
+            f"Cannot open the remote directory {remote_path!r} on {smb_server} "
+            "(see the smbclient error above).\n"
+            "Check the login and the path. Put a path with backslashes in quotation marks, "
+            "or use forward slashes. " + hint
+        )
 
 
 def ensure_remote_path(

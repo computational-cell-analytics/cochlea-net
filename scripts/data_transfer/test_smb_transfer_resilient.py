@@ -195,9 +195,7 @@ class TestPhase1Ingest(unittest.TestCase):
             rec = Recorder()  # preflight + bulk mput both succeed
             with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "verify_and_repair_upload"):
-                with self.assertRaises(SystemExit) as cm:
-                    smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", None)
-        self.assertEqual(cm.exception.code, 0)
+                smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", None)
         self.assertIn(['cd "P"'], rec.command_lists)          # preflight
         self.assertIn(['cd "P"', "recurse", "prompt", "mput n5"], rec.command_lists)
 
@@ -208,8 +206,7 @@ class TestPhase1Ingest(unittest.TestCase):
             rec = Recorder()
             with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "verify_and_repair_upload"):
-                with self.assertRaises(SystemExit):
-                    smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", ["setup0"])
+                smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", ["setup0"])
         self.assertIn(['mkdir "P/n5"'], rec.command_lists)
         self.assertIn(['cd "P/n5"', "put attributes.json", "recurse", "prompt", "mput setup0"],
                       rec.command_lists)
@@ -442,7 +439,8 @@ class TestGenericUpload(unittest.TestCase):
 
 @contextmanager
 def _patch_download(is_n5):
-    with mock.patch.object(smb, "_looks_like_n5_remote", return_value=is_n5), \
+    with mock.patch.object(smb, "require_remote_dir"), \
+         mock.patch.object(smb, "_looks_like_n5_remote", return_value=is_n5), \
          mock.patch.object(smb, "iterative_n5_transfer") as it_n5, \
          mock.patch.object(smb, "generic_iterative_download") as it_gen, \
          mock.patch.object(smb, "verify_and_repair_n5") as v_n5, \
@@ -458,8 +456,7 @@ class TestDownloadDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with _patch_download(is_n5=True) as (it_n5, it_gen, v_n5, v_gen), \
                  patch_run_smbclient(Recorder([([], False, 0)])):
-                with self.assertRaises(SystemExit):
-                    smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
+                smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
         v_n5.assert_called_once()
         v_gen.assert_not_called()
         it_n5.assert_not_called()
@@ -471,8 +468,7 @@ class TestDownloadDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with _patch_download(is_n5=False) as (it_n5, it_gen, v_n5, v_gen), \
                  patch_run_smbclient(Recorder([([], False, 0)])):
-                with self.assertRaises(SystemExit):
-                    smb._run_download(self._args(), "p", "P", "data", tmp, "log", None)
+                smb._run_download(self._args(), "p", "P", "data", tmp, "log", None)
         v_gen.assert_called_once()
         v_n5.assert_not_called()
 
@@ -494,6 +490,13 @@ class TestDownloadDispatch(unittest.TestCase):
         it_n5.assert_not_called()
         v_gen.assert_called_once()
 
+    def test_missing_remote_dir_aborts(self):
+        rec = Recorder([(["cd \\P\\n5\\: NT_STATUS_OBJECT_NAME_NOT_FOUND"], False, 1)])
+        with tempfile.TemporaryDirectory() as tmp, patch_run_smbclient(rec):
+            with self.assertRaises(SystemExit):
+                smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
+        self.assertEqual(rec.command_lists, [['cd "P/n5"']])
+
     def test_generic_flag_forces_generic(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _patch_download(is_n5=True) as (it_n5, it_gen, v_n5, v_gen), \
@@ -513,7 +516,7 @@ class TestIngestDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             make_tree(tmp)
             with patch_run_smbclient(Recorder([([], True, 0)])), \
-                 mock.patch.object(smb, "remote_dir_exists", return_value=True), \
+                 mock.patch.object(smb, "require_remote_dir"), \
                  mock.patch.object(smb, "iterative_n5_upload") as up_n5, \
                  mock.patch.object(smb, "generic_iterative_upload") as up_gen, \
                  mock.patch.object(smb, "verify_and_repair_upload") as v_up:

@@ -236,6 +236,24 @@ class TestTransportFailureDetection(unittest.TestCase):
         self.assertEqual(proc.stdin.write.call_args[0][0], "recurse\nmget x\nexit")
 
 
+class TestNormalizeRemoteDir(unittest.TestCase):
+    def test_unquoted_path_warns(self):
+        from flamingo_tools.data_transfer_utils import normalize_remote_dir
+
+        # The shell turns an unquoted UKON100\archiv\imaging into UKON100archivimaging.
+        with self.assertWarns(UserWarning):
+            self.assertEqual(normalize_remote_dir("UKON100archivimaging"), "UKON100archivimaging")
+
+    def test_separators(self):
+        import warnings
+        from flamingo_tools.data_transfer_utils import normalize_remote_dir
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self.assertEqual(normalize_remote_dir("\\UKON100\\archiv\\"), "/UKON100/archiv")
+            self.assertEqual(normalize_remote_dir("UKON100/archiv"), "UKON100/archiv")
+
+
 class FakeSmbclient:
     """Stand-in for run_smbclient that grows a local file by a fixed amount per call."""
 

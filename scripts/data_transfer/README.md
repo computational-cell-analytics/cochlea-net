@@ -32,6 +32,18 @@ You are then prompted to enter your password.
 Enter your password and press Enter.
 The file transfer should start automatically.
 
+## Remote paths
+
+- Put a remote path with backslashes in quotation marks. Without them, the shell removes every
+  backslash: `UKON100\archiv\imaging` arrives as `UKON100archivimaging`. The Python scripts warn
+  about a path without a separator before they ask for the password.
+- Forward slashes need no quotation marks: `-p UKON100/archiv/imaging/...` works too.
+- A leading backslash is optional. `\UKON100\archiv` and `UKON100\archiv` name the same directory.
+- `smb_transfer_resilient.py` and `smb_transfer_converted_stitching.py` check the login and the
+  remote directory before any transfer, and stop with an error if either fails.
+- These two scripts exit with code 1 when a transfer unit still failed after all retries. The log
+  file then lists the failed units.
+
 ## Converting raw data over an unstable connection
 
 You do not need to transfer the raw data first in order to convert it. `flamingo_tools.convert_data`

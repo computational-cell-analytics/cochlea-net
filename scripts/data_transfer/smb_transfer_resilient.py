@@ -30,7 +30,6 @@ import posixpath
 import re
 import sys
 import time  # noqa: F401  (tests patch smb.time.sleep)
-import warnings
 from typing import Optional
 
 # The generic SMB primitives live in the package so that flamingo_tools.convert_data can use
@@ -43,8 +42,10 @@ from flamingo_tools.data_transfer_utils import (
     build_remote_size_map,
     ensure_remote_path,
     list_remote_dirs,
-    remote_dir_exists,
+    log_size,
+    normalize_remote_dir,
     remote_size_map_with_retry,
+    require_remote_dir,
     run_smbclient,
     run_with_retry,
     transfer_path,
@@ -801,6 +802,7 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
     both use the matching path. A generic tree is transferred and verified per file.
     """
     full_remote = f"{remote_dir}/{n5_name}"
+    require_remote_dir(args.username, password, full_remote, output_dir, smb_server=args.smb_server)
     is_n5 = not args.generic and (
         bool(setup_filter) or
         _looks_like_n5_remote(args.username, password, full_remote, output_dir,
@@ -836,7 +838,7 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
                 if not os.path.isdir(os.path.join(output_dir, n5_name, s)):
                     print(f"  [warn] requested setup not found after transfer: {s}")
         _verify()
-        sys.exit(0)
+        return
 
     if not had_disconnect:
         print(f"Transfer failed (exit code {rc}).")
@@ -870,14 +872,8 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     if args.create_parents:
         ensure_remote_path(args.username, password, base="", target=remote_dir,
                            local_cwd=source_dir, smb_server=args.smb_server)
-    else:
-        exists = remote_dir_exists(args.username, password, remote_dir, source_dir,
-                                   smb_server=args.smb_server)
-        if exists is False:
-            raise SystemExit(
-                f"Remote parent directory does not exist: {remote_dir}\n"
-                "Create it first or pass --create-parents to create it automatically."
-            )
+    require_remote_dir(args.username, password, remote_dir, source_dir, smb_server=args.smb_server,
+                       hint="Create a missing parent directory first, or pass --create-parents.")
 
     print("Connecting to SMB server and starting bulk ingest...")
     full_remote = f"{remote_dir}/{n5_name}"
@@ -900,7 +896,7 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
         verify_and_repair_upload(args.username, password, remote_dir, n5_name, source_dir,
                                  log_file=log_file, smb_server=args.smb_server,
                                  setup_filter=setup_filter, base=base)
-        sys.exit(0)
+        return
 
     if not had_disconnect:
         print("Bulk ingest reported an error — switching to iterative ingest mode.")
@@ -923,9 +919,9 @@ def main():
         description="Resilient SMB transfer for N5 data with automatic disconnect recovery. "
                     "Downloads from the share by default; pass --ingest to upload."
     )
-    parser.add_argument("-u", "--username", help="GWDG username, e.g. schilling40")
-    parser.add_argument("-p", "--remote_parent_dir", help="Remote parent directory on the SMB share")
-    parser.add_argument("-d", "--remote_data", help="N5 root directory name (on the share and locally)")
+    parser.add_argument("-u", "--username", required=True, help="GWDG username, e.g. schilling40")
+    parser.add_argument("-p", "--remote_parent_dir", required=True, help="Remote parent directory on the SMB share")
+    parser.add_argument("-d", "--remote_data", required=True, help="N5 root directory name (on the share and locally)")
     parser.add_argument("-o", "--output-dir", default=os.getcwd(),
                         help="Local directory. Download: destination for the dataset. "
                              "Ingest: parent directory that contains the dataset to upload. "
@@ -957,13 +953,9 @@ def main():
     elif not os.path.isdir(output_dir):
         parser.error(f"local source directory does not exist: {output_dir}")
 
+    remote_dir = normalize_remote_dir(args.remote_parent_dir)
     password = getpass.getpass("Enter password: ")
 
-    if "\\" not in args.remote_parent_dir:
-        warnings.warn("Ensure that path to parent directory contains double \\ or is quoted.")
-
-    p = pathlib.PureWindowsPath(args.remote_parent_dir)
-    remote_dir = p.as_posix()
     n5_name = args.remote_data
     log_file = args.log_file if args.log_file is not None else os.path.join(output_dir, "transfer_log.txt")
 
@@ -974,10 +966,13 @@ def main():
         except ValueError as e:
             parser.error(str(e))
 
+    log_start = log_size(log_file)
     if args.ingest:
         _run_ingest(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     else:
         _run_download(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
+    if log_size(log_file) > log_start:
+        raise SystemExit(f"\n[error] Some transfers failed. See {log_file}")
 
 
 if __name__ == "__main__":

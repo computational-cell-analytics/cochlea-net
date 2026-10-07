@@ -17,9 +17,15 @@ Usage:
 import argparse
 import getpass
 import os
-import pathlib
 
-from flamingo_tools.data_transfer_utils import SMB_SERVER, list_remote_dirs, transfer_path
+from flamingo_tools.data_transfer_utils import (
+    SMB_SERVER,
+    list_remote_dirs,
+    log_size,
+    normalize_remote_dir,
+    require_remote_dir,
+    transfer_path,
+)
 from smb_transfer_resilient import iterative_n5_transfer, verify_and_repair_download_generic, verify_and_repair_n5
 
 INTEREST_POINTS = "interestpoints.n5"
@@ -45,14 +51,17 @@ def main():
                         help="First scale level of the image N5 to copy. Default: 2 (s2, s3, ...).")
     args = parser.parse_args()
 
-    remote_dir = f"{pathlib.PureWindowsPath(args.remote_parent_dir).as_posix()}/{args.remote_data}"
+    remote_dir = f"{normalize_remote_dir(args.remote_parent_dir)}/{args.remote_data}"
     local_dir = os.path.join(os.path.realpath(args.output_dir), args.remote_data)
     os.makedirs(local_dir, exist_ok=True)
     log_file = args.log_file if args.log_file is not None else os.path.join(local_dir, "transfer_log.txt")
     smb = dict(log_file=log_file, smb_server=args.smb_server)
 
+    log_start = log_size(log_file)
+
     password = getpass.getpass("Enter password: ")
 
+    require_remote_dir(args.username, password, remote_dir, local_dir, smb_server=args.smb_server)
     dirs = list_remote_dirs(args.username, password, remote_dir, local_dir,
                             local_fallback=local_dir, smb_server=args.smb_server)
     image_n5s = [d for d in dirs if d.endswith(".n5") and d != INTEREST_POINTS]
@@ -75,6 +84,9 @@ def main():
         iterative_n5_transfer(args.username, password, remote_dir, n5_name, local_dir,
                               min_scale=args.min_scale, **smb)
         verify_and_repair_n5(args.username, password, remote_dir, n5_name, local_dir, **smb)
+
+    if log_size(log_file) > log_start:
+        raise SystemExit(f"\n[error] Some transfers failed. See {log_file}")
 
 
 if __name__ == "__main__":
