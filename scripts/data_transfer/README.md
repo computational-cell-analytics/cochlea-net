@@ -117,6 +117,27 @@ python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_resilient.py \
 - File names with spaces are handled. Empty directories are not recreated on download.
 - Re-runs are idempotent, so an interrupted transfer can simply be re-run.
 
+## Copying stitching data
+
+`smb_transfer_converted_stitching.py` downloads the input for BigStitcher from a converted-data
+folder (usually `2_converted_stitching`) without the full-resolution image data.
+
+**Example**:
+```bash
+UKON_FOLDER="UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\2026\Aleyna\00_LSFM_cosynapse\M_AMD_000117_L"
+python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_converted_stitching.py \
+    -u <GWDG-username> -p "$UKON_FOLDER" -d 2_converted_stitching -o /local/dest/dir
+```
+
+**Behaviour and options**:
+- The data lands in `<output_dir>/2_converted_stitching`, with the same layout as on the share.
+- All files whose name contains `xml` are copied (`*.xml` and the backups `*.xml~N`).
+- `interestpoints.n5` is copied in full, then every file size is compared to the share.
+- Every other `*.n5` folder is treated as image data. Only the scale levels from `--min_scale`
+  (default 2) onwards are copied, so `s0` and `s1` stay on the share.
+- The image transfer is per chunk directory for `s0`-`s3` and per scale for the rest, with the same
+  retries as `smb_transfer_resilient.py`.
+
 # Data Transfer Huisken
 
 See "Transfer via smbclient" above:
