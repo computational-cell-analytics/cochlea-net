@@ -143,7 +143,9 @@ python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_converted_stitchi
 
 **Behaviour and options**:
 - The data lands in `<output_dir>/2_converted_stitching`, with the same layout as on the share.
-- All files whose name contains `xml` are copied (`*.xml` and the backups `*.xml~N`).
+- All files whose name contains `xml` are copied (`*.xml` and the backups `*.xml~N`). The script
+  stops before the image transfer when no `*.xml` file arrives, for example when `-d` names the
+  wrong folder.
 - `interestpoints.n5` is copied in full, then every file size is compared to the share.
 - Every other `*.n5` folder is treated as image data. Only the scale levels from `--min_scale`
   (default 2) onwards are copied, so `s0` and `s1` stay on the share.

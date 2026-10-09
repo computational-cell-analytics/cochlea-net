@@ -16,6 +16,7 @@ Usage:
 
 import argparse
 import getpass
+import glob
 import os
 
 from flamingo_tools.data_transfer_utils import (
@@ -74,6 +75,10 @@ def main():
 
     print("\n=== XML files ===")
     transfer_path(args.username, password, remote_cd=remote_dir, mget_target="*xml*", local_cwd=local_dir, **smb)
+    # mget exits 0 when no file matches, so check the result before the large image transfer.
+    if not glob.glob(os.path.join(local_dir, "*.xml")):
+        raise SystemExit(f"No XML file was downloaded from {remote_dir}. "
+                         "Check that -d names the converted-data folder.")
 
     if INTEREST_POINTS in dirs:
         print(f"\n=== {INTEREST_POINTS} ===")
