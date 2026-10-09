@@ -346,6 +346,17 @@ class TestIterativeDownload(unittest.TestCase):
             ("P/n5/setup0/timepoint0", "s4"),
         ])
 
+    def test_empty_listing_is_logged(self):
+        # A failed listing returns [] without a disconnect; the skipped scale must reach the log.
+        listing = {"P/n5": ["setup0"], "P/n5/setup0/timepoint0": ["s2"], "P/n5/setup0/timepoint0/s2": []}
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch_both("list_remote_dirs", side_effect=lambda u, p, path, *a, **k: listing[path]), \
+             patch_both("transfer_path"):
+            log_file = os.path.join(tmp, "log.txt")
+            smb.iterative_n5_transfer("u", "p", "P", "n5", tmp, log_file=log_file)
+            with open(log_file) as f:
+                self.assertIn("no chunk directories found in P/n5/setup0/timepoint0/s2", f.read())
+
 
 class TestDetection(unittest.TestCase):
     def test_looks_like_n5_local(self):

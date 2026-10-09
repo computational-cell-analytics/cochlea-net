@@ -60,6 +60,12 @@ def _sort_key(name):
     return int(name) if name.isdigit() else name
 
 
+def _log_warning(log_file: Optional[str], message: str) -> None:
+    """Print a warning about skipped data and log it, so that the run exits with an error."""
+    print(f"  {message}")
+    append_log(log_file, message)
+
+
 def _normalize_setup(value: str) -> str:
     """Normalize a --setup CLI value to 'setupN' form (accepts '0' or 'setup0').
 
@@ -151,7 +157,7 @@ def verify_and_repair_n5(
     local_n5 = os.path.join(output_dir, n5_name)
 
     if not os.path.isdir(local_n5):
-        print(f"  [warn] local N5 directory not found for verification: {local_n5}")
+        _log_warning(log_file, f"[warn] local N5 directory not found for verification: {local_n5}")
         return
 
     for attempt in range(1, max_passes + 1):
@@ -235,13 +241,13 @@ def iterative_n5_transfer(
                               local_fallback=local_n5, smb_server=smb_server)
     setup_names = sorted(s for s in setups if re.match(r"^setup\d+$", s))
     if not setup_names:
-        print("  [warn] no setup* directories found — nothing to transfer")
+        _log_warning(log_file, f"[warn] no setup* directories found in {full_remote} — nothing to transfer")
         return
 
     if setup_filter:
         missing = [s for s in setup_filter if s not in setup_names]
         for s in missing:
-            print(f"  [warn] requested setup not found remotely: {s}")
+            _log_warning(log_file, f"[warn] requested setup not found remotely: {full_remote}/{s}")
         setup_names = [s for s in setup_names if s in setup_filter]
         if not setup_names:
             print("  [warn] none of the requested setups were found remotely — nothing to transfer")
@@ -265,7 +271,7 @@ def iterative_n5_transfer(
         )
         scale_names = sorted(s for s in scales if re.match(r"^s\d+$", s) and int(s[1:]) >= min_scale)
         if not scale_names:
-            print(f"  [warn] no scale directories found in {setup}/timepoint0")
+            _log_warning(log_file, f"[warn] no scale directories found in {tp_remote}")
             continue
 
         print(f"  Scales: {scale_names}")
@@ -284,7 +290,7 @@ def iterative_n5_transfer(
                 )
                 chunk_dirs = sorted(subdirs, key=_sort_key)
                 if not chunk_dirs:
-                    print(f"  [warn] no chunk directories found in {scale}")
+                    _log_warning(log_file, f"[warn] no chunk directories found in {scale_remote}")
                     continue
 
                 print(f"{scale} chunk directories: {chunk_dirs[0]} … {chunk_dirs[-1]} ({len(chunk_dirs)} total)")
@@ -401,13 +407,13 @@ def iterative_n5_upload(
 
     setup_names = _local_dirs(local_n5, r"^setup\d+$")
     if not setup_names:
-        print("  [warn] no setup* directories found locally — nothing to transfer")
+        _log_warning(log_file, f"[warn] no setup* directories found in {local_n5} — nothing to transfer")
         return
 
     if setup_filter:
         missing = [s for s in setup_filter if s not in setup_names]
         for s in missing:
-            print(f"  [warn] requested setup not found locally: {s}")
+            _log_warning(log_file, f"[warn] requested setup not found locally: {local_n5}/{s}")
         setup_names = [s for s in setup_names if s in setup_filter]
         if not setup_names:
             print("  [warn] none of the requested setups were found locally — nothing to transfer")
@@ -435,7 +441,7 @@ def iterative_n5_upload(
 
             scale_names = _local_dirs(tp_local, r"^s\d+$")
             if not scale_names:
-                print(f"  [warn] no scale directories found in {setup}/{tp}")
+                _log_warning(log_file, f"[warn] no scale directories found in {tp_local}")
                 continue
 
             print(f"  Scales: {scale_names}")
@@ -453,7 +459,7 @@ def iterative_n5_upload(
                                          log_file=log_file, smb_server=smb_server)
                     chunk_dirs = _local_dirs(scale_local)
                     if not chunk_dirs:
-                        print(f"  [warn] no chunk directories found in {scale}")
+                        _log_warning(log_file, f"[warn] no chunk directories found in {scale_local}")
                         continue
                     print(f"{scale} chunk directories: {chunk_dirs[0]} … {chunk_dirs[-1]} "
                           f"({len(chunk_dirs)} total)")
@@ -521,7 +527,7 @@ def verify_and_repair_upload(
     base = base if base is not None else remote_dir
 
     if not os.path.isdir(local_n5):
-        print(f"  [warn] local N5 directory not found for verification: {local_n5}")
+        _log_warning(log_file, f"[warn] local N5 directory not found for verification: {local_n5}")
         return
 
     def _local_rel_files() -> list[str]:
@@ -654,7 +660,7 @@ def generic_iterative_download(
     size_map = _remote_size_map_with_retry(username, password, full_remote, output_dir,
                                            smb_server=smb_server)
     if not size_map:
-        print("  [warn] could not list the remote tree — nothing transferred")
+        _log_warning(log_file, f"[warn] could not list the remote tree {full_remote} — nothing transferred")
         return
 
     print(f"  Found {len(size_map)} file(s) to transfer")
@@ -836,7 +842,7 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
         if setup_filter:
             for s in setup_filter:
                 if not os.path.isdir(os.path.join(output_dir, n5_name, s)):
-                    print(f"  [warn] requested setup not found after transfer: {s}")
+                    _log_warning(log_file, f"[warn] requested setup not found after transfer: {full_remote}/{s}")
         _verify()
         return
 
