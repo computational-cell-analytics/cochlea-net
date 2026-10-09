@@ -39,10 +39,11 @@ The file transfer should start automatically.
   about a path without a separator before they ask for the password.
 - Forward slashes need no quotation marks: `-p UKON100/archiv/imaging/...` works too.
 - A leading backslash is optional. `\UKON100\archiv` and `UKON100\archiv` name the same directory.
-- `smb_transfer_resilient.py` and `smb_transfer_converted_stitching.py` check the login and the
-  remote directory before any transfer, and stop with an error if either fails.
-- These two scripts exit with code 1 when a transfer unit still failed after all retries. The log
-  file then lists the failed units.
+- `smb_transfer_resilient.py`, `smb_transfer_converted_stitching.py` and `smb_list_raw.py` check
+  the login and the remote directory before any transfer, and stop with an error if either fails.
+  `smb_transfer_files.py` checks the login only.
+- The transfer scripts exit with code 1 when a transfer unit still failed after all retries, or
+  when expected data was not found. The log file then lists these units.
 
 ## Converting raw data over an unstable connection
 

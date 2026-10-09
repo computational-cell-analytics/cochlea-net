@@ -33,7 +33,9 @@ from flamingo_tools.data_transfer_utils import (
     UPLOAD_ERROR_TOKENS,
     append_log,
     ensure_remote_path,
+    normalize_remote_dir,
     remote_dir_exists,
+    require_remote_dir,
     run_with_retry,
     transfer_path,
     upload_path,
@@ -139,8 +141,8 @@ def transfer_single_file(
     """
     if ingest:
         src_path = os.path.join(job.local_dir, job.local_name)
-        if os.path.getsize(src_path) == 0:
-            message = f"[warn] {job.label}: local source file is empty — skipping upload"
+        if not os.path.isfile(src_path) or os.path.getsize(src_path) == 0:
+            message = f"[warn] {job.label}: local source file is missing or empty — skipping upload"
             print(f"  {message}")
             append_log(log_file, message)
             return False
@@ -157,13 +159,14 @@ def transfer_single_file(
         )
         if not ok:
             return False
-        if os.path.getsize(dest_path) > 0:
+        # smbclient exits 0 when the remote file does not exist, so the file can be missing here.
+        if os.path.isfile(dest_path) and os.path.getsize(dest_path) > 0:
             return True
-        print(f"  [warn] {job.label}: downloaded file is empty (attempt {attempt}/{empty_retries})")
+        print(f"  [warn] {job.label}: downloaded file is missing or empty (attempt {attempt}/{empty_retries})")
         if attempt < empty_retries:
-            print(f"  [retry {attempt + 1}/{empty_retries}] re-downloading {job.label} (empty result)")
+            print(f"  [retry {attempt + 1}/{empty_retries}] re-downloading {job.label} (missing or empty result)")
 
-    message = f"[error] {job.label}: still empty after {empty_retries} attempts — skipping"
+    message = f"[error] {job.label}: still missing or empty after {empty_retries} attempts — skipping"
     print(f"  {message}")
     append_log(log_file, message)
     return False
@@ -394,8 +397,12 @@ def main():
     )
     args = parser.parse_args()
     validate_args(args, parser)
+    if args.remote is not None:
+        args.remote = normalize_remote_dir(args.remote)
 
     password = getpass.getpass("Enter password: ")
+    # Check the login once: every transfer retries a failed login, which can lock the account.
+    require_remote_dir(args.username, password, "/", os.getcwd(), smb_server=args.smb_server)
 
     if args.manifest is not None:
         log_file = args.log_file if args.log_file is not None else os.path.join(os.getcwd(), "transfer_log.txt")
