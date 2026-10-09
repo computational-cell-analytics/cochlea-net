@@ -244,7 +244,8 @@ class TestLogSize(unittest.TestCase):
             log_file = os.path.join(tmp, "log.txt")
             self.assertEqual(log_size(log_file), 0)
             append_log(log_file, "x")
-            self.assertEqual(log_size(log_file), 2)
+            # Only growth counts: the newline is 1 byte on Linux and 2 bytes on Windows.
+            self.assertGreater(log_size(log_file), 0)
             # append_log ignores this error, so log_size must raise it before the transfer.
             with self.assertRaises(OSError):
                 log_size(os.path.join(tmp, "missing", "log.txt"))
