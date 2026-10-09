@@ -54,11 +54,11 @@ fi
 
 cd "$OUTPUT_DIR" || exit
 
-# Use smbclient to connect and copy the file
+# Use smbclient to connect and copy the file.
+# -D instead of a cd command: a wrong directory then stops smbclient with a non-zero exit code,
+# instead of running mget in the share root.
 echo "Connecting to SMB server and transferring file..."
-smbclient "//wfs-medizin.top.gwdg.de/ukon-all$/ukon100" -U "GWDG/$username%$password" << EOF
-	cd "$remote_dir"
-	ls
+smbclient "//wfs-medizin-spezial.top.gwdg.de/ukon-all$" -U "GWDG/$username%$password" -D "$remote_dir" << EOF
 	recurse
 	prompt
 	mget "$remote_data"
@@ -70,4 +70,5 @@ if [ $? -eq 0 ]; then
 	echo "File transfer completed successfully."
 else
 	echo "An error occurred during the file transfer."
+	exit 1
 fi

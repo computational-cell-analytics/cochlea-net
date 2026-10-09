@@ -32,6 +32,19 @@ You are then prompted to enter your password.
 Enter your password and press Enter.
 The file transfer should start automatically.
 
+## Remote paths
+
+- Put a remote path with backslashes in quotation marks. Without them, the shell removes every
+  backslash: `UKON100\archiv\imaging` arrives as `UKON100archivimaging`. The Python scripts warn
+  about a path without a separator before they ask for the password.
+- Forward slashes need no quotation marks: `-p UKON100/archiv/imaging/...` works too.
+- A leading backslash is optional. `\UKON100\archiv` and `UKON100\archiv` name the same directory.
+- `smb_transfer_resilient.py`, `smb_transfer_converted_stitching.py` and `smb_list_raw.py` check
+  the login and the remote directory before any transfer, and stop with an error if either fails.
+  `smb_transfer_files.py` checks the login only.
+- The transfer scripts exit with code 1 when a transfer unit still failed after all retries, or
+  when expected data was not found. The log file then lists these units.
+
 ## Converting raw data over an unstable connection
 
 You do not need to transfer the raw data first in order to convert it. `flamingo_tools.convert_data`
@@ -116,6 +129,52 @@ python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_resilient.py \
   mutually exclusive (`--setup` applies to N5 data only).
 - File names with spaces are handled. Empty directories are not recreated on download.
 - Re-runs are idempotent, so an interrupted transfer can simply be re-run.
+
+## Copying stitching data
+
+`smb_transfer_converted_stitching.py` downloads the input for BigStitcher from a converted-data
+folder (usually `2_converted_stitching`) without the full-resolution image data.
+
+**Example**:
+```bash
+UKON_FOLDER="UKON100\archiv\imaging\Lightsheet\Huiskengroup_CTLSM\2026\Aleyna\00_LSFM_cosynapse\M_AMD_000117_L"
+python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_converted_stitching.py \
+    -u <GWDG-username> -p "$UKON_FOLDER" -d 2_converted_stitching -o /local/dest/dir
+```
+
+**Behaviour and options**:
+- The data lands in `<output_dir>/2_converted_stitching`, with the same layout as on the share.
+- All files whose name contains `xml` are copied (`*.xml` and the backups `*.xml~N`). The script
+  stops before the image transfer when no `*.xml` file arrives, for example when `-d` names the
+  wrong folder.
+- `interestpoints.n5` is copied in full, then every file size is compared to the share.
+- Every other `*.n5` folder is treated as image data. Only the scale levels from `--min_scale`
+  (default 2) onwards are copied, so `s0` and `s1` stay on the share.
+- The image transfer is per chunk directory for `s0`-`s3` and per scale for the rest, with the same
+  retries as `smb_transfer_resilient.py`.
+
+## Listing raw data
+
+`smb_list_raw.py` writes the file names of a raw-data folder to a JSON file. Nothing is downloaded.
+The raw-data folder contains one subfolder per stain.
+
+**Example**:
+```bash
+python /path/to/cochlea-net/scripts/data_transfer/smb_list_raw.py \
+    -u <GWDG-username> -p "$UKON_FOLDER" -d <raw_data_folder> -o raw_files.json
+```
+
+The JSON file holds the raw-data folder name and the sorted file names of each stain folder:
+```json
+{
+  "raw_data": "<raw_data_folder>",
+  "stain_folders": {
+    "20260409_040345_MAMD_118L_Vglut3_488_PELCOfHC2": ["<file 1>", "<file 2>"]
+  }
+}
+```
+Files directly in the raw-data folder are not listed. A file in a deeper subfolder keeps its path
+relative to the stain folder.
 
 # Data Transfer Huisken
 

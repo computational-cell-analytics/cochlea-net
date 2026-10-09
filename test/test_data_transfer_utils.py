@@ -177,7 +177,7 @@ class TestCopyFileResilient(unittest.TestCase):
 class TestTransportFailureDetection(unittest.TestCase):
     """smbclient can abort mid-file and still exit 0, so the output has to be scanned."""
 
-    def _run(self, output_lines, rc=0):
+    def _run(self, output_lines, rc=0, commands=("ls",)):
         import flamingo_tools.data_transfer_utils as dtu
 
         class FakeProc:
@@ -195,7 +195,7 @@ class TestTransportFailureDetection(unittest.TestCase):
 
         proc = FakeProc()
         with mock.patch.object(dtu.subprocess, "Popen", return_value=proc) as popen:
-            lines, had_disconnect, code = dtu.run_smbclient("u", "p", ["ls"], cwd=".")
+            lines, had_disconnect, code = dtu.run_smbclient("u", "p", list(commands), cwd=".")
         return lines, had_disconnect, code, popen.call_args[0][0], proc
 
     def test_io_timeout_with_exit_zero_is_a_failure(self):
@@ -228,6 +228,45 @@ class TestTransportFailureDetection(unittest.TestCase):
         self.assertIn("-t", argv)
         self.assertEqual(argv[argv.index("-t") + 1], str(SMB_TIMEOUT))
         self.assertEqual(SMB_TIMEOUT, 60)
+
+    def test_leading_cd_becomes_directory_option(self):
+        # A failed cd command leaves smbclient in the share root; a failed -D stops it.
+        _, _, _, argv, proc = self._run(["ok\n"], commands=['cd "P/my data"', "recurse", "mget x"])
+        self.assertEqual(argv[argv.index("-D") + 1], "P/my data")
+        self.assertEqual(proc.stdin.write.call_args[0][0], "recurse\nmget x\nexit")
+
+
+class TestLogSize(unittest.TestCase):
+    def test_creates_log_and_fails_for_missing_directory(self):
+        from flamingo_tools.data_transfer_utils import append_log, log_size
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_file = os.path.join(tmp, "log.txt")
+            self.assertEqual(log_size(log_file), 0)
+            append_log(log_file, "x")
+            # Only growth counts: the newline is 1 byte on Linux and 2 bytes on Windows.
+            self.assertGreater(log_size(log_file), 0)
+            # append_log ignores this error, so log_size must raise it before the transfer.
+            with self.assertRaises(OSError):
+                log_size(os.path.join(tmp, "missing", "log.txt"))
+
+
+class TestNormalizeRemoteDir(unittest.TestCase):
+    def test_unquoted_path_warns(self):
+        from flamingo_tools.data_transfer_utils import normalize_remote_dir
+
+        # The shell turns an unquoted UKON100\archiv\imaging into UKON100archivimaging.
+        with self.assertWarns(UserWarning):
+            self.assertEqual(normalize_remote_dir("UKON100archivimaging"), "UKON100archivimaging")
+
+    def test_separators(self):
+        import warnings
+        from flamingo_tools.data_transfer_utils import normalize_remote_dir
+
+        with warnings.catch_warnings():
+            warnings.simplefilter("error")
+            self.assertEqual(normalize_remote_dir("\\UKON100\\archiv\\"), "/UKON100/archiv")
+            self.assertEqual(normalize_remote_dir("UKON100/archiv"), "UKON100/archiv")
 
 
 class FakeSmbclient:

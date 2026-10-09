@@ -160,7 +160,18 @@ class TestTransferSingleFileEmptyRetry(unittest.TestCase):
             self.assertEqual(m.call_count, 3)
             with open(log_file) as f:
                 content = f.read()
-            self.assertIn("still empty after 3 attempts", content)
+            self.assertIn("still missing or empty after 3 attempts", content)
+
+    def test_download_missing_remote_file(self):
+        # smbclient exits 0 when the remote file does not exist, so no local file appears.
+        with tempfile.TemporaryDirectory() as tmp:
+            job = sf.FileJob("R", "missing.raw", tmp, "local.raw", label="local.raw")
+            log_file = os.path.join(tmp, "log.txt")
+            with mock.patch.object(sf, "download_file", return_value=True):
+                ok = sf.transfer_single_file("u", "p", job, ingest=False, empty_retries=2, log_file=log_file)
+            self.assertFalse(ok)
+            with open(log_file) as f:
+                self.assertIn("still missing or empty after 2 attempts", f.read())
 
     def test_download_transfer_itself_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -181,7 +192,15 @@ class TestTransferSingleFileEmptyRetry(unittest.TestCase):
             m.assert_not_called()
             with open(log_file) as f:
                 content = f.read()
-            self.assertIn("local source file is empty", content)
+            self.assertIn("local source file is missing or empty", content)
+
+    def test_upload_missing_source_skipped(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            job = sf.FileJob("R", "remote.raw", tmp, "missing.raw", label="missing.raw")
+            with mock.patch.object(sf, "upload_file") as m:
+                ok = sf.transfer_single_file("u", "p", job, ingest=True)
+            self.assertFalse(ok)
+            m.assert_not_called()
 
     def test_upload_nonempty_source_calls_upload_file(self):
         with tempfile.TemporaryDirectory() as tmp:
