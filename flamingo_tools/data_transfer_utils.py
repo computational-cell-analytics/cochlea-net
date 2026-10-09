@@ -74,12 +74,16 @@ def append_log(log_file: Optional[str], message: str) -> None:
         print(f"Error: {e}")
 
 
-def log_size(log_file: Optional[str]) -> int:
-    """Return the size of the log file in bytes, 0 if it does not exist.
+def log_size(log_file: str) -> int:
+    """Create the log file if necessary and return its size in bytes.
 
     Compare the size before and after a run to find out whether the run logged a failure.
+    Call it before the transfer: append_log ignores write errors, so an unwritable log path
+    must fail here, or a run with failures would look clean.
     """
-    return os.path.getsize(log_file) if log_file and os.path.exists(log_file) else 0
+    with open(log_file, "a"):
+        pass
+    return os.path.getsize(log_file)
 
 
 #

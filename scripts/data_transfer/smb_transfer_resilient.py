@@ -867,9 +867,6 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     the Phase-2 fallback; verification is size-based for both (verify_and_repair_upload).
     """
     local_n5 = os.path.join(source_dir, n5_name)
-    if not os.path.isdir(local_n5):
-        raise SystemExit(f"Local dataset not found: {local_n5}")
-
     is_n5 = not args.generic and (bool(setup_filter) or _looks_like_n5_local(local_n5))
 
     # The parent directory must exist so mput does not dump the dataset into the
@@ -953,17 +950,17 @@ def main():
     if args.generic and args.setup:
         parser.error("--generic and --setup are mutually exclusive (--setup applies to N5 data only)")
 
+    # The name is an mget/mput mask and a local folder name, so drop a trailing separator.
+    n5_name = args.remote_data.rstrip("/\\")
     output_dir = os.path.realpath(args.output_dir)
     if not args.ingest:
         os.makedirs(output_dir, exist_ok=True)
-    elif not os.path.isdir(output_dir):
-        parser.error(f"local source directory does not exist: {output_dir}")
+    elif not os.path.isdir(os.path.join(output_dir, n5_name)):
+        parser.error(f"local dataset does not exist: {os.path.join(output_dir, n5_name)}")
 
     remote_dir = normalize_remote_dir(args.remote_parent_dir)
-    password = getpass.getpass("Enter password: ")
-
-    n5_name = args.remote_data
     log_file = args.log_file if args.log_file is not None else os.path.join(output_dir, "transfer_log.txt")
+    log_start = log_size(log_file)
 
     setup_filter = None
     if args.setup:
@@ -972,7 +969,7 @@ def main():
         except ValueError as e:
             parser.error(str(e))
 
-    log_start = log_size(log_file)
+    password = getpass.getpass("Enter password: ")
     if args.ingest:
         _run_ingest(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     else:

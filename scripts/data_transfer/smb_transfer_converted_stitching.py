@@ -46,22 +46,26 @@ def main():
     parser.add_argument("-s", "--smb_server", type=str, default=SMB_SERVER,
                         help=f"SMB server to transfer from. Default: {SMB_SERVER}")
     parser.add_argument("-l", "--log_file", type=str, default=None,
-                        help="Log transfer errors. Default: transfer_log.txt in the local data folder.")
+                        help="Log transfer errors. Default: transfer_log.txt in the output directory.")
     parser.add_argument("--min_scale", type=int, default=2,
                         help="First scale level of the image N5 to copy. Default: 2 (s2, s3, ...).")
     args = parser.parse_args()
 
-    remote_dir = f"{normalize_remote_dir(args.remote_parent_dir)}/{args.remote_data}"
-    local_dir = os.path.join(os.path.realpath(args.output_dir), args.remote_data)
-    os.makedirs(local_dir, exist_ok=True)
-    log_file = args.log_file if args.log_file is not None else os.path.join(local_dir, "transfer_log.txt")
+    data_name = args.remote_data.rstrip("/\\")
+    remote_dir = f"{normalize_remote_dir(args.remote_parent_dir)}/{data_name}"
+    output_dir = os.path.realpath(args.output_dir)
+    local_dir = os.path.join(output_dir, data_name)
+    os.makedirs(output_dir, exist_ok=True)
+    log_file = args.log_file if args.log_file is not None else os.path.join(output_dir, "transfer_log.txt")
     smb = dict(log_file=log_file, smb_server=args.smb_server)
 
     log_start = log_size(log_file)
 
     password = getpass.getpass("Enter password: ")
 
-    require_remote_dir(args.username, password, remote_dir, local_dir, smb_server=args.smb_server)
+    # Create the local folder only after the check, so that a wrong -d leaves nothing behind.
+    require_remote_dir(args.username, password, remote_dir, output_dir, smb_server=args.smb_server)
+    os.makedirs(local_dir, exist_ok=True)
     dirs = list_remote_dirs(args.username, password, remote_dir, local_dir,
                             local_fallback=local_dir, smb_server=args.smb_server)
     image_n5s = [d for d in dirs if d.endswith(".n5") and d != INTEREST_POINTS]

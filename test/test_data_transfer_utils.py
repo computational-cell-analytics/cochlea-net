@@ -236,6 +236,20 @@ class TestTransportFailureDetection(unittest.TestCase):
         self.assertEqual(proc.stdin.write.call_args[0][0], "recurse\nmget x\nexit")
 
 
+class TestLogSize(unittest.TestCase):
+    def test_creates_log_and_fails_for_missing_directory(self):
+        from flamingo_tools.data_transfer_utils import append_log, log_size
+
+        with tempfile.TemporaryDirectory() as tmp:
+            log_file = os.path.join(tmp, "log.txt")
+            self.assertEqual(log_size(log_file), 0)
+            append_log(log_file, "x")
+            self.assertEqual(log_size(log_file), 2)
+            # append_log ignores this error, so log_size must raise it before the transfer.
+            with self.assertRaises(OSError):
+                log_size(os.path.join(tmp, "missing", "log.txt"))
+
+
 class TestNormalizeRemoteDir(unittest.TestCase):
     def test_unquoted_path_warns(self):
         from flamingo_tools.data_transfer_utils import normalize_remote_dir

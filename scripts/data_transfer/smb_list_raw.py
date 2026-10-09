@@ -46,7 +46,10 @@ def main():
                         help=f"SMB server to list from. Default: {SMB_SERVER}")
     args = parser.parse_args()
 
-    remote_dir = f"{normalize_remote_dir(args.remote_parent_dir)}/{args.remote_data}"
+    if not os.path.isdir(os.path.dirname(os.path.abspath(args.output))):
+        parser.error(f"the directory of the output file does not exist: {args.output}")
+    data_name = args.remote_data.rstrip("/\\")
+    remote_dir = f"{normalize_remote_dir(args.remote_parent_dir)}/{data_name}"
 
     password = getpass.getpass("Enter password: ")
 
@@ -56,7 +59,7 @@ def main():
     if size_map is None:
         raise SystemExit(f"Could not list the remote directory {remote_dir}.")
 
-    file_list = raw_file_list(args.remote_data, size_map)
+    file_list = raw_file_list(data_name, size_map)
     with open(args.output, "w") as f:
         json.dump(file_list, f, indent=2)
 
