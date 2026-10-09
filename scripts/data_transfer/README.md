@@ -150,6 +150,29 @@ python /path/to/cochlea-net/scripts/data_transfer/smb_transfer_converted_stitchi
 - The image transfer is per chunk directory for `s0`-`s3` and per scale for the rest, with the same
   retries as `smb_transfer_resilient.py`.
 
+## Listing raw data
+
+`smb_list_raw.py` writes the file names of a raw-data folder to a JSON file. Nothing is downloaded.
+The raw-data folder contains one subfolder per stain.
+
+**Example**:
+```bash
+python /path/to/cochlea-net/scripts/data_transfer/smb_list_raw.py \
+    -u <GWDG-username> -p "$UKON_FOLDER" -d <raw_data_folder> -o raw_files.json
+```
+
+The JSON file holds the raw-data folder name and the sorted file names of each stain folder:
+```json
+{
+  "raw_data": "<raw_data_folder>",
+  "stain_folders": {
+    "20260409_040345_MAMD_118L_Vglut3_488_PELCOfHC2": ["<file 1>", "<file 2>"]
+  }
+}
+```
+Files directly in the raw-data folder are not listed. A file in a deeper subfolder keeps its path
+relative to the stain folder.
+
 # Data Transfer Huisken
 
 See "Transfer via smbclient" above:
