@@ -57,12 +57,14 @@
 			"PELCOfHC2longnoDCM": {
 				"label": "MWfLS",
 				"animal": "mouse",
-				"description": "Microwave-assisted hybrid clearing with long incubation and without dichloromethane. Same cochleae as the 'mwfls' group.",
+				"description": "Microwave-assisted hybrid clearing with long incubation and without dichloromethane. The 'mwfls' group holds the M_AMD_000126 and M_AMD_000127 cochleae of this protocol.",
 				"cochleae": [
 					"M_AMD_000126_L",
 					"M_AMD_000126_R",
 					"M_AMD_000127_L",
-					"M_AMD_000127_R"
+					"M_AMD_000127_R",
+					"M_AMD_000137_L",
+					"M_AMD_000137_R"
 				]
 			},
 			"PELCODISCO1": {
@@ -277,6 +279,24 @@
 					"M_LR_N152_L",
 					"M_LR_N152_R",
 					"M_LR_N98_R"
+				]
+			},
+			"fast_SGN_subtype": {
+				"label": "fast SGN subtype",
+				"animal": "mouse",
+				"description": "Cochleae stained for SGN subtype markers and prepared with a fast preparation protocol.",
+				"cochleae": [
+					"M_AMD_N159_L",
+					"M_AMD_N159_R"
+				]
+			},
+			"cosynapse": {
+				"label": "cosynapse",
+				"animal": "mouse",
+				"description": "Cochleae of the cosynapse imaging cohort.",
+				"cochleae": [
+					"M_AMD_000117_L",
+					"M_AMD_000118_L"
 				]
 			},
 			"undefined": {
