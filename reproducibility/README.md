@@ -11,8 +11,10 @@ through the console scripts of the package; see Usage below.
 | `training_crops` | Crop centers for the creation of training data, written by `scripts/training/` |
 | `export_lower_resolution` | Positions and channels for the export of overview images |
 | `model_accuracy` | Segmentation and detection accuracy per model, read by the figure scripts |
-| `templates_processing` | Slurm templates for segmentation and detection |
-| `templates_transfer` | Templates for the transfer of data into MoBIE and to S3 |
+
+The Slurm jobs for segmentation, detection, and the transfer of data into MoBIE and to S3 come
+from the repository [slurm-workflows](https://github.com/computational-cell-analytics/slurm-workflows).
+See its [documentation of the processing pipelines](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_03_processing_pipelines.md).
 
 ## The processing parameter files
 
@@ -132,6 +134,9 @@ for f in reproducibility/processing/*.json; do
     flamingo_tools.object_measures   --json_info "$f" -o <out-dir> --s3
 done
 ```
+
+The commands write the tables to `<out-dir>`. To copy them to the S3 bucket, see
+[Upload the tables to the S3 bucket](../doc/analysis.md#upload-the-tables-to-the-s3-bucket).
 
 ### Labeling of components in the segmentation
 

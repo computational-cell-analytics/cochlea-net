@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=synapse-detect
+#SBATCH --job-name=sgn-detect
 #SBATCH -t 03:00:00             # estimated time, adapt to your needs
 #SBATCH --mail-type=FAIL        # send mail when job begins and ends
 
@@ -10,8 +10,7 @@
 #SBATCH --mem 32G
 
 source ~/.bashrc
-# micromamba activate micro-sam_gpu
-micromamba activate sam
+micromamba activate cochlea-net
 
 # Print out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -19,14 +18,7 @@ echo "Home directory: ${HOME}"
 echo "Working directory: $PWD"
 echo "Current node: ${SLURM_NODELIST}"
 
-# Run the script
-#python myprogram.py $SLURM_ARRAY_TASK_ID
-
-# SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
-SCRIPT_REPO=/user/pape41/u12086/Work/my_projects/flamingo-tools
-cd "$SCRIPT_REPO"/flamingo_tools/segmentation/ || exit
-
-export SCRIPT_DIR=$SCRIPT_REPO/scripts
+SCRIPT_REPO=${SCRIPT_REPO:-$HOME/cochlea-net}
 
 # name of cochlea, as it appears in MoBIE and the NHR
 COCHLEA=$1
@@ -53,7 +45,7 @@ INPUT_KEY="s0"
 echo "OUTPUT_FOLDER $OUTPUT_FOLDER"
 echo "MODEL $MODEL"
 
-python ~/flamingo-tools/scripts/sgn_detection/sgn_detection.py \
+python "$SCRIPT_REPO"/scripts/sgn_detection/sgn_detection.py \
 	--input "$INPUT_PATH" \
 	--input_key $INPUT_KEY \
 	--output_folder "$OUTPUT_FOLDER" \

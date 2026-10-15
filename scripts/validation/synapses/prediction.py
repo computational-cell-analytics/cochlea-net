@@ -42,7 +42,7 @@ _TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/
 VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
 # Production values, kept in one place so a pipeline change is easy to mirror.
-PRODUCTION_THRESHOLD = 0.5  # detect_synapse_peaks_template.sbatch and the marker_detection default.
+PRODUCTION_THRESHOLD = 0.5  # detect_synapses template of slurm-workflows and the marker_detection default.
 PRODUCTION_MAX_DISTANCE = 3.0  # marker_detection() default; callers have also used 5, 8 and 20.
 
 # Predictions produced with the production settings live under their own root. The predictions
