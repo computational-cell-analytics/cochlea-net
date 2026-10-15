@@ -583,6 +583,11 @@ def object_measures_single(
     """
     input_key = "s0"
     out_paths = [os.path.realpath(o) for o in out_paths]
+    if len(out_paths) != len(image_paths):
+        raise ValueError(
+            f"Give one output path for each image path: got {len(out_paths)} output path(s) "
+            f"for {len(image_paths)} image path(s)."
+        )
 
     if not isinstance(voxel_size, float):
         if len(voxel_size) == 1:
@@ -593,6 +598,11 @@ def object_measures_single(
 
     if bg_cache_paths is None:
         bg_cache_paths = [None for _ in range(len(image_paths))]
+    elif len(bg_cache_paths) != len(image_paths):
+        raise ValueError(
+            f"Give one background mask path for each image path: got {len(bg_cache_paths)} "
+            f"background mask path(s) for {len(image_paths)} image path(s)."
+        )
 
     for (img_path, out_path, bg_cache_path) in zip(image_paths, out_paths, bg_cache_paths):
         n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
@@ -867,6 +877,7 @@ def object_measures_json_wrapper(
         object_measures_single(
             out_paths=out_paths,
             use_bg_mask=use_bg_mask,
+            bg_cache_paths=bg_cache_paths or None,
             s3=s3,
             image_paths=image_paths,
             table_path=table_path,
