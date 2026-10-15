@@ -80,6 +80,23 @@ class TestMeasurements(unittest.TestCase):
         for col in expected_columns:
             self.assertIn(col, table.columns)
 
+    def test_object_measures_single_needs_output(self):
+        from flamingo_tools.measurements import object_measures_single
+
+        with self.assertRaises(ValueError):
+            object_measures_single(self.table_path, self.seg_path, [self.image_path], out_paths=[])
+
+    def test_object_measures_bg_cache_paths_without_json(self):
+        from flamingo_tools.measurements import object_measures_json_wrapper
+
+        out_path = os.path.join(self.folder, "measurements.tsv")
+        cache_paths = [os.path.join(self.folder, f"bg_{i}.zarr") for i in range(2)]
+        with self.assertRaises(ValueError):
+            object_measures_json_wrapper(
+                out_paths=[out_path], image_paths=[self.image_path], table_path=self.table_path,
+                seg_path=self.seg_path, use_bg_mask=True, bg_cache_paths=cache_paths,
+            )
+
     def test_normalize_background(self):
         """Every intensity measure drops by the background level, and the spread stays unchanged."""
         from flamingo_tools.measurements import _default_object_features, BACKGROUND_NORMALIZED_MEASURES

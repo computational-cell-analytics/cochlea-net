@@ -10,7 +10,7 @@
 #SBATCH --mem 128G
 
 source ~/.bashrc
-micromamba activate micro-sam_gpu
+micromamba activate cochlea-net
 
 # Print out some info.
 echo "Submitting job with sbatch from directory: ${SLURM_SUBMIT_DIR}"
@@ -18,7 +18,7 @@ echo "Home directory: ${HOME}"
 echo "Working directory: $PWD"
 echo "Current node: ${SLURM_NODELIST}"
 
-SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
+SCRIPT_REPO=${SCRIPT_REPO:-$HOME/cochlea-net}
 export PYTHONPATH="$SCRIPT_REPO:$PYTHONPATH"
 
 # Directory for the checkpoints. train_synapse_detection.py writes to

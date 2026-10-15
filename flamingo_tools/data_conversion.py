@@ -972,7 +972,7 @@ def convert_lightsheet_to_bdv_cli():
     parser = argparse.ArgumentParser(
         description="Convert lightsheet data from a flamingo microscope to a format compatible with BigDataViewer / BigStitcher. "  # noqa
                     "For most flamingo data it should be sufficient to run the script like this: \n"
-                    "python convert_flamingo_data.py -i /path/to/flamingo_data -o /path/to/output.n5 \n"
+                    "flamingo_tools.convert_data -i /path/to/flamingo_data -o /path/to/output.n5 \n"
                     "Here, -i specifies the path to the input folder and -o specifies the path to the output data. \n"
                     "In order to process flamingo data stored in raw format you also need to pass the argument '-f .raw'."  # noqa
     )

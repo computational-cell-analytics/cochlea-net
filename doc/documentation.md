@@ -1,29 +1,28 @@
 # CochleaNet
 
-CochleaNet is a tool for the analysis of cochleae imaged in light-sheet microscopy.
+CochleaNet is a tool for the analysis of cochleae in light-sheet microscopy data.
 Its main components are:
-- A deep neural network for segmenting spiral ganglion neurons (SGNs) from parvalbumin (PV) staining.
-- A deep neural network for segmenting inner hair cells (IHCs) from VGlut3 staining.
-- A deep neural network for detecting ribbon synapses from CtBP2 staining.
+- A deep neural network that segments spiral ganglion neurons (SGNs) in a parvalbumin (PV) stain.
+- A deep neural network that segments inner hair cells (IHCs) in a VGlut3 stain.
+- A deep neural network that detects ribbon synapses in a CtBP2 stain.
 
-In addition, it contains functionality for data pre-processing and different kinds of measurements based on the network predictions, including:
-- Analyzing the tonotopic mapping of SGNs and IHCs in the cochlea.
-- Validating gene therapies and optogentic therapies (based on additional fluorescent stainings).
-- Analyzing SGN subtypes (based on additional fluorescent staining).
-- Visualizing segmentation results and derived analyses in [MoBIE](https://mobie.github.io/).
+CochleaNet also contains functions for data pre-processing and for measurements on the network predictions:
+- Analysis of the tonotopic mapping of SGNs and IHCs in the cochlea.
+- Validation of gene therapies and optogenetic therapies, with additional fluorescent stains.
+- Analysis of SGN subtypes, with additional fluorescent stains.
+- Visualization of segmentation results and derived analyses in [MoBIE](https://mobie.github.io/).
 
-The networks and analysis methods were primarily developed for high-resolution isotropic data from a [custom light-sheet microscope](https://www.nature.com/articles/s41587-025-02882-8).
-The networks work best for the respective fluorescent stains they were trained on, but will work for similar stains.
-For example, we have successfully applied the network for SGN segmentation on a calretinin (CR) stain and the network for IHC segmentation on a Myosin VII A stain.
-In addition, CochleaNet provides networks for the segmentation of SGNs and IHCs in anisotropic data from a [commercial light-sheet microscope](https://www.miltenyibiotec.com/DE-en/products/macs-imaging-and-spatial-biology/ultramicroscope-platform.html).
+The networks and analysis methods are primarily for high-resolution isotropic data from a [custom light-sheet microscope](https://www.nature.com/articles/s41587-025-02882-8).
+The networks work best for the fluorescent stains of their training data, but they also work for similar stains.
+For example, the SGN network segments a calretinin (CR) stain, and the IHC network segments a Myosin VIIa stain.
+CochleaNet also provides networks that segment SGNs and IHCs in anisotropic data from a [commercial light-sheet microscope](https://www.miltenyibiotec.com/DE-en/products/macs-imaging-and-spatial-biology/ultramicroscope-platform.html).
 
-For more information on CochleaNet, check out our [preprint](https://doi.org/10.1101/2025.11.16.688700).
+For more information on CochleaNet, see our [preprint](https://doi.org/10.1101/2025.11.16.688700).
 
 ## Installation
 
-CochleaNet can be installed via `conda` (or [micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html)).
-To install it:
-- Download the CochleaNet github repository:
+Install CochleaNet with `conda` (or [micromamba](https://mamba.readthedocs.io/en/latest/user_guide/micromamba.html)):
+- Download the CochleaNet GitHub repository:
 ```
 git clone https://github.com/computational-cell-analytics/cochlea-net
 ```
@@ -31,7 +30,7 @@ git clone https://github.com/computational-cell-analytics/cochlea-net
 ```
 cd cochlea-net
 ```
-- Create an environment with the required dependencies:
+- Create an environment with the necessary dependencies:
 ```
 conda env create -f environment.yaml
 ```
@@ -43,40 +42,40 @@ conda activate cochlea-net
 ```
 pip install .
 ```
-- (Optional): if you want to use the napari plugin you have to install napari:
+- (Optional) To use the napari plugin, install napari:
 ```
 conda install -c conda-forge napari pyqt
 ```
-- (Optional): if you want to train the synapse detection with the flow channels you have to install spotiflow:
+- (Optional) To train the synapse detection with the flow channels, install spotiflow:
 ```
-pip install "cochlea_net[flow]"
+pip install ".[flow]"
 ```
 ## Available Models
 
-CochleaNet provides four different segmentation models:
-- `SGN`: for segmenting spiral ganglion neurons (SGNs) in high-resolution, isotropic light-sheet microscopy data.
-    - This model was trained on image data with parvalbumin (PV) stain, with a voxel size of 0.38 micrometer.
-- `IHC`: for segmenting inner hair cells (IHCs) in high-resolution, isotropic light-sheet microscopy data.
-    - This model was trained on image data with Vglut3 stain, with a voxel size of 0.38 micrometer.
-- `SGN-lowres`: for segmenting SGNs in lower-resolution, anisotropic light-sheet microscopy data.
-    - This model was trained on image data with PV stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
-- `IHC-lowres`: for segmenting IHCs in lower-resolution, anisotropic light-sheet microscopy data.
-    - This model was trained on image data with Myosin VIIa stain, with a voxel size of 0.76 X 0.76 X 3.0 micrometer.
+CochleaNet provides four segmentation models:
+- `SGN`: segments spiral ganglion neurons (SGNs) in high-resolution, isotropic light-sheet microscopy data.
+    - Training data: PV stain, voxel size 0.38 micrometer.
+- `IHC`: segments inner hair cells (IHCs) in high-resolution, isotropic light-sheet microscopy data.
+    - Training data: Vglut3 stain, voxel size 0.38 micrometer.
+- `SGN-lowres`: segments SGNs in lower-resolution, anisotropic light-sheet microscopy data.
+    - Training data: PV stain, voxel size 0.76 X 0.76 X 3.0 micrometer.
+- `IHC-lowres`: segments IHCs in lower-resolution, anisotropic light-sheet microscopy data.
+    - Training data: Myosin VIIa stain, voxel size 0.76 X 0.76 X 3.0 micrometer.
 
-It provides one detection model:
-- `Synapses`: for detecting afferent ribbon synapses in high-resolution isotropic light-sheet microscopy data.
-    - This model was trained on image data with CtBP2 stain, with a voxel size of 0.38 micrometer.
+CochleaNet provides one detection model:
+- `Synapses`: detects afferent ribbon synapses in high-resolution, isotropic light-sheet microscopy data.
+    - Training data: CtBP2 stain, voxel size 0.38 micrometer.
 
-**Note: If you want to run the segmentation in a environment without internet access, you must download the models beforehand and copy them to CocheaNet's `Model directory`. The model directory can be identified with the command `flamingo_tools.info`.**
+**Note: To run the segmentation in an environment without internet access, download the models first. Then copy them to the `Model directory` of CochleaNet. The command `flamingo_tools.info` shows the model directory.**
 
-The models can be downloaded from ownCloud:
+Download the models from ownCloud:
 - [SGN](https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download),
 - [IHC](https://owncloud.gwdg.de/index.php/s/wB7d2MjV5LRTP06/download),
 - [Synapses](https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download),
 - [SGN-lowres](https://owncloud.gwdg.de/index.php/s/OS7985CKaTTBT5g/download), and
 - [IHC-lowres](https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download).
 
-Alternatively, after installation, the models can be downloaded using `flamingo_tools.download_model` for all or individual models:
+As an alternative, use `flamingo_tools.download_model` after the installation. It downloads all models or the selected models:
 ```bash
 # Download all models
 flamingo_tools.download_model
@@ -84,79 +83,111 @@ flamingo_tools.download_model
 flamingo_tools.download_model -m SGN
 ```
 
-They can be checked using
+To examine the downloaded models, run:
 ```bash
 flamingo_tools.info
 ```
-which will output something like this:
+The output is similar to:
 ```
 Version: 0.1.0
 Model directory: /home/pape/.cache/cochlea-net/models
 Downloaded models: ['IHC-lowres', 'SGN', 'Synapses', 'SGN-lowres', 'IHC']
 ```
-In case you download models manually, copy them to the `Model directory` and rerun `flamingo_tools.info` to check that they are correctly identified.
+If you download the models manually, copy them to the `Model directory`.
+Then run `flamingo_tools.info` again to make sure that it finds the models.
 
 ## Usage
 
-CochleaNet can be used via:
-- The [napari plugin](#napari-plugin): enables prediction with the pre-trained CochleaNet deep neural networks.
-- The [command line interface](#command-line-interface): enables data conversion, model prediction, and selected analysis workflows for large image data.
-- The [python library](#python-library): implements CochleaNet's functionality and can be used to implement flexible prediction and data analysis workflows for large image data.
+Use CochleaNet with:
+- The [napari plugin](#napari-plugin): prediction with the pre-trained CochleaNet deep neural networks.
+- The [command line interface](#command-line-interface): data conversion, model prediction, and analysis workflows for large image data.
+- The [python library](#python-library): the functions of CochleaNet, for your own prediction and analysis workflows for large image data.
+- The [HPC pipelines](#hpc-pipelines): processing of whole cochleae as Slurm jobs on the GWDG cluster.
 
-**Note: the napari plugin was not optimized for processing large data. Please use the CLI or python library for processing large data.**
+**Note: The napari plugin is not optimized for large data. Use the CLI or the python library to process large data.**
 
 ### Napari Plugin
 
-The plugins for segmentation (SGNs and IHCS) and detection (ribbon synapses) is available under `Plugins->CochleaNet->Segmentation/Detection` in napari:
+The plugins for segmentation (SGNs and IHCs) and detection (ribbon synapses) are in napari under `Plugins->CochleaNet->Segmentation/Detection`:
 
 <img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-selection.png" alt="The CochleaNet plugins available in napari." width="384">
 
 
-The segmentation plugin offers the choice of different models under `Select Model:` (see [Available Models](#available-models) for details). `Image data` enables the choice which image data (napari layer) the model is applied to.
-The segmentation is started by clicking the `Run Segmentation` button. After the segmentation has finished, a new segmentation layer with the result (here `IHC`) will be added:
+Select the model under `Select Model:` (see [Available Models](#available-models) for details).
+Select the image data (napari layer) for the model under `Image data`.
+Click `Run Segmentation` to start the segmentation. When the segmentation is complete, the plugin adds a segmentation layer with the result (here `IHC`):
 <img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-segmentation.png" alt="The CochleaNet segmentation plugin." width="768">
 
 Select `Show intermediate outputs` in the advanced settings to add the foreground, center-distance, and boundary-distance predictions as image layers.
 
-The detection model works similarly. It currently provides the model for synapse detection. The predictions are added as a point layer (`Synapses`):
+The detection plugin works in the same way. It currently provides the model for synapse detection. The plugin adds the predictions as a point layer (`Synapses`):
 <img src="https://raw.githubusercontent.com/computational-cell-analytics/cochlea-net/refs/heads/master/doc/img/cochlea-net-plugin-detection.png" alt="The CochleaNet detection plugin." width="768">
 
 Select `Show intermediate outputs` in the advanced settings to also add the synapse heatmap as an image layer.
 
-For more information on how to use napari, check out the tutorials at [www.napari.org](https://napari.org/stable/).
+For more information on napari, see the tutorials at [www.napari.org](https://napari.org/stable/).
 
-**To use the napari plugin you have to install `napari` and `pyqt` in your environment. See [installation](#installation) for details.**
+**The napari plugin needs `napari` and `pyqt` in your environment. See [installation](#installation) for details.**
 
 ### Command Line Interface
 
-The command line interface provides the following commands:
+The command line interface provides these commands for data conversion and prediction:
 
-`flamingo_tools.convert_data`: Convert data from a flamingo microscope. You can use this command as follows:
+`flamingo_tools.convert_data` converts data from a flamingo microscope:
 ```bash
 flamingo_tools.convert_data -i /path/to/data -o /path/to/output.n5 --file_ext .tif
 ```
-Use `--file_ext .raw` if the data is stored in raw files. The the output data format is determined by the extension of the output path you specify (`-o`):
-- If you specify `.n5` the data will be exported to the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md). It can be opened with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5` or with [BigStitcher](https://imagej.net/plugins/bigstitcher/) as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
-- If you specify `.ome.zarr` the data will be exported to the [ome.zarr format](https://ngff.openmicroscopy.org/).
+Use `--file_ext .raw` for data in raw files. The extension of the output path (`-o`) sets the output data format:
+- `.n5` writes the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md). Open it with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5`, or with [BigStitcher](https://imagej.net/plugins/bigstitcher/) as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
+- `.ome.zarr` writes the [ome.zarr format](https://ngff.openmicroscopy.org/).
 
-`flamingo_tools.run_segmentation`: To segment cells in volumetric light microscopy data. You can use this command as follows:
+`flamingo_tools.run_segmentation` segments cells in volumetric light microscopy data:
 ```bash
 flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -m SGN
 ```
-Here, `-m` determines which model is used. See also [available models](#available-models).
+`-m` selects the model. See also [available models](#available-models).
+Use `--checkpoint_path` (`-c`) for a custom trained model.
 
-To use a custom trained model you can use the argument `--checkpoint_path` (`-c`).
+`flamingo_tools.run_detection` detects synapses in volumetric light microscopy data. Its usage is similar to `flamingo_tools.run_segmentation`.
+See the [segmentation documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/segmentation.md) for examples of both commands.
 
-`flamingo_tools.run_detection`: To detect synapses in volumetric light microscopy data. The command is used similarly to `flamingo_tools.run_segmentation`.
+The command line interface also provides commands for the analysis of segmentation tables:
+- `flamingo_tools.label_components`: finds the connected components of a segmentation.
+- `flamingo_tools.tonotopic_mapping`: assigns a frequency to each instance.
+- `flamingo_tools.object_measures`: measures the morphology and the intensity of each instance.
+- `flamingo_tools.json_block_extraction`, `flamingo_tools.equidistant_centers`, `flamingo_tools.extract_central_blocks` and `flamingo_tools.extract_block`: extract blocks along the cochlea, for example for the intensity annotation.
+- `flamingo_tools.sgn_density`: calculates the SGN density at positions along Rosenthal's canal.
+- `flamingo_tools.table_info`: finds the table row closest to a value of a column, for example a frequency.
 
-For more information on any of the command run `flamingo_tools.<COMMAND> -h` (e.g. `flamingo_tools.run_segmentation -h`) in your terminal.
+See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md) and the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) for examples.
 
-We will add additional command line functionality soon.
+Run `flamingo_tools.<COMMAND> -h` (for example `flamingo_tools.run_segmentation -h`) to show all options of a command.
 
 ### Python Library
 
-CochleaNet's functionality is implemented in the `flamingo_tools` python library. It implements:
-- `flamingo_tools.measurements`: functionality to measure morphological attributes and intensity statistics for segmented cells.
-- `flamingo_tools.mobie`: functionality to export flamingo image data or segmentation results to a MoBIE project.
-- `flamingo_tools.segmentation`: functionality to apply segmentation and detection models to large volumetric image data.
-- `flamingo_tools.training`: functionality to train segmentation and detection networks.
+The `flamingo_tools` python library contains the functions of CochleaNet:
+- `flamingo_tools.measurements`: measures morphological attributes and intensity statistics of segmented cells.
+- `flamingo_tools.mobie`: exports flamingo image data or segmentation results to a MoBIE project.
+- `flamingo_tools.postprocessing`: labels connected components and maps the tonotopy of segmented cells.
+- `flamingo_tools.segmentation`: applies segmentation and detection models to large volumetric image data.
+- `flamingo_tools.training`: trains segmentation and detection networks.
+
+### HPC Pipelines
+
+The repository [slurm-workflows](https://github.com/computational-cell-analytics/slurm-workflows) holds the Slurm templates and pipelines that process whole cochleae with CochleaNet on the GWDG cluster.
+Its project `cochlea-net` provides pipelines for:
+- the conversion to the MoBIE data format and the transfer to the S3 bucket,
+- the segmentation of IHCs,
+- the segmentation of SGNs, and
+- the detection of ribbon synapses.
+
+Each user keeps the account-specific values in a settings file. A parameter file per cochlea holds the values of a job.
+The script `scripts/deploy_process.py` fills the templates with these values and submits the steps of a pipeline as a chain of Slurm jobs.
+The repository also archives the metadata of each job.
+
+The documentation of slurm-workflows explains:
+- [Getting started](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_01_getting_started.md): the HPC project, the SSH connection, and the environment on the cluster.
+- [Data transfer](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_02_data_transfer.md): the transfer from and to UKON100 and the S3 bucket.
+- [Processing pipelines](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_03_processing_pipelines.md): the settings file, the parameter files, and the commands that run a pipeline.
+
+After a pipeline, continue with the [analysis](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md) of the segmentation.

@@ -19,7 +19,7 @@ PATH_METHOD_HELP = ("Method for finding the central path through the segmentatio
 
 def equidistant_centers():
     parser = argparse.ArgumentParser(
-        description="Script to extract region of interest (ROI) block around center coordinate.")
+        description="Find equidistant center coordinates along the central path of a segmentation.")
 
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("-i", "--input", type=str, default=None,
@@ -349,7 +349,7 @@ def object_measures():
 
 def tonotopic_mapping():
     parser = argparse.ArgumentParser(
-        description="Script to extract region of interest (ROI) block around center coordinate.")
+        description="Assign tonotopic frequencies to the instances of a segmentation table.")
 
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("-i", "--input", type=str, default=None,
@@ -369,7 +369,9 @@ def tonotopic_mapping():
                         help="Animal type to be used for frequency mapping. Either 'mouse' or 'gerbil'.")
     parser.add_argument("--otof", action="store_true", help="Use frequency mapping for OTOF cochleae.")
     parser.add_argument("--apex_position", type=str, default="apex_higher",
-                        help="Use frequency mapping for OTOF cochleae.")
+                        help="Position of the apex. 'apex_higher' sets the apex to the end of the central path "
+                        "with the higher y-value. Another value sets it to the end with the lower y-value. "
+                        "Default: apex_higher")
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",
