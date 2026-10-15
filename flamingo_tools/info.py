@@ -15,7 +15,7 @@ def module_info():
     parser = argparse.ArgumentParser(
         description="Return information about the flamingo_tools module. "
         "Check whether pre-trained CochleaNet models are in the local cache. "
-        "Run flamingo_tools.download_models to download models."
+        "Run flamingo_tools.download_model to download models."
     )
     _ = parser.parse_args()
 
@@ -28,7 +28,7 @@ def module_info():
     if not os.path.isdir(model_dir):
         print(f"No models in cache directory {cache_dir}.")
         print(f"Create model directory {model_dir} and transfer pre-trained models.")
-        print("If you have internet acces: Run flamingo_tools.download_models to download models.")
+        print("If you have internet access: Run flamingo_tools.download_model to download models.")
     else:
         downloaded_models = [entry.name for entry in os.scandir(model_dir)]
         print(f"Model directory: {model_dir}")
