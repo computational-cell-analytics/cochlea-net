@@ -1,14 +1,14 @@
 # Training data for SGN, IHC, and synapse networks
 
-The files in this folder give an overview over the image crops used for the training, validation, and testing of the SGN, IHC, and synapse detection networks which were used in the CochleaNet paper.
-Each file features a list of image crops in the format of a dataframe in CSV format.
-Each row contains the original name, a standardized version of the name, its crop center, the number of samples and other parameters.
+The files in this folder list the image crops for the training, validation, and testing of the SGN, IHC, and synapse detection networks of the CochleaNet paper.
+Each file is a table of image crops in TSV format.
+Each row contains the original name, a standardized version of the name, the crop center, the number of samples, and other parameters.
 
 ## Creation process
 
-First, the file names of the crops are manually collected and stored in the `Original` column.
-The subdirectory is specified in form of the `Dataset` entry.
-Once these values are given, the table is expanded with the script `scripts/analysis/analyze_training_data.py`.
+First, collect the file names of the crops manually in the column `Original`.
+The column `Dataset` gives the subdirectory.
+Then the script `scripts/analysis/analyze_training_data.py` adds the other columns.
 The script uses the functions `add_metadata_to_crop_table` and `add_metadata_to_crop_table_synapses` located at `flamingo_tools/analysis/training_data_utils.py`.
 It selects the function from the name of the table, which must contain `IHC`, `SGN`, or `synapse`.
 
@@ -55,7 +55,8 @@ The script reports these crops, so that a new prefix does not pass unnoticed.
 
 ## IHC split for single sample
 
-Due to the lack of annotation data, one volume was split into a subvolume for training and validation for the initial trainings.
+The first trainings had little annotated data.
+Thus one volume was split into a subvolume for training and a subvolume for validation:
 ```
 arr_img = imageio.imread("171R_Vglut3_apexIHC_HCAT_C1.tif")
 arr_seg = imageio.imread("171R_Vglut3_apexIHC_HCAT_C1_annotations.tif")

@@ -1,58 +1,63 @@
 # Methods for the analysis of a segmented cochlea
 
-The following code snippets will show how a single cochlea is analyzed.
+This document shows the analysis of one segmented cochlea.
+
+- Run the `python scripts/...` commands from the root of the repository.
+- With `--s3`, a command reads the data from the S3 bucket. Paths such as `M_AMD_N162_L/tables/SGN_v2/default.tsv` are then relative to the bucket.
+- Without `--s3`, give the local path, for example in a local MoBIE project.
 
 ## Labeling components
-The component labeling for SGNs is quite reliable.
+
+`flamingo_tools.label_components` finds the connected components of a segmentation table.
+The labeling of SGN components usually needs no tuning:
 ```bash
-# locally
-flamingo_tools.label_components --input "$MOBIE_DIR"/M_AMD_N162_L/tables/SGN_v2/default.tsv -o M_AMD_N162_L_v2.tsv --cell_type sgn
-# access segmentation table on S3 bucket
-flamingo_tools.label_components --input M_AMD_N162_L/tables/SGN_v2/default.tsv --s3 -o M_AMD_N162_L_v2.tsv --cell_type sgn
-# check with napari
-flamingo_tools.label_components --input M_AMD_N162_L/tables/SGN_v2/default.tsv --s3 -o M_AMD_N162_L_v2.tsv --cell_type sgn --napari
+flamingo_tools.label_components -i M_AMD_N162_L/tables/SGN_v2/default.tsv -o M_AMD_N162_L_v2.tsv --s3
 ```
 
-Labeling IHC components may require tuning of the `--max_edge_distance` and `--min_component_length` parameters and is usually an iterative process.
+- Add `--napari` to show the components in napari.
+- Add `--cell_type ihc` for an IHC segmentation.
 
-```bash
-# locally
-flamingo_tools.label_components --input "$MOBIE_DIR"/M_AMD_N162_L/tables/IHC_v4b/default.tsv -o M_AMD_N162_L_v4b.tsv --cell_type ihc
-# access segmentation table on S3 bucket
-flamingo_tools.label_components --input M_AMD_N162_L/tables/IHC_v4b/default.tsv --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc
-# check with napari
-flamingo_tools.label_components --input M_AMD_N162_L/tables/IHC_v4b/default.tsv --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --napari
-```
+The labeling of IHC components often needs tuning of `--max_edge_distance` and `--min_component_length`.
+The example below shows this iterative process.
 
 ### Example
 
-A typical process could look like this:
+Start with the default parameters and show the result in napari:
 ```bash
 flamingo_tools.label_components --input M_AMD_N162_L/tables/IHC_v4b/default.tsv --napari --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc
 ```
 ![Step1](img/component_label_ihc_01.png)
-For the most part, the IHCs are correctly segmented, but there are some gaps between the labeled components.
-The gap between components 2 (light blue) and 3 (light violet) is small, and a larger section between components 3 and 4 (dark violet) has been segmented but is not registered as a connected component. We can resolve these issues by increasing the `max_edge_distance` (default: 30 µm). Setting it to 50 or 70 µm is usually a good choice.
+Most IHCs are segmented correctly, but there are gaps between the labeled components:
+- The gap between component 2 (light blue) and component 3 (light violet) is small.
+- The section between component 3 and component 4 (dark violet) is segmented, but it is not part of a connected component.
+
+Increase `--max_edge_distance` (default 30 micrometer) to close these gaps.
+A value of 50 or 70 micrometer usually gives a good result.
 
 ```bash
 flamingo_tools.label_components --input M_AMD_N162_L/tables/IHC_v4b/default.tsv --napari --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --max_edge_distance 70 --force
 ```
 ![Step2](img/component_label_ihc_02.png)
-The gap between components 2 and 3 has closed, and components 2, 3, and 4, as well as the section between 3 and 4, have fused into a single component.
-However, there are isolated IHC instances at the top and bottom of the main component which we can see in the white and grey overlay.
-There are too few IHCs to register as a connected component, so we decrease the minimum component length (default: 50 instances).
-It can be set as low as two, but estimating the number of IHCs can help keep the representation clear and concise.
+The gap between component 2 and component 3 is closed.
+Components 2, 3, and 4 and the section between components 3 and 4 are now one component.
+
+Some IHC instances at the top and at the bottom of the main component are isolated. The white and grey overlay shows them.
+These groups have too few IHCs for a connected component.
+Decrease `--min_component_length` (default 50 instances) to include them.
+The minimum value is 2. An estimate of the number of IHCs helps to keep the result clear.
 ```bash
 flamingo_tools.label_components --input M_AMD_N162_L/tables/IHC_v4b/default.tsv --napari --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --max_edge_distance 70 --min_component_length 20 --force
 ```
 ![Step3](img/component_label_ihc_03.png)
-As we can see, the IHC spiral consists of components 1, 4, and 5. You can view the label by hovering over the component in Napari.
-We can find the total number of IHCs by adding the parameter `-c` to our previous command.
-Although the order of components 4, 1, and 5 does not matter in this instance, it is useful to keep in mind because it will be necessary for tonotopic mapping.
+The IHC spiral consists of components 1, 4, and 5.
+Move the pointer over a component in napari to see its label.
+
+Add the list of components with `-c` to show the number of IHCs.
+The order of the components 4, 1, and 5 is not important here, but the tonotopic mapping needs the order of the components in the cochlea.
 ```bash
 flamingo_tools.label_components --input M_AMD_N162_L/tables/IHC_v4b/default.tsv --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --max_edge_distance 70 --min_component_length 20 -c 4 1 5 --force
 ```
-Output of the terminal:
+Output in the terminal:
 ```
 Total IHCs: 926
 Component 4 has 21 instances.
@@ -60,232 +65,277 @@ Component 1 has 511 instances.
 Component 5 has 21 instances.
 Custom component(s) have 553 IHCs.
 ```
-Because we can not be sure, if all the components we selected are indeed IHCs, the components should be verified by visualizing them in MoBIE.
+The selected components can contain other structures than IHCs.
+Examine the components in MoBIE to make sure that they contain only IHCs.
 
 ## Tonotopic mapping
 
-The tonotopic mapping command is quite similar to the component labeling command, but it does require some additional information.
-Specifically, the animal type must be specified because the parameters of the Greenwood function, which is used for frequency mapping, differ between mice and gerbils.
-If the segmentation consists of multiple connected components, they must be in the same consecutive order as in the cochlear volume.
+`flamingo_tools.tonotopic_mapping` assigns a frequency to each instance of a segmentation table.
+The frequency comes from the Greenwood function, and its parameters are different for mouse and gerbil.
+Set the animal with `--animal` (`mouse` or `gerbil`, default `mouse`).
+If the segmentation has more than one connected component, give the components with `-c` in their order in the cochlea.
 ```bash
-flamingo_tools.tonotopic_mapping --input M_AMD_N162_L_v4b.tsv --s3 -o M_AMD_N162_L_v4b.tsv --cell_type ihc --animal mouse -c 4 1 5 --force
+flamingo_tools.tonotopic_mapping -i M_AMD_N162_L_v4b.tsv --cell_type ihc --animal mouse -c 4 1 5
 ```
-We can use the table we created after labeling the components as the input because the function only adds new columns without changing the existing ones.
+The input is the table from the component labeling.
+The command adds new columns and does not change the existing columns.
+Without `-o`, the command overwrites the input table.
 
-The central path through the segmentation is found with the method given by `--path_method`.
-SGNs default to `edt_refined`, which recentres the path on the cross-sections of Rosenthal's canal.
-IHCs default to `graph`, which follows the row of cells directly.
-Use `--path_method edt` to reproduce the mapping used for the CochleaNet paper.
+`--path_method` selects the method that finds the central path through the segmentation:
+- `edt_refined` is the default for SGNs. It moves the path to the center of the cross-sections of Rosenthal's canal.
+- `graph` is the default for IHCs. It follows the row of cells.
+- `edt` is the method of the CochleaNet paper. Use it to reproduce the mapping of the paper.
 
-The refined path is shorter than the `edt` path by a median of 3 % across the local cochleae,
-and individual cochleae range from 8 % shorter to 37 % longer.
-The run length and the mapped frequency therefore differ between the two methods.
-Map a whole cohort with one method; do not mix results from both in one analysis.
+Across the local cochleae, the `edt_refined` path is 3 % shorter than the `edt` path (median).
+For single cochleae, the difference is between 8 % shorter and 37 % longer.
+Thus the run length and the frequency are different for the two methods.
+Map all cochleae of a cohort with the same method. Do not mix the results of the two methods in one analysis.
 
-Run lengths of IHC segmentations that consist of several components also changed.
-Every component in the component list is now measured over its full extent.
-Previously only the section between the nodes that joined a component to its neighbours was counted,
-which under-reported the run length, in one case by a factor of two.
+The run length of an IHC segmentation with more than one component has changed.
+The command now measures each component of the component list over its full length.
+Before, it measured only the section between the nodes that connect a component to its neighbors.
+This gave a run length that was too short, in one case by a factor of two.
 
 ## Intensity annotation
 
-For the analysis of optogenetic therapy or the identification of SGN subtypes, the intensity of stains within SGN segmentation is evaluated.
-Although evaluation is performed on the entire cochlear volume, manual thresholding on subvolumes is sufficient and the results can be extrapolated to the entire volume.
+The analysis of optogenetic therapy and of SGN subtypes uses the intensity of stains in each SGN instance.
+The evaluation uses the full cochlea, but manual thresholds on subvolumes are sufficient.
+The thresholds of the subvolumes apply to the full cochlea.
+The process has four steps:
 
-1) Multiple equidistant crops are extracted along the segmentation.
-2) Object measures of the stains are calculated for each instance of the segmentation.
-3) The crops are manually thresholded to classify positive and negative instances.
-4) Finally, based on the manual thresholding, the entire cochlear volume is analyzed.
+1) Extract equidistant crops along the segmentation.
+2) Calculate the object measures of the stains for each instance of the segmentation.
+3) Threshold the crops manually to classify the instances as positive or negative.
+4) Apply the thresholds to the full cochlea.
 
 ### 1 - Extraction of regions of interest (ROI) blocks
 
-Sub-volumes in form of blocks are extracted to determine thresholds for positive/negative instances.
+The blocks give the thresholds for positive and negative instances.
 
-Create a JSON dictionary which will be used as the input for extracting central crops.
+Create a JSON file with the parameters of the block extraction:
 ```bash
 flamingo_tools.json_block_extraction -o M_AMD_N162_L.json -d M_AMD_N162_L -i PV SGN_v2 --cell_type sgn -c 1 -n 6 --roi_halo 256 256 64 -s SGN_v2
 ```
-Provide this JSON file as input to the function
+Extract the blocks with this JSON file:
 ```bash
-# s3 cluster
+# data on the S3 bucket
 flamingo_tools.extract_central_blocks --input M_AMD_N162_L.json -o <output_dir> --s3
-# local MoBIE project
+# data in a local MoBIE project
 flamingo_tools.extract_central_blocks --input M_AMD_N162_L.json -o <output_dir> --mobie_dir <mobie_project_dir>
 ```
 
 #### Step-by-Step
-The process can also be performed step-by-step.
-This function provides coordinates that are equally spaced along the center of Rosenthal's canal (for SGN) or along the inner hair cell (IHC) segmentation.
+You can also do the two parts of `flamingo_tools.extract_central_blocks` one after the other.
+
+`flamingo_tools.equidistant_centers` finds coordinates at equal distances along the center of Rosenthal's canal (SGN) or along the IHC segmentation.
+With `--json_info`, the command writes the coordinates as `crop_centers` into the JSON file:
 ```bash
-flamingo_tools.equidistant_centers -i M_AMD_N162_L/tables/SGN_v2/default.tsv -o M_AMD_N162_L_crop.json -n 6 --s3
+flamingo_tools.equidistant_centers --json_info M_AMD_N162_L.json --s3
 ```
-This command creates a JSON dictionary with six center coordinates which can be used with the function `flamingo_tools.extract_block`:
+`flamingo_tools.extract_block` then extracts one block for each crop center and image channel of the JSON file:
 ```bash
-flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr -o <output_dir> --json_info M_AMD_N162_L_crop.json --s3
-# or for a single crop center
+flamingo_tools.extract_block --json_info M_AMD_N162_L.json -o <output_dir> --s3
+```
+To extract one block, give the image data and the center coordinate in micrometer:
+```bash
 flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr -o crop.tif -c x y z --s3
 ```
 
 ### 2 - Calculation of object measures
 
-Before performing the thresholding in Napari, the intensity of the stain within the SGN segmentation is calculated.
-The function `flamingo_tools.object_measures` can also take the same JSON file which was used for the block extraction as an input.
-When working locally, the MoBIE directory can be given via the argument `--mobie_dir` to create the files directly in the appropriate locations,
-e.g. under `<mobie_project>/<cochlea>/tables/<seg_name>/<stain>_<seg_name>_object-measures.tsv`.
-If an output directory is specified, the output is given as:
-`<cochlea>_<stain>_<seg_name>_object-measures.tsv`
+Calculate the intensity of the stain in each SGN instance before the thresholding in napari.
+`flamingo_tools.object_measures` accepts the JSON file of the block extraction as input.
+The location of the output depends on the arguments:
+- With `--mobie_dir`, the command writes the tables into the local MoBIE project, as `<mobie_project>/<cochlea>/tables/<seg_name>/<stain>_<seg_name>_object-measures.tsv`.
+- With an output directory `-o`, the command writes `<cochlea>_<stain>_<seg_name>_object-measures.tsv` into this directory.
+- Without `--json_info`, give one output file for each image path with `-o`.
+
 ```bash
-# for creating the files in the MoBIE project
+# write the tables into the local MoBIE project
 flamingo_tools.object_measures --mobie_dir <mobie_dir> --json_info M_AMD_N162_L.json
 
-# for creating the files in an output directory reading the files from the S3 bucket
+# read the data from the S3 bucket and write the tables into an output directory
 flamingo_tools.object_measures -o <output_dir> --json_info M_AMD_N162_L.json --s3
 
-# calculate the PV intensity object measures without a JSON dictionary
+# calculate the PV object measures without a JSON file
 flamingo_tools.object_measures -o M-AMD-N162-L_PV_SGN-v2_object-measures.tsv \
     -i M_AMD_N162_L/images/ome-zarr/PV.ome.zarr \
     --seg_table M_AMD_N162_L/tables/SGN_v2/default.tsv \
     --seg_path M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr \
     --s3
 ```
-This is an example for the calculation of object measures using a background mask.
-Once the background mask has been calculated it can be reused by supplying the explicit path.
-A directory is filled with one mask per image channel; explicit paths need one per channel.
-If no path is specified, the background mask is only computed on the fly and not saved.
-The image, segmentation and table paths come from the parameter file, so `-i`, `--seg_path` and
-`--seg_table` are only needed to override them, and then one image path per channel is required.
+
+`--bg_mask` calculates the object measures with a background mask.
+A parameter file can also enable the background mask with `"use_bg_mask": "yes"` in its `object_measures` section.
+The command calculates the background mask on the fly and does not save it, unless `--bg_cache_paths` gives a location:
+- With `--json_info`, a directory receives one mask for each image channel.
+- Explicit paths need one path for each image channel. Without `--json_info`, give one path for each image path.
+
+The next run then uses the saved masks again.
+
+The parameter file gives the paths of the images, the segmentation, and the table.
+Use `-i`, `--seg_path` and `--seg_table` only to override these paths. Then give one image path for each channel.
+The parameter file in this example enables the background mask:
 ```bash
 flamingo_tools.object_measures \
-    --json_info /path/to/cochlea-net/reproducibility/processing/M_LR_000144_L_SGN.json \
+    --json_info reproducibility/processing/M_LR_000144_L_SGN.json \
     --bg_cache_paths bg_masks \
     -o . --s3
 ```
 
 
 #### 2a - For subtype analysis
-You may want to calculate the ratio of subtype stains to a reference stain, e.g. the ratio of Calb1 and Ntng1 to PV.
-You can use the script `scripts/measurements/sgn_subtype_ratio.py` for this.
-Before executing the script, the relevant parameters for the cochlea can be added to `flamingo_tools/postprocessing/sgn_subtype_utils.py` to increase the reproducibility of the process.
+Use the script `scripts/measurements/sgn_subtype_ratio.py` to calculate the ratio of subtype stains to a reference stain, for example the ratio of Calb1 and Ntng1 to PV.
+Before you run the script, add the parameters of the cochlea to `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
+This makes the process reproducible.
 
 ### 3 - Manual intensity thresholding
-For the annotation of GFP, the crops of PV, GFP, and SGN are needed.
-For the annotation of Alphatag, the crops of Vglut3, Alphatag, IHC, and optionally Otof are needed.
-The crop files are expected to have the format `<cochlea>_crop_xxx-yyy-zzz_<image_channel>.tif`.
-The annotation tool in Napari is called using the common prefix `<cochlea>_crop_xxx-yyy-zzz` of all crops.
-The GFP/Alphatag scenario is auto-detected from the stain files found for this prefix.
-`--meas_table` takes the directory containing the per-channel object-measures tables, e.g. `<mobie_project>/<cochlea>/tables/<seg_name>`, and the matching table for each channel is found by its filename prefix, e.g. `Alphatag_IHC-v11_object-measures-bg-mask.tsv`, `Otof_IHC-v11_object-measures-bg-mask.tsv`.
+The annotation needs these crops:
+- GFP: the crops of PV, GFP, and SGN.
+- Alphatag: the crops of Vglut3, Alphatag, IHC, and optionally Otof.
+
+The names of the crop files must have the format `<cochlea>_crop_xxx-yyy-zzz_<image_channel>.tif`.
+Start the annotation tool in napari with the common prefix `<cochlea>_crop_xxx-yyy-zzz` of all crops.
+The tool selects the GFP or the Alphatag scenario from the stain files with this prefix.
+
+`--meas_table` is the directory with the object-measures tables of the channels, for example `<mobie_project>/<cochlea>/tables/<seg_name>`.
+The tool finds the table of each channel by its file name prefix, for example `Alphatag_IHC-v11_object-measures-bg-mask.tsv` or `Otof_IHC-v11_object-measures-bg-mask.tsv`.
 ```bash
-python /path/to/cochlea-net-repository/scripts/intensity_annotation/intensity_annotation.py --meas_table <path_to_object_measures_dir> --prefix <common_prefix>
+python scripts/intensity_annotation/intensity_annotation.py --meas_table <object_measures_dir> --prefix <common_prefix>
 ```
-For the Alphatag scenario, thresholding is a two-step process: first threshold Alphatag expression, then switch to Otof (if present) via the channel selection box at the top right of the Napari window, and threshold it as well. The histogram, threshold slider, and visible image layer all follow the selected channel.
+In the Alphatag scenario, the thresholding has two steps:
+1) Threshold the Alphatag expression.
+2) If the Otof crop is present, select Otof in the channel selection box at the top right of the napari window. Then threshold Otof.
 
-For each crop and channel, analysis requires two segmentation representations, which separate the instances into two groups through thresholding.
-1) The first should separate the clearly negative instances from all instances, which might be seen as positive.
-It should be named `<cochlea>_crop_<crop-coords>_<stain>_allWeakPositiveIncluded_<suffix>.tif`.
-2) The second should separate the clearly positive instances from all instances, which might be seen as negative.
-It should be named `<cochlea>_crop_<crop-coords>_<stain>_allNegativeExcluded_<suffix>.tif`.
+The histogram, the threshold slider, and the visible image layer follow the selected channel.
 
-Note: While the suffixes can be chosen freely, the other components are essential.
+For each crop and channel, the analysis needs two segmentations. Each segmentation divides the instances into two groups with a threshold:
+1) The first segmentation separates the clearly negative instances from all instances that can be positive.
+Its name is `<cochlea>_crop_<crop-coords>_<stain>_allWeakPositiveIncluded_<suffix>.tif`.
+2) The second segmentation separates the clearly positive instances from all instances that can be negative.
+Its name is `<cochlea>_crop_<crop-coords>_<stain>_allNegativeExcluded_<suffix>.tif`.
 
-Based on these two files, the next processing step will calculate a threshold as a mean value between both groups - the clearly negative and the clearly positive instances.
+Note: You can select the suffix freely. The other parts of the name are necessary.
+
+The next step calculates the threshold as a mean value between the two groups: the clearly negative and the clearly positive instances.
 
 ### 4 - Analysing the marker annotation
-All thresholding files should be placed in the same directory.
-This directory is passed as the `-a, --annotation_dirs` argument.
-If multiple annotators worked on the same crops, multiple annotation directories can be passed.
-The function will check within all passed directories for annotations of the specified cochleae.
-It is not required that every annotator has annotated every crop.
-A summary of the intensities for all crops and annotators will be created as `<cochlea>_<stain>_<seg_name>_annotations.tsv`.
+Put the thresholding files of one annotator into one directory.
+Give this directory with the argument `-a, --annotation_dirs`.
+If more than one annotator annotated the same crops, give one directory for each annotator.
+The script searches all directories for the annotations of the given cochleae.
+An annotator does not have to annotate every crop.
+The script writes a summary of the intensities of all crops and annotators to `<cochlea>_<stain>_<seg_name>_annotations.tsv`.
 
 ```bash
-python /path/to/cochlea-net-repo/flamingo-tools/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
-    -o /path/to/output_dir -t /optional/path/to/output_dir \
-    -a /path/to/annotation/results/Results{LR,AMD,EK} \
+python scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
+    -o <output_dir> -t <threshold_dir> \
+    -a <annotation_dir>/Results{LR,AMD,EK} \
     --seg_name SGN_v2 --marker_name GFP --s3
 ```
-This command is equivalent to the one above, but specifies the input paths explicitly.
+This command is equal to the command above, but it gives the input paths explicitly:
 ```bash
-python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
-    -o /path/to/output_dir -t /optional/path/to/output_dir \
-    -a /path/to/annotation/results/Results{LR,AMD,EK} \
+python scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
+    -o <output_dir> -t <threshold_dir> \
+    -a <annotation_dir>/Results{LR,AMD,EK} \
     --seg_data M_LR_000143_L/images/ome-zarr/SGN_v2.ome.zarr \
     --seg_table M_LR_000143_L/tables/SGN_v2/default.tsv \
     --meas_table M_LR_000143_L/tables/SGN_v2/GFP_SGN-v2_object-measures.tsv \
     --seg_name SGN_v2 --marker_name GFP --s3
 ```
-The analysis can also be performed locally. If the paths are as expected (see previous command), passing the `--mobie_dir` argument is sufficient:
+The script can also read local data.
+If the paths have the structure of the previous command, `--mobie_dir` is sufficient:
 ```bash
-python /path/to/cochlea-net-repo/scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
-    -o /path/to/output_dir -t /optional/path/to/output_dir \
-    -a /path/to/annotation/results/Results{LR,AMD,EK} \
+python scripts/measurements/eval_marker_annotations.py -c M_LR_000143_L \
+    -o <output_dir> -t <threshold_dir> \
+    -a <annotation_dir>/Results{LR,AMD,EK} \
     --mobie_dir <local_mobie_dir> \
     --seg_name SGN_v2 --marker_name GFP
 ```
-If no output directory is passed, the output will be saved as a table in `<mobie_project>/<cochlea>/tables/<seg_name>/<marker_name>_<seg_name>.tsv`.
+Without an output directory, the script writes the table to `<mobie_project>/<cochlea>/tables/<seg_name>/<marker_name>_<seg_name>.tsv`.
 
-The `--column` argument selects the column of the measurement table that the threshold applies to, and `--bg_mask` reads the object measures computed with a background mask.
-The threshold rule is unchanged: it stays the value between the clearly positive and the clearly negative population, only measured on another column.
+`--column` selects the column of the measurement table for the threshold.
+`--bg_mask` reads the object measures that use a background mask.
+The threshold rule does not change: the threshold is the value between the clearly positive and the clearly negative population, measured on the selected column.
 
-The `-t, --threshold_save_dir` argument saves the thresholds as `<cochlea>_<stain>_<seg_name>.json`.
-For each crop, this file contains the threshold averaged over all annotators as `median_intensity`, and the threshold of each single annotator as `annotator_intensities`.
-The annotator name is the name of the annotation directory, e.g. `ResultsAMD`.
+`-t, --threshold_save_dir` saves the thresholds as `<cochlea>_<stain>_<seg_name>.json`.
+For each crop, this file contains:
+- `median_intensity`: the threshold averaged over all annotators.
+- `annotator_intensities`: the threshold of each annotator.
+
+The annotator name is the name of the annotation directory, for example `ResultsAMD`.
 
 #### Variability between annotators
-The `--variance` argument evaluates how much the marker assignment depends on the annotator.
-The thresholds of a single annotator are applied to the whole cochlea, which gives one scenario per annotator.
-These scenarios are compared to each other and to the `median` scenario, which uses the thresholds averaged over all annotators.
-Crops without a threshold for an annotator are left out of the scenario of this annotator.
-The result is saved as `<cochlea>_<stain>_<seg_name>_variance.json` in the threshold directory, or in the output directory if no threshold directory is passed.
-It contains the percentage of positive and negative instances per scenario, the variance of these percentages over all annotators, and a breakdown per crop.
+`--variance` evaluates how much the marker assignment depends on the annotator.
+The script applies the thresholds of each annotator to the full cochlea. This gives one scenario for each annotator.
+The script compares these scenarios with each other and with the `median` scenario.
+The `median` scenario uses the thresholds averaged over all annotators.
+If an annotator has no threshold for a crop, the scenario of this annotator does not include the crop.
+
+The script saves the result as `<cochlea>_<stain>_<seg_name>_variance.json` in the threshold directory.
+Without a threshold directory, the script uses the output directory.
+The file contains:
+- the percentage of positive and negative instances for each scenario,
+- the variance of these percentages over all annotators,
+- the values for each crop.
 
 ### 4a - Subtype analysis
-The same functionality applies to subtype analysis as to marker annotation.
+The subtype analysis works like the marker annotation:
 ```bash
-python /path/to/cochlea-net-repo/scripts/measurements/eval_subtype_annotations.py -c M_LR_N152_L \
-    -o /path/to/output_dir -t /optional/path/to/output_dir \
-    -a /path/to/annotation/results/Results{LR,AMD,EK} \
+python scripts/measurements/eval_subtype_annotations.py -c M_LR_N152_L \
+    -o <output_dir> -t <threshold_dir> \
+    -a <annotation_dir>/Results{LR,AMD,EK} \
     --s3
 ```
-The cochlea is processed for every subtype stain in the `COCHLEAE` dictionary of `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
-The `--variance` argument creates one threshold variance file per stain, `<cochlea>_<stain>_<seg_name>_variance.json`.
-The file has the same format as the file for the marker annotation.
-If a custom threshold in `CUSTOM_THRESHOLDS` overrides the annotations of a stain, the `median` scenario still uses the annotated thresholds, so that the comparison stays between annotators.
+The script processes the cochlea for each subtype stain in the `COCHLEAE` dictionary of `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
+`--variance` writes one threshold variance file for each stain, `<cochlea>_<stain>_<seg_name>_variance.json`.
+The file has the same format as the file of the marker annotation.
+
+A custom threshold in `CUSTOM_THRESHOLDS` can override the annotations of a stain.
+The `median` scenario then still uses the annotated thresholds, so that the comparison stays between the annotators.
 The item `custom_thresholds` records this case.
 
 #### Variability of the subtypes
-A subtype follows from a pair of stains, see `STAIN_TO_TYPE` in `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
-To evaluate the variability of the subtypes, pass the directory with the threshold variance files to `scripts/assign_subtypes.py`.
+A pair of stains gives a subtype, see `STAIN_TO_TYPE` in `flamingo_tools/postprocessing/sgn_subtype_utils.py`.
+To evaluate the variability of the subtypes, give the directory with the threshold variance files to `scripts/assign_subtypes.py`:
 ```bash
-python /path/to/cochlea-net-repo/scripts/assign_subtypes.py -c M_LR_N152_L \
-    -o /path/to/output_dir --variance /path/to/variance_dir
+python scripts/assign_subtypes.py -c M_LR_N152_L -o <output_dir> --variance <variance_dir>
 ```
-The directory is searched for the default file name of every subtype stain of the cochlea.
-If the files are found, the thresholds of each annotator are applied again to the whole cochlea, and the subtypes are assigned for this annotator alone.
-The result is saved as `<cochlea>_subtypes_variance.json`.
-It contains the number and the percentage of instances per subtype for each annotator, the variance of the percentages over all annotators, and the difference to the `median` scenario.
-An annotator must have annotated every stain of a pairing. Other annotators are skipped with a warning.
+The script searches the directory for the default file name of each subtype stain of the cochlea.
+For the files that it finds, the script applies the thresholds of each annotator to the full cochlea again.
+Then it assigns the subtypes for this annotator only.
+
+The script saves the result as `<cochlea>_subtypes_variance.json`. The file contains:
+- the number and the percentage of instances for each subtype and annotator,
+- the variance of the percentages over all annotators,
+- the difference to the `median` scenario.
+
+An annotator must annotate all stains of a pair. The script skips other annotators and shows a warning.
 
 
 ### 4b - Regenerating the OTOF marker labels
-The four cochleae `M_AMD_OTOF27_L`, `M_AMD_OTOF27_R`, `M_AMD_OTOF28_L` and `M_AMD_OTOF28_R` have their per-crop thresholds stored, so their marker labels can be regenerated without the annotation files.
-The script `scripts/measurements/regenerate_otof_MAMDOTOF27_28_thresholds.py` holds two threshold sets and applies either of them.
-Both threshold the `mean` of the object measures, but of a different table.
+The per-crop thresholds of the four cochleae `M_AMD_OTOF27_L`, `M_AMD_OTOF27_R`, `M_AMD_OTOF28_L` and `M_AMD_OTOF28_R` are stored.
+Thus the script can regenerate their marker labels without the annotation files.
+The script `scripts/measurements/regenerate_otof_MAMDOTOF27_28_thresholds.py` contains two threshold sets and applies one of them.
+Both sets threshold the `mean` of the object measures, but of different tables.
 
 | set | argument | table |
 |---|---|---|
 | annotator | `--local_annotator` | `Otof_IHC-v11_object-measures-bg-mask.tsv` |
 | optimal | `--local_optimal` | `Otof_IHC-v11_object-measures.tsv` |
 
-The annotator set is the value between the clearly positive and the clearly negative population of each crop, the rule that `get_crop_parameters` applies to an annotated crop, averaged over both annotators.
-Every value can therefore be reproduced from the annotations, which is why this set is the reference.
-The optimal set was fitted on the plain `mean` by a leave-one-instance-out sweep with a positive instance weighted three times.
-It reproduces the annotated calls slightly better, but it cannot be derived by hand.
+The annotator set uses the value between the clearly positive and the clearly negative population of each crop, averaged over both annotators.
+`get_crop_parameters` applies the same rule to an annotated crop.
+Thus each value of this set comes from the annotations, and this set is the reference.
+
+The optimal set comes from a leave-one-instance-out sweep on the plain `mean`, with a weight of three for each positive instance.
+This set agrees slightly better with the annotated calls, but it does not come from a rule that you can apply by hand.
 
 ```bash
-python /path/to/cochlea-net-repo/scripts/measurements/regenerate_otof_MAMDOTOF27_28_thresholds.py \
-    --local_annotator --s3 -o /path/to/output_dir
+python scripts/measurements/regenerate_otof_MAMDOTOF27_28_thresholds.py \
+    --local_annotator --s3 -o <output_dir>
 ```
-The resulting fraction of positive IHCs:
+The fraction of positive IHCs:
 
 | cochlea | annotator | optimal |
 |---|---|---|
@@ -294,37 +344,59 @@ The resulting fraction of positive IHCs:
 | M_AMD_OTOF28_L | 33.99 % | 37.92 % |
 | M_AMD_OTOF28_R | 17.61 % | 17.92 % |
 
-The assignment follows the same principle as step 4.
-Each crop center is mapped onto the `length_fraction` of the cochlea, and the crop governs the band up to the middle of the distance to its neighbour.
-The mapping runs on the instances of the connected components only, because an instance outside them carries a placeholder length fraction of 0, which would pull the crop positions toward the start of the cochlea.
-The segmentation table therefore needs the `component_labels` and `length_fraction` columns, which the component labeling and the tonotopic mapping add.
-An instance whose `length_fraction` is exactly 0 or 1 falls between the bands and stays unassigned, which affects a handful of instances per cochlea.
+The assignment uses the same principle as step 4:
+- The script maps each crop center to the `length_fraction` of the cochlea.
+- Each crop sets the threshold of a band. The band ends at the middle of the distance to the neighbor crop.
 
-`M_AMD_OTOF27_R` is an untreated control. Its crops carry a threshold above every measured value, so the whole cochlea is negative. The same holds for the crop `0397-0162-0613` of `M_AMD_OTOF28_R`.
+The mapping uses only the instances of the connected components.
+An instance outside of these components has the placeholder length fraction 0. This value would move the crop positions toward the start of the cochlea.
+Thus the segmentation table must have the columns `component_labels` and `length_fraction`.
+The component labeling and the tonotopic mapping add these columns.
+An instance with a `length_fraction` of exactly 0 or 1 is between the bands and stays unassigned. This applies to a few instances in each cochlea.
 
-For each cochlea the script writes `<cochlea>_Otof_IHC-v11.tsv` with the assignment in the `marker_labels` column, a JSON with the thresholds and the counts per band, and a plot of the `mean` over the length fraction with one threshold line per band.
-A positive instance is 1, a negative instance is 2, and an instance outside the components or without an object measure is 0.
+`M_AMD_OTOF27_R` is an untreated control.
+The thresholds of its crops are above all measured values, so the full cochlea is negative.
+The same applies to the crop `0397-0162-0613` of `M_AMD_OTOF28_R`.
 
-Note on the object measures: a table computed with `--bg_mask` before the fix of `_normalize_background` has an unsubtracted median, and every other statistic subtracted by its own background counterpart rather than by one background level. Such a table must be regenerated before it is thresholded.
+For each cochlea, the script writes:
+- `<cochlea>_Otof_IHC-v11.tsv` with the assignment in the column `marker_labels`,
+- a JSON file with the thresholds and the counts for each band,
+- a plot of the `mean` over the length fraction, with one threshold line for each band.
+
+The labels are 1 for a positive instance and 2 for a negative instance.
+An instance outside the components or without an object measure has the label 0.
+
+Note on the object measures: a table that `--bg_mask` calculated before the fix of `_normalize_background` is not correct.
+Its median has no background subtraction.
+Each other statistic has the subtraction of its own background statistic, not of one background level.
+Calculate such a table again before you threshold it.
 
 ### Example for standard output table
 
-For an easier analysis, it makes sense to limit entries in the segmentation table to segmentation instances in specific components.
-This can either be a single component or multiple components if the cochlea is broken.
-However, it makes sense to still keep other entries in case they may be relevant for later analysis.
-Therefore, a table with the main parameters is created based on the `default.tsv` segmentation table and other object measures.
+Limit the segmentation table to the instances of specific components to make the analysis easier.
+These are one component, or more than one component if the cochlea is broken.
+Keep the other entries, because they can be necessary for a later analysis.
+For this reason, `scripts/analysis/create_main_table.py` creates a separate table with the main parameters.
+It uses the `default.tsv` segmentation table and the object measures.
 
 #### Changes for the main table
-The main table adds a `volume[µm³]` column, which is the `n_pixels` column multiplied by the voxel size.
-The distance from the center to the RC can be found in the column `offset` in the original segmentation table. When the main table is created, it is renamed into `dist_from_center[µm]` for SGNs.
-It also includes entries for the mean intensity within a cell, if a table with the object measures is provided. I would recommend to test this without calculating the background subtracted mean intensity, because this step currently takes quite long.
+The main table:
+- adds the column `volume[µm³]`, which is the column `n_pixels` multiplied by the voxel volume.
+- renames the column `offset` of the segmentation table to `dist_from_center[µm]` for SGNs. This column contains the distance from the center to Rosenthal's canal.
+- includes the mean intensity in each cell, if you give a table with object measures.
+
+The calculation of the background-subtracted mean intensity takes a long time.
+Test the script without it first.
 
 #### Not yet included
-The columns for colocalization thresholding are currently added independently from this function using the `scripts/measurements/eval_marker_annotations.py` and `scripts/measurements/eval_subtype_annotations.py` scripts (see above).
-The added columns are `marker_labels` for GFP/rbOtof and `marker_<stain>` for subtypes. Additionally, a column `subtype_label` is added for subtype analysis.
+The main table does not include the columns of the colocalization thresholding.
+The scripts `scripts/measurements/eval_marker_annotations.py` and `scripts/measurements/eval_subtype_annotations.py` add these columns separately (see above):
+- `marker_labels` for GFP and rbOtof,
+- `marker_<stain>` for the subtypes,
+- `subtype_label` for the subtype analysis.
 
 #### Example
-The following example shows a series of commands for the cochlea `M_LR_000153_L` which was used for the publication.
+These commands process the cochlea `M_LR_000153_L` of the publication:
 
 ```bash
 # label components
@@ -333,21 +405,34 @@ flamingo_tools.label_components -i MLR153L_default.tsv -o MLR153L_labeled.tsv --
 # tonotopic mapping
 flamingo_tools.tonotopic_mapping -i MLR153L_labeled.tsv -o MLR153L_tonotopic.tsv --cell_type sgn -c 1 2 3 --animal mouse
 
-# this create a JSON dictionary, which can be used as input for further analysis
-flamingo_tools.json_block_extraction -o M_LR_000153_L.json -d M_LR_000153_L -i PV CR GFP SGN_v2 --cell_type sgn -c 1 2 3  -n 6 --roi_halo 256 256 64 -s SGN_v2
+# create a JSON file as input for the next steps
+flamingo_tools.json_block_extraction -o M_LR_000153_L.json -d M_LR_000153_L -i PV CR GFP SGN_v2 --cell_type sgn -c 1 2 3 -n 6 --roi_halo 256 256 64 -s SGN_v2
 
-# this creates object measures without using a background mask,
+# object measures without a background mask
 flamingo_tools.object_measures -o . --json_info M_LR_000153_L.json --s3
 
-# this creates object measures with using a background mask
+# object measures with a background mask
 flamingo_tools.object_measures -o . --json_info M_LR_000153_L.json --s3 --bg_mask
 
-# explicit paths for a single stain (PV) using a background mask
-flamingo_tools.object_measures --image_paths M_LR_000153_L/images/ome-zarr/PV.ome.zarr --seg_table M_LR_000153_L/tables/SGN_v2/default.tsv --seg_path M_LR_000153_L/images/ome-zarr/SGN_v2.ome.zarr -c 1 2 3 --bg_mask --s3
+# explicit paths for one stain (PV) with a background mask
+flamingo_tools.object_measures -o M-LR-000153-L_PV_SGN-v2_object-measures-bg-mask.tsv --image_paths M_LR_000153_L/images/ome-zarr/PV.ome.zarr --seg_table M_LR_000153_L/tables/SGN_v2/default.tsv --seg_path M_LR_000153_L/images/ome-zarr/SGN_v2.ome.zarr -c 1 2 3 --bg_mask --s3
 
-# example with object measures
-python /path/to/cochlea-net/scripts/create_main_table.py --input MLR153L_tonotopic.tsv \
+# main table with object measures
+python scripts/analysis/create_main_table.py --input MLR153L_tonotopic.tsv \
     --json_info M_LR_000153_L.json \
-    --meas_tables M-LR-000153-L_GFP_SGN-v2_object-measures-bg-mask.tsv M-LR-000153-L_PV_SGN-v2_object-measures.tsv M-LR-000153-L_GFP_SGN-v2_object-measures.tsv  M-LR-000153-L_CR_SGN-v2_object-measures.tsv \
+    --meas_tables M-LR-000153-L_GFP_SGN-v2_object-measures-bg-mask.tsv M-LR-000153-L_PV_SGN-v2_object-measures.tsv M-LR-000153-L_GFP_SGN-v2_object-measures.tsv M-LR-000153-L_CR_SGN-v2_object-measures.tsv \
     --output MLR153L_filtered.tsv
 ```
+
+## Upload the tables to the S3 bucket
+
+Copy the tables of the analysis to the S3 bucket with `rclone`.
+See [Data transfer from/to the S3 bucket](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_02_data_transfer.md#data-transfer-fromto-the-s3-bucket) in slurm-workflows for the setup of `rclone`.
+```bash
+# segmentation table with the component labels, see Labeling components
+rclone --progress copyto M_AMD_N162_L_v2.tsv cochlea-lightsheet:cochlea-lightsheet/M_AMD_N162_L/tables/SGN_v2/default.tsv
+# object measures: the name on the bucket has no cochlea prefix
+rclone --progress copyto M-AMD-N162-L_PV_SGN-v2_object-measures.tsv cochlea-lightsheet:cochlea-lightsheet/M_AMD_N162_L/tables/SGN_v2/PV_SGN-v2_object-measures.tsv
+```
+
+**Upload a segmentation table only if you made it from the current table on the bucket. Otherwise, you delete the columns of a later analysis, for example `marker_labels`.**
