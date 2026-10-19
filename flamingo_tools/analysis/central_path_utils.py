@@ -159,3 +159,40 @@ def insert_coordinates_to_central_path(
             table = insert_coordinate(table, optimal_pos, coord)
 
     table.to_csv(output_path, sep="\t", index=False)
+
+
+def mean_by_offset(
+    table: pd.DataFrame,
+    value_columns: List[str],
+    n_length_bins: int = 20,
+    offset_step: float = 10.0,
+    max_offset: float = 100.0,
+) -> pd.DataFrame:
+    """Average columns of a mapped table per window along the central path and per offset bin.
+
+    The windows split 'length_fraction' into `n_length_bins` equal parts. The offset bins are
+    `offset_step` micrometers wide. The last bin holds every offset of `max_offset` or more.
+    Instances without a mapping have an offset of -1 and are dropped.
+
+    Args:
+        table: Segmentation table with the columns of `tonotopic_mapping`.
+        value_columns: Columns to average.
+        n_length_bins: Number of windows along the central path.
+        offset_step: Width of an offset bin in micrometers.
+        max_offset: Lower edge of the last, open offset bin in micrometers.
+
+    Returns:
+        One row per window and offset bin, with the columns 'length_bin', 'offset_bin', 'n' and
+        the mean of each value column. Empty cells have n = 0.
+    """
+    table = table[table["offset"] >= 0]
+    length_bin = pd.cut(
+        table["length_fraction"], np.linspace(0, 1, n_length_bins + 1), include_lowest=True,
+    ).rename("length_bin")
+    offset_edges = np.append(np.arange(0, max_offset + offset_step, offset_step), np.inf)
+    offset_bin = pd.cut(table["offset"], offset_edges, right=False).rename("offset_bin")
+
+    grouped = table.groupby([length_bin, offset_bin], observed=False)
+    result = grouped[value_columns].mean()
+    result.insert(0, "n", grouped.size())
+    return result.reset_index()

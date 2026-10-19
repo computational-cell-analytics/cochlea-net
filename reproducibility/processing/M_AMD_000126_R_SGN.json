@@ -9,6 +9,7 @@
 		1
 	],
 	"label_components": {},
+	"tonotopic_mapping": {},
 	"object_measures": {
 		"use_bg_mask": "yes"
 	}
