@@ -1,7 +1,6 @@
 import argparse
 import json
 import os
-import re
 import sys
 from typing import List, Optional
 
@@ -59,8 +58,6 @@ def table_type(table_path: str) -> str:
 def species_from_name(standardized_name: str) -> str:
     """Derive the species from the first component of a standardized crop name.
 
-    The components are separated by '-' or '_', because some crops keep the older underscore form.
-
     Args:
         standardized_name: The standardized name of a crop.
 
@@ -68,7 +65,7 @@ def species_from_name(standardized_name: str) -> str:
         The species that matches the first component, or 'unknown' for a prefix outside
         SPECIES_PREFIXES.
     """
-    prefix = re.split(r"[-_]", standardized_name)[0]
+    prefix = standardized_name.split("-", 1)[0]
     return SPECIES_PREFIXES.get(prefix, UNKNOWN_SPECIES)
 
 

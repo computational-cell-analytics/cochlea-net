@@ -140,6 +140,9 @@ def _get_device_and_tiling(block_shape, halo, input_):
     # The clip only depends on the input shape, so all slurm array tasks get the same grid.
     block_shape = tuple(min(bs, sh) for bs, sh in zip(block_shape, input_.shape))
     halo = tuple(min(ha, bs // 2) for ha, bs in zip(halo, block_shape))
+    # The U-Nets (depth 4) need every input axis divisible by 16. The clip can break this:
+    # 61 slices + 2 * 16 halo = 93. Grow the block; torch_em pads the excess.
+    block_shape = tuple(bs + (-(bs + 2 * ha)) % 16 for bs, ha in zip(block_shape, halo))
     gpu_ids = [0] if have_cuda else ["cpu"]
     return gpu_ids, block_shape, halo
 

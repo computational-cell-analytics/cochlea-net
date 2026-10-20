@@ -74,13 +74,15 @@ MEAN_STD_NAME = "mean_std.json"
 
 
 def block_shape_for(shape: Sequence[int]) -> Tuple[int, ...]:
-    """Clip the block shape to the volume, exactly as `_get_device_and_tiling` does."""
-    return tuple(min(bs, sh) for bs, sh in zip(BLOCK_SHAPE, shape))
+    """Clip the block shape to the volume and round it up, exactly as `_get_device_and_tiling` does."""
+    clipped = tuple(min(bs, sh) for bs, sh in zip(BLOCK_SHAPE, shape))
+    return tuple(bs + (-(bs + 2 * ha)) % 16 for bs, ha in zip(clipped, halo_for(shape)))
 
 
 def halo_for(shape: Sequence[int]) -> Tuple[int, ...]:
-    """Clip the halo to the block shape, exactly as `_get_device_and_tiling` does."""
-    return tuple(min(ha, bs // 2) for ha, bs in zip(HALO, block_shape_for(shape)))
+    """Clip the halo to the clipped block shape, exactly as `_get_device_and_tiling` does."""
+    clipped = tuple(min(bs, sh) for bs, sh in zip(BLOCK_SHAPE, shape))
+    return tuple(min(ha, bs // 2) for ha, bs in zip(HALO, clipped))
 
 
 def _grid(shape: Sequence[int], tile: Sequence[int]) -> Tuple[int, ...]:

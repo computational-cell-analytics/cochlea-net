@@ -288,3 +288,21 @@ class TestPredictionInstances(unittest.TestCase):
 
         covered = sorted(block_id for task in assignments for block_id in task)
         self.assertEqual(covered, list(range(n_blocks)))
+
+
+class TestClippedTiling(unittest.TestCase):
+    def test_odd_slice_count(self):
+        """A 61-slice volume clips the block to 61, and 61 + 2 * 16 is not divisible by 16."""
+        from flamingo_tools.segmentation.unet_prediction import prediction_impl
+
+        shape = (61, 64, 64)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "model.pt")
+            torch.save(UNet3d(in_channels=1, out_channels=3, initial_features=4, depth=4), model_path)
+            data_path = os.path.join(tmp_dir, "data.tif")
+            imageio.imwrite(data_path, np.random.randint(0, 255, size=shape).astype("uint8"))
+
+            _, prediction = prediction_impl(
+                data_path, None, None, model_path, scale=None, block_shape=None, halo=None,
+            )
+        self.assertEqual(prediction.shape, (3,) + shape)

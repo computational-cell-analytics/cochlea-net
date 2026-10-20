@@ -157,7 +157,8 @@ def fig_05c(
     ax[0].set_xlim(xmin, xmax)
     lower_y, upper_y = literature_reference_values("SGN", animal="gerbil")
     ax[0].hlines([lower_y, upper_y], xmin, xmax, color=COLOR_LITERATURE)
-    ax[0].text(1, upper_y - 2000, "literature", color=COLOR_LITERATURE, fontsize=main_tick_size, ha="center")
+    ax[0].text(1, lower_y + (upper_y - lower_y) * 0.2, "literature",
+               color=COLOR_LITERATURE, fontsize=main_tick_size, ha="center")
     ax[0].fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)
 
     ylim0 = 900
