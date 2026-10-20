@@ -56,11 +56,11 @@ CochleaNet provides four segmentation models:
 - `SGN`: segments spiral ganglion neurons (SGNs) in high-resolution, isotropic light-sheet microscopy data.
     - Training data: PV stain, voxel size 0.38 micrometer.
 - `IHC`: segments inner hair cells (IHCs) in high-resolution, isotropic light-sheet microscopy data.
-    - Training data: Vglut3 stain, voxel size 0.38 micrometer.
+    - Training data: Vglut3 stain of mouse and gerbil cochleae, voxel size 0.38 micrometer.
 - `SGN-lowres`: segments SGNs in lower-resolution, anisotropic light-sheet microscopy data.
-    - Training data: PV stain, voxel size 0.76 X 0.76 X 3.0 micrometer.
+    - Training data: PV stain, voxel size 1.89 X 1.89 X 3.0 micrometer.
 - `IHC-lowres`: segments IHCs in lower-resolution, anisotropic light-sheet microscopy data.
-    - Training data: Myosin VIIa stain, voxel size 0.76 X 0.76 X 3.0 micrometer.
+    - Training data: Myosin VIIa and calretinin stains, voxel size 1.89 X 1.89 X 3.0 micrometer, and downscaled Vglut3 data.
 
 CochleaNet provides one detection model:
 - `Synapses`: detects afferent ribbon synapses in high-resolution, isotropic light-sheet microscopy data.
@@ -74,6 +74,7 @@ The models are available on BioImage.IO:
 - [IHC-lowres](https://bioimage.io/#/artifacts/confused-cow).
 
 CochleaNet downloads a model from BioImage.IO when you use it for the first time.
+The script `scripts/bioimageio/export_models.py` builds the BioImage.IO packages from the training checkpoints.
 
 **Note: To run the segmentation in an environment without internet access, download the models first. Then copy them to the `Model directory` of CochleaNet. The command `flamingo_tools.info` shows the model directory.**
 
