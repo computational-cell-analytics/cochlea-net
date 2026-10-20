@@ -1,0 +1,19 @@
+Original	Standardized	Dataset	Crop_center	n_samples	mean_vol[px]	min_vol[px]	max_vol[px]	dim	n_samples[>=1000px]	n_samples[<1000px]
+LaVision-M04_crop_0396-1906-0383_PV_empty	LaVision-M04_crop_0396-1906-0383_PV_empty	train	0396-1906-0383	0	0.0	0	0	(128, 256, 256)	0	0
+LaVision-M04_crop_0400-2500-0840_PV_empty	LaVision-M04_crop_0400-2500-0840_PV_empty	train	0400-2500-0840	0	0.0	0	0	(121, 256, 256)	0	0
+LaVision-M04_crop_0830-3390-0670_PV_empty	LaVision-M04_crop_0830-3390-0670_PV_empty	train	0830-3390-0670	0	0.0	0	0	(128, 256, 256)	0	0
+LaVision-M04_crop_1619-3445-0271_PV_0	LaVision-M04_crop_1619-3445-0271_PV_0	train	1619-3445-0271	181	1120.5	1018	1363	(24, 128, 128)	4	177
+LaVision-M04_crop_1867-2538-0390_PV_empty	LaVision-M04_crop_1867-2538-0390_PV_empty	train	1867-2538-0390	0	0.0	0	0	(128, 256, 256)	0	0
+LaVision-M04_crop_2378-2105-0304_PV_0	LaVision-M04_crop_2378-2105-0304_PV_0	train	2378-2105-0304	121	0.0	0	0	(24, 128, 128)	0	121
+LaVision-M04_crop_2452-2497-0504_PV_0	LaVision-M04_crop_2452-2497-0504_PV_0	train	2452-2497-0504	157	0.0	0	0	(24, 128, 128)	0	157
+LaVision-M04_crop_3520-1525-0310_PV_empty	LaVision-M04_crop_3520-1525-0310_PV_empty	val	3520-1525-0310	0	0.0	0	0	(128, 256, 256)	0	0
+LaVision-Mar05-PV-451-1129-1589_1	LaVision-Mar05_crop_0451-1129-1589_PV_1	train	0451-1129-1589	188	1970.6	1000	5600	(48, 256, 256)	148	40
+LaVision-Mar05-PV-544-1513-1193_0	LaVision-Mar05_crop_0544-1513-1193_PV_0	train	0544-1513-1193	115	1474.4	1000	3336	(48, 256, 256)	70	45
+LaVision-Mar05-PV-559-1188-1586_2	LaVision-Mar05_crop_0559-1188-1586_PV_2	train	0559-1188-1586	214	2006.5	1000	4152	(48, 256, 256)	154	60
+LaVision-Mar05_crop_0620-1900-1825_PV_empty	LaVision-Mar05_crop_0620-1900-1825_PV_empty	train	0620-1900-1825	0	0.0	0	0	(256, 512, 512)	0	0
+LaVision-Mar05_crop_1182-2920-0726_PV_empty	LaVision-Mar05_crop_1182-2920-0726_PV_empty	val	1182-2920-0726	0	0.0	0	0	(256, 512, 512)	0	0
+LaVision-Mar05_crop_1330-3375-1114_PV_empty	LaVision-Mar05_crop_1330-3375-1114_PV_empty	train	1330-3375-1114	0	0.0	0	0	(256, 512, 512)	0	0
+LaVision-Mar05_crop_2247-2434-1660_PV_empty	LaVision-Mar05_crop_2247-2434-1660_PV_empty	train	2247-2434-1660	0	0.0	0	0	(256, 512, 512)	0	0
+LaVision-Mar05_crop_2463-2818-1177_PV_2	LaVision-Mar05_crop_2463-2818-1177_PV_2	val	2463-2818-1177	440	1482.3	1000	2752	(48, 256, 256)	270	170
+LaVision-Mar05_crop_2530-1660-1840_PV_empty	LaVision-Mar05_crop_2530-1660-1840_PV_empty	train	2530-1660-1840	0	0.0	0	0	(256, 512, 512)	0	0
+LaVision-Mar05_crop_3442-2950-1000_PV_empty	LaVision-Mar05_crop_3442-2950-1000_PV_empty	train	3442-2950-1000	0	0.0	0	0	(256, 512, 512)	0	0
