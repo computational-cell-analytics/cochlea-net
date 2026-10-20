@@ -8,7 +8,7 @@ from torch_em.util.prediction import predict_with_halo
 
 from .base_widget import BaseWidget
 from .util import _load_custom_model, _available_devices, _get_current_tiling
-from ..model_utils import get_model, get_model_registry, get_device, get_default_tiling
+from ..model_utils import MODELS, get_model, get_device, get_default_tiling
 
 
 def _run_detection(image, model, model_type, tiling, device, return_intermediates=False):
@@ -61,7 +61,7 @@ class DetectionWidget(BaseWidget):
         model_widget = QWidget()
         title_label = QLabel("Select Model:")
 
-        model_list = list(get_model_registry().urls.keys())
+        model_list = list(MODELS.keys())
 
         # Exclude the detection models.
         segmentation_models = ["Synapses"]

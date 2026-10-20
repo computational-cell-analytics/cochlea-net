@@ -66,16 +66,18 @@ CochleaNet provides one detection model:
 - `Synapses`: detects afferent ribbon synapses in high-resolution, isotropic light-sheet microscopy data.
     - Training data: CtBP2 stain, voxel size 0.38 micrometer.
 
+The models are available on BioImage.IO:
+- [SGN](https://bioimage.io/#/artifacts/knowledgeable-mouse),
+- [IHC](https://bioimage.io/#/artifacts/content-fish),
+- [Synapses](https://bioimage.io/#/artifacts/loyal-ant),
+- [SGN-lowres](https://bioimage.io/#/artifacts/nervous-shark), and
+- [IHC-lowres](https://bioimage.io/#/artifacts/confused-cow).
+
+CochleaNet downloads a model from BioImage.IO when you use it for the first time.
+
 **Note: To run the segmentation in an environment without internet access, download the models first. Then copy them to the `Model directory` of CochleaNet. The command `flamingo_tools.info` shows the model directory.**
 
-Download the models from ownCloud:
-- [SGN](https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download),
-- [IHC](https://owncloud.gwdg.de/index.php/s/wB7d2MjV5LRTP06/download),
-- [Synapses](https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download),
-- [SGN-lowres](https://owncloud.gwdg.de/index.php/s/OS7985CKaTTBT5g/download), and
-- [IHC-lowres](https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download).
-
-As an alternative, use `flamingo_tools.download_model` after the installation. It downloads all models or the selected models:
+Use `flamingo_tools.download_model` after the installation. It downloads all models or the selected models:
 ```bash
 # Download all models
 flamingo_tools.download_model
@@ -91,10 +93,9 @@ The output is similar to:
 ```
 Version: 0.1.0
 Model directory: /home/pape/.cache/cochlea-net/models
-Downloaded models: ['IHC-lowres', 'SGN', 'Synapses', 'SGN-lowres', 'IHC']
+Downloaded models: ['SGN-knowledgeable-mouse-v0.pt', 'IHC-content-fish-v0.pt', 'Synapses-loyal-ant-v0.pt', 'SGN-lowres-nervous-shark-v0.pt', 'IHC-lowres-confused-cow-v0.pt']
 ```
-If you download the models manually, copy them to the `Model directory`.
-Then run `flamingo_tools.info` again to make sure that it finds the models.
+If you copy the models to the `Model directory` of another machine, run `flamingo_tools.info` on that machine to make sure that it finds the models.
 
 ## Usage
 

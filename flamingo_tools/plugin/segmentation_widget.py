@@ -10,7 +10,7 @@ from qtpy.QtWidgets import QWidget, QVBoxLayout, QPushButton, QLabel, QComboBox
 from .base_widget import BaseWidget
 from .util import _load_custom_model, _available_devices, _get_current_tiling
 from ..model_utils import (
-    get_model, get_model_registry, get_device, get_default_tiling, get_default_segmentation_settings
+    MODELS, get_model, get_device, get_default_tiling, get_default_segmentation_settings
 )
 
 
@@ -75,7 +75,7 @@ class SegmentationWidget(BaseWidget):
         model_widget = QWidget()
         title_label = QLabel("Select Model:")
 
-        model_list = list(get_model_registry().urls.keys())
+        model_list = list(MODELS.keys())
 
         # Exclude the detection models.
         segmentation_models = ["SGN", "IHC", "SGN-lowres", "IHC-lowres"]
