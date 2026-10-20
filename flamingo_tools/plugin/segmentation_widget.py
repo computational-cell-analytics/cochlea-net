@@ -2,6 +2,7 @@ import copy
 
 import napari
 
+from bioimage_cpp.filters import gaussian_smoothing
 from torch_em.util.prediction import predict_with_halo
 from torch_em.util.segmentation import watershed_from_center_and_boundary_distances
 from napari.utils.notifications import show_info
@@ -21,6 +22,8 @@ def _run_segmentation(image, model, model_type, tiling, device, min_size, return
         image, model, gpu_ids=[device], block_shape=block_shape, halo=halo,
         tqdm_desc="Run prediction"
     )
+    # Smooth the center distances as prediction_impl does for run_segmentation.
+    prediction[1] = gaussian_smoothing(prediction[1], sigma=2.0)
     settings = get_default_segmentation_settings(model_type)
     foreground_threshold = settings.pop("fg_threshold", 0.5)
     settings.pop("seg_class", None)

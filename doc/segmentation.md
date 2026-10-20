@@ -17,7 +17,7 @@ The examples use short paths. Replace them with the paths of your data.
 
 ```bash
 flamingo_tools.run_segmentation -i M_AMD_N162_L.n5 -k setup0/timepoint0/s0 -o SGN_v2 -m SGN --min_size 1000
-flamingo_tools.run_segmentation -i M_AMD_N162_L.n5 -k setup1/timepoint0/s0 -o IHC_v4b -m IHC --min_size 1000
+flamingo_tools.run_segmentation -i M_AMD_N162_L.n5 -k setup1/timepoint0/s0 -o IHC_v11 -m IHC --min_size 1000
 ```
 
 The command writes the segmentation to `segmentation.zarr` in the output folder.
@@ -29,7 +29,7 @@ The pipelines of slurm-workflows use 1000. The default is 250.
 The standard case matches the detections of a CTBP2 stain to an IHC segmentation:
 
 ```bash
-flamingo_tools.run_detection -i M_AMD_N162_L.n5 -k setup2/timepoint0/s0 -o synapses --mask_path IHC_v4b.ome.zarr
+flamingo_tools.run_detection -i M_AMD_N162_L.n5 -k setup2/timepoint0/s0 -o synapses --mask_path IHC_v11.ome.zarr
 ```
 
 The command writes two tables to the output folder:

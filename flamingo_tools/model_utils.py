@@ -214,6 +214,7 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
         Dictionary with the default segmentation settings.
     """
     all_default_kwargs = {
+        # The values of SGN_v2, the BioImage.IO SGN model.
         "SGN": {
             "center_distance_threshold": 0.4,
             "boundary_distance_threshold": 0.5,
@@ -228,11 +229,12 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
             "distance_smoothing": 0.0,
             "seg_class": "sgn_low",
         },
+        # The grid search result of IHC_v11, the BioImage.IO IHC model (best_best_params.json of the checkpoint).
         "IHC": {
-            "center_distance_threshold": 0.5,
+            "center_distance_threshold": 0.7,
             "boundary_distance_threshold": 0.6,
             "fg_threshold": 0.5,
-            "distance_smoothing": 0.6,
+            "distance_smoothing": 1.0,
             "seg_class": "ihc",
         },
         "IHC-lowres": {

@@ -9,8 +9,18 @@ import torch
 import yaml
 
 from flamingo_tools.model_utils import MODELS, _create_model, get_model, get_model_path, get_model_url
+from flamingo_tools.segmentation.cli import _parse_segmentation_kwargs
 from flamingo_tools.segmentation.synapse_detection import _get_model_out_channels
 from flamingo_tools.segmentation.unet_prediction import _load_model
+
+
+class TestSegmentationDefaults(unittest.TestCase):
+    def test_ihc_defaults(self):
+        """run_segmentation must use the grid search result of IHC_v11, the model that get_model('IHC') loads."""
+        kwargs = _parse_segmentation_kwargs([], "IHC")
+        self.assertEqual(kwargs["center_distance_threshold"], 0.7)
+        self.assertEqual(kwargs["boundary_distance_threshold"], 0.6)
+        self.assertEqual(kwargs["distance_smoothing"], 1.0)
 
 
 class TestModelSource(unittest.TestCase):
