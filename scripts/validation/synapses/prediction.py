@@ -88,11 +88,10 @@ PREDICTION_DICT = {
 def _padded_input(input_path: str, input_key: str, output_folder: str) -> Tuple[str, Tuple[int, ...]]:
     """Zero-pad a validation crop up to a multiple of the production block shape.
 
-    `prediction_impl` hands the U-Net blocks of `block_shape + 2 * halo`, whose shape has to be
-    divisible by the U-Net's downsampling factors. A whole cochlea satisfies this because it is
-    far larger than one block, but the validation crops are not, so the production block shape
-    fails on them without padding. The padded region predicts as background and any detection
-    landing in it is dropped afterwards.
+    `prediction_impl` clips the block shape to a volume that is smaller than one block. A whole
+    cochlea is far larger than one block, but the validation crops are not, so without padding
+    they would be predicted with a different block geometry than production. The padded region
+    predicts as background and any detection landing in it is dropped afterwards.
 
     Args:
         input_path: Path to the crop in ZARR format.
