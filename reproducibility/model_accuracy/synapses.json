@@ -923,5 +923,79 @@
 		"precision": 0.974,
 		"recall": 0.792,
 		"f1-score": 0.874
+	},
+	"v10": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			158,
+			61,
+			173,
+			150,
+			179,
+			186
+		],
+		"fp": [
+			0,
+			0,
+			3,
+			2,
+			3,
+			5
+		],
+		"fn": [
+			41,
+			21,
+			44,
+			44,
+			29,
+			63
+		],
+		"precision": 0.986,
+		"recall": 0.789,
+		"f1-score": 0.877
+	},
+	"v10-latest": {
+		"crops": [
+			"MLR226L_Vglut3Ctbp2_apex1_p50-140.csv",
+			"MLR226L_Vglut3Ctbp2_apex2_p1-134.csv",
+			"MLR226L_Vglut3Ctbp2_base1_reslice_p122-256.csv",
+			"MLR226L_Vglut3Ctbp2_base2_p40-130.csv",
+			"MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185.csv",
+			"MLR226L_Vglut3Ctbp2_mid2_p65-195.csv"
+		],
+		"tp": [
+			159,
+			61,
+			173,
+			148,
+			179,
+			187
+		],
+		"fp": [
+			0,
+			0,
+			4,
+			2,
+			3,
+			5
+		],
+		"fn": [
+			40,
+			21,
+			44,
+			46,
+			29,
+			62
+		],
+		"precision": 0.985,
+		"recall": 0.789,
+		"f1-score": 0.876
 	}
 }

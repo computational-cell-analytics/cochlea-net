@@ -33,11 +33,13 @@ _IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/ima
 # The v7 and v8 predictions are filtered against an IHC v11 segmentation, every earlier entry in
 # synapses.json against v4, so they are only comparable to baselines that were re-predicted.
 # Those are 'v3-ihc11' and 'v5-ihc11'; the plain 'v3' and 'v5' entries stay on IHC v4.
-# v9 is the v7 recipe with the candidate-exclusion mask, see prediction.py.
+# v9 is the v7 recipe with the candidate-exclusion mask, see prediction.py. v10 is the v7 recipe
+# with a Gaussian target of sigma 0.7 instead of 1.
 _PRODUCTION_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
     "v3-flow-1-best", "v3-flow-1-latest",
     "v7", "v7-latest", "v8", "v8-latest", "v9", "v9-latest",
+    "v10", "v10-latest",
     "v3-ihc11", "v5-ihc11",
 )
 _LEGACY_VERSIONS = (
@@ -226,6 +228,7 @@ def run_evaluation(
             os.makedirs(out_dir, exist_ok=True)
         with open(output_file, "w") as f:
             json.dump(data, f, indent="\t", separators=(",", ": "))
+            f.write("\n")
         print(f"Saved results to {output_file}")
 
 

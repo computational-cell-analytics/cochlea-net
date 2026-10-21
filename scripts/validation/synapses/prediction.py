@@ -117,6 +117,10 @@ PREDICTION_DICT = {
     # after the patch sampling fix, so its fixed validation patches are other draws.
     "v9": _entry("synapse_detection_v9.pt", "v9"),
     "v9-latest": _entry("synapse_detection_v9-latest.pt", "v9-latest"),
+    # The v7 recipe with a narrower Gaussian target (--sigma 0.7 instead of 1), to separate
+    # adjacent synapses. Its heatmap is calibrated lower, so threshold 0.5 is strict for it.
+    "v10": _entry("synapse_detection_v10.pt", "v10"),
+    "v10-latest": _entry("synapse_detection_v10-latest.pt", "v10-latest"),
     # The released baselines scored against the IHC v11 segmentation, for the comparison with v7
     # and later. The plain 'v3' and 'v5' keys of synapses.json stay on IHC v4, because Figure 2c
     # and Supplementary Figure 2 compare them with other IHC v4 entries.
