@@ -446,9 +446,10 @@ python scripts/validation/synapses/run_evaluation.py -p $OUT -o reproducibility/
 `v7-latest_md1`. The whole-cochlea entry points still detect with `min_distance` 2. Pass the
 option on to them once the validation selects another value.
 
-**Idea for v10: a narrower target.** For two annotations 3 voxels (1.1 um) apart, the sigma-1
+**v10: a narrower target.** For two annotations 3 voxels (1.1 um) apart, the sigma-1
 target falls only to 73 % of the peak between them, and the trained heatmap merges such pairs.
-With sigma 0.7 it falls to 38 %. `--sigma` exists, but v10 is not trained:
+With sigma 0.7 it falls to 38 %. v10 was trained with this command. For the result, see the next
+section:
 
 ```bash
 python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v10 --random_state 42 -s $SAVE_ROOT \
@@ -458,11 +459,70 @@ python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v10 --random_state 42 -s 
 A narrower target has fewer positive voxels, which can lower the recall instead. Score v10 at
 the `min_distance` that its own validation selects.
 
+### v10 and the narrower target (2026-10-21)
+
+v10 is the v7 recipe with `--sigma 0.7`. Like v9, it was trained after the patch sampling fix.
+The production scores from `synapses.json` (IHC v11):
+
+| Entry | Precision | Recall | F1 | TP | FP | FN |
+|---|---:|---:|---:|---:|---:|---:|
+| `v7` | 0.970 | 0.799 | 0.876 | 918 | 28 | 231 |
+| `v7-latest` | 0.972 | 0.815 | 0.886 | 936 | 27 | 213 |
+| `v10` | 0.986 | 0.789 | 0.877 | 907 | 13 | 242 |
+| `v10-latest` | 0.985 | 0.789 | 0.876 | 907 | 14 | 242 |
+
+**At the production setting, v10 gives no gain.** It halves the false positives, but it loses 11
+to 29 true positives. F1 does not change.
+
+The diagnostics below detect the peaks again on the stored heatmaps in `production_2026-09-25/`
+with the production code. They match the detections at 3 um against the 1,123 IHC-filtered
+consensus points. At threshold 0.5 and `min_distance` 2, the detection reproduces the stored
+detections exactly. The recall divides by 1,123. The `min_distance` table of 2026-10-01 divides
+by all 1,149 points, so its recall is about 0.02 lower for the same detections. These values come
+from the test crops. They describe the models but do not select a setting.
+
+1. **The narrow target does not separate the adjacent synapses.** This was the purpose of v10.
+   There are 131 consensus pairs closer than 1.5 um. The table counts the pairs with both points
+   found at threshold 0.5. The last column gives the pairs with a separate local maximum in the
+   heatmap for each point. Each maximum has a value above 0.1 and lies within 1.5 um of its point.
+
+   | Entry | Both found, `min_distance` 2 | Both found, `min_distance` 1 | Two heatmap maxima |
+   |---|---:|---:|---:|
+   | `v7-latest` | 11 | 22 | 20 % |
+   | `v10-latest` | 9 | 20 | 24 % |
+
+   A probable reason is that the CTBP2 signal itself does not resolve these pairs. A narrower
+   target cannot add that information. This reason is not tested.
+2. **The narrow target lowers the heatmap values, so threshold 0.5 is strict for v10.** For 19 %
+   of the v10 false negatives, no heatmap value within 4 voxels reaches 0.5. For `v7-latest`,
+   this is 7 %. A threshold sweep from 0.05 to 2.0 gives:
+
+   | Entry | Best F1 (threshold, `min_distance`) | Recall at precision >= 0.97, `min_distance` 2 | Recall at precision >= 0.98, `min_distance` 2 |
+   |---|---|---|---|
+   | `v7` | 0.903 (0.35, 1) | 0.790 (0.75) | 0.754 (1.1) |
+   | `v7-latest` | 0.909 (0.35, 1) | 0.812 (0.65) | 0.792 (0.9) |
+   | `v10` | 0.908 (0.20, 1) | 0.825 (0.30) | 0.810 (0.45) |
+   | `v10-latest` | 0.909 (0.20, 1) | 0.831 (0.25) | 0.808 (0.45) |
+
+   At its best threshold, v10 has the F1 of `v7-latest`. At matched high precision, `v10-latest`
+   finds about 20 more synapses than `v7-latest`, which is 2 % recall. The gap to `v7` is larger,
+   but `v7` is the weaker export of that run. This is the only advantage. It is smaller than the
+   seed spread of one recipe (F1 SD 0.016 to 0.031 for the v3 seeds), and each recipe has one seed.
+3. **`min_distance` 1 helps every model by about the same amount.** At threshold 0.5, F1 increases
+   by 0.008 to 0.013: from 0.892 to 0.905 for `v7-latest`, and from 0.885 to 0.893 for
+   `v10-latest`. The narrow target does not make `min_distance` 1 more useful.
+
+**Recommendation: keep sigma 1 and the v7 recipe.** v10 has no advantage at the F1 optimum, and
+it does not remove the recall limit that it was made for. If an application needs a
+high-precision operating point, v10 at a lower threshold is an option. Select that threshold with
+the gridsearch on the validation crops. `min_distance` 1 for `v7-latest`, selected on the
+validation crops as shown above, is still the open gain.
+
 ### Settings of every model version
 
 Common to every run: patch shape 40 × 112 × 112, batch size 32, learning rate 1e-4, 3,200
-training and 160 validation samples per epoch, no augmentation, a Gaussian target of sigma 1
-voxel and peak 4, and three validation crops. The `synapses.json` entries of the production
+training and 160 validation samples per epoch, no augmentation, a Gaussian target of peak 4 and
+sigma 1 voxel (v10: 0.7), and three validation crops. The `synapses.json` entries of the production
 pipeline use threshold 0.5, `min_distance` 2, the IHC filter at 3 um and matching at 3 um on the
 six consensus test crops.
 
@@ -482,7 +542,7 @@ six consensus test crops.
 | v7 | `v7` | heatmap | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10 | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
-| v10 (idea) | `v7` | heatmap | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 1e5 | | target sigma 0.7 |
+| v10 | `v7` | heatmap, target sigma 0.7 | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 
 `MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
 probability 0.2. v7 to v9 standardize the raw input, which is a no-op for this network; whether
