@@ -20,7 +20,7 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
     use_flow=False, sampler_name=None, n_iterations=int(1e5), save_root=SAVE_ROOT,
-    legacy_recipe=False, sigma=1.0, fixed_target=False, lr_schedule="plateau",
+    legacy_recipe=False, sigma=1.0, fixed_target=False, split_path=None, lr_schedule="plateau",
 ):
     if use_flow and sigma != 1:
         # The flow correction at inference assumes the target sigma (_HEATMAP_FLOW_SIGMA = 1 in
@@ -66,9 +66,17 @@ def train(
     # validation crops, so that the metric selecting best.pt is scored on the same data.
     val_patch_seed = None if legacy_recipe else random_state
 
-    train_paths, val_paths, train_label_paths, val_label_paths = train_test_split(
-        image_paths, label_paths, test_size=val_sample_size, random_state=random_state,
-    )
+    if split_path is None:
+        train_paths, val_paths, train_label_paths, val_label_paths = train_test_split(
+            image_paths, label_paths, test_size=val_sample_size, random_state=random_state,
+        )
+    else:
+        with open(split_path) as f:
+            split = json.load(f)
+        train_paths = [os.path.join(image_dir, f"{name}.zarr") for name in split["train"]]
+        val_paths = [os.path.join(image_dir, f"{name}.zarr") for name in split["val"]]
+        train_label_paths = [os.path.join(label_dir, f"{name}.csv") for name in split["train"]]
+        val_label_paths = [os.path.join(label_dir, f"{name}.csv") for name in split["val"]]
 
     train_val_dic = {
         "train": [os.path.splitext(os.path.basename(f))[0] for f in train_paths],
@@ -124,7 +132,12 @@ def main():
     parser.add_argument("-i", "--input_dir", type=str, default=ROOT_SYNAPSE_DATA)
     parser.add_argument("-v", "--version", type=str, default="v5")
     parser.add_argument("-r", "--random_state", type=int, default=None,
-                        help="Random state for train and validation split. Default: 42 for fixed versions.")
+                        help="Random state for train and validation split, and for the validation "
+                             "patches. Default: 42 for fixed versions.")
+    parser.add_argument("--split", type=str, default=None,
+                        help="JSON file with the crop names of the 'train' and 'val' lists, in the "
+                             "format this script writes. With it, --random_state only fixes the "
+                             "validation patches. Default: a random split by --random_state.")
     parser.add_argument("-m", "--model_suffix", type=str, default=None,
                         help="Custom suffix for model name. Default: Same as version.")
     parser.add_argument("--use_flow", action="store_true",
@@ -172,6 +185,7 @@ def main():
         legacy_recipe=args.legacy_recipe,
         sigma=args.sigma,
         fixed_target=args.fixed_target,
+        split_path=args.split,
         lr_schedule=args.lr_schedule,
     )
 
