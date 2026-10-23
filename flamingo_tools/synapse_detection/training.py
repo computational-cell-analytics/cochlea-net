@@ -5,6 +5,7 @@ was imported through a hard-coded path into another user's home directory and co
 not be pinned or changed from here.
 """
 
+import math
 from typing import Callable, Optional, Sequence
 
 import torch
@@ -44,6 +45,25 @@ class DetectionLoss(nn.Module):
         if self.flow_weight:
             loss = loss + self.flow_weight * ((prediction[:, 1:] - target[:, 1:]) ** 2).mean()
         return loss
+
+
+class EpochCosineSchedule(torch.optim.lr_scheduler.CosineAnnealingLR):
+    """Cosine decay of the learning rate to zero, with one step per epoch.
+
+    torch_em passes the validation metric to `step`. This schedule ignores it, so that the learning
+    rate does not depend on a noisy validation metric.
+
+    Args:
+        optimizer: The optimizer.
+        T_max: The number of epochs of the run.
+    """
+    def __init__(self, optimizer: torch.optim.Optimizer, T_max: int):
+        super().__init__(optimizer, T_max=T_max)
+        # Read by torch_em.util.get_constructor_arguments when the trainer is serialized.
+        self.init_kwargs = {"T_max": T_max}
+
+    def step(self, metric=None):
+        super().step()
 
 
 def get_3d_model(in_channels: int, out_channels: int, initial_features: int = 32) -> nn.Module:
@@ -119,6 +139,7 @@ def supervised_training(
     num_workers: int = 8,
     metric: Optional[nn.Module] = None,
     val_patch_seed: Optional[int] = None,
+    lr_schedule: str = "plateau",
 ) -> None:
     """Train the synapse detection model.
 
@@ -146,7 +167,14 @@ def supervised_training(
         val_patch_seed: Seed that fixes the validation patches, so that every epoch is scored on
             the same data. Without it the validation set is redrawn at random on every epoch and
             the metric that selects 'best.pt' carries that noise.
+        lr_schedule: "plateau" is the torch_em default of every model up to v10: it halves the
+            learning rate when the validation metric does not improve for 5 epochs. In v5 to v10
+            the learning rate reached its floor of 1.2e-8 within 100 to 200 of 1000 epochs.
+            "cosine" decays it to zero over the whole run, independent of the validation metric.
+            Use 'latest.pt' with it.
     """
+    if lr_schedule not in ("plateau", "cosine"):
+        raise ValueError(f"Unknown lr_schedule {lr_schedule}, expected 'plateau' or 'cosine'.")
     loader_kwargs = dict(
         raw_key=raw_key, patch_shape=patch_shape, batch_size=batch_size, num_workers=num_workers,
         label_transform=label_transform, sampler=sampler,
@@ -171,4 +199,9 @@ def supervised_training(
         loss=loss,
         metric=loss if metric is None else metric,
     )
+    if lr_schedule == "cosine":
+        # The trainer serializes its scheduler in fit, so replacing it here is recorded correctly.
+        trainer.lr_scheduler = EpochCosineSchedule(
+            trainer.optimizer, T_max=math.ceil(n_iterations / len(train_loader))
+        )
     trainer.fit(n_iterations)
