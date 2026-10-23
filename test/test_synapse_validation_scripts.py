@@ -7,6 +7,8 @@ import tempfile
 import unittest
 from unittest import mock
 
+import torch
+
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 VALIDATION_DIR = os.path.join(REPO_ROOT, "scripts", "validation", "synapses")
 
@@ -211,6 +213,43 @@ class TestEvaluationRoots(unittest.TestCase):
                     self.evaluation.main()
             with mock.patch.object(sys, "argv", argv + ["--overwrite"]):
                 self.evaluation.main()
+
+
+class TestTrainingRecipe(unittest.TestCase):
+    """The flags of train() decide which recipe a run reproduces."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.training = _load_module(
+            "synapse_training",
+            os.path.join(REPO_ROOT, "scripts", "synapse_marker_detection", "train_synapse_detection.py"),
+        )
+
+    def _train(self, **kwargs):
+        recorded = {}
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            for folder, ext in (("images", ".zarr"), ("labels", ".csv")):
+                os.makedirs(os.path.join(tmp_dir, "v0", folder))
+                for name in ("a", "b", "c"):
+                    open(os.path.join(tmp_dir, "v0", folder, name + ext), "w").close()
+            with mock.patch.object(self.training, "supervised_training", lambda **kw: recorded.update(kw)), \
+                 mock.patch("flamingo_tools.synapse_detection.detection_dataset._spotiflow_available", True):
+                self.training.train(tmp_dir, version="v0", val_sample_size=1, **kwargs)
+        return recorded
+
+    def test_default_is_the_v7_recipe(self):
+        recorded = self._train()
+        self.assertEqual(recorded["sampler"].min_points, 1)
+        self.assertIsNone(recorded["metric"])
+        self.assertEqual(recorded["val_patch_seed"], 42)
+
+    def test_legacy_recipe(self):
+        recorded = self._train(legacy_recipe=True)
+        self.assertIsNone(recorded["sampler"])
+        self.assertIsInstance(recorded["metric"], torch.nn.MSELoss)
+        self.assertIsNone(recorded["val_patch_seed"])
+        # v5 and v3-flow-1 used the sampler.
+        self.assertIsNotNone(self._train(legacy_recipe=True, use_flow=True)["sampler"])
 
 
 if __name__ == "__main__":

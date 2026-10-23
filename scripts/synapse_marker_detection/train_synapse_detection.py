@@ -38,10 +38,10 @@ def train(
             random_state = sum([ord(char) for char in model_suffix.lower()])
         print(f"Using random state {random_state}.")
 
-    # Without flow the sampler is off, because the czii-protein-challenge version used for v3
-    # silently dropped it.
+    # The heatmap-only legacy runs (v3, v6-1) had no sampler, because the czii-protein-challenge
+    # version used for v3 silently dropped it. Every other recipe uses it, v7 included.
     if sampler_name is None:
-        sampler_name = "minpoint" if use_flow else "none"
+        sampler_name = "none" if (legacy_recipe and not use_flow) else "minpoint"
     # MinPointSampler accepts a patch when n_points > min_points, so min_points=1 needs two annotations.
     sampler = MinPointSampler(min_points=1, p_reject=0.8) if sampler_name == "minpoint" else None
 
@@ -128,7 +128,7 @@ def main():
                              "synapse_detection_v3.")
     parser.add_argument("--sampler", type=str, default=None, choices=["none", "minpoint"],
                         help="Sampler to reject patches with too few points. "
-                             "Default: minpoint with --use_flow, none without.")
+                             "Default: none with --legacy_recipe and without --use_flow, else minpoint.")
     parser.add_argument("-n", "--n_iterations", type=int, default=int(1e5),
                         help="Number of training iterations. Default: 100000.")
     parser.add_argument("--sigma", type=float, default=1.0,
@@ -141,8 +141,9 @@ def main():
     parser.add_argument("--legacy_recipe", action="store_true",
                         help="Reproduce the training recipe of synapse_detection_v3 and v5: an "
                              "unweighted mean squared error over all output channels as the "
-                             "validation metric, and validation patches that are redrawn on every "
-                             "epoch. Required to retrain those models.")
+                             "validation metric, validation patches that are redrawn on every "
+                             "epoch, and no sampler without --use_flow. Required to retrain those "
+                             "models.")
 
     args = parser.parse_args()
     train(

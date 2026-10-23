@@ -22,7 +22,7 @@ SCRIPT_REPO=/user/schilling40/u15000/flamingo-tools
 export PYTHONPATH="$SCRIPT_REPO:$PYTHONPATH"
 
 # Directory for the checkpoints. train_synapse_detection.py writes to
-# ./checkpoints/synapse_detection_<MODEL_SUFFIX>, so the job must run inside it.
+# $WORK_DIR/checkpoints/synapse_detection_<MODEL_SUFFIX>.
 WORK_DIR=$1
 # Version of the training data below the training_data/synapses/training_data folder, e.g. v5
 VERSION=$2
@@ -42,9 +42,9 @@ if [ -n "$RANDOM_STATE" ]; then
 	split_args+=(-r "$RANDOM_STATE")
 fi
 
-# Trains the heatmap only, the output layout of synapse_detection_v3. Add --use_flow for the
-# 5 channel heatmap and flow training of synapse_detection_v5, and --sampler to override the
-# default sampler of the selected mode. To retrain v3 or v5 themselves, add --legacy_recipe:
-# the runs before 2026-09-21 had a different validation metric.
+# Trains the v7 recipe: heatmap only, MinPointSampler and fixed validation patches. Add
+# --use_flow for the 5 channel heatmap and flow training of synapse_detection_v5. To retrain v3
+# or v5 themselves, add --legacy_recipe: the runs before 2026-09-21 had a different validation
+# metric, redrawn validation patches, and no sampler without flow.
 python "$SCRIPT_REPO"/scripts/synapse_marker_detection/train_synapse_detection.py \
-	-v "$VERSION" -m "$MODEL_SUFFIX" "${split_args[@]}"
+	-v "$VERSION" -m "$MODEL_SUFFIX" -s "$WORK_DIR" "${split_args[@]}"
