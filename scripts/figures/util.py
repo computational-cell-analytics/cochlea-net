@@ -792,11 +792,11 @@ def cohort_postnatal(cohort):
 # through cochlea_components() or cochleae_for(), never by indexing the nested dicts directly.
 # Only the (structure, version) pairs that a figure script needs are listed, so an unintended
 # lookup raises instead of filtering on a guessed component list.
-# TODO: plot_fig6.py still defines its own COCHLEAE_DICT_LaVision. Its LaVision cochleae are not
+# TODO: data.py still defines its own LAVISION_COCHLEAE_DICT. Its LaVision cochleae are not
 # in this registry, and plot_lavision.py holds a third, conflicting component list for them.
 COCHLEA_DICT = {
     # iDISCO reference cochleae. The IHC component lists were validated on IHC_v11. IHC_v4c
-    # reuses them, which is what plot_mwfls.py already did through the old plot_fig3 registry.
+    # reuses them for the iDISCO data of plot_mwfls.py.
     "M_LR_000226_L": {
         "alias": "M_01L", "color": "#9C5027",
         "SGN": {"SGN_v2": {"component": [1]}},

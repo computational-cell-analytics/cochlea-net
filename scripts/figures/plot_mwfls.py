@@ -12,11 +12,11 @@ from util import (
     literature_reference_values,
     prism_style, prism_cleanup_axes,
     ax_prism_boxplot,
-    VALUE_DICT, COHORT_DICT, cohort_cochleae,
+    VALUE_DICT, COHORT_DICT, SYNAPSE_DIR_ROOT, cohort_cochleae,
     MWFLS_COCHLEAE_DICT, OUTLIER_DICT
 )
-from plot_fig2 import _load_ribbon_synapse_counts
-from plot_fig3 import supp_fig_03a_meyer, COCHLEAE_DICT, get_tonotopic_data, SYNAPSE_DIR
+from data import get_tonotopic_data, load_ribbon_synapse_counts
+from tonotopic_mapping import IDISCO_COCHLEAE_DICT as COCHLEAE_DICT, plot_synapses_along_cochlea
 
 png_dpi = 300
 FILE_EXTENSION = "png"
@@ -80,7 +80,7 @@ def fig_cohort_boxplot(
     # Collect synapse counts per cohort.
     syn_by_cohort = {}
     for cohort in cohorts:
-        syn_by_cohort[cohort] = _load_ribbon_synapse_counts(
+        syn_by_cohort[cohort] = load_ribbon_synapse_counts(
             ihc_version=syn_versions[cohort],
             cochleae=cohort_cochleae(cohort),
         )
@@ -195,12 +195,12 @@ def fig_mwfls_synapses(
     idisco_data = get_tonotopic_data(
         cochleae=cohort_cochleae("idisco"),
         source_name=f"IHC_{idisco_syn_version}",
-        synapse_dir=SYNAPSE_DIR,
+        synapse_dir=SYNAPSE_DIR_ROOT,
     )
     mwfls_data = get_tonotopic_data(
         cochleae=cohort_cochleae("mwfls"),
         source_name=f"IHC_{mwfls_syn_version}",
-        synapse_dir=SYNAPSE_DIR,
+        synapse_dir=SYNAPSE_DIR_ROOT,
     )
 
     MEYER_COLORS = [
@@ -212,7 +212,7 @@ def fig_mwfls_synapses(
 
     cohorts = ["idisco", "mwfls"]
 
-    # Build a unified cohort_dict consumed by the generalized supp_fig_03a_meyer.
+    # Build a unified cohort_dict consumed by plot_synapses_along_cochlea.
     merged_cohort_dict = {}
     for num, name in enumerate(cohort_cochleae("idisco")):
         entry = dict(COCHLEAE_DICT[name])
@@ -228,7 +228,7 @@ def fig_mwfls_synapses(
 
     tonotopic_data = {**idisco_data, **mwfls_data}
 
-    supp_fig_03a_meyer(
+    plot_synapses_along_cochlea(
         tonotopic_data=tonotopic_data,
         save_path=save_path,
         cohort_dict=merged_cohort_dict,

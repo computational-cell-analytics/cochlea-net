@@ -18,12 +18,14 @@ import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-from util import (cochlea_label, export_legend, get_flatline_handle, get_marker_handle, prism_cleanup_axes,
-                  prism_palette, prism_style)
-from plot_fig4 import COCHLEAE_DICT
+from util import (cochlea_label, cochleae_for, cohort_cochleae, export_legend, get_flatline_handle,
+                  get_marker_handle, prism_cleanup_axes, prism_palette, prism_style)
 
 FILE_EXTENSION = "png"
 png_dpi = 300
+
+# The ChReef cochleae, for the alias and the x-axis order of a plotted cochlea.
+COCHLEAE_DICT = cochleae_for(cohort_cochleae("chreef_mouse"), "SGN", "SGN_v2")
 
 # Display names for the annotators. The order also fixes the marker shape and the x offset.
 # The marker annotations and the subtype annotations use a different key for the same annotator.
