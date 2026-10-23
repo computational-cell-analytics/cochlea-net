@@ -21,6 +21,7 @@ echo "Current node: ${SLURM_NODELIST}"
 export SCRIPT_DIR=/user/schilling40/u15000/flamingo-tools/scripts/synapse_marker_detection
 SAVE_ROOT=/mnt/lustre-grete/usr/u15000/checkpoints
 
+# Needs commit 4da9e70: the mask code was removed from the package afterwards.
 # v7 with the candidate-exclusion mask. Data, split and sampler are those of v7, so the mask is the
 # only intended difference. The validation patches are other draws, because the patch sampling
 # changed after v7 was trained. Check the printed candidate count per crop before the

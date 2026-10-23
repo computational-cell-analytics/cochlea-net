@@ -31,43 +31,23 @@ class DetectionLoss(nn.Module):
     Args:
         flow_weight: Weight of the flow channels. Keep it at zero for a heatmap-only model, which
             has a single output channel and no flow channels to compare.
-        masked: Whether the target carries a binary loss mask in its last channel. Only voxels
-            inside the mask then contribute to the loss.
     """
-    def __init__(self, flow_weight: float = 0.0, masked: bool = False):
+    def __init__(self, flow_weight: float = 0.0):
         super().__init__()
         self.flow_weight = flow_weight
-        self.masked = masked
         # Read by torch_em.util.get_constructor_arguments when the trainer is serialized.
-        self.init_kwargs = {"flow_weight": flow_weight, "masked": masked}
-
-    @staticmethod
-    def _mse(prediction, target, mask):
-        error = (prediction - target) ** 2
-        if mask is None:
-            return error.mean()
-        # Mean over the masked voxels of the whole batch. A patch without annotations has an
-        # empty mask and contributes nothing; the clamp keeps an all-empty batch finite.
-        n_values = mask.sum() * prediction.shape[1]
-        return (error * mask).sum() / n_values.clamp(min=1.0)
+        self.init_kwargs = {"flow_weight": flow_weight}
 
     def forward(self, prediction: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
-        # Without this a target that carries a mask channel while `masked` is off trains happily
-        # with the mask ignored, which is silent and wrong.
-        expected_channels = prediction.shape[1] + (1 if self.masked else 0)
-        if target.shape[1] != expected_channels:
+        # Without this a 5 channel target trains a 1 channel model on the heatmap alone, silently.
+        if target.shape[1] != prediction.shape[1]:
             raise ValueError(
-                f"Expected {expected_channels} target channels for a {prediction.shape[1]} channel "
-                f"prediction with masked={self.masked}, got {target.shape[1]}."
+                f"Expected {prediction.shape[1]} target channels, got {target.shape[1]}."
             )
 
-        mask = None
-        if self.masked:
-            mask, target = target[:, -1:], target[:, :-1]
-
-        loss = self._mse(prediction[:, :1], target[:, :1], mask)
+        loss = ((prediction[:, :1] - target[:, :1]) ** 2).mean()
         if self.flow_weight:
-            loss = loss + self.flow_weight * self._mse(prediction[:, 1:], target[:, 1:], mask)
+            loss = loss + self.flow_weight * ((prediction[:, 1:] - target[:, 1:]) ** 2).mean()
         return loss
 
 
@@ -127,8 +107,8 @@ def _get_loader(
         for index, (raw_path, label_path, n_samples_dataset)
         in enumerate(zip(raw_paths, label_paths, _samples_per_dataset(n_samples, len(raw_paths))))
     ]
-    # Fixed patches only give a reproducible metric when the batches are fixed too: the trainer
-    # averages the metric over batches, and the masked loss normalizes within a batch.
+    # Fixed patches only give a reproducible metric when the batches are fixed too, because the
+    # trainer averages the metric over batches.
     shuffle = patch_seed is None
     loader = DataLoader(
         ConcatDataset(*datasets), batch_size=batch_size, shuffle=shuffle, num_workers=num_workers
