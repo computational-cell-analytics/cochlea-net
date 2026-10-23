@@ -167,7 +167,8 @@ def prediction_impl(
         if os.path.isdir(model_path):
             model = load_model(model_path)
         else:
-            obj = torch.load(model_path, weights_only=False)
+            # The prediction moves the model to its device, so a GPU checkpoint also loads on a CPU node.
+            obj = torch.load(model_path, map_location="cpu", weights_only=False)
             model = _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
 
     input_ = read_image_data(input_path, input_key)
