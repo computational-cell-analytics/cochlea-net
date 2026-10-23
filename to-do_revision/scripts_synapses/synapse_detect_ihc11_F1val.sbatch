@@ -24,13 +24,11 @@ echo "Current node: ${SLURM_NODELIST}"
 
 export SCRIPT_DIR=/user/schilling40/u15000/flamingo-tools
 
-# A new root: prediction.py skips every crop that already has a prediction, and the predictions in
-# production_2026-09-24 were normalized with statistics that included the zero padding.
+# A new root, because prediction.py skips every crop that already has a prediction.
 OUTPUT_DIR=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/val_synapses/production_2026-09-25
 
 # All entries are scored against IHC v11. --overwrite replaces the entries of the 2026-09-24 run.
-# Add v9 and v9-latest once the model is trained and exported.
-for VERSION in v3-ihc11 v5-ihc11 v7 v7-latest v8 v8-latest ; do
+for VERSION in v3-ihc11 v5-ihc11 v7 v7-latest v8 v8-latest v9 v9-latest v10 v10-latest ; do
 	python "$SCRIPT_DIR"/scripts/validation/synapses/prediction.py \
 		-v "$VERSION" --output_root "$OUTPUT_DIR"
 	python "$SCRIPT_DIR"/scripts/validation/synapses/run_evaluation.py \
