@@ -39,22 +39,6 @@ LEGEND_LABEL = {
     "Type Ic": r"$\mathrm{Type}~\mathrm{I}_{\mathrm{c}}$",
 }
 
-# Groups of cochleae with a common staining. The key lists the subtypes the staining can
-# distinguish, a suffix after "-" separates groups with the same subtypes.
-GROUPINGS = {
-    "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
-    "Type Ia;Type Ib;Type Ic;Type II-noPV": ["M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R"],
-    "Type Ia;Type Ib;Type Ic;Type II-old+new": [
-        "M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
-    ],
-    "Type Ia;Type Ib;Type Ic;Type II-all": [
-        "M_LR_000098_L", "M_LR_N98_R", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
-    ],
-    "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
-    "Type Ib;Type Ic;inconclusive": ["M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_R"],
-    "Type Ib;Type Ic;Type IbIc": ["M_LR_000099_L"],
-}
-
 COLORS_OFFSET = {
     "M_10L": "#D63637",
     "M_10R": "#237556",
@@ -320,14 +304,16 @@ def _prph_cochleae() -> List[str]:
 def plot_offset_legend(
     save_path: str,
     ncol: Optional[int] = None,
+    cochleae: Optional[List[str]] = None,
 ):
     """Plot the legend of plot_type_offset.
 
     Args:
         save_path: Path to save legend.
         ncol: Number of columns for legend.
+        cochleae: Cochleae of the legend. Defaults to the cochleae with Prph as only subtype stain.
     """
-    labels = [ALIAS[k] for k in _prph_cochleae()]
+    labels = [ALIAS[k] for k in (_prph_cochleae() if cochleae is None else cochleae)]
     colors = [COLORS_OFFSET[label] for label in labels]
     handles = [get_flatline_handle(c) for c in colors]
     save_legend(handles, labels, save_path, ncol=len(labels) if ncol is None else ncol)
@@ -338,6 +324,7 @@ def plot_type_offset(
     plot: bool = False,
     plot_type: str = "mean",
     seed: int = 0,
+    cochleae: Optional[List[str]] = None,
 ):
     """Plot the offset of Type I and Type II SGNs from the central path of Rosenthal's canal.
 
@@ -346,8 +333,10 @@ def plot_type_offset(
         plot: Plot figure.
         plot_type: Plot mode. Either "mean" for mean offset or "points" for point cloud representation.
         seed: Seed of the horizontal jitter of the "points" mode.
+        cochleae: Cochleae to plot, each with one color of COLORS_OFFSET. Defaults to the cochleae
+            with Prph as only subtype stain.
     """
-    cochleae = _prph_cochleae()
+    cochleae = _prph_cochleae() if cochleae is None else cochleae
 
     dic = {}
     for cochlea in cochleae:

@@ -28,11 +28,21 @@ LAVISION_COCHLEAE_DICT = {
 }
 
 
-def _read_cache(cache_path: str, force_download: bool):
+def _read_cache(cache_path: str, force_download: bool, cochleae: Optional[List[str]] = None):
+    """Read a pickle cache.
+
+    With cochleae, only these cochleae are returned, in their order. The result is None if one of
+    them is not in the cache, so that the caller fetches the data again.
+    """
     if force_download or not os.path.exists(cache_path):
         return None
     with open(cache_path, "rb") as f:
-        return pickle.load(f)
+        cached = pickle.load(f)
+    if cochleae is None:
+        return cached
+    if not all(cochlea in cached for cochlea in cochleae):
+        return None
+    return {cochlea: cached[cochlea] for cochlea in cochleae}
 
 
 def _write_cache(cache_path: str, data):
@@ -100,12 +110,12 @@ def get_tonotopic_data(
     """
     if cache_path is None:
         cache_path = f"./tonotopic_data_{source_name}.pkl"
-    cached = _read_cache(cache_path, force_download)
+    cochleae = cohort_cochleae("idisco") if cochleae is None else list(cochleae)
+    cached = _read_cache(cache_path, force_download, cochleae)
     if cached is not None:
         return cached
 
     ihc_version = source_name.split("_")[1]
-    cochleae = cohort_cochleae("idisco") if cochleae is None else list(cochleae)
 
     s3 = create_s3_target()
     tonotopic_data = {}
@@ -196,6 +206,7 @@ def load_ribbon_synapse_counts(
 
 
 def get_chreef_data(
+    cochleae: Optional[List[str]] = None,
     cache_path: str = "./chreef_data.pkl",
     force_download: bool = False,
 ) -> Dict[str, pd.DataFrame]:
@@ -204,6 +215,7 @@ def get_chreef_data(
     The merge is an inner join on label_id, so an SGN without an intensity measurement is left out.
 
     Args:
+        cochleae: Cochleae to load. Defaults to the chreef_mouse cohort.
         cache_path: Path for the pickle cache.
         force_download: Ignore the cached pickle and fetch the tables again.
 
@@ -211,12 +223,13 @@ def get_chreef_data(
         Mapping of cochlea name to a table with label_id, length[µm], frequency[kHz],
         marker_labels and the columns of the object measures table.
     """
-    cached = _read_cache(cache_path, force_download)
+    cochleae = cohort_cochleae("chreef_mouse") if cochleae is None else list(cochleae)
+    cached = _read_cache(cache_path, force_download, cochleae)
     if cached is not None:
         return cached
 
     source_name = "SGN_v2"
-    cochleae_dict = cochleae_for(cohort_cochleae("chreef_mouse"), "SGN", source_name)
+    cochleae_dict = cochleae_for(cochleae, "SGN", source_name)
     s3 = create_s3_target()
     chreef_data = {}
     for cochlea, meta in cochleae_dict.items():
@@ -244,12 +257,14 @@ def get_chreef_data(
 
 
 def get_otof_data(
+    cochleae: Optional[List[str]] = None,
     cache_path: str = "./otof_data.pkl",
     force_download: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """Load the IHC_v11 tables of the OTOF gene-therapy cochleae.
 
     Args:
+        cochleae: Cochleae to load. Defaults to the otof_mouse cohort.
         cache_path: Path for the pickle cache.
         force_download: Ignore the cached pickle and fetch the tables again.
 
@@ -257,14 +272,15 @@ def get_otof_data(
         Mapping of cochlea name to a table with label_id, length[µm], frequency[kHz] and
         marker_labels.
     """
-    cached = _read_cache(cache_path, force_download)
+    cochleae = cohort_cochleae("otof_mouse") if cochleae is None else list(cochleae)
+    cached = _read_cache(cache_path, force_download, cochleae)
     if cached is not None:
         return cached
 
     source_name = "IHC_v11"
     s3 = create_s3_target()
     otof_data = {}
-    for cochlea, meta in cochleae_for(cohort_cochleae("otof_mouse"), "IHC", source_name).items():
+    for cochlea, meta in cochleae_for(cochleae, "IHC", source_name).items():
         print("Processing cochlea:", cochlea)
         table = read_source_table(s3, cochlea, source_name)
         component_labels = meta["component"]
@@ -339,26 +355,29 @@ def _match_column(columns, prefix: str, exclude: Optional[str] = None) -> str:
 
 
 def get_gerbil_fchrimson_data(
+    cochleae: Optional[List[str]] = None,
     cache_path: str = "./gerbil_fchrimson_sgn_data.pkl",
     force_download: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """Load the GFP-marked SGN_v2 tables of the f-Chrimson gerbil cochleae.
 
     Args:
+        cochleae: Cochleae to load. Defaults to the fchrimson_gerbil cohort.
         cache_path: Path for the pickle cache.
         force_download: Ignore the cached pickle and fetch the tables from S3 again.
 
     Returns:
         Mapping of cochlea name to a table with columns label_id, frequency[kHz], marker_labels.
     """
-    cached = _read_cache(cache_path, force_download)
+    cochleae = cohort_cochleae("fchrimson_gerbil") if cochleae is None else list(cochleae)
+    cached = _read_cache(cache_path, force_download, cochleae)
     if cached is not None:
         return cached
 
     source_name = "SGN_v2"
     s3 = create_s3_target()
     fchrimson_data = {}
-    for cochlea, meta in cochleae_for(cohort_cochleae("fchrimson_gerbil"), "SGN", source_name).items():
+    for cochlea, meta in cochleae_for(cochleae, "SGN", source_name).items():
         print("Processing cochlea:", cochlea)
         table = read_source_table(s3, cochlea, source_name, table_name="GFP_SGN-v2.tsv")
         table = table[table.component_labels.isin(meta["component"])]
@@ -401,9 +420,8 @@ def get_gerbil_density_data(
     """
     if cochleae is None:
         cochleae = list(cohort_cochleae("fchrimson_gerbil")) + list(cohort_cochleae("wt_gerbil"))
-    cached = _read_cache(cache_path, force_download)
-    # A cache written for a smaller cohort would raise a KeyError downstream instead.
-    if cached is not None and all(cochlea in cached for cochlea in cochleae):
+    cached = _read_cache(cache_path, force_download, cochleae)
+    if cached is not None:
         return cached
 
     s3 = create_s3_target()

@@ -29,6 +29,22 @@ class TestPaperFigures(unittest.TestCase):
             self.assertIsNotNone(re.fullmatch(r"S?\d+[a-z]", panel_id), panel_id)
         self.assertLessEqual(set(self.paper.VARIANTS), set(self.paper.PANELS))
 
+    def test_paper_cohorts_are_registered(self):
+        from flamingo_tools.postprocessing.sgn_subtype_utils import COCHLEAE
+        for name, cochleae in self.paper.PAPER_COHORTS.items():
+            for cochlea in cochleae:
+                self.assertIn(cochlea, self.paper.COCHLEA_DICT, f"{cochlea} of cohort {name}")
+        for name, cochleae in self.paper.SUBTYPE_COHORTS.items():
+            for cochlea in cochleae:
+                self.assertIn(cochlea, COCHLEAE, f"{cochlea} of subtype cohort {name}")
+
+    def test_no_cohort_lookup(self):
+        # The published panels must not follow later changes of util.COHORT_DICT.
+        with open(os.path.join(FIGURE_DIR, "paper_cochleanet_figures.py")) as f:
+            source = f.read()
+        self.assertNotIn("cohort_cochleae", source)
+        self.assertNotIn("cohort_postnatal", source)
+
     def test_select_panels(self):
         select = self.paper.select_panels
         self.assertEqual(select(["2"]), ["2c", "2d"])

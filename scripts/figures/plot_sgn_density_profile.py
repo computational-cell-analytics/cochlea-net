@@ -657,8 +657,7 @@ def export_wt_gerbil_legend(
 
     handles = []
     labels = []
-    for cochlea in COHORTS["wt_gerbil"]:
-        meta = cochleae_dict[cochlea]
+    for cochlea, meta in cochleae_dict.items():
         handles.append(get_marker_handle(meta["color"], meta["marker"]))
         labels.append(cochlea_label(cochlea, meta, use_alias))
 

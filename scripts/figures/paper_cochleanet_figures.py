@@ -31,7 +31,7 @@ import segmentation_accuracy
 import sgn_subtypes
 import tonotopic_mapping
 from util import (
-    COHORT_DICT, SYNAPSE_DIR_ROOT, cohort_cochleae, documented_counts, literature_reference_values,
+    COCHLEA_DICT, SYNAPSE_DIR_ROOT, cochleae_for, documented_counts, literature_reference_values,
     plot_cochlea_legend,
 )
 
@@ -106,17 +106,64 @@ SEED_KEYS = {
 }
 SEED_GROUP_LABELS = {"SGN_3D": "SGN", "IHC_3D": "IHC", "synapses": "Synapses"}
 
-# The four wild-type gerbil cochleae with finalized SGN and IHC counts of panel 5C. Keep this
-# explicit until G_LR_000301_L has been transferred to S3 and can join the profile/synapse cohort.
-WT_COUNT_COCHLEAE = ["G_EK_000233_L", "G_LR_000301_L", "G_LR_000301_R", "G_LR_000302_R"]
-# The SGN and IHC axes include all four manuscript wild types. GLR301L is excluded only from
-# the synapse axis because its staining-limited estimate remains distinctly low even after
-# removing zero-count IHCs. The other three cochleae retain that zero-exclusion rule.
-WT_SYNAPSE_COCHLEAE = ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"]
+# The cochleae of the published panels. The panels read them from here and not from
+# util.COHORT_DICT, so that a later change of a cohort does not change a published panel. The
+# aliases, colors and component lists still come from util.COCHLEA_DICT.
+PAPER_COHORTS = {
+    # iDISCO reference mice: 2D, 3C, S4A and the untreated counts of 4C and 6C.
+    "idisco": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
+    # ChReef mice: 4C-E and the alias and x-axis order of S6D. 4C-E leave out the M_LR_000143 pair.
+    "chreef_mouse": [
+        "M_LR_000143_L", "M_LR_000144_L", "M_LR_000145_L", "M_LR_000153_L", "M_LR_000155_L", "M_LR_000189_L",
+        "M_LR_000143_R", "M_LR_000144_R", "M_LR_000145_R", "M_LR_000153_R", "M_LR_000155_R", "M_LR_000189_R",
+    ],
+    # OTOF gene therapy mice: 6C.
+    "otof_mouse": ["M_AMD_OTOF27_L", "M_AMD_OTOF27_R", "M_AMD_OTOF28_L", "M_AMD_OTOF28_R"],
+    # f-Chrimson gerbils: 5D, 5E and S8E.
+    "fchrimson_gerbil": [
+        "G_EK_000049_L", "G_EK_000049_R", "G_EK_000071_L", "G_EK_000071_R",
+        "G_EK_000074_L", "G_EK_000074_R", "G_EK_000076_L", "G_EK_000076_R",
+    ],
+    # G_EK_000049 received the injection postnatally, the other three animals as adults.
+    "fchrimson_gerbil_postnatal": ["G_EK_000049_L", "G_EK_000049_R"],
+    # Wild-type gerbils: the SGN and IHC counts of 5C, the untreated band of 5D and S7D.
+    # G_LR_000301_L has no tables on S3, so 5D, S7C and S7D need a cache that holds it.
+    "wt_gerbil": ["G_EK_000233_L", "G_LR_000301_L", "G_LR_000301_R", "G_LR_000302_R"],
+    # S7C leaves out G_EK_000233_L, which is incomplete along Rosenthal's canal.
+    "wt_gerbil_normalized": ["G_LR_000301_L", "G_LR_000301_R", "G_LR_000302_R"],
+    # The synapse axis of 5C leaves out G_LR_000301_L, because its staining-limited estimate stays
+    # distinctly low even after removing zero-count IHCs. The other three cochleae keep that
+    # zero-exclusion rule.
+    "wt_gerbil_synapses": ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"],
+}
+
+# Groups of SGN subtype cochleae (keys of sgn_subtype_utils.COCHLEAE) with a common staining. The
+# key lists the subtypes the staining can distinguish, a suffix after "-" separates groups with the
+# same subtypes. "Type I;Type II" also holds the Type I/II offsets of S4C.
+SUBTYPE_COHORTS = {
+    "Type Ia;Type Ib;Type Ic;Type II": ["M_LR_000098_L", "M_LR_N152_L"],  # "M_LR_N98_R"
+    "Type Ia;Type Ib;Type Ic;Type II-noPV": ["M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R"],
+    "Type Ia;Type Ib;Type Ic;Type II-old+new": [
+        "M_LR_000098_L", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
+    ],
+    "Type Ia;Type Ib;Type Ic;Type II-all": [
+        "M_LR_000098_L", "M_LR_N98_R", "M_LR_N152_L", "M_AMD_N180_L", "M_AMD_N180_R", "M_AMD_N190_L", "M_AMD_N190_R",
+    ],
+    "Type I;Type II": ["M_LR_000184_L", "M_LR_000184_R", "M_LR_000260_L"],
+    "Type Ib;Type Ic;inconclusive": ["M_LR_N110_L", "M_LR_N110_R", "M_LR_N152_R"],
+}
+
+IDISCO_DICT = cochleae_for(PAPER_COHORTS["idisco"], "IHC", "IHC_v11")
+CHREEF_DICT = cochleae_for(PAPER_COHORTS["chreef_mouse"], "SGN", "SGN_v2")
+OTOF_DICT = cochleae_for(PAPER_COHORTS["otof_mouse"], "IHC", "IHC_v11")
+FCHRIMSON_DICT = cochleae_for(PAPER_COHORTS["fchrimson_gerbil"], "SGN", "SGN_v2")
 
 # The adult injected gerbil cochleae, whose mean is the reference line of Supp. Fig. 8E. The
 # postnatal animal is left out, because it is not comparable to them.
-ADULT_INJECTED_GERBILS = [name for name in gene_therapy.ADULT_COCHLEAE if name.endswith("_L")]
+ADULT_INJECTED_GERBILS = [
+    name for name in PAPER_COHORTS["fchrimson_gerbil"]
+    if name.endswith("_L") and name not in PAPER_COHORTS["fchrimson_gerbil_postnatal"]
+]
 
 PANELS = {}
 VARIANTS = {}
@@ -158,33 +205,36 @@ def _cache(args, file_name):
 
 def _tonotopic_data(args):
     return _load("tonotopic", lambda: data.get_tonotopic_data(
-        source_name="IHC_v11", synapse_dir=args.synapse_dir,
+        cochleae=PAPER_COHORTS["idisco"], source_name="IHC_v11", synapse_dir=args.synapse_dir,
         cache_path=_cache(args, "tonotopic_data_IHC_v11.pkl"), force_download=args.refresh_cache))
 
 
 def _subtype_data(grouping):
-    return _load(f"subtypes {grouping}", lambda: data.get_subtype_data(sgn_subtypes.GROUPINGS[grouping]))
+    return _load(f"subtypes {grouping}", lambda: data.get_subtype_data(SUBTYPE_COHORTS[grouping]))
 
 
 def _chreef_data(args):
     def load():
-        chreef_data = data.get_chreef_data(_cache(args, "chreef_data.pkl"), args.refresh_cache)
+        chreef_data = data.get_chreef_data(
+            PAPER_COHORTS["chreef_mouse"], _cache(args, "chreef_data.pkl"), args.refresh_cache)
         # M_LR_000143_L is a complete outlier. Its right cochlea goes too, so that only pairs remain.
         return {name: table for name, table in chreef_data.items() if not name.startswith("M_LR_000143")}
     return _load("chreef", load)
 
 
 def _otof_data(args):
-    return _load("otof", lambda: data.get_otof_data(_cache(args, "otof_data.pkl"), args.refresh_cache))
+    return _load("otof", lambda: data.get_otof_data(
+        PAPER_COHORTS["otof_mouse"], _cache(args, "otof_data.pkl"), args.refresh_cache))
 
 
 def _gerbil_sgn_data(args):
     return _load("gerbil sgn", lambda: data.get_gerbil_fchrimson_data(
-        _cache(args, "gerbil_fchrimson_sgn_data.pkl"), args.refresh_cache))
+        PAPER_COHORTS["fchrimson_gerbil"], _cache(args, "gerbil_fchrimson_sgn_data.pkl"), args.refresh_cache))
 
 
 def _gerbil_density_data(args):
     return _load("gerbil density", lambda: data.get_gerbil_density_data(
+        cochleae=PAPER_COHORTS["fchrimson_gerbil"] + PAPER_COHORTS["wt_gerbil"],
         cache_path=_cache(args, "gerbil_fchrimson_density_data.pkl"), force_download=args.refresh_cache))
 
 
@@ -230,7 +280,7 @@ def fig2c_variants(args):
 
 @panel("2d")
 def fig2d(args):
-    cochleae = cohort_cochleae("idisco")
+    cochleae = PAPER_COHORTS["idisco"]
     literature_comparison.plot_counts_vs_literature(
         out(args, "2d"),
         [
@@ -240,7 +290,8 @@ def fig2d(args):
             {"values": documented_counts(cochleae, "IHC", "IHC_v11"), "label": "IHC",
              "literature": literature_reference_values("IHC"), "ylim": (600, 800),
              "yticks": list(range(600, 801, 100))},
-            {"values": data.load_ribbon_synapse_counts(_synapse_counts_dir(args)), "label": "Synapses per IHC",
+            {"values": data.load_ribbon_synapse_counts(_synapse_counts_dir(args), cochleae=cochleae),
+             "label": "Synapses per IHC",
              "literature": literature_reference_values("synapse"), "ylim": (-1, 41),
              "yticks": [0, 10, 20, 30, 40, 50]},
         ],
@@ -259,8 +310,9 @@ def fig3a(args):
 @panel("3c")
 def fig3c(args):
     tonotopic_mapping.plot_synapses_per_band(
-        _tonotopic_data(args), out(args, "3c"), plot=args.plot, use_alias=args.use_alias, trendline=True)
-    plot_cochlea_legend(out(args, "3c", "_legend"), tonotopic_mapping.IDISCO_COCHLEAE_DICT, ncol=1)
+        _tonotopic_data(args), out(args, "3c"), plot=args.plot, use_alias=args.use_alias, trendline=True,
+        cochleae_dict=IDISCO_DICT)
+    plot_cochlea_legend(out(args, "3c", "_legend"), IDISCO_DICT, ncol=1)
 
 
 @panel("3d")
@@ -307,28 +359,28 @@ def fig3f_variants(args):
 @panel("4c")
 def fig4c(args):
     gene_therapy.plot_count_vs_untreated(
-        _chreef_data(args), out(args, "4c"), gene_therapy.CHREEF_COCHLEAE_DICT,
-        documented_counts(cohort_cochleae("idisco"), "SGN", "SGN_v2"), plot=args.plot, use_alias=args.use_alias,
+        _chreef_data(args), out(args, "4c"), CHREEF_DICT,
+        documented_counts(PAPER_COHORTS["idisco"], "SGN", "SGN_v2"), plot=args.plot, use_alias=args.use_alias,
         ylim=(5000, 14000), y_ticks=list(range(6000, 13000, 2000)))
 
 
 @panel("4d")
 def fig4d(args):
     gene_therapy.plot_expression_efficiency(
-        _chreef_data(args), out(args, "4d"), gene_therapy.CHREEF_COCHLEAE_DICT, plot=args.plot,
+        _chreef_data(args), out(args, "4d"), CHREEF_DICT, plot=args.plot,
         use_alias=args.use_alias, ylim=(0.65, 1.05), y_ticks=np.arange(0.7, 1, 0.1))
 
 
 def _plot_chreef_efficiency_per_band(args, save_path, trendline_std):
     gene_therapy.plot_efficiency_per_band(
-        _chreef_data(args), save_path, gene_therapy.CHREEF_COCHLEAE_DICT, animal="mouse", plot=args.plot,
+        _chreef_data(args), save_path, CHREEF_DICT, animal="mouse", plot=args.plot,
         use_alias=args.use_alias, trendlines=True, trendline_std=trendline_std,
         trendline_colors=("gray", "gray"), ylim=(0.45, 1.05), y_ticks=np.arange(0.5, 1.01, 0.1))
 
 
 @panel("4e")
 def fig4e(args):
-    gene_therapy.plot_pair_legend(_chreef_data(args), out(args, "4e", "_legend"), gene_therapy.CHREEF_COCHLEAE_DICT,
+    gene_therapy.plot_pair_legend(_chreef_data(args), out(args, "4e", "_legend"), CHREEF_DICT,
                                   use_alias=args.use_alias)
     gene_therapy.plot_side_trendline_legend(out(args, "4e", "_legend_trendline"))
     _plot_chreef_efficiency_per_band(args, out(args, "4e"), trendline_std=False)
@@ -344,14 +396,15 @@ def fig5c(args):
     literature_comparison.plot_counts_vs_literature(
         out(args, "5c"),
         [
-            {"values": documented_counts(WT_COUNT_COCHLEAE, "SGN", "SGN_v2"), "label": "SGN",
+            {"values": documented_counts(PAPER_COHORTS["wt_gerbil"], "SGN", "SGN_v2"), "label": "SGN",
              "literature": literature_reference_values("SGN", animal="gerbil"), "ylim": (14000, 30000),
              "yticks": list(range(16000, 30001, 4000)), "literature_label": True},
-            {"values": documented_counts(WT_COUNT_COCHLEAE, "IHC", "IHC_v11"), "label": "IHC",
+            {"values": documented_counts(PAPER_COHORTS["wt_gerbil"], "IHC", "IHC_v11"), "label": "IHC",
              "literature": literature_reference_values("IHC", animal="gerbil"), "ylim": (900, 1200),
              "yticks": list(range(900, 1201, 100))},
             {"values": data.load_ribbon_synapse_counts(
-                _synapse_counts_dir(args), cochleae=WT_SYNAPSE_COCHLEAE, exclude_zero=True, require_all=True),
+                _synapse_counts_dir(args), cochleae=PAPER_COHORTS["wt_gerbil_synapses"], exclude_zero=True,
+                require_all=True),
              "label": "Synapses per IHC", "literature": literature_reference_values("synapse", animal="gerbil"),
              "ylim": (-1, 80), "yticks": list(range(0, 81, 20)), "box_zorder": None},
         ],
@@ -362,16 +415,16 @@ def fig5c(args):
 def _plot_gerbil_density(args, save_path, show_std):
     density_data = _gerbil_density_data(args)
     gene_therapy.plot_density_by_region(
-        {name: density_data[name] for name in cohort_cochleae("fchrimson_gerbil")}, save_path,
-        plot=args.plot, use_alias=args.use_alias, show_std=show_std,
+        {name: density_data[name] for name in PAPER_COHORTS["fchrimson_gerbil"]}, save_path,
+        cochleae_dict=FCHRIMSON_DICT, plot=args.plot, use_alias=args.use_alias, show_std=show_std,
         reference_values=gene_therapy.untreated_reference_values(
-            {name: density_data[name] for name in cohort_cochleae("wt_gerbil")}))
+            {name: density_data[name] for name in PAPER_COHORTS["wt_gerbil"]}))
 
 
 @panel("5d")
 def fig5d(args):
     gene_therapy.plot_pair_legend(_gerbil_sgn_data(args), out(args, "5d", "_legend"),
-                                  gene_therapy.FCHRIMSON_COCHLEAE_DICT, use_alias=args.use_alias)
+                                  FCHRIMSON_DICT, use_alias=args.use_alias)
     _plot_gerbil_density(args, out(args, "5d"), show_std=True)
 
 
@@ -379,16 +432,16 @@ def fig5d(args):
 def fig5d_variants(args):
     _plot_gerbil_density(args, out(args, "5d", "_no_sd", variant=True), show_std=False)
     gene_therapy.plot_count_vs_untreated(
-        _sgn_length_data(args, cohort_cochleae("fchrimson_gerbil")),
+        _sgn_length_data(args, PAPER_COHORTS["fchrimson_gerbil"]),
         out(args, "5", "_fchrimson_sgn_count", variant=True),
-        gene_therapy.FCHRIMSON_COCHLEAE_DICT, documented_counts(WT_COUNT_COCHLEAE, "SGN", "SGN_v2"),
+        FCHRIMSON_DICT, documented_counts(PAPER_COHORTS["wt_gerbil"], "SGN", "SGN_v2"),
         plot=args.plot, use_alias=args.use_alias)
 
 
 @panel("5e")
 def fig5e(args):
     gene_therapy.plot_expression_efficiency(
-        _gerbil_sgn_data(args), out(args, "5e"), gene_therapy.FCHRIMSON_COCHLEAE_DICT, plot=args.plot,
+        _gerbil_sgn_data(args), out(args, "5e"), FCHRIMSON_DICT, plot=args.plot,
         use_alias=args.use_alias)
 
 
@@ -396,15 +449,15 @@ def fig5e(args):
 def fig6c(args):
     otof_data = _otof_data(args)
     gene_therapy.plot_count_vs_untreated(
-        otof_data, out(args, "6c", "_ihc_count"), gene_therapy.OTOF_COCHLEAE_DICT,
-        documented_counts(cohort_cochleae("idisco"), "IHC", "IHC_v11"), plot=args.plot, use_alias=args.use_alias,
+        otof_data, out(args, "6c", "_ihc_count"), OTOF_DICT,
+        documented_counts(PAPER_COHORTS["idisco"], "IHC", "IHC_v11"), plot=args.plot, use_alias=args.use_alias,
         count_label="IHC count per cochlea", xtick_labels=("Injected", "Non-Injected"),
         ylim=(500, 750), y_ticks=list(range(500, 800, 50)))
     gene_therapy.plot_expression_efficiency(
-        otof_data, out(args, "6c", "_expression"), gene_therapy.OTOF_COCHLEAE_DICT, plot=args.plot,
+        otof_data, out(args, "6c", "_expression"), OTOF_DICT, plot=args.plot,
         use_alias=args.use_alias, xtick_labels=("Injected", "Non-Injected"), ylim=(-0.03, 0.4),
         y_ticks=[0.0, 0.1, 0.2, 0.3])
-    gene_therapy.plot_pair_legend(otof_data, out(args, "6c", "_legend"), gene_therapy.OTOF_COCHLEAE_DICT,
+    gene_therapy.plot_pair_legend(otof_data, out(args, "6c", "_legend"), OTOF_DICT,
                                   use_alias=args.use_alias)
 
 
@@ -472,8 +525,8 @@ def supp_fig3d(args):
 def supp_fig4a(args):
     tonotopic_mapping.plot_synapses_along_cochlea(
         _tonotopic_data(args), out(args, "S4a"), use_alias=args.use_alias, plot=args.plot, n_bins=25,
-        top_axis=True, trendline=True)
-    plot_cochlea_legend(out(args, "S4a", "_legend"), tonotopic_mapping.IDISCO_COCHLEAE_DICT, ncol=3, meyer=True)
+        top_axis=True, trendline=True, cohort_dict=IDISCO_DICT, alpha=1)
+    plot_cochlea_legend(out(args, "S4a", "_legend"), IDISCO_DICT, ncol=3, meyer=True)
 
 
 @panel("S4b")
@@ -485,9 +538,11 @@ def supp_fig4b(args):
 
 @panel("S4c")
 def supp_fig4c(args):
-    sgn_subtypes.plot_type_offset(out(args, "S4c", "_mean"), plot=args.plot, plot_type="mean")
-    sgn_subtypes.plot_type_offset(out(args, "S4c", "_points"), plot=args.plot, plot_type="points")
-    sgn_subtypes.plot_offset_legend(out(args, "S4c", "_legend"))
+    cochleae = SUBTYPE_COHORTS["Type I;Type II"]
+    sgn_subtypes.plot_type_offset(out(args, "S4c", "_mean"), plot=args.plot, plot_type="mean", cochleae=cochleae)
+    sgn_subtypes.plot_type_offset(out(args, "S4c", "_points"), plot=args.plot, plot_type="points",
+                                  cochleae=cochleae)
+    sgn_subtypes.plot_offset_legend(out(args, "S4c", "_legend"), cochleae=cochleae)
 
 
 @panel("S4d", "S4e")
@@ -517,25 +572,22 @@ def supp_fig4g(args):
 def supp_fig6d(args):
     if args.variance_dir is None:
         raise ValueError("Panel S6d needs --variance_dir, the folder with the *_variance.json files.")
-    df = plot_annotator_variance.load_variance_records(args.variance_dir, marker="GFP", use_alias=args.use_alias)
-    plot_annotator_variance.plot_annotator_variance(df, save_path=out(args, "S6d"), n_breaks=0, plot=args.plot)
+    df = plot_annotator_variance.load_variance_records(
+        args.variance_dir, marker="GFP", use_alias=args.use_alias, cochleae_dict=CHREEF_DICT)
+    plot_annotator_variance.plot_annotator_variance(
+        df, save_path=out(args, "S6d"), n_breaks=0, cochleae_dict=CHREEF_DICT, plot=args.plot)
     plot_annotator_variance.plot_annotator_variance_legend(df, save_path=out(args, "S6d", "_legend"))
 
 
 def _plot_wt_gerbil_density(args, save_path, absolute_runlength):
-    cohort = "wt_gerbil"
-    cochleae = cohort_cochleae(cohort)
-    length_data = _sgn_length_data(args, cochleae)
-    if not absolute_runlength:
-        length_data = {name: table for name, table in length_data.items()
-                       if name not in plot_sgn_density_profile.WT_GERBIL_NORMALIZED_EXCLUDE}
-    metadata = plot_sgn_density_profile.build_plot_metadata(cochleae, cohort=COHORT_DICT[cohort]["label"])
+    length_data = _sgn_length_data(args, PAPER_COHORTS["wt_gerbil" if absolute_runlength else "wt_gerbil_normalized"])
+    metadata = plot_sgn_density_profile.build_plot_metadata(PAPER_COHORTS["wt_gerbil"], cohort="WT gerbil")
     plot_sgn_density_profile.plot_sgn_density_profile(
         length_data, save_path=save_path, mode="bins", n_bins=10, absolute_runlength=absolute_runlength,
         cochleae_dict=metadata, use_alias=args.use_alias, plot=args.plot,
         trendline=not absolute_runlength, trendline_std=False,
         trendline_label=None if absolute_runlength else "Mean", top_axis=not absolute_runlength,
-        animal=COHORT_DICT[cohort]["animal"], show_legend=False, length_info=False,
+        animal="gerbil", show_legend=False, length_info=False,
     )
     return metadata
 
@@ -554,11 +606,11 @@ def supp_fig7d(args):
 @panel("S8e")
 def supp_fig8e(args):
     gerbil_data = _gerbil_sgn_data(args)
-    gene_therapy.plot_pair_legend(gerbil_data, out(args, "S8e", "_legend"), gene_therapy.FCHRIMSON_COCHLEAE_DICT,
+    gene_therapy.plot_pair_legend(gerbil_data, out(args, "S8e", "_legend"), FCHRIMSON_DICT,
                                   use_alias=args.use_alias)
     gene_therapy.plot_adult_mean_legend(out(args, "S8e", "_legend_adult_mean"))
     gene_therapy.plot_efficiency_per_band(
-        gerbil_data, out(args, "S8e"), gene_therapy.FCHRIMSON_COCHLEAE_DICT, animal="gerbil", plot=args.plot,
+        gerbil_data, out(args, "S8e"), FCHRIMSON_DICT, animal="gerbil", plot=args.plot,
         use_alias=args.use_alias, reference_cochleae=ADULT_INJECTED_GERBILS)
 
 
@@ -567,14 +619,16 @@ def supp_fig8e_variants(args):
     gerbil_data = _gerbil_sgn_data(args)
     gene_therapy.plot_side_trendline_legend(out(args, "S8e", "_legend_trendline", variant=True))
     gene_therapy.plot_efficiency_per_band(
-        gerbil_data, out(args, "S8e", "_std", variant=True), gene_therapy.FCHRIMSON_COCHLEAE_DICT,
+        gerbil_data, out(args, "S8e", "_std", variant=True), FCHRIMSON_DICT,
         animal="gerbil", plot=args.plot, use_alias=args.use_alias, trendline_std=True,
         reference_cochleae=ADULT_INJECTED_GERBILS)
     gene_therapy.plot_efficiency_per_band(
-        gerbil_data, out(args, "S8e", "_postnatal", variant=True), gene_therapy.FCHRIMSON_COCHLEAE_DICT,
-        animal="gerbil", plot=args.plot, use_alias=args.use_alias, cochleae=gene_therapy.POSTNATAL_COCHLEAE,
+        gerbil_data, out(args, "S8e", "_postnatal", variant=True), FCHRIMSON_DICT,
+        animal="gerbil", plot=args.plot, use_alias=args.use_alias, cochleae=PAPER_COHORTS["fchrimson_gerbil_postnatal"],
         color_by_side=True, reference_cochleae=ADULT_INJECTED_GERBILS)
-    gene_therapy.plot_side_legend(out(args, "S8e", "_postnatal_legend", variant=True))
+    gene_therapy.plot_side_legend(
+        out(args, "S8e", "_postnatal_legend", variant=True),
+        labels=[COCHLEA_DICT[name]["alias"] for name in PAPER_COHORTS["fchrimson_gerbil_postnatal"]])
 
 
 @panel("S9e")
