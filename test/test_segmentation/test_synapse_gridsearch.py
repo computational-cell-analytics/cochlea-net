@@ -34,6 +34,17 @@ class TestDetectionGridsearch(unittest.TestCase):
             pd.DataFrame(self.annotations, columns=["axis-0", "axis-1", "axis-2"]).to_csv(
                 os.path.join(label_dir, "crop.csv"), index=False
             )
+            if kwargs.pop("with_ihc", False):
+                # One IHC next to the pair and one next to the unannotated spot, none next to the
+                # isolated annotation.
+                segmentation = np.zeros(self.shape, dtype="uint32")
+                segmentation[8:13, 16:26, 16:26] = 1
+                segmentation[8:13, 116:124, 116:124] = 2
+                ihc_dir = os.path.join(tmp_dir, "ihc")
+                zarr.open(store=os.path.join(ihc_dir, "crop_ihc", "segmentation.zarr"), mode="w").create_array(
+                    "segmentation", data=segmentation
+                )
+                kwargs["ihc_dir"] = ihc_dir
             with mock.patch.object(gs, "prediction_impl", return_value=(None, heatmap)):
                 return gs.gridsearch(
                     "model.pt", image_dir=image_dir, label_dir=label_dir, out_channels=1, **kwargs
@@ -52,6 +63,12 @@ class TestDetectionGridsearch(unittest.TestCase):
 
         _, _, scores = self._run(annotated_radius=None)
         self.assertEqual(scores.loc[(1, 0.5), "precision"], 0.75)
+
+    def test_ihc_filter_replaces_the_radius(self):
+        _, _, scores = self._run(with_ihc=True)
+        # The pair and the unannotated spot are kept, the isolated annotation is lost.
+        self.assertEqual(scores.loc[(1, 0.5), "n_pred"], 3)
+        self.assertEqual(scores.loc[(1, 0.5), "tp"], 2)
 
     def test_padding_is_not_scored(self):
         # 15 voxels from an annotation, but in the padding beyond the last z plane of the crop.
