@@ -7,7 +7,8 @@ The training data is located in separate `images` and `labels` directories, so t
 An example script for training `synapses_v3-1` is `train_synapse_v3-1.sbatch`.
 
 The training commands of every run so far are in `scripts_synapses/`. The runs before v7 need
-`--legacy_recipe`, and their scripts pass it. The `v6` training data in
+`--legacy_recipe`, and their scripts pass it. The mask options of v8 and v9 were removed on
+2026-10-21. Check out commit `4da9e70` to retrain v8 or v9. The `v6` training data in
 `/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v6`
 is identical to the `v5` data.
 
@@ -93,125 +94,57 @@ average. Suppressing such candidates can lower voxelwise MSE while also suppress
 synapses, which is consistent with the low-loss, low-recall behavior of conservative seeds such
 as v3-1 and v3-2. This is a plausible mechanism, not yet a causal checkpoint-level demonstration.
 
-#### Critical independent bug: raw input is not normalized
+#### Raw normalization
 
-**Correction (2026-10-01): this is not a bug for this network.** The U-Net starts with an
-InstanceNorm on its raw input (`ConvBlock3d` is norm, convolution, ReLU), so every training patch
-and every prediction block is standardized inside the network. A global mean and standard
-deviation change the output by about 2e-5, and the mix of `uint8` and `uint16` crops does not
-matter. `TestModelNormalization` in `test/test_segmentation/test_detection_dataset.py` pins this.
-The text below is the original 2026-08-27 diagnosis.
+The raw input needs no normalization. The U-Net starts with an InstanceNorm on its input
+(`ConvBlock3d` is norm, convolution, ReLU), so every training patch and every prediction block is
+standardized inside the network. A global mean and standard deviation change the output by about
+2e-5, and the mix of `uint8` and `uint16` crops does not matter. `TestModelNormalization` in
+`test/test_segmentation/test_detection_dataset.py` pins this. The 2026-08-27 diagnosis that called
+the missing normalization a bug is withdrawn. v7 to v10 standardized each crop anyway. That code
+was removed on 2026-10-21.
 
-**The current v3-style training path does not normalize the raw input and must be fixed before
-the next training run.** `supervised_training` sets `raw_transform=None`. The local
-`DetectionDataset` stores this value unchanged and only applies a transform when it is not
-`None`; `ensure_tensor_with_channels` then casts the original values to floating point without
-normalizing them. Consequently, the network receives the native intensity scales of a mixture of
-`uint8` and `uint16` volumes. For example, `4.1L_mid_IHCribboncount_Z` is `uint8`, whereas the
-other v3 volumes are `uint16` with substantially different ranges.
+#### Status of the recommended tests
 
-The upstream detection dataset normally falls back to standardization when no raw transform is
-provided, but the local dataset does not implement this fallback. This is separate from the
-missing-label problem and is another credible source of domain sensitivity and seed instability.
-Training should define and test an explicit normalization that is also applied identically during
-inference.
+1. Raw normalization: not needed, see above.
+2. A fixed validation patch set: done on 2026-09-21. A detection-level validation metric: open.
+3. Supervise the unannotated CTBP2 spots as *ignore*: done as the cube mask of v8 and the
+   candidate-exclusion mask of v9. Neither helped, see "v7 against v8" and "v9 and the recall
+   limit".
+4. An ablation without the three `m78l_*_cr-ctbp2` volumes: not needed. v7 against v8 shows that
+   the unannotated spots do not limit the recall.
+5. Checkpoint predictions at the candidate coordinates: obsolete.
 
-#### Further confounder and recommended tests
+#### The training recipe since 2026-09-21
 
-Validation patches are not fixed: `DetectionDataset.__getitem__` samples a new random bounding
-box on every access, and the validation loader is shuffled. Validation loss therefore measures a
-different set of patches at each evaluation. The off-target distribution makes this noise more
-consequential, but random validation sampling is an independent problem.
+The training no longer imports czii-protein-challenge. The model, the loaders, the loss and the
+trainer live in `flamingo_tools/synapse_detection/training.py`.
 
-Before interpreting another seed comparison, the training setup should:
+**Retraining v3 or v5.** Pass `--legacy_recipe`. It restores the deltas that otherwise make the
+old recipes unreachable: the validation metric goes back to an unweighted mean squared error over
+every output channel, which is what selected `best.pt` for v5, the validation patches are redrawn
+on every epoch, and a heatmap-only run has no sampler. The archived scripts in
+`scripts_synapses/` pass the flag. Without it, the script trains the v7 recipe: heatmap only,
+`MinPointSampler` and fixed validation patches.
 
-1. add an explicit and identical training/inference raw normalization; **done in training on
-   2026-09-21, but not needed: the network standardizes its own input, see the correction
-   above. Training, validation and production need no common statistics.**
-2. use a fixed validation patch set and a detection-level validation metric; **the fixed patch
-   set is done. The detection-level metric is still open.**
-3. mark regions outside the exhaustively annotated/IHC-valid region as *ignore*, rather than as
-   background in the loss; **done as the cube mask of v8, which failed. Replaced by the
-   candidate-exclusion mask of v9, see "v7 against v8" below.**
-4. run a quick ablation without the three `m78l_*_cr-ctbp2` volumes, followed by a proper masked
-   training run that retains their valid annotations; **the ablation is optional: v7 against v8
-   shows that the unannotated spots do not limit the recall. v9 is the masked run.**
-5. ~~apply the existing checkpoints at the confirmed candidate coordinates and test whether the
-   lowest-loss seeds suppress both off-target candidates and annotated synapses.~~ **Obsolete:
-   v7 against v8 tests the mechanism more directly.**
+**Comparing the next runs.** Score models with `scripts/validation/synapses/run_evaluation.py`,
+and train a fresh baseline with the same code rather than comparing against the shipped models.
 
-An IHC-derived mask can be used only for the training loss, so this test does not require an IHC
-channel as network input at inference time. If the IHC channel is intended to be a model input
-instead, its availability and stain-dependent behavior must first be resolved for all training and
-production volumes.
+**The validation patch set is fixed.** `DetectionDataset` takes a `patch_seed`, and the bounding
+box for a given index is a pure function of `(patch_seed, index)`, so the same index gives the
+same patch in every epoch and in every data loader worker. The training script derives the seed
+from `--random_state`, the same number that already fixes the train and validation split, so the
+validation data is reproducible across runs as well. The validation loader also stops shuffling,
+because the trainer averages the metric over batches. Measured on a synthetic stand-in at the
+production validation size, 160 patches in batches of 32, scored against a fixed prediction so
+that only the patch draw moves: the metric spread over six passes was **15 % of its mean** before
+the change and exactly zero after it.
 
-#### Implemented: masked loss and raw normalization (2026-09-21)
-
-Recommendations 1 and 3 are implemented. The training no longer imports
-czii-protein-challenge; the model, the loaders, the loss and the trainer live in
-`flamingo_tools/synapse_detection/training.py`.
-
-**Loss mask.** `train_synapse_detection.py --mask_radius R` marks a cube of half width `R`
-voxels around every annotation. `CsvHeatmapTransform` appends the mask as the last target
-channel, and `DetectionLoss` restricts both the training loss and the validation metric to it.
-Use `--mask_radius 16`, which is about 12 um at 0.38 um/voxel and stays well below the 40 voxel
-radius that defines a spatially distant candidate above. **v8 is this run, and it failed. Do not
-use the cube mask for new runs, see "v7 against v8" below.**
-
-`mask_radius` also raises the label transform halo to at least `R`, so `DetectionDataset` loads
-the annotations up to `R` voxels beyond the patch. Target and mask are then built from the same
-points. Without that, an annotation just in front of the patch would contribute its cube to the
-mask but no Gaussian to the target, and the loss would be told to drive a real synapse to zero.
-
-The mask covers 5 % of a crop at the median for `R = 16`, but training patches are not sampled
-uniformly. Measured over 48 patches from eight v5 crops with `MinPointSampler`, the mask covers
-**30 % of a patch at the median** and 8 % of the patches have an empty mask. Each annotation
-therefore keeps a large amount of genuine negative context, and only the distant unannotated
-CTBP2 spots lose their supervision.
-
-`MinPointSampler` becomes the default whenever a mask radius is given. Only 31 % of uniformly
-sampled patches contain an annotation, and a patch without one contributes no gradient at all
-once the loss is masked.
-
-**Raw normalization.** Each crop is standardized with the mean and standard deviation of its
-full `raw` array. This has no effect on the network output, see the correction above. It stays
-because it is part of the recorded v7, v8 and v9 recipe.
-
-**Retraining v3 or v5.** Pass `--legacy_recipe`. It restores the three deltas that otherwise make
-the old recipes unreachable: the raw input stays unnormalized, the validation metric goes back to
-an unweighted mean squared error over every output channel, which is what selected `best.pt` for
-v5, and the validation patches are redrawn on every epoch. It cannot be combined with
-`--mask_radius`, because that metric cannot read a masked target. The archived scripts in
-`scripts_synapses/` pass the flag.
-
-**Comparing the next runs.** The logged loss and metric change scale through the masked mean.
-They are not comparable to the v3, v5 or v6-1 numbers. Score
-models with `scripts/validation/synapses/run_evaluation.py`, and train a fresh unmasked baseline
-with the same code rather than comparing against the shipped models.
-
-**Recommendation 2, first half: the validation patch set is fixed.** `DetectionDataset` takes a
-`patch_seed`, and the bounding box for a given index is a pure function of `(patch_seed, index)`,
-so the same index gives the same patch in every epoch and in every data loader worker. The
-training script derives the seed from `--random_state`, the same number that already fixes the
-train and validation split, so the validation data is reproducible across runs as well. The
-validation loader also stops shuffling: the trainer averages the metric over batches and the
-masked loss normalizes within a batch, so a fixed patch set alone would not give a fixed metric.
-Measured on a synthetic stand-in at the production validation size, 160 patches in batches of
-32, scored against a fixed prediction so that only the patch draw moves: the metric spread over
-six passes was **15 % of its mean** before the change and exactly zero after it. The noise does
-not average away with `n_samples_val`, because the reported value is a mean over only five
-batches and each batch is normalized by its own mask size.
-
-**Still open: the detection-level metric.** The other half of recommendation 2 is not done. The
-metric remains a voxelwise masked mean squared error, so `best.pt` is now stable but still a
-proxy for detection F1, and the seed study already showed that validation loss does not rank
-detectors (Spearman rho 0.39, p = 0.38). Keep scoring candidates with
-`scripts/validation/synapses/run_evaluation.py`, and keep comparing `best.pt` against
-`latest.pt`.
-
-**Not used: the IHC channel.** 21 of the 29 v5/v6 crops do carry a `raw_ihc` array, so a real
-IHC-derived loss mask is possible for most of them. The label-derived mask is used instead
-because it is uniform over all crops and independent of the stain.
+**Still open: the detection-level metric.** The metric remains a voxelwise mean squared error, so
+`best.pt` is now stable but still a proxy for detection F1, and the seed study already showed
+that validation loss does not rank detectors (Spearman rho 0.39, p = 0.38). Keep scoring
+candidates with `scripts/validation/synapses/run_evaluation.py`, and keep comparing `best.pt`
+against `latest.pt`.
 
 ## Network application
 Potentially relevant for a new synapse network.
@@ -336,42 +269,23 @@ positives against 918 for v7, but it produces 562 false positives against 28.
    The fixed validation patches do not help here: a masked recipe needs a detection-level
    metric, or a mask that covers almost all of the patch.
 
-**Withdrawn on 2026-10-01: the validation normalization.** `prediction.py` pads every crop with
-zeros to a multiple of the production block shape, and `prediction_impl` takes the mean and
-standard deviation over the padded volume. That shifts the statistics, but the network
-standardizes every block itself, so the shift has no effect. The 2026-09-25 rescoring with the
-statistics of the unpadded crop reproduced the 2026-09-24 detections: v7 identical, v8 within
-one detection per crop. The fix is reverted, and `prediction.py` no longer takes `--mean` and
-`--std`.
-
 **Fixed: the patch sampling.** `DetectionDataset._sample_bounding_box` drew the patch start
 from `[0, shape - patch_shape - 2 * halo)`, although the halo is clamped when the patch is
 loaded. The last `2 * halo + 1` voxels of every axis never reached training: 33 for v8, 21 for
 the flow models such as v5, and 1 for v7.
 
-**v9: the candidate-exclusion mask.** `--ignore_percentile P` keeps the loss on every voxel
-except a cube of half width 3 voxels around each unannotated CTBP2 candidate. A candidate is a
-local maximum of the smoothed crop that is more than 4 voxels from every annotation and at
-least as bright as the `P`th percentile of the maxima at the annotations
-(`find_unannotated_candidates`). The cube around an annotation always stays supervised. On the
-six test crops, `P = 10` gives 11 to 55 candidates per crop, which ignore at most 0.3 % of the
-tissue. The `m78l_*_cr-ctbp2` training crops are expected to give far more, so check the counts
-that the training prints. v9 keeps the data, the split and the sampler of v7. It was trained after
-the patch sampling fix, so its fixed validation patches are other random draws than those of v7,
-and its patches reach one more voxel per axis. The mask is the only intended difference:
+**v9: the candidate-exclusion mask.** `--ignore_percentile P` kept the loss on every voxel
+except a cube of half width 3 voxels around each unannotated CTBP2 candidate. A candidate was a
+local maximum of the smoothed crop that is more than 4 voxels from every annotation and at least
+as bright as the `P`th percentile of the maxima at the annotations. v9 kept the data, the split
+and the sampler of v7. It was trained after the patch sampling fix, so its fixed validation
+patches are other random draws than those of v7. The option was removed on 2026-10-21. Check out
+commit `4da9e70` to run the command again:
 
 ```bash
 python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $SAVE_ROOT \
     --sampler minpoint --ignore_percentile 10
 ```
-
-`scripts_synapses/train_synapse_v9.sbatch` runs it. Register the exports as
-`synapse_detection_v9.pt` and `synapse_detection_v9-latest.pt`, and add `v9 v9-latest` to the
-version loop of `synapse_detect_ihc11_F1val.sbatch`. v9 is a success if it keeps the precision
-of v7 and gains recall.
-
-The ignore mask cannot suppress an unannotated spot close to the IHC either (point 2). If v9
-shows the same false-positive class, the IHC filter distance is the next place to look.
 
 ### v9 and the recall limit (2026-10-01)
 
@@ -518,11 +432,208 @@ high-precision operating point, v10 at a lower threshold is an option. Select th
 the gridsearch on the validation crops. `min_distance` 1 for `v7-latest`, selected on the
 validation crops as shown above, is still the open gain.
 
+### Target defect and v11 (2026-10-21)
+
+The Gaussian target of every model up to v10 has two defects in `CsvHeatmapTransform`:
+
+1. **The peak height depends on the patch.** The target is smoothed with the `nearest` border
+   mode and divided by its patch maximum. An annotation on a face voxel of the loaded box gets
+   a 1.75 times higher value, so every other peak of that patch falls from 4 to 2.28 (two faces:
+   1.30, a corner: 0.74). On the 29 local v5/v7 training crops with the v7 sampler, the median
+   peak of a patch is 2.28 in 80 to 85 % of the patches.
+2. **Annotations just outside the patch lose their Gaussian.** The heatmap-only transform loads
+   no halo since #133. In 92 % of the patches an annotation lies up to 2 voxels outside the
+   patch, and the patch border is trained as 0 where its Gaussian reaches 2.43 (1 voxel) or 0.54
+   (2 voxels).
+
+Close pairs do not matter: only 1.3 % of the annotations have a neighbour within 2 voxels.
+
+`--fixed_target` smooths with the `constant` mode, scales every isolated peak to exactly 4, and
+loads a halo of `ceil(3 * sigma)` voxels. The default stays the old target, so v7 and v10 remain
+retrainable. With the flag, the median peak is 4.0 in every patch of the local crops. The effect
+on F1 is not known. v11 is the v7 recipe with this one change:
+
+```bash
+python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v11 --random_state 42 -s $SAVE_ROOT \
+    --fixed_target
+```
+
+Its heatmap peaks near 4 instead of about 2.3, so threshold 0.5 is not comparable. Select the
+threshold and `min_distance` with `python -m flamingo_tools.synapse_detection.gridsearch` on the
+validation crops (default grid 0.05 to 2.95; on the consensus val crops with `--ihc_dir`, see
+"Training robustness"), score once on the test crops, and then register
+`v11` in `PREDICTION_DICT` and `_PRODUCTION_VERSIONS`.
+
+### Training robustness (2026-10-21)
+
+Every recent difference is smaller than the seed spread, and each recent recipe has one seed. So
+no recipe change can be judged. This section collects the causes found before a seed study of
+the next recipe. The measurements use the local copies of the crops and of the checkpoints.
+
+**The training labels mark close pairs 2-3x less often than the consensus.** Share of the points
+with a neighbour closer than 1.5 um and closer than 2 um:
+
+| Labels | Points | < 1.5 um | < 2 um |
+|---|---:|---:|---:|
+| Consensus, IHC-filtered (six test crops) | 1,123 | 20.7 % | 42.4 % |
+| The test annotators AMD, EK, LR, one at a time | 1,098-1,274 | 15-27 % | 42-48 % |
+| Training: `*IHCribboncount*` and `*IHCribbons*` (9 crops) | 2,666 | 24.6 % | 50.3 % |
+| Training: MLR226R, `mlr226r_*` and `m226r_*` (9 crops) | 1,558 | 9.7 % | 31.7 % |
+| Training: MLR227L, `227l_*` and `mlr227-l_*` (8 crops) | 1,701 | 5.9 % | 26.2 % |
+| Training: CR, `m78l_*` (3 crops) | 654 | 7.3 % | 29.1 % |
+| v7-latest detections at threshold 0.5, `min_distance` 2 | 963 | 2.3 % | 24.1 % |
+
+- The consensus is not denser than one annotator: 1,149 consensus points against 1,138 (AMD),
+  1,098 (EK) and 1,274 (LR) on the same crops. So the 20 sparse training crops are the outlier.
+  This is also true for MLR226R, the other ear of the test animal.
+- The network gets conflicting targets for close pairs: dense in 9 crops, sparse in 20. This
+  agrees with the recall limit in "v9 and the recall limit".
+- All three val crops of v5 to v10 (`mlr227-l_0973…`, `MLR227-L_0403…`, `m78l_apexp2718…`) are
+  in the sparse groups. `m78l_apexp2718_cr-ctbp2` (CR stain, 34 points) also supplies a third
+  of the 160 val patches.
+- Hypothesis (Martin): this mismatch makes a gridsearch on the val crops unreliable for the test
+  crops. `scripts_synapses/rescore_operating_point.sbatch` tests it, see below.
+
+**The models are at human level on the test crops.** As reference, take the points that the
+other two annotators agree on (2 um), and score at 3 um after the IHC filter. The held-out
+annotator gets F1 0.871 to 0.916 (mean 0.901). v7-latest gets 0.897 to 0.918 (mean 0.909), and
+v5-ihc11 0.893 to 0.919. The models have the higher precision and the lower recall. The test
+set has little headroom.
+
+**The test set is precise, but it shows one cochlea.** For two fixed models, the paired crop
+bootstrap of the F1 difference has a 95 % interval of about +-0.01 (v7-latest - v10-latest:
++0.007 [-0.004, 0.018]; v5-ihc11 - v3-ihc11: +0.019 [0.010, 0.026]). That is smaller than the
+seed spread. All six crops come from MLR226L, and 9 training crops probably come from MLR226R.
+So there is no animal-level independence that a consensus val crop could break.
+
+**The learning rate collapses early in every run.** The trainer uses the torch_em default
+`ReduceLROnPlateau(factor 0.5, patience 5)`, and an epoch has 100 iterations. Every `latest.pt`
+ends at the floor of 1.22e-8 (1e-4 / 2^13). From the checkpoints:
+
+| Run | `best.pt` epoch | Learning rate at `best.pt` | Floor reached |
+|---|---:|---:|---|
+| v7 | 58 | 1.25e-5 | at epoch 118 or earlier |
+| v9 | 72 | 3.9e-7 | at epoch 102 or earlier |
+| v10 | 95 | 1.6e-6 | at epoch 137 or earlier |
+| v8 | 10 | 1e-4 | |
+| v5 | 204 | 1.22e-8 | at epoch 204 or earlier |
+| v5-rep2, v5-rep4 | 13, 28 | 1e-4, 2.5e-5 | |
+
+After `best.pt`, the metric does not improve, so the learning rate halves every 6 epochs. About
+86 % of the 1e5 iterations (about 27 of 32 A100 hours) run at 1.2e-8. The final weights depend
+on when a noisy plateau detector fires, which differs between seeds. The `best.pt` and
+`latest.pt` heatmaps of v9 correlate at 0.998, against 0.81 to 0.86 between runs.
+`--lr_schedule cosine` decays the learning rate to zero over the whole run, independent of the
+metric. Use `latest.pt` with it. The default stays the plateau schedule, so v7 to v10 stay
+retrainable.
+
+**The `v5-f1…f4` scores mix split and seed.** The exports
+`synapse_detection_model_v5-f{1..4}.pt` are identical to `v5-fold{1..4}/best.pt`. Each fold has
+other val crops, for example `4.1L_apex`, `6.2R_base` and `m78l_base` for fold 1. The checkpoint
+folders `v5-f1…f4` are seed replicates with the v5 split. Their exports were never scored. They
+are `v5-rep1…4` here, to keep the names apart.
+
+**The operating point differs between runs.** The best threshold on the test crops is 0.20 for
+v10, 0.35 for v7, 0.45 for v3 and 0.65 for v5. At the fixed threshold 0.5, each run is at
+another point of its precision-recall curve. The v3 seed spread is mostly recall (0.66 to 0.80
+at precision 0.95 to 0.98).
+
+**A new split.** The paper is published, so two consensus crops become val crops:
+
+- val: `MLR226L_Vglut3Ctbp2_apex1_p50-140`, `MLR226L_Vglut3Ctbp2_base1_reslice_p122-256`
+  (416 points);
+- test v6: `…apex2_p1-134`, `…mid1_resliced_p70-185`, `…mid2_p65-195`, `…base2_p40-130`
+  (733 points);
+- the three old val crops go back to training (29 training crops).
+
+Code changes for the split:
+
+- `read_csv_points` keeps only the `consensus` rows of a consensus CSV.
+- `prediction.py` and `run_evaluation.py` pair each image with `<ref_root>/<crop>.csv`, so a
+  folder with a subset of the crops scores that subset.
+- `train_synapse_detection.py --split` takes a fixed split file.
+- `gridsearch --ihc_dir` filters the detections by their distance to the IHCs, as the
+  evaluation does (see the result below).
+- `prediction_impl` loads a GPU checkpoint on a CPU node. On the local CPU, one small crop takes
+  about 1 hour, so run the predictions on the cluster.
+
+Use `consensus_annotation/` (1,149 points) as reference, not `test_data/v5/labels`, which is an
+older copy with 1,133 consensus points.
+
+Set up the data on the cluster:
+
+```bash
+ROOT=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet
+DATA=$ROOT/training_data/synapses
+REF=$ROOT/AnnotatedImageCrops/Synapses_2026-04/consensus_annotation
+VAL="MLR226L_Vglut3Ctbp2_apex1_p50-140 MLR226L_Vglut3Ctbp2_base1_reslice_p122-256"
+TEST="MLR226L_Vglut3Ctbp2_apex2_p1-134 MLR226L_Vglut3Ctbp2_mid1_resliced_p70-185 \
+MLR226L_Vglut3Ctbp2_mid2_p65-195 MLR226L_Vglut3Ctbp2_base2_p40-130"
+
+# The open check: the v7 data equals the v5 data.
+diff <(cd $DATA/training_data/v5 && find images labels -type f | sort | xargs md5sum) \
+     <(cd $DATA/training_data/v7 && find images labels -type f | sort | xargs md5sum) && echo "v7 == v5"
+
+mkdir -p $DATA/training_data/v11/images $DATA/training_data/v11/labels $DATA/test_data/v6/images
+ln -s $DATA/training_data/v7/images/*.zarr $DATA/training_data/v11/images/
+ln -s $DATA/training_data/v7/labels/*.csv $DATA/training_data/v11/labels/
+for n in $VAL; do
+    ln -s $DATA/test_data/v5/images/$n.zarr $DATA/training_data/v11/images/
+    ln -s $REF/$n.csv $DATA/training_data/v11/labels/
+done
+for n in $TEST; do ln -s $DATA/test_data/v5/images/$n.zarr $DATA/test_data/v6/images/; done
+python -c "
+import json, os, sys
+root, val = sys.argv[1], sys.argv[2:]
+train = sorted(f[:-5] for f in os.listdir(root + '/images') if f[:-5] not in val)
+json.dump({'train': train, 'val': val}, open(root + '/train_val_split.json', 'w'), indent='\t')
+" $DATA/training_data/v11 $VAL
+```
+
+Then pull this branch on the cluster, check the checkpoint paths in
+`scripts_synapses/rescore_operating_point.sbatch`, and submit it. For every model it selects the
+setting on the consensus val crops and on the old val crops, and scores test v6 at (0.5, 2) and
+at both selected settings.
+
+**First result, from the stored heatmaps of the 8 production models.** The setting is selected
+on the 2 consensus val crops, and test v6 is scored with the production IHC filter and matching.
+This scoring reproduces `synapses.json` exactly: on all six crops, every model gets its stored
+F1, and v7-latest its per-crop counts.
+
+| Model | Test v6 at (0.5, 2) | Gridsearch, radius filter: setting, test F1 | Gridsearch, `--ihc_dir`: setting, test P / R / F1 | Best test F1 (diagnostic) |
+|---|---:|---|---|---:|
+| v3-ihc11 | 0.862 | (0.50, 1), 0.876 | (0.50, 1), 0.964 / 0.802 / 0.876 | 0.879 |
+| v5-ihc11 | 0.878 | (0.35, 1), 0.886 | (0.50, 1), 0.955 / 0.834 / 0.890 | 0.893 |
+| v7 | 0.869 | (0.15, 1), 0.859 | (0.20, 1), 0.889 / 0.872 / 0.880 | 0.890 |
+| v7-latest | 0.881 | (0.35, 1), 0.896 | (0.35, 1), 0.951 / 0.847 / 0.896 | 0.898 |
+| v9 | 0.875 | (0.15, 1), 0.785 | (0.55, 1), 0.978 / 0.802 / 0.882 | 0.885 |
+| v9-latest | 0.874 | (0.20, 1), 0.851 | (0.40, 1), 0.971 / 0.813 / 0.885 | 0.885 |
+| v10 | 0.873 | (0.10, 1), 0.873 | (0.15, 1), 0.956 / 0.853 / 0.901 | 0.903 |
+| v10-latest | 0.873 | (0.10, 1), 0.888 | (0.10, 1), 0.907 / 0.869 / 0.888 | 0.905 |
+
+- **The default gridsearch is unreliable on the consensus crops.** Its radius filter scores
+  only the detections within 40 voxels of an annotation. This hides the false positives far
+  from the annotations, so it selects thresholds of 0.10 to 0.20 and loses up to 0.09 F1 (v9).
+  Without a filter it selects 0.6 to 0.8, which is too high. Only the IHC filter of the
+  evaluation selects a setting that transfers to the test crops.
+- **With `--ihc_dir`, the selection works.** The gridsearch then filters the detections by
+  their distance to the IHCs, as the evaluation does. Every model gains 0.007 to 0.028 F1 over
+  (0.5, 2) and is within 0.017 (median 0.003) of its best test F1. Every model selects
+  `min_distance` 1.
+- **The selection does not shrink the spread between these runs.** At the selected setting the
+  8 models span F1 0.876 to 0.901 (SD 0.008), at (0.5, 2) 0.862 to 0.881 (SD 0.006). The ranking
+  changes: v10 moves from the middle to the top.
+- The close-pair hypothesis needs the old val crops, which have no stored heatmaps here. The
+  cluster job scores them with the former practice (radius filter). Note that the radius filter
+  can make that gridsearch unreliable by itself, not only the sparse close pairs.
+
 ### Settings of every model version
 
-Common to every run: patch shape 40 × 112 × 112, batch size 32, learning rate 1e-4, 3,200
+Common to every run: patch shape 40 × 112 × 112, batch size 32, learning rate 1e-4 with the
+torch_em `ReduceLROnPlateau` (factor 0.5, patience 5 epochs, see "Training robustness"), 3,200
 training and 160 validation samples per epoch, no augmentation, a Gaussian target of peak 4 and
-sigma 1 voxel (v10: 0.7), and three validation crops. The `synapses.json` entries of the production
+sigma 1 voxel (v10: 0.7) divided by its patch maximum (see "Target defect and v11"), and three
+validation crops. The `synapses.json` entries of the production
 pipeline use threshold 0.5, `min_distance` 2, the IHC filter at 3 um and matching at 3 um on the
 six consensus test crops.
 
@@ -537,15 +648,16 @@ six consensus test crops.
 | v4 | `v4`, 20 crops | heatmap + flow | upstream, not recorded in detail | `MinPointSampler(1)`, probably applied | none | redrawn | 1e5 | not recorded | legacy pipeline, IHC v4, never rescored |
 | v5 | `v5`, 29 crops | heatmap + flow | MSE + 0.1 flow / MSE over 5 channels | `MinPointSampler(1)`; last 21 voxels per axis not trained | none | redrawn | 1e5 | `best.pt` | `v5`: legacy pipeline at 0.5, IHC v4; `v5-ihc11`: production, IHC v11 |
 | v5_05t | v5 checkpoint | | | | | | | | old per-version pipeline at threshold 0.5 |
-| v5-f0 … v5-f4 | `v5`, split not recorded | heatmap + flow | as v5 | as v5 | none | redrawn | 1e5 | not recorded | `run_detection` at 0.5, IHC v4; v5-f0 has the counts of v5 |
+| v5-f1 … v5-f4 | `v5`, four other splits: the exports are `v5-fold1..4/best.pt` | heatmap + flow | as v5 | as v5 | none | redrawn | 1e5 | `best.pt` (epochs 31, 698, 681, 64) | `run_detection` at 0.5, IHC v4; `v5-f0` has the counts of v5 |
+| v5-rep1 … v5-rep4 | `v5`, the v5 split; checkpoint folders `v5-f1..4` | heatmap + flow | as v5 | as v5 | none | redrawn | 1e5 | `best.pt` (epochs 278, 13, 109, 28) and `latest.pt` | not scored, see "Training robustness" |
 | v6-1 | `v6` = v5 data | heatmap | MSE / MSE | none | none | redrawn | 1e5 | not recorded | not scored |
 | v7 | `v7` | heatmap | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
-| v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
-| v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10 | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained; commit `4da9e70` | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10; commit `4da9e70` | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v10 | `v7` | heatmap, target sigma 0.7 | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 
 `MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
-probability 0.2. v7 to v9 standardize the raw input, which is a no-op for this network; whether
+probability 0.2. v7 to v10 standardize the raw input, which is a no-op for this network; whether
 the earlier runs did is irrelevant for the same reason. Gaps and conflicts in the record:
 
 - The v3 split is 13/2 in the original 2025-06-15 script and 12/3 in the later notes.
@@ -554,7 +666,8 @@ the earlier runs did is irrelevant for the same reason. Gaps and conflicts in th
 - `v5_05t` (F1 0.888) and `v5` (0.871) are both at threshold 0.5. The cause of the difference is
   not recorded.
 - The plain `v3-3` export (0.851) is not documented. `v3-3-best` is the epoch 848 `best.pt`.
-- The command that retrained v5-f1 to v5-f4 with a fixed `--random_state` is not recorded.
+- The commands of the v5 folds and of the v5 replicates are not recorded. The val crops of each
+  run are in its checkpoint, in `init["val_dataset"]`.
 - The thresholds behind `v5_f1val_threshold` and `v5_train_threshold` in
   `plot_supp_fig2.py` are not recorded.
 - That the `v7` and `v8` data folders equal the v5/v6 data is stated, but not shown.
