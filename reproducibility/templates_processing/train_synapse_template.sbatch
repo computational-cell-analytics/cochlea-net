@@ -45,6 +45,6 @@ fi
 # Trains the heatmap only, the output layout of synapse_detection_v3. Add --use_flow for the
 # 5 channel heatmap and flow training of synapse_detection_v5, and --sampler to override the
 # default sampler of the selected mode. To retrain v3 or v5 themselves, add --legacy_recipe:
-# the runs before 2026-09-21 had no raw normalization and a different validation metric.
+# the runs before 2026-09-21 had a different validation metric.
 python "$SCRIPT_REPO"/scripts/synapse_marker_detection/train_synapse_detection.py \
 	-v "$VERSION" -m "$MODEL_SUFFIX" "${split_args[@]}"

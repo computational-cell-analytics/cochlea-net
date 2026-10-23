@@ -58,8 +58,7 @@ def train(
     label_transform = transform_class(sigma=sigma, eps=1e-5)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
-    # they trained on unnormalized input, and they redrew the validation patches on every epoch.
-    # The legacy recipe restores all three together.
+    # and they redrew the validation patches on every epoch. The legacy recipe restores both.
     metric = torch.nn.MSELoss(reduction="mean") if legacy_recipe else None
     # The same number that fixes the train / validation split also fixes the patches inside the
     # validation crops, so that the metric selecting best.pt is scored on the same data.
@@ -103,7 +102,6 @@ def train(
         label_transform=label_transform,
         loss=loss,
         metric=metric,
-        normalize_raw=not legacy_recipe,
         val_patch_seed=val_patch_seed,
         save_root=save_root,
         n_samples_train=3200,
@@ -141,10 +139,10 @@ def main():
     parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
                         help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
     parser.add_argument("--legacy_recipe", action="store_true",
-                        help="Reproduce the training recipe of synapse_detection_v3 and v5: no raw "
-                             "normalization, and an unweighted mean squared error over all output "
-                             "channels as the validation metric, and validation patches that are "
-                             "redrawn on every epoch. Required to retrain those models.")
+                        help="Reproduce the training recipe of synapse_detection_v3 and v5: an "
+                             "unweighted mean squared error over all output channels as the "
+                             "validation metric, and validation patches that are redrawn on every "
+                             "epoch. Required to retrain those models.")
 
     args = parser.parse_args()
     train(
