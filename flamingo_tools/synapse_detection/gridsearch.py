@@ -15,6 +15,7 @@ import tempfile
 
 import numpy as np
 import pandas as pd
+import zarr
 from scipy.optimize import linear_sum_assignment
 from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
@@ -24,6 +25,7 @@ from flamingo_tools.segmentation.synapse_detection import (
     _PREDICTION_BLOCK_SHAPE,
     _PREDICTION_HALO,
     _get_model_out_channels,
+    map_and_filter_detections,
     pad_to_block_shape,
 )
 from flamingo_tools.segmentation.unet_prediction import prediction_impl
@@ -41,6 +43,9 @@ MATCH_DISTANCE = 3.0 / VOXEL_SIZE
 # annotation is not scored, which is the "spatially distant" class of the 2026-08-27 diagnostics
 # in to-do_revision/synapses.md.
 ANNOTATED_RADIUS = 40
+# The evaluation drops every detection further than this many µm from the IHC segmentation
+# (PRODUCTION_MAX_DISTANCE in scripts/validation/synapses/prediction.py).
+IHC_MAX_DISTANCE = 3.0
 
 # ---------------------------------------------------------------------------
 # Coordinate matching metric (inlined from czii evaluation_metrics.py)
@@ -88,6 +93,17 @@ def _predict_heatmap(image_path, raw_key, model_path, out_channels):
     return heatmap, shape
 
 
+def _filter_by_ihc(peaks, segmentation_path):
+    """Keep the peaks within IHC_MAX_DISTANCE of the IHC segmentation, as the evaluation does."""
+    f = zarr.open(segmentation_path, mode="r")
+    segmentation = f["segmentation_filtered" if "segmentation_filtered" in f else "segmentation"][:]
+    detections = pd.DataFrame(peaks * VOXEL_SIZE, columns=["z", "y", "x"])
+    detections = map_and_filter_detections(
+        segmentation, detections, max_distance=IHC_MAX_DISTANCE, voxel_size=(VOXEL_SIZE,) * 3, verbose=False,
+    )
+    return peaks[detections.index.values]
+
+
 # ---------------------------------------------------------------------------
 # Gridsearch
 # ---------------------------------------------------------------------------
@@ -102,6 +118,7 @@ def gridsearch(
     min_distances=(1, 2),
     thresholds=None,
     annotated_radius=ANNOTATED_RADIUS,
+    ihc_dir=None,
 ):
     """Find the peak-detection threshold and min_distance that maximise F1 on the validation set.
 
@@ -128,6 +145,11 @@ def gridsearch(
             of 0.05.
         annotated_radius: Detections further than this many voxels from every annotation are not
             scored. None scores every detection.
+        ihc_dir: Folder with the IHC segmentation of each crop at `<crop>_ihc/segmentation.zarr`,
+            the layout of scripts/validation/synapses/prediction.py. With it, the detections are
+            filtered by their distance to the IHCs as in the evaluation, and `annotated_radius` is
+            not used. Use it for the consensus crops: on them, the radius filter selects too low a
+            threshold, and no filter too high a threshold.
 
     Returns:
         The best threshold, the best min_distance, and a table with the precision, recall and F1
@@ -161,7 +183,9 @@ def gridsearch(
             # padding are those of the production peak detection; peaks in the padding are dropped.
             peaks = peak_local_max(heatmap, min_distance=min_distance, threshold_abs=min(thresholds))
             peaks = peaks[np.all(peaks < np.array(shape), axis=1)]
-            if annotated_radius is not None:
+            if ihc_dir is not None:
+                peaks = _filter_by_ihc(peaks, os.path.join(ihc_dir, f"{val_name}_ihc", "segmentation.zarr"))
+            elif annotated_radius is not None:
                 if len(label_coords) == 0:
                     peaks = peaks[:0]
                 else:
@@ -199,8 +223,12 @@ def main():
                         help="The train_val_split*.json of the training run. Default: every crop in --image_dir.")
     parser.add_argument("-i", "--image_dir", default=TRAIN_ROOT)
     parser.add_argument("-l", "--label_dir", default=LABEL_ROOT)
+    parser.add_argument("--ihc_dir", default=None,
+                        help="Folder with <crop>_ihc/segmentation.zarr for each crop, as prediction.py writes "
+                             "it. Filters the detections by their distance to the IHCs, as the evaluation does. "
+                             "Default: score the detections within 40 voxels of an annotation.")
     args = parser.parse_args()
-    gridsearch(args.model, args.split, image_dir=args.image_dir, label_dir=args.label_dir)
+    gridsearch(args.model, args.split, image_dir=args.image_dir, label_dir=args.label_dir, ihc_dir=args.ihc_dir)
 
 
 if __name__ == "__main__":
