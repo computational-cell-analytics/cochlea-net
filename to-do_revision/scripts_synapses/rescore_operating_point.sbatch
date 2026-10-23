@@ -1,6 +1,6 @@
 #!/bin/bash
 #SBATCH --job-name=synapse-rescore
-#SBATCH -t 06:00:00
+#SBATCH -t 12:00:00
 #SBATCH -p grete:shared
 #SBATCH -G A100:1
 #SBATCH -A nim00007
@@ -11,13 +11,17 @@
 # 1. select threshold and min_distance with the gridsearch on the consensus val crops (data v11,
 #    filtered by the IHC segmentation as in the evaluation) and on the old val crops (data v7,
 #    the radius filter, the former practice);
-# 2. score test v6 at (0.5, 2) and at both selected settings.
+# 2. score test v11 at (0.5, 2) and at both selected settings.
 # The selected settings go to $OUT/selected_settings.txt, the scores to $OUT/synapses.json
-# (keys <model>-fixed, <model>-cons, <model>-old). Needs the data folders v11 and test v6 of
-# ../synapses.md and a checkout that pairs the reference CSVs by crop name.
+# (keys <model>-fixed, <model>-cons, <model>-old). Needs the data folders v11 and test v11 of
+# ../synapses.md and the branch HEAD: --ihc_dir and the consensus-only labels of the gridsearch
+# do not exist in 4da9e70, and the run of 2026-10-22 on that checkout got no cons setting.
+# The exports are pickled U-Nets, which fail in torch_em 0.10.7 and later ('Decoder' object has
+# no attribute 'explicit_skip_channels'). micro-sam_gpu has 0.10.8; cochlea-net must have <= 0.10.6.
+# The v3-1..v3-4 exports are not readable for this account, so they are not in MODELS.
 
 source ~/.bashrc
-micromamba activate micro-sam_gpu
+micromamba activate cochlea-net || exit 1
 
 REPO=/user/schilling40/u15000/flamingo-tools
 export PYTHONPATH="$REPO:$PYTHONPATH"
@@ -26,10 +30,10 @@ SYN=$ROOT/trained_models/Synapses
 DATA=$ROOT/training_data/synapses
 IHC=$ROOT/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20
 REF=$ROOT/AnnotatedImageCrops/Synapses_2026-04/consensus_annotation
-TEST=$DATA/test_data/v6/images
+TEST=$DATA/test_data/v11/images
 # IHC v11 segmentations of all six consensus crops, for the gridsearch on the consensus val crops.
 IHC_SEG=$ROOT/predictions/val_synapses/production_2026-09-25/v7
-OUT=$ROOT/predictions/val_synapses/rescore_2026-10-21
+OUT=$ROOT/predictions/val_synapses/rescore_2026-10-23
 # Trainer checkpoints of the runs without an export. Check the paths before you submit.
 CKPT=/mnt/lustre-grete/usr/u15000/checkpoints
 
@@ -38,10 +42,6 @@ CKPT=/mnt/lustre-grete/usr/u15000/checkpoints
 # standard split, never scored.
 MODELS=(
 	"v3 $SYN/synapse_detection_model_v3.pt"
-	"v3-1 $SYN/synapse_detection_model_v3-1.pt"
-	"v3-2 $SYN/synapse_detection_model_v3-2.pt"
-	"v3-3 $SYN/synapse_detection_model_v3-3.pt"
-	"v3-4 $SYN/synapse_detection_model_v3-4.pt"
 	"v5 $SYN/synapse_detection_model_v5.pt"
 	"v5-latest $CKPT/synapse_detection_v5/latest.pt"
 	"v5-rep1 $CKPT/synapse_detection_v5-f1/best.pt"
@@ -91,6 +91,9 @@ for entry in "${MODELS[@]}"; do
 		python "$REPO"/scripts/validation/synapses/prediction.py -o "$RUN" -i "$TEST" -g "$REF" \
 			--model_synapse "$MODEL" --model_ihc "$IHC" --threshold "$T" --min_distance "$MD"
 		python "$REPO"/scripts/validation/synapses/run_evaluation.py -p "$RUN" -c "$TEST" -r "$REF" -o "$OUT"
-		IHC_DONE=${IHC_DONE:-$RUN}
+		# Only a run with IHC output can supply it, otherwise every later run gets a broken link.
+		if [ -z "$IHC_DONE" ] && compgen -G "$RUN/*_ihc" > /dev/null; then
+			IHC_DONE=$RUN
+		fi
 	done
 done

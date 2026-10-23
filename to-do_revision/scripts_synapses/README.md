@@ -119,6 +119,7 @@ prediction, because a silent CPU fallback is about 50x slower and never finishes
 | `train_synapse_v3-flow-1.sbatch` | v3 data with the v5 recipe (`--use_flow`) |
 | `train_synapse_v6-1.sbatch` | v6 data with the v3 recipe |
 | `train_synapse_v9.sbatch` | v7 with the candidate-exclusion mask |
+| `train_synapse_v11.sbatch` | Three seeds of the refined recipe: fixed target, cosine LR over 3e4 iterations, consensus val crops |
 | `synapse_detect_ihc11_F1val.sbatch` | Score the baselines and v7 to v10 against IHC v11 |
 | `synapse_detect_v5-variation_F1val.sbatch` | Run the four v5 fold models over the six test crops |
 | `rescore_operating_point.sbatch` | Select the detection setting on the consensus and the old val crops, score test v6 |
