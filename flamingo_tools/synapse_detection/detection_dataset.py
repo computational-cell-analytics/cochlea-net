@@ -69,14 +69,28 @@ class CsvHeatmapTransform:
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
+        fixed_target: Give every isolated annotation a peak of 4, and load the annotations up to
+            3 sigma beyond the patch. Without it, the target of every model up to v10 is
+            reproduced: the heatmap is divided by its patch maximum, and an annotation on the
+            border of the loaded box raises that maximum, which lowers every other peak in the
+            patch to 2.28. An annotation just outside the patch also loses its Gaussian.
     """
 
-    # Context that DetectionDataset must load around each patch. Only the flow needs any.
+    # Context that DetectionDataset must load around each patch. Only the flow and the fixed
+    # target need any.
     halo = 0
 
-    def __init__(self, sigma: float, eps: float = 1e-8):
+    def __init__(self, sigma: float, eps: float = 1e-8, fixed_target: bool = False):
         self.sigma = sigma
         self.eps = eps
+        self.fixed_target = fixed_target
+        if fixed_target:
+            # `self.halo` reads the class attribute and shadows it per instance.
+            self.halo = max(self.halo, int(np.ceil(3 * sigma)))
+            radius = int(np.ceil(4 * sigma))
+            delta = np.zeros((2 * radius + 1,) * 3, dtype=np.float32)
+            delta[radius, radius, radius] = 1
+            self._peak = float(gaussian(delta, sigma, mode="constant").max())
 
     @staticmethod
     def _local_points(label_path, bb):
@@ -97,9 +111,12 @@ class CsvHeatmapTransform:
                 for coord, size in zip(local_points.T, local_shape)
             )
             heatmap[coords] = 1
-            heatmap = gaussian(heatmap, self.sigma)
-            heatmap /= (heatmap.max() + self.eps)
-            heatmap *= 4
+            if self.fixed_target:
+                heatmap = gaussian(heatmap, self.sigma, mode="constant") * (4 / self._peak)
+            else:
+                heatmap = gaussian(heatmap, self.sigma)
+                heatmap /= (heatmap.max() + self.eps)
+                heatmap *= 4
         return heatmap
 
     def __call__(self, label_path, shape, bb_labels, bb_for_loading):
@@ -119,18 +136,19 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
+        fixed_target: See `CsvHeatmapTransform`.
     """
 
     # The flow needs points beyond the patch border to be correct close to the border.
     halo = 10
 
-    def __init__(self, sigma: float, eps: float = 1e-8):
+    def __init__(self, sigma: float, eps: float = 1e-8, fixed_target: bool = False):
         if not _spotiflow_available:
             raise ImportError(
                 "spotiflow is required for flow computation. "
                 'Install it with: pip install "cochlea_net[flow]"'
             )
-        super().__init__(sigma, eps)
+        super().__init__(sigma, eps, fixed_target)
 
     def __call__(self, label_path, shape, bb_labels, bb_for_loading):
         bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
@@ -199,7 +217,7 @@ class DetectionDataset(torch.utils.data.Dataset):
         self.label_dtype = label_dtype
 
         # Buffer added around each sampled patch before calling the label transform. The label
-        # transform declares how much context it needs: the flow.
+        # transform declares how much context it needs: the flow and the fixed target.
         self.halo = getattr(label_transform, "halo", 10)
 
         f = zarr.open(self.raw_path, mode="r")

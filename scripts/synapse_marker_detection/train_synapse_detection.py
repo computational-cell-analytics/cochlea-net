@@ -20,12 +20,14 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
     use_flow=False, sampler_name=None, n_iterations=int(1e5), save_root=SAVE_ROOT,
-    legacy_recipe=False, sigma=1.0,
+    legacy_recipe=False, sigma=1.0, fixed_target=False,
 ):
     if use_flow and sigma != 1:
         # The flow correction at inference assumes the target sigma (_HEATMAP_FLOW_SIGMA = 1 in
         # flamingo_tools/segmentation/synapse_detection.py) and would shift every detection.
         raise ValueError(f"The flow targets need sigma 1, got {sigma}.")
+    if legacy_recipe and fixed_target:
+        raise ValueError("--legacy_recipe reproduces v3 and v5, which were trained without --fixed_target.")
 
     if model_suffix is None:
         model_suffix = version
@@ -55,7 +57,7 @@ def train(
 
     transform_class = CsvHeatmapFlowTransform if use_flow else CsvHeatmapTransform
     out_channels = 5 if use_flow else 1
-    label_transform = transform_class(sigma=sigma, eps=1e-5)
+    label_transform = transform_class(sigma=sigma, eps=1e-5, fixed_target=fixed_target)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
     # and they redrew the validation patches on every epoch. The legacy recipe restores both.
@@ -74,6 +76,7 @@ def train(
         "flow": use_flow,
         "sampler": sampler_name,
         "sigma": sigma,
+        "fixed_target": fixed_target,
         "legacy_recipe": legacy_recipe,
         "val_patch_seed": val_patch_seed,
     }
@@ -85,7 +88,7 @@ def train(
     print(len(train_paths), "tomograms for training")
     print(len(val_paths), "tomograms for validation")
     print(f"{out_channels} output channels, flow: {use_flow}, sampler: {sampler_name}")
-    print(f"Legacy recipe: {legacy_recipe}")
+    print(f"Fixed target: {fixed_target}, legacy recipe: {legacy_recipe}")
 
     supervised_training(
         name=model_name,
@@ -134,8 +137,12 @@ def main():
     parser.add_argument("--sigma", type=float, default=1.0,
                         help="Standard deviation in voxels of the Gaussian target around each "
                              "annotation. A smaller value keeps adjacent synapses apart in the "
-                             "target. Default: 1, the value of every model so far. Only 1 works "
-                             "with --use_flow.")
+                             "target. Default: 1, the value of every model except v10. Only 1 "
+                             "works with --use_flow.")
+    parser.add_argument("--fixed_target", action="store_true",
+                        help="Give every isolated annotation the same target peak, and keep the "
+                             "Gaussians of the annotations just outside the patch. Every model up "
+                             "to v10 was trained without it. Cannot be combined with --legacy_recipe.")
     parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
                         help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
     parser.add_argument("--legacy_recipe", action="store_true",
@@ -157,6 +164,7 @@ def main():
         save_root=args.save_root,
         legacy_recipe=args.legacy_recipe,
         sigma=args.sigma,
+        fixed_target=args.fixed_target,
     )
 
 
