@@ -124,7 +124,8 @@ def gridsearch(
         raw_key: Zarr key for the raw image data.
         out_channels: Number of model output channels.  Auto-detected if None.
         min_distances: The minimum voxel distances between detected peaks to compare.
-        thresholds: The absolute heatmap thresholds to compare. Default: 0.3 to 1.9 in steps of 0.1.
+        thresholds: The absolute heatmap thresholds to compare. Default: 0.05 to 2.95 in steps
+            of 0.05.
         annotated_radius: Detections further than this many voxels from every annotation are not
             scored. None scores every detection.
 
@@ -135,7 +136,7 @@ def gridsearch(
     if out_channels is None:
         out_channels = _get_model_out_channels(model_path)
     if thresholds is None:
-        thresholds = np.round(np.arange(0.3, 2.0, 0.1), 2)
+        thresholds = np.round(np.arange(0.05, 3.0, 0.05), 2)
 
     if json_val_path is not None:
         with open(json_val_path) as f:
