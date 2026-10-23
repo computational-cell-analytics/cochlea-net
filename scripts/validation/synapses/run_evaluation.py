@@ -336,7 +336,9 @@ def main():
             version_key = f"{Path(pred_root).name}_{ref_root.split(os.path.sep)[-2]}"
 
         ctbp2_files = sorted(glob(os.path.join(image_root, "*.zarr")))
-        gt_files = sorted(glob(os.path.join(ref_root, "*.csv")))
+        # Pair by crop name, so that an image folder with a subset of the reference crops scores
+        # that subset.
+        gt_files = [os.path.join(ref_root, f"{Path(ff).stem}.csv") for ff in ctbp2_files]
 
         pred_files = []
         for ff in ctbp2_files:

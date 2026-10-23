@@ -113,6 +113,25 @@ class TestPredictionRoots(unittest.TestCase):
         recorded = self._run(["-i", "/tmp/img", "-o", "/tmp/out", "--model_synapse", "/tmp/syn.pt"])
         self.assertEqual(recorded["output_root"], "/tmp/out")
 
+    def test_gt_is_paired_by_crop_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            images, refs = os.path.join(tmp_dir, "images"), os.path.join(tmp_dir, "refs")
+            os.makedirs(os.path.join(images, "crop.zarr"))
+            os.makedirs(refs)
+            # A reference crop without an image sorts first, as a held-out crop does.
+            for name, value in (("another", 1.0), ("crop", 2.0)):
+                with open(os.path.join(refs, f"{name}.csv"), "w", newline="") as f:
+                    csv.writer(f).writerows([["axis-0", "axis-1", "axis-2"], [value] * 3])
+
+            calls = []
+            with mock.patch.object(self.prediction, "_filter_synapse_impl", lambda *args: calls.append(args)):
+                self.prediction.filter_gt(images, refs, tmp_dir)
+
+        (gt, ihc, output_path), = calls
+        self.assertEqual(os.path.basename(output_path), "crop_gt_filtered.tsv")
+        self.assertIn("crop_ihc", ihc)
+        self.assertAlmostEqual(gt["z"].item(), 2.0 * self.prediction.VOXEL_SIZE[2])
+
 
 class TestEvaluationRoots(unittest.TestCase):
     """-p must take the same directory that prediction.py was given as -o."""
@@ -162,6 +181,23 @@ class TestEvaluationRoots(unittest.TestCase):
             self.assertEqual(results["v7"]["tp"], [len(self.points)])
             self.assertEqual(results["v7"]["fp"], [0])
             self.assertEqual(results["v7"]["fn"], [0])
+
+    def test_reference_is_paired_by_crop_name(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            images, refs, preds = self._create_data(tmp_dir, "v7")
+            # A reference crop without an image sorts first, as a held-out crop does.
+            with open(os.path.join(refs, "another.csv"), "w", newline="") as f:
+                csv.writer(f).writerows([["axis-0", "axis-1", "axis-2"], [500.0, 500.0, 500.0]])
+            out_dir = os.path.join(tmp_dir, "accuracy")
+
+            argv = ["run_evaluation.py", "-v", "v7", "-c", images, "-r", refs, "-p", preds, "-o", out_dir]
+            with mock.patch.object(sys, "argv", argv):
+                self.evaluation.main()
+
+            with open(os.path.join(out_dir, "synapses.json")) as f:
+                result = json.load(f)["v7"]
+            self.assertEqual(result["crops"], ["crop.csv"])
+            self.assertEqual(result["tp"], [len(self.points)])
 
     def test_existing_entry_needs_overwrite(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
