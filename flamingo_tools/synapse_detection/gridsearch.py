@@ -75,16 +75,17 @@ def _true_positives(gts, preds, match_distance):
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _predict_heatmap(image_path, raw_key, model_path, out_channels, block_shape, halo):
+def _predict_heatmap(image_path, raw_key, model_path, out_channels):
+    """Return the heatmap of the padded crop and the shape of the unpadded crop."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         padded_path, shape = pad_to_block_shape(image_path, raw_key, tmp_dir)
         _, pred = prediction_impl(
             padded_path, raw_key, None, model_path,
-            scale=None, block_shape=block_shape, halo=halo,
+            scale=None, block_shape=_PREDICTION_BLOCK_SHAPE, halo=_PREDICTION_HALO,
             apply_postprocessing=False, output_channels=out_channels,
         )
     heatmap = pred[0] if pred.ndim == 4 else pred
-    return heatmap[: shape[0], : shape[1], : shape[2]]
+    return heatmap, shape
 
 
 # ---------------------------------------------------------------------------
@@ -98,8 +99,6 @@ def gridsearch(
     label_dir=LABEL_ROOT,
     raw_key="raw",
     out_channels=None,
-    block_shape=_PREDICTION_BLOCK_SHAPE,
-    halo=_PREDICTION_HALO,
     min_distances=(1, 2),
     thresholds=None,
     annotated_radius=ANNOTATED_RADIUS,
@@ -112,8 +111,9 @@ def gridsearch(
     ``.csv`` extension. If no JSON file is supplied, all images in ZARR format in the directory
     are evaluated.
 
-    The scores are summed over the crops, as in the reported metric. Each crop is predicted once
-    with the production block shape and halo; the peaks of every setting come from that one
+    The scores are summed over the crops, as in the reported metric. Each crop is padded and
+    predicted once with the production block shape and halo, as in
+    scripts/validation/synapses/prediction.py; the peaks of every setting come from that one
     heatmap.
 
     Args:
@@ -123,8 +123,6 @@ def gridsearch(
         label_dir: Directory containing the matching CSV label files.
         raw_key: Zarr key for the raw image data.
         out_channels: Number of model output channels.  Auto-detected if None.
-        block_shape: Spatial block shape for tiled prediction.
-        halo: Halo (overlap) for tiled prediction.
         min_distances: The minimum voxel distances between detected peaks to compare.
         thresholds: The absolute heatmap thresholds to compare. Default: 0.3 to 1.9 in steps of 0.1.
         annotated_radius: Detections further than this many voxels from every annotation are not
@@ -152,16 +150,16 @@ def gridsearch(
         label_path = os.path.join(label_dir, f"{val_name}.csv")
 
         print(f"Running prediction on {image_path}")
-        heatmap = _predict_heatmap(image_path, raw_key, model_path, out_channels, block_shape, halo)
+        heatmap, shape = _predict_heatmap(image_path, raw_key, model_path, out_channels)
         label_coords = read_csv_points(label_path)
         print(f"  {len(label_coords)} ground-truth points loaded")
 
         for min_distance in min_distances:
             # A peak above a higher threshold is also a peak above the lowest one, so one
-            # detection per min_distance serves every threshold.
-            peaks = peak_local_max(
-                heatmap, min_distance=min_distance, threshold_abs=min(thresholds), exclude_border=False,
-            )
+            # detection per min_distance serves every threshold. The border handling and the
+            # padding are those of the production peak detection; peaks in the padding are dropped.
+            peaks = peak_local_max(heatmap, min_distance=min_distance, threshold_abs=min(thresholds))
+            peaks = peaks[np.all(peaks < np.array(shape), axis=1)]
             if annotated_radius is not None:
                 if len(label_coords) == 0:
                     peaks = peaks[:0]
