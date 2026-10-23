@@ -279,6 +279,42 @@ class TestDetectionDataset(unittest.TestCase):
                 starts.max(axis=0).tolist(), [sh - psh for sh, psh in zip(self.shape, self.patch_shape)]
             )
 
+    def test_fixed_target_ignores_border_points(self):
+        """A point on the border of the loaded box must not lower the peaks of the other points."""
+        bb = tuple(slice(0, psh) for psh in self.patch_shape)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            label_path = os.path.join(tmp_dir, "points.csv")
+            points = [(20.0, 56.0, 56.0), (0.0, 30.0, 30.0)]
+            pd.DataFrame(points, columns=["axis-0", "axis-1", "axis-2"]).to_csv(label_path, index=False)
+
+            legacy = CsvHeatmapTransform(sigma=1, eps=1e-5)(label_path, self.shape, bb, bb)[0]
+            fixed = CsvHeatmapTransform(sigma=1, eps=1e-5, fixed_target=True)(label_path, self.shape, bb, bb)[0]
+
+        # The target of every model up to v10.
+        self.assertAlmostEqual(float(legacy[20, 56, 56]), 2.28, delta=0.01)
+        self.assertAlmostEqual(float(fixed[20, 56, 56]), 4.0, places=5)
+        self.assertAlmostEqual(float(fixed[0, 30, 30]), 4.0, places=5)
+
+    def test_fixed_target_keeps_points_outside_the_patch(self):
+        transform = CsvHeatmapTransform(sigma=1, eps=1e-5, fixed_target=True)
+        self.assertEqual(transform.halo, 3)
+        self.assertEqual(CsvHeatmapTransform.halo, 0)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            label_path = os.path.join(tmp_dir, "border.csv")
+            point = (self.bb[0].start - 1.0, 50.0, 60.0)
+            pd.DataFrame([point], columns=["axis-0", "axis-1", "axis-2"]).to_csv(label_path, index=False)
+
+            # DetectionDataset expands the patch by the halo, calls the transform and crops back.
+            halo = transform.halo
+            bb_for_loading = tuple(slice(axis.start - halo, axis.stop + halo) for axis in self.bb)
+            labels = transform(label_path, self.shape, bb_for_loading, bb_for_loading)
+            heatmap = labels[0][tuple(slice(halo, halo + size) for size in self.patch_shape)]
+
+        # One voxel from the annotation, inside the first plane of the patch.
+        local = (0, 50 - self.bb[1].start, 60 - self.bb[2].start)
+        self.assertAlmostEqual(float(heatmap[local]), 4 * np.exp(-0.5), places=4)
+
     @unittest.skipUnless(_HAVE_SPOTIFLOW, "spotiflow is required for the flow channels")
     def test_flow_transform(self):
         with tempfile.TemporaryDirectory() as tmp_dir:

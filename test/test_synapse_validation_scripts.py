@@ -242,6 +242,7 @@ class TestTrainingRecipe(unittest.TestCase):
         self.assertEqual(recorded["sampler"].min_points, 1)
         self.assertIsNone(recorded["metric"])
         self.assertEqual(recorded["val_patch_seed"], 42)
+        self.assertFalse(recorded["label_transform"].fixed_target)
 
     def test_legacy_recipe(self):
         recorded = self._train(legacy_recipe=True)
@@ -250,6 +251,11 @@ class TestTrainingRecipe(unittest.TestCase):
         self.assertIsNone(recorded["val_patch_seed"])
         # v5 and v3-flow-1 used the sampler.
         self.assertIsNotNone(self._train(legacy_recipe=True, use_flow=True)["sampler"])
+
+    def test_fixed_target(self):
+        self.assertTrue(self._train(fixed_target=True)["label_transform"].fixed_target)
+        with self.assertRaises(ValueError):
+            self._train(legacy_recipe=True, fixed_target=True)
 
 
 if __name__ == "__main__":
