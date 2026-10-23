@@ -257,6 +257,15 @@ class TestTrainingRecipe(unittest.TestCase):
         with self.assertRaises(ValueError):
             self._train(legacy_recipe=True, fixed_target=True)
 
+    def test_split_file(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            split_path = os.path.join(tmp_dir, "split.json")
+            with open(split_path, "w") as f:
+                json.dump({"train": ["a", "c"], "val": ["b"]}, f)
+            recorded = self._train(split_path=split_path)
+        self.assertEqual([os.path.basename(p) for p in recorded["train_paths"]], ["a.zarr", "c.zarr"])
+        self.assertEqual([os.path.basename(p) for p in recorded["val_label_paths"]], ["b.csv"])
+
 
 if __name__ == "__main__":
     unittest.main()
