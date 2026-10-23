@@ -26,8 +26,14 @@ CANDIDATE_MATCH_DISTANCE = 4
 
 
 def read_csv_points(label_path: str) -> np.ndarray:
-    """Read Napari CSV point annotations as an (N, 3) array in voxel coordinates, in ZYX order."""
+    """Read Napari CSV point annotations as an (N, 3) array in voxel coordinates, in ZYX order.
+
+    A consensus annotation also lists the points that only one annotator marked, in an `annotator`
+    column. Only the `consensus` rows are returned for such a file.
+    """
     points_df = pd.read_csv(label_path)
+    if "annotator" in points_df.columns:
+        points_df = points_df[points_df["annotator"] == "consensus"]
     return np.stack([
         points_df["axis-0"].values, points_df["axis-1"].values, points_df["axis-2"].values,
     ], axis=1).astype(np.float32)

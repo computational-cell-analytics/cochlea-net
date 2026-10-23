@@ -17,6 +17,7 @@ from flamingo_tools.synapse_detection.detection_dataset import (
     DetectionDataset,
     MinPointSampler,
     find_unannotated_candidates,
+    read_csv_points,
 )
 from flamingo_tools.synapse_detection.training import DetectionLoss, _samples_per_dataset, get_3d_model
 
@@ -476,6 +477,18 @@ class TestDetectionDataset(unittest.TestCase):
 
             self.assertEqual(flow_labels.shape, (5, *self.patch_shape))
             self.assertTrue(np.array_equal(flow_labels[0], heatmap_labels[0]))
+
+
+class TestReadCsvPoints(unittest.TestCase):
+    def test_consensus_rows_only(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            label_path = os.path.join(tmp_dir, "crop.csv")
+            pd.DataFrame({
+                "annotator": ["consensus", "LR", "consensus"],
+                "axis-0": [1.0, 2.0, 3.0], "axis-1": [4.0, 5.0, 6.0], "axis-2": [7.0, 8.0, 9.0],
+            }).to_csv(label_path, index=False)
+            points = read_csv_points(label_path)
+        np.testing.assert_array_equal(points, [[1, 4, 7], [3, 6, 9]])
 
 
 class TestDetectionLoss(unittest.TestCase):
