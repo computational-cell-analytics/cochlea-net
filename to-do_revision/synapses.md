@@ -451,7 +451,9 @@ Close pairs do not matter: only 1.3 % of the annotations have a neighbour within
 `--fixed_target` smooths with the `constant` mode, scales every isolated peak to exactly 4, and
 loads a halo of `ceil(3 * sigma)` voxels. The default stays the old target, so v7 and v10 remain
 retrainable. With the flag, the median peak is 4.0 in every patch of the local crops. The effect
-on F1 is not known. v11 is the v7 recipe with this one change:
+on F1 is not known. Superseded: v11 is now the refined recipe with three seeds, see
+"Rescoring result (2026-10-23)". The single-variable v11 proposed here was the v7 recipe with this
+one change:
 
 ```bash
 python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v11 --random_state 42 -s $SAVE_ROOT \
@@ -542,7 +544,7 @@ at precision 0.95 to 0.98).
 
 - val: `MLR226L_Vglut3Ctbp2_apex1_p50-140`, `MLR226L_Vglut3Ctbp2_base1_reslice_p122-256`
   (416 points);
-- test v6: `…apex2_p1-134`, `…mid1_resliced_p70-185`, `…mid2_p65-195`, `…base2_p40-130`
+- test v11: `…apex2_p1-134`, `…mid1_resliced_p70-185`, `…mid2_p65-195`, `…base2_p40-130`
   (733 points);
 - the three old val crops go back to training (29 training crops).
 
@@ -574,14 +576,19 @@ MLR226L_Vglut3Ctbp2_mid2_p65-195 MLR226L_Vglut3Ctbp2_base2_p40-130"
 diff <(cd $DATA/training_data/v5 && find images labels -type f | sort | xargs md5sum) \
      <(cd $DATA/training_data/v7 && find images labels -type f | sort | xargs md5sum) && echo "v7 == v5"
 
-mkdir -p $DATA/training_data/v11/images $DATA/training_data/v11/labels $DATA/test_data/v6/images
+mkdir -p $DATA/training_data/v11/images $DATA/training_data/v11/labels \
+    $DATA/test_data/v11/images $DATA/test_data/v11/labels
 ln -s $DATA/training_data/v7/images/*.zarr $DATA/training_data/v11/images/
 ln -s $DATA/training_data/v7/labels/*.csv $DATA/training_data/v11/labels/
 for n in $VAL; do
     ln -s $DATA/test_data/v5/images/$n.zarr $DATA/training_data/v11/images/
     ln -s $REF/$n.csv $DATA/training_data/v11/labels/
 done
-for n in $TEST; do ln -s $DATA/test_data/v5/images/$n.zarr $DATA/test_data/v6/images/; done
+for n in $TEST; do
+    ln -s $DATA/test_data/v5/images/$n.zarr $DATA/test_data/v11/images/
+    ln -s $REF/$n.csv $DATA/test_data/v11/labels/
+done
+# Writes the same file as the local synapses_data/train_val_split.json.
 python -c "
 import json, os, sys
 root, val = sys.argv[1], sys.argv[2:]
@@ -592,15 +599,15 @@ json.dump({'train': train, 'val': val}, open(root + '/train_val_split.json', 'w'
 
 Then pull this branch on the cluster, check the checkpoint paths in
 `scripts_synapses/rescore_operating_point.sbatch`, and submit it. For every model it selects the
-setting on the consensus val crops and on the old val crops, and scores test v6 at (0.5, 2) and
+setting on the consensus val crops and on the old val crops, and scores test v11 at (0.5, 2) and
 at both selected settings.
 
 **First result, from the stored heatmaps of the 8 production models.** The setting is selected
-on the 2 consensus val crops, and test v6 is scored with the production IHC filter and matching.
+on the 2 consensus val crops, and test v11 is scored with the production IHC filter and matching.
 This scoring reproduces `synapses.json` exactly: on all six crops, every model gets its stored
 F1, and v7-latest its per-crop counts.
 
-| Model | Test v6 at (0.5, 2) | Gridsearch, radius filter: setting, test F1 | Gridsearch, `--ihc_dir`: setting, test P / R / F1 | Best test F1 (diagnostic) |
+| Model | Test v11 at (0.5, 2) | Gridsearch, radius filter: setting, test F1 | Gridsearch, `--ihc_dir`: setting, test P / R / F1 | Best test F1 (diagnostic) |
 |---|---:|---|---|---:|
 | v3-ihc11 | 0.862 | (0.50, 1), 0.876 | (0.50, 1), 0.964 / 0.802 / 0.876 | 0.879 |
 | v5-ihc11 | 0.878 | (0.35, 1), 0.886 | (0.50, 1), 0.955 / 0.834 / 0.890 | 0.893 |
@@ -626,6 +633,101 @@ F1, and v7-latest its per-crop counts.
 - The close-pair hypothesis needs the old val crops, which have no stored heatmaps here. The
   cluster job scores them with the former practice (radius filter). Note that the radius filter
   can make that gridsearch unreliable by itself, not only the sparse close pairs.
+
+### Rescoring result (2026-10-23)
+
+`rescore_operating_point.sbatch` ran on 2026-10-22 on checkout `4da9e70` in the `micro-sam_gpu`
+env. The local copy is `rescore_2026-10-21/` in the repository root. Most of the job failed:
+
+- The `cons` arm failed for every model. `4da9e70` has no `gridsearch --ihc_dir` and no
+  consensus-only `read_csv_points`.
+- Every *export* (v3, v3-1…4, v5, v5-fold1…4, v7, v9, v10 and their `-latest`) failed. Each
+  wrote an empty `predictions.zarr` and gave no gridsearch setting. The trainer checkpoints
+  (`v5-latest`, `v5-rep1…4` best and latest) ran. The log `slurm-16801815.out` gives two causes:
+  - The exports are pickled U-Nets. torch_em 0.10.7 and later reads
+    `Decoder.explicit_skip_channels`, which a U-Net pickled with 0.10.6 or earlier does not
+    have (`AttributeError`). `micro-sam_gpu` resolves to `micro-sam2` with torch_em 0.10.8.
+    Locally, the v5-f1 export runs with 0.10.1 and 0.10.6 and fails with 0.10.7 and 0.10.8.
+    The same is true for the pickled `get_model` files of this branch. On master, `get_model`
+    loads the BioImage.io state-dict weights and is not affected. A trainer checkpoint builds
+    a new model, so it is not affected either. `environment.yaml` allows `torch_em >=0.9`.
+  - `synapse_detection_model_v3-{1..4}.pt` are not readable for the job account
+    (`PermissionError`). They are removed from the rescoring.
+- After the first failure, `IHC_DONE` pointed to a run without IHC output, and every later run got
+  a broken `*_ihc` link.
+- `test_data/v6/images` on the cluster has all six crops. The test v11 values below add up the
+  per-crop counts of the four test crops.
+
+The scored part is valid. The (0.5, 2) arm uses the prediction path of HEAD, and per crop
+TP + FN equals the consensus counts (1,149 points). The `old` arm used the old gridsearch (grid 0.3
+to 1.9, border handling on the unpadded crop). All its selected thresholds are inside that grid.
+The script is fixed (HEAD, `cochlea-net` with torch_em 0.10.6 or earlier, 12 h, `IHC_DONE` only
+from a run with IHC output, output root `rescore_2026-10-23`, test v11 with 4 crops, no v3-1…4).
+The rerun must reproduce the 18 existing entries at the test v11 values below.
+
+**Selection on the old val crops loses F1.** Test v11, F1:
+
+| Run | (0.5, 2) | Old-selected (setting) | Change |
+|---|---:|---:|---:|
+| v5-latest | 0.881 | 0.877 (0.8, 2) | -0.004 |
+| v5-rep1 / -latest | 0.840 / 0.841 | 0.825 / 0.827 (0.4, 2) | -0.015 / -0.014 |
+| v5-rep2 / -latest | 0.852 / 0.858 | 0.816 (1.0, 1) / 0.833 (0.9, 2) | -0.036 / -0.025 |
+| v5-rep3 / -latest | 0.876 / 0.877 | 0.844 / 0.845 (1.1, 2) | -0.032 / -0.032 |
+| v5-rep4 / -latest | 0.860 / 0.877 | 0.843 / 0.880 (0.9, 1) | -0.017 / +0.003 |
+
+In 8 of 9 runs, the old val crops select a threshold that is too high (precision 0.97 to 0.99, lower
+recall). The mean change is -0.019. The consensus val crops with `--ihc_dir` gave +0.007 to +0.028
+on the 8 production models (see above). This agrees with the close-pair hypothesis. Do not select
+a setting on the old val crops.
+
+**Seed spread of the v5 recipe.** v5 and v5-rep1…4 at (0.5, 2) on test v11: `best.pt` 0.840 to
+0.878 (SD 0.016), `latest.pt` 0.841 to 0.881 (SD 0.017). On all six crops the SD is 0.030.
+v5-rep1 has low recall (0.75) and is the outlier.
+
+**`latest.pt` is never worse than `best.pt`.** Test v11, F1 at (0.5, 2), with the learning rate at
+the `best.pt` epoch from the local checkpoints:
+
+| Run | `best.pt` epoch | Learning rate | `best.pt` | `latest.pt` |
+|---|---:|---:|---:|---:|
+| v5-rep2 | 13 | 1e-4 | 0.852 | 0.858 |
+| v5-rep4 | 28 | 2.5e-5 | 0.860 | 0.877 |
+| v7 | 58 | 1.25e-5 | 0.869 | 0.881 |
+| v10, v9, v5, v5-rep3, v5-rep1 | 95, 72, 204, 109, 278 | 1.6e-6 or less | | change -0.001 to +0.003 |
+
+**Learning rate and early stopping.**
+
+- The decay helps. When `best.pt` is from a high learning rate, the annealed `latest.pt` gains
+  0.006 to 0.017. Below about 1e-6 nothing changes. The extra epochs confound this comparison.
+- The plateau trigger does not help. It follows the noisy val MSE, reaches the floor at a
+  seed-dependent epoch (102 to 204), and leaves about 86 % of the iterations at 1.2e-8.
+- Early stopping (torch_em `early_stopping`, a patience of 80 epochs or more) would stop at the
+  floor and give the same `latest.pt` at 20 to 30 % of the compute. But it keeps the dependency
+  on the val MSE, which does not rank detectors (Spearman 0.39; the v5-rep2 `best.pt` at epoch
+  13 is its weaker export).
+- Use a fixed cosine decay over 3e4 iterations (300 epochs) and `latest.pt`. This covers the
+  latest `best.pt` epoch (278) and the latest floor (204). The v3 runs with 1e4 iterations (F1
+  0.80 to 0.84) did not differ from those with 1e5 (0.78 to 0.87). A run takes about 10 instead
+  of 32 A100 hours.
+
+**v11 is now the refined recipe, with three seeds.** The v7 recipe with `--fixed_target`,
+`--lr_schedule cosine -n 30000` and the consensus val split above (the three old val crops go back
+to training). This replaces the single-variable v11 of "Target defect and v11". The test set has
+little headroom (human level, bootstrap +-0.01), so the purpose is a recipe without the known
+defects: deterministic, about 3 times cheaper, and with a threshold that transfers. Three seeds can
+show a large change of the spread, but not a small one. Train with
+`scripts_synapses/train_synapse_v11.sbatch` (array `v11-1…3`).
+
+Evaluation of each seed on `latest.pt`, with rules that are fixed before the results:
+
+1. Select the setting with
+   `python -m flamingo_tools.synapse_detection.gridsearch -m <ckpt>/latest.pt -s $DATA/training_data/v11/train_val_split.json -i $DATA/training_data/v11/images -l $DATA/training_data/v11/labels --ihc_dir $ROOT/predictions/val_synapses/production_2026-09-25/v7`.
+2. Score test v11 at the selected setting, and once at the median setting of the three seeds.
+3. Baseline: v5, v5-rep1…4, v7 and v7-latest at their `cons` setting from the rerun.
+4. Make the recipe the default when all of these are true:
+   - the mean F1 is at least the baseline mean minus 0.01;
+   - no seed is below the worst baseline seed;
+   - the selected thresholds of the three seeds agree.
+5. Choose the released seed by its val-crop F1, not by its test F1.
 
 ### Settings of every model version
 
@@ -655,6 +757,7 @@ six consensus test crops.
 | v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained; commit `4da9e70` | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10; commit `4da9e70` | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v10 | `v7` | heatmap, target sigma 0.7 | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v11-1 … v11-3 | `v11` = `v7` + 2 consensus val crops; split file, the 3 old val crops train | heatmap, fixed target | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 3e4, cosine learning rate | `latest.pt` | planned: gridsearch on the consensus val crops, test v11 |
 
 `MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
 probability 0.2. v7 to v10 standardize the raw input, which is a no-op for this network; whether
