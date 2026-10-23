@@ -12,7 +12,6 @@ import argparse
 import json
 import os
 import tempfile
-import warnings
 
 import numpy as np
 import pandas as pd
@@ -24,22 +23,20 @@ from skimage.feature import peak_local_max
 from flamingo_tools.segmentation.synapse_detection import (
     _PREDICTION_BLOCK_SHAPE,
     _PREDICTION_HALO,
+    _get_model_out_channels,
     pad_to_block_shape,
 )
 from flamingo_tools.segmentation.unet_prediction import prediction_impl
+from flamingo_tools.synapse_detection.detection_dataset import read_csv_points
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 TRAIN_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v7/images")
 LABEL_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v7/labels")
 VOXEL_SIZE = 0.38  # µm per voxel, isotropic.
-_DEFAULT_PARAMS = {"threshold": 0.5, "min_distance": 2}
 
 # The reported metric matches a detection to an annotation within 3 µm
 # (_MATCH_DISTANCE in scripts/validation/synapses/run_evaluation.py), so the selection does too.
 MATCH_DISTANCE = 3.0 / VOXEL_SIZE
-# The former selection radius, 1.52 µm. It is printed alongside, because it separates adjacent
-# synapses more sharply: 42 % of the annotations have a neighbour within 2 µm.
-STRICT_MATCH_DISTANCE = 4
 # The training crops are annotated only around the IHCs. A detection further than this from every
 # annotation is not scored, which is the "spatially distant" class of the 2026-08-27 diagnostics
 # in to-do_revision/synapses.md.
@@ -77,29 +74,6 @@ def _true_positives(gts, preds, match_distance):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-
-def _load_csv_labels(label_path):
-    """Return (N, 3) voxel coordinate array [z, y, x] from a napari CSV file."""
-    df = pd.read_csv(label_path)
-    return np.stack([df["axis-0"].values, df["axis-1"].values, df["axis-2"].values], axis=1)
-
-
-def _get_out_channels(model_path):
-    """Return the number of output channels from a model file or trainer checkpoint."""
-    try:
-        import sys
-        import flamingo_tools.synapse_detection.detection_dataset as _dd
-        sys.modules.setdefault("detection_dataset", _dd)
-    except ImportError:
-        pass
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        import torch
-        obj = torch.load(model_path, map_location="cpu", weights_only=False)
-    if isinstance(obj, dict) and "model_state" in obj:
-        return obj["init"]["model_kwargs"].get("out_channels", 1)
-    return obj.state_dict()["out_conv.bias"].shape[0]
-
 
 def _predict_heatmap(image_path, raw_key, model_path, out_channels, block_shape, halo):
     with tempfile.TemporaryDirectory() as tmp_dir:
@@ -158,10 +132,10 @@ def gridsearch(
 
     Returns:
         The best threshold, the best min_distance, and a table with the precision, recall and F1
-        of every setting at the reported and at the strict match distance.
+        of every setting.
     """
     if out_channels is None:
-        out_channels = _get_out_channels(model_path)
+        out_channels = _get_model_out_channels(model_path)
     if thresholds is None:
         thresholds = np.round(np.arange(0.3, 2.0, 0.1), 2)
 
@@ -179,7 +153,7 @@ def gridsearch(
 
         print(f"Running prediction on {image_path}")
         heatmap = _predict_heatmap(image_path, raw_key, model_path, out_channels, block_shape, halo)
-        label_coords = _load_csv_labels(label_path)
+        label_coords = read_csv_points(label_path)
         print(f"  {len(label_coords)} ground-truth points loaded")
 
         for min_distance in min_distances:
@@ -201,74 +175,20 @@ def gridsearch(
                     "min_distance": min_distance, "threshold": float(threshold),
                     "n_pred": len(pred_coords), "n_gt": len(label_coords),
                     "tp": _true_positives(label_coords, pred_coords, MATCH_DISTANCE),
-                    "tp_strict": _true_positives(label_coords, pred_coords, STRICT_MATCH_DISTANCE),
                 })
 
     scores = pd.DataFrame(records).groupby(["min_distance", "threshold"]).sum()
-    for suffix, tp in (("", scores["tp"]), ("_strict", scores["tp_strict"])):
-        precision = tp / scores["n_pred"].clip(lower=1)
-        recall = tp / scores["n_gt"].clip(lower=1)
-        scores[f"precision{suffix}"] = precision
-        scores[f"recall{suffix}"] = recall
-        scores[f"f1{suffix}"] = (2 * precision * recall / (precision + recall)).fillna(0.0)
+    scores["precision"] = scores["tp"] / scores["n_pred"].clip(lower=1)
+    scores["recall"] = scores["tp"] / scores["n_gt"].clip(lower=1)
+    scores["f1"] = (
+        2 * scores["precision"] * scores["recall"] / (scores["precision"] + scores["recall"])
+    ).fillna(0.0)
 
     best_min_distance, best_threshold = scores["f1"].idxmax()
-    print(scores[["precision", "recall", "f1", "f1_strict"]].round(3).to_string())
+    print(scores[["precision", "recall", "f1"]].round(3).to_string())
     print(f"Best: threshold {best_threshold:.2f}, min_distance {best_min_distance} "
           f"(F1={scores['f1'].max():.3f})")
     return float(best_threshold), int(best_min_distance), scores
-
-
-# ---------------------------------------------------------------------------
-# Cached wrapper
-# ---------------------------------------------------------------------------
-
-def get_or_compute_detection_params(
-    model_path,
-    json_val_path=None,
-    image_dir=TRAIN_ROOT,
-    label_dir=LABEL_ROOT,
-    **gridsearch_kwargs,
-):
-    """Return the cached detection settings for *model_path*, running the gridsearch if needed.
-
-    The settings are stored as ``<model_path_without_extension>_detection_params.json``
-    alongside the model file.  Subsequent calls skip the gridsearch and return
-    the cached values immediately.
-
-    Args:
-        model_path: Path to the model file (used both for prediction and as the
-            cache key).
-        json_val_path: Path to the JSON train/val split file.
-        image_dir: Directory containing validation zarr files.
-        label_dir: Directory containing validation CSV label files.
-        **gridsearch_kwargs: Forwarded to :func:`gridsearch` (e.g. ``block_shape``,
-            ``min_distances``, ``annotated_radius``).
-
-    Returns:
-        A dict with the detection ``threshold`` and ``min_distance``. The production defaults
-        when the validation data is not available.
-    """
-    cache_path = os.path.splitext(model_path)[0] + "_detection_params.json"
-
-    if os.path.exists(cache_path):
-        with open(cache_path) as f:
-            params = json.load(f)
-        print(f"Loaded cached detection settings {params} from {cache_path}")
-        return params
-
-    if not os.path.isdir(image_dir):
-        return dict(_DEFAULT_PARAMS)
-
-    threshold, min_distance, _ = gridsearch(
-        model_path, json_val_path, image_dir=image_dir, label_dir=label_dir,
-        **gridsearch_kwargs,
-    )
-    params = {"threshold": threshold, "min_distance": min_distance}
-    with open(cache_path, "w") as f:
-        json.dump(params, f, indent=2)
-    print(f"Detection settings {params} saved to {cache_path}")
-    return params
 
 
 def main():
