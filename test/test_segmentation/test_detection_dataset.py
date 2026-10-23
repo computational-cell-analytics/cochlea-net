@@ -17,7 +17,12 @@ from flamingo_tools.synapse_detection.detection_dataset import (
     MinPointSampler,
     read_csv_points,
 )
-from flamingo_tools.synapse_detection.training import DetectionLoss, _samples_per_dataset, get_3d_model
+from flamingo_tools.synapse_detection.training import (
+    DetectionLoss,
+    EpochCosineSchedule,
+    _samples_per_dataset,
+    get_3d_model,
+)
 
 try:
     import spotiflow  # noqa
@@ -341,6 +346,25 @@ class TestReadCsvPoints(unittest.TestCase):
             }).to_csv(label_path, index=False)
             points = read_csv_points(label_path)
         np.testing.assert_array_equal(points, [[1, 4, 7], [3, 6, 9]])
+
+
+class TestEpochCosineSchedule(unittest.TestCase):
+    def test_ignores_the_metric_and_decays_to_zero(self):
+        n_epochs = 10
+        learning_rates = []
+        for metric in (0.1, 1e3):
+            optimizer = torch.optim.AdamW([torch.nn.Parameter(torch.zeros(1))], lr=1e-4)
+            schedule = EpochCosineSchedule(optimizer, T_max=n_epochs)
+            lrs = []
+            for _ in range(n_epochs):
+                optimizer.step()
+                schedule.step(metric)
+                lrs.append(optimizer.param_groups[0]["lr"])
+            learning_rates.append(lrs)
+        self.assertEqual(learning_rates[0], learning_rates[1])
+        self.assertTrue(all(a > b for a, b in zip(learning_rates[0], learning_rates[0][1:])))
+        self.assertAlmostEqual(learning_rates[0][-1], 0.0)
+        self.assertEqual(schedule.init_kwargs, {"T_max": n_epochs})
 
 
 class TestDetectionLoss(unittest.TestCase):

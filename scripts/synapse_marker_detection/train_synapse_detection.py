@@ -20,7 +20,7 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 def train(
     root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
     use_flow=False, sampler_name=None, n_iterations=int(1e5), save_root=SAVE_ROOT,
-    legacy_recipe=False, sigma=1.0, fixed_target=False,
+    legacy_recipe=False, sigma=1.0, fixed_target=False, lr_schedule="plateau",
 ):
     if use_flow and sigma != 1:
         # The flow correction at inference assumes the target sigma (_HEATMAP_FLOW_SIGMA = 1 in
@@ -79,6 +79,7 @@ def train(
         "fixed_target": fixed_target,
         "legacy_recipe": legacy_recipe,
         "val_patch_seed": val_patch_seed,
+        "lr_schedule": lr_schedule,
     }
 
     with open(json_path, "w") as f:
@@ -88,7 +89,7 @@ def train(
     print(len(train_paths), "tomograms for training")
     print(len(val_paths), "tomograms for validation")
     print(f"{out_channels} output channels, flow: {use_flow}, sampler: {sampler_name}")
-    print(f"Fixed target: {fixed_target}, legacy recipe: {legacy_recipe}")
+    print(f"Fixed target: {fixed_target}, legacy recipe: {legacy_recipe}, lr schedule: {lr_schedule}")
 
     supervised_training(
         name=model_name,
@@ -111,6 +112,7 @@ def train(
         n_samples_val=160,
         sampler=sampler,
         num_workers=8,
+        lr_schedule=lr_schedule,
     )
 
 
@@ -143,6 +145,11 @@ def main():
                         help="Give every isolated annotation the same target peak, and keep the "
                              "Gaussians of the annotations just outside the patch. Every model up "
                              "to v10 was trained without it. Cannot be combined with --legacy_recipe.")
+    parser.add_argument("--lr_schedule", type=str, default="plateau", choices=["plateau", "cosine"],
+                        help="'plateau' halves the learning rate when the validation metric stops "
+                             "improving, as for every model up to v10. It reaches its floor early. "
+                             "'cosine' decays it to zero over the whole run; use latest.pt with it. "
+                             "Default: plateau.")
     parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
                         help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
     parser.add_argument("--legacy_recipe", action="store_true",
@@ -165,6 +172,7 @@ def main():
         legacy_recipe=args.legacy_recipe,
         sigma=args.sigma,
         fixed_target=args.fixed_target,
+        lr_schedule=args.lr_schedule,
     )
 
 
