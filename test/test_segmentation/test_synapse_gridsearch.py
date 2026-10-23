@@ -17,10 +17,13 @@ class TestDetectionGridsearch(unittest.TestCase):
     # A spot far from every annotation, in the unannotated part of a training crop.
     unannotated = (10, 120, 120)
 
-    def _run(self, **kwargs):
+    def _run(self, extra_peaks=(), **kwargs):
+        # The prediction of the crop zero-padded to the production block shape.
         heatmap = np.zeros((64, 256, 256), dtype="float32")
         for point, value in zip(self.annotations + [self.unannotated], (2.0, 1.5, 2.0, 2.0)):
             heatmap[point] = value
+        for point in extra_peaks:
+            heatmap[point] = 2.0
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             image_dir, label_dir = os.path.join(tmp_dir, "images"), os.path.join(tmp_dir, "labels")
@@ -49,6 +52,11 @@ class TestDetectionGridsearch(unittest.TestCase):
 
         _, _, scores = self._run(annotated_radius=None)
         self.assertEqual(scores.loc[(1, 0.5), "precision"], 0.75)
+
+    def test_padding_is_not_scored(self):
+        # 15 voxels from an annotation, but in the padding beyond the last z plane of the crop.
+        _, _, scores = self._run(extra_peaks=[(25, 60, 60)])
+        self.assertEqual(scores.loc[(1, 0.5), "n_pred"], 3)
 
 
 if __name__ == "__main__":
