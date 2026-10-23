@@ -102,12 +102,12 @@ def pad_to_block_shape(input_path: str, input_key: str, output_folder: str) -> T
     if target == shape:
         return input_path, shape
 
+    # Always written again: a copy left by a killed job reads its missing chunks as zeros.
     padded_path = os.path.join(output_folder, "padded_input.zarr")
-    if not os.path.exists(padded_path):
-        padded = np.zeros(target, dtype=raw.dtype)
-        padded[: shape[0], : shape[1], : shape[2]] = raw
-        f = zarr.open(store=padded_path, mode="w")
-        f.create_array(input_key, data=padded, chunks=(64, 128, 128))
+    padded = np.zeros(target, dtype=raw.dtype)
+    padded[: shape[0], : shape[1], : shape[2]] = raw
+    f = zarr.open(store=padded_path, mode="w")
+    f.create_array(input_key, data=padded, chunks=(64, 128, 128))
     print(f"Padded {tuple(shape)} to {target} for the production block shape.")
     return padded_path, shape
 
