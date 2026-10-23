@@ -277,8 +277,9 @@ def filter_gt(
     """Filter synapses of ground truth reference based on IHC proximity.
     """
     input_files = sorted(glob(os.path.join(input_root, "*.zarr")))
-    gt_files = sorted(glob(os.path.join(gt_root, "*.csv")))
-    for ff, gt in zip(input_files, gt_files):
+    for ff in input_files:
+        # Paired by crop name, so that an input folder with a subset of the crops works.
+        gt = os.path.join(gt_root, f"{Path(ff).stem}.csv")
         ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
         # Written below the output root. This used to land next to the source CSV, which writes
         # into the shared ground truth directory and fails as soon as it is not writable.
