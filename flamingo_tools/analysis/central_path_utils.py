@@ -183,14 +183,18 @@ def mean_by_offset(
 
     Returns:
         One row per window and offset bin, with the columns 'length_bin', 'offset_bin', 'n' and
-        the mean of each value column. Empty cells have n = 0.
+        the mean of each value column. 'length_bin' and 'offset_bin' hold the lower edge of the
+        bin. Empty cells have n = 0.
     """
     table = table[table["offset"] >= 0]
+    length_edges = np.arange(n_length_bins + 1) / n_length_bins
     length_bin = pd.cut(
-        table["length_fraction"], np.linspace(0, 1, n_length_bins + 1), include_lowest=True,
+        table["length_fraction"], length_edges, labels=length_edges[:-1], include_lowest=True,
     ).rename("length_bin")
     offset_edges = np.append(np.arange(0, max_offset + offset_step, offset_step), np.inf)
-    offset_bin = pd.cut(table["offset"], offset_edges, right=False).rename("offset_bin")
+    offset_bin = pd.cut(
+        table["offset"], offset_edges, labels=offset_edges[:-1], right=False,
+    ).rename("offset_bin")
 
     grouped = table.groupby([length_bin, offset_bin], observed=False)
     result = grouped[value_columns].mean()

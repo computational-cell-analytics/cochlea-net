@@ -22,13 +22,14 @@ class TestMeanByOffset(unittest.TestCase):
         first = result.iloc[0]
         self.assertEqual(first["n"], 2)
         self.assertEqual(first["intensity"], 2.0)
-        self.assertEqual(first["offset_bin"].left, 0)
+        self.assertEqual(first["length_bin"], 0)
+        self.assertEqual(first["offset_bin"], 0)
 
         last = result.iloc[-1]
         self.assertEqual(last["n"], 1)
         self.assertEqual(last["intensity"], 7.0)
-        self.assertEqual(last["length_bin"].right, 1.0)
-        self.assertEqual(last["offset_bin"].left, 100)
+        self.assertEqual(last["length_bin"], 0.95)
+        self.assertEqual(last["offset_bin"], 100)
 
         empty = result[result["n"] == 0]
         self.assertTrue(empty["intensity"].isna().all())
