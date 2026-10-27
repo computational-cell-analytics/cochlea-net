@@ -819,6 +819,67 @@ gridsearch):
   value of `v5-rep1-old` (0.835). v5-rep2 and v5-rep3 select the same setting as on 2026-10-21.
   v5-rep4 selects (0.85, 2) with F1 0.836, instead of (0.9, 1) with 0.843.
 
+### v11 result (2026-10-27)
+
+The three seeds of the refined recipe (`train_synapse_v11.sbatch`, array `v11-1…3`) are trained.
+The production pipeline scored `best.pt` (`v11-<i>`) and `latest.pt` (`v11-<i>-latest`) at (0.5, 2)
+on the six consensus crops. `evaluate_synapse_v11.sbatch` (rules 1 and 2) has not run yet.
+
+Test v11 at (0.5, 2), P / R / F1 and F1 per crop:
+
+| Run | P | R | F1 | apex2 | base2 | mid1 | mid2 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| v11-1-latest | 0.980 | 0.802 | 0.882 | 0.863 | 0.890 | 0.910 | 0.858 |
+| v11-2-latest | 0.972 | 0.819 | 0.889 | 0.907 | 0.893 | 0.911 | 0.860 |
+| v11-3-latest | 0.983 | 0.809 | 0.888 | 0.878 | 0.899 | 0.915 | 0.858 |
+| v11-1, `best.pt` | 0.905 | 0.849 | 0.876 | 0.811 | 0.887 | 0.906 | 0.865 |
+| v11-2, `best.pt` | 0.965 | 0.834 | 0.895 | 0.886 | 0.906 | 0.917 | 0.869 |
+| v11-3, `best.pt` | 0.960 | 0.819 | 0.884 | 0.870 | 0.895 | 0.909 | 0.857 |
+
+Spread of the test v11 F1 at (0.5, 2):
+
+| Group | Runs | Mean | SD | Range | Worst |
+|---|---:|---:|---:|---:|---:|
+| v5 recipe, `best.pt` (v5, v5-rep1…4) | 5 | 0.861 | 0.016 | 0.038 | 0.840 |
+| v5 recipe, `latest.pt` | 5 | 0.867 | 0.017 | 0.040 | 0.841 |
+| v7, v9, v10 and their `-latest`, one seed each | 6 | 0.874 | 0.004 | 0.012 | 0.869 |
+| v11, `latest.pt` | 3 | 0.886 | 0.004 | 0.007 | 0.882 |
+| v11, `best.pt` | 3 | 0.885 | 0.009 | 0.019 | 0.876 |
+
+- Every v11 `latest.pt` is better than every earlier model at (0.5, 2). The best earlier models
+  are v5-latest and v7-latest (0.881). v11-1-latest is only 0.001 above them, and the paired
+  bootstrap interval of a model difference is about +-0.01. The gain is recall (0.80 to 0.82,
+  v7 to v10: 0.78 to 0.81) at the same precision (0.97 to 0.98).
+- Rules 4.1 and 4.2 pass without a selection: the mean (0.886) is above 0.864, and the worst seed
+  (0.882) is above 0.835. The baseline is at its cons setting, so this comparison favours the
+  baseline.
+- The spread is small, but three seeds do not prove that it is smaller. Against the v5 seeds,
+  the F-test of the variances gives p 0.04 to 0.05 and the Levene test p 0.10 to 0.34. The six
+  v7-family variants also have SD 0.004. So the large spread is probably a property of the v5
+  recipe (flow channels, plateau schedule, `best.pt`), and v11 keeps the small spread.
+- apex2 was the weak crop of the v5 seeds (0.68 to 0.85). v11 `latest.pt` gets 0.86 to 0.91.
+  mid2 limits every model (0.85 to 0.87), so the recall limit of "v9 and the recall limit" is
+  unchanged.
+- `best.pt` is less stable: v11-1 `best.pt` is at another operating point (P 0.905, R 0.849). Use
+  `latest.pt`, as planned.
+- On the val crops (apex1, base1) at (0.5, 2), `latest.pt` gets F1 0.901 (v11-1), 0.912 (v11-2)
+  and 0.895 (v11-3). Rule 5 uses the val F1 of the gridsearch, so this order is preliminary.
+
+**Training cost.** One seed takes 5 h 38 min to 5 h 42 min on an A100. The plateau runs with 1e5
+iterations took about 32 h. That is 5.6 times less: 3.3 times from the iterations, and an
+iteration takes 0.68 s instead of about 1.15 s. `reportseff` of job 16845185: 35 to 36 % of the
+16 h limit, CPU 48 to 51 %, memory 11 % of 64 GB (about 7 GB). `-t 08:00:00` and `--mem 16G` are
+enough for the next run.
+
+**Status.** v11 meets the condition for a switch. The performance is at least equal, the training
+is cheaper, and the known defects (target, learning rate schedule, val split) are removed. Open:
+
+- rules 4.3 and 5: run `evaluate_synapse_v11.sbatch`;
+- the production setting: v11 is already the best model at (0.5, 2). For the v5 replicates, the
+  cons selection gained only +0.004 on average and lost in 3 of 8 runs. Keep (0.5, 2), unless the
+  three seeds select the same setting and gain clearly;
+- the training default and the released model do not change yet.
+
 ### Settings of every model version
 
 Common to every run: patch shape 40 × 112 × 112, batch size 32, learning rate 1e-4 with the
@@ -847,7 +908,7 @@ six consensus test crops.
 | v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained; commit `4da9e70` | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10; commit `4da9e70` | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v10 | `v7` | heatmap, target sigma 0.7 | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
-| v11-1 … v11-3 | `v11` = `v7` + 2 consensus val crops; split file, the 3 old val crops train | heatmap, fixed target | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 3e4, cosine learning rate | `latest.pt` | planned: gridsearch on the consensus val crops, test v11 |
+| v11-1 … v11-3 | `v11` = `v7` + 2 consensus val crops; split file, the 3 old val crops train | heatmap, fixed target | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 3e4, cosine learning rate | `best.pt` and `latest.pt` | production, IHC v11, see "v11 result (2026-10-27)"; gridsearch on the consensus val crops not run yet |
 
 `MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
 probability 0.2. v7 to v10 standardize the raw input, which is a no-op for this network; whether
