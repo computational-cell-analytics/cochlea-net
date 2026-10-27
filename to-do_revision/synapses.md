@@ -722,12 +722,101 @@ Evaluation of each seed on `latest.pt`, with rules that are fixed before the res
 1. Select the setting with
    `python -m flamingo_tools.synapse_detection.gridsearch -m <ckpt>/latest.pt -s $DATA/training_data/v11/train_val_split.json -i $DATA/training_data/v11/images -l $DATA/training_data/v11/labels --ihc_dir $ROOT/predictions/val_synapses/production_2026-09-25/v7`.
 2. Score test v11 at the selected setting, and once at the median setting of the three seeds.
-3. Baseline: v5, v5-rep1…4, v7 and v7-latest at their `cons` setting from the rerun.
+3. Baseline: v5, v5-rep1…4, v7 and v7-latest at their `cons` setting, see "Rescoring rerun
+   (2026-10-26)": mean F1 0.874, worst seed 0.835 (v5-rep1).
 4. Make the recipe the default when all of these are true:
    - the mean F1 is at least the baseline mean minus 0.01;
    - no seed is below the worst baseline seed;
    - the selected thresholds of the three seeds agree.
 5. Choose the released seed by its val-crop F1, not by its test F1.
+
+### Rescoring rerun (2026-10-26)
+
+The rerun of `rescore_operating_point.sbatch` at HEAD in `cochlea-net` (local copy
+`rescore_2026-10-23/`) scored only v3, v5, v5-latest and v5-rep1. At about 16:48 the code in the
+cluster checkout changed:
+
+- The entry `v5-rep1-old` (F1 0.002) is invalid. Its crops are apex1, apex2, base1 and base2: the
+  4 test predictions were paired by index with the first 4 of the 6 reference CSVs, as
+  `run_evaluation.py` on master does. Its predictions are identical to `v5-rep1-cons` (same
+  setting), so its true F1 is 0.835.
+- From v5-rep2 on, every run is empty, also at (0.5, 2). Master has no `prediction.py --threshold`
+  and no `synapse_detection/gridsearch.py`.
+- Probable cause: the checkout changed to master while the job ran. Do not switch the branch of the
+  cluster checkout while a job runs.
+
+The scored part is valid. v3 and v5 select (0.50, 1) and get the P/R/F1 of the stored-heatmap
+analysis above. The per-crop counts of v5-latest (fixed and old) and v5-rep1 (fixed) equal those of
+2026-10-21. The exports run, so the torch_em fix works.
+
+**Local completion.** The 2026-10-21 copy has the heatmaps of all six crops for v5-latest,
+v5-rep1…4 and v5-rep1…4-latest. The selection runs the gridsearch with `--ihc_dir` on these
+heatmaps. The test score uses the production peak detection (with the flow correction), the
+padding drop, the IHC filter and `run_evaluation.py`. This reproduces the cluster values of
+`v5-latest-cons` and `v5-rep1-cons` per crop. The gridsearch scores the peaks without the flow
+correction of the v5 models. For v5-rep1 this changes one match on the test crops.
+
+Test v11, F1 (old: rows v3 to v5-rep1 from the rerun, the other rows from 2026-10-21 with the old
+gridsearch):
+
+| Run | (0.5, 2) | `cons`: setting, P / R / F1 | `old`: setting, F1 | cons - fixed |
+|---|---:|---|---|---:|
+| v3 | 0.862 | (0.50, 1), 0.964 / 0.802 / 0.876 | (0.90, 2), 0.851 | +0.014 |
+| v5 | 0.878 | (0.50, 1), 0.955 / 0.834 / 0.890 | (0.75, 2), 0.876 | +0.012 |
+| v5-latest | 0.881 | (0.50, 1), 0.949 / 0.838 / 0.890 | (0.80, 2), 0.877 | +0.009 |
+| v5-rep1 | 0.840 | (0.45, 2), 0.940 / 0.752 / 0.835 | (0.45, 2), 0.835 | -0.005 |
+| v5-rep2 | 0.852 | (0.55, 1), 0.924 / 0.797 / 0.856 | (1.0, 1), 0.816 | +0.004 |
+| v5-rep3 | 0.876 | (0.45, 1), 0.932 / 0.846 / 0.887 | (1.1, 2), 0.844 | +0.011 |
+| v5-rep4 | 0.860 | (0.50, 1), 0.944 / 0.808 / 0.871 | (0.9, 1), 0.843 | +0.011 |
+| v5-rep1-latest | 0.841 | (0.40, 2), 0.920 / 0.752 / 0.827 | (0.4, 2), 0.827 | -0.014 |
+| v5-rep2-latest | 0.858 | (0.45, 1), 0.936 / 0.799 / 0.862 | (0.9, 2), 0.833 | +0.004 |
+| v5-rep3-latest | 0.877 | (0.40, 1), 0.910 / 0.854 / 0.881 | (1.1, 2), 0.845 | +0.004 |
+| v5-rep4-latest | 0.877 | (0.45, 2), 0.927 / 0.831 / 0.876 | (0.9, 1), 0.880 | -0.001 |
+
+- **The old val crops select too high a threshold.** The old selection is below (0.5, 2) in 10 of
+  11 runs and below the cons selection in 8 (2 ties). The mean change from old to cons is +0.020.
+- **The cons selection is not always a gain.** It loses in 3 of the 8 v5 replicate runs (up to
+  -0.014 for v5-rep1-latest), and the gain is +0.004 on average over the 11 runs. On the 8 models
+  of the stored-heatmap analysis it was +0.007 to +0.028. With 2 val crops (416 points), the
+  selection can cost up to 0.014.
+- **The selection widens the seed spread of the v5 recipe.** v5 and v5-rep1…4: `best.pt` SD 0.016
+  at (0.5, 2), 0.023 at cons; `latest.pt` 0.017 and 0.025. The weak seeds lose, the strong seeds
+  gain. Only v5-rep1 (best and latest) and v5-rep4-latest select `min_distance` 2. The other 14
+  models select 1.
+- **`latest.pt` and `best.pt` are equal on average at cons** (mean 0.867 and 0.868).
+- **Baseline for rule 3:** v5 0.890, v5-rep1 0.835, v5-rep2 0.856, v5-rep3 0.887, v5-rep4 0.871,
+  v7 0.880, v7-latest 0.896 (the last two from the stored-heatmap analysis). Mean 0.874, so rule
+  4 needs a v11 mean of 0.864 or more and no seed below 0.835.
+
+**Completion on the cluster (2026-10-27).** The job ran again for all models. The local copy
+`rescore_2026-10-23/` now has its `synapses.json` and `selected_settings.txt`.
+
+- The `cons` rows of v7 to v10 reproduce the stored-heatmap analysis exactly.
+- For v7 to v10, the old val crops do not cost F1. Test v11, F1:
+
+| Run | (0.5, 2) | `cons`: setting, F1 | `old`: setting, F1 |
+|---|---:|---|---|
+| v7 | 0.869 | (0.20, 1), 0.880 | (0.50, 2), 0.869 |
+| v7-latest | 0.881 | (0.35, 1), 0.896 | (0.75, 1), 0.880 |
+| v9 | 0.875 | (0.55, 1), 0.882 | (0.50, 1), 0.883 |
+| v9-latest | 0.874 | (0.40, 1), 0.885 | (0.40, 2), 0.876 |
+| v10 | 0.873 | (0.15, 1), 0.901 | (0.20, 2), 0.891 |
+| v10-latest | 0.873 | (0.10, 1), 0.888 | (0.45, 2), 0.875 |
+
+  Against (0.5, 2), the old selection changes F1 by -0.001 to +0.018. For v3 and v5 it lost in
+  10 of 11 runs. So the too-high old selection of v3 and v5 does not apply to the
+  `DetectionLoss` recipe. The cons selection is better than the old selection in 5 of 6 runs
+  (mean +0.010).
+- The `v5-fold1…4` rows are not the fold models. Their heatmaps are byte-identical to those of
+  `v5-rep1…4`, so all counts are identical. Locally, the export
+  `synapse_detection_model_v5-f{1..4}.pt` has the weights of `v5-fold{1..4}/best.pt` (epochs 31,
+  698, 681 and 64), not those of `v5-f{1..4}/best.pt`. Compare the cluster exports in
+  `trained_models/Synapses` with the local copies before you score a fold model again. Until
+  then, it is not known whether the historical `v5-f1…f4` entries of `synapses.json` score the
+  folds or the seed replicates. `v5-fold3-fixed` is not in the new `synapses.json`.
+- The duplicates give the `old` arm of the v5 replicates at HEAD. `v5-fold1-old` confirms the true
+  value of `v5-rep1-old` (0.835). v5-rep2 and v5-rep3 select the same setting as on 2026-10-21.
+  v5-rep4 selects (0.85, 2) with F1 0.836, instead of (0.9, 1) with 0.843.
 
 ### Settings of every model version
 
