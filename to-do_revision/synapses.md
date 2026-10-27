@@ -722,6 +722,7 @@ Evaluation of each seed on `latest.pt`, with rules that are fixed before the res
 1. Select the setting with
    `python -m flamingo_tools.synapse_detection.gridsearch -m <ckpt>/latest.pt -s $DATA/training_data/v11/train_val_split.json -i $DATA/training_data/v11/images -l $DATA/training_data/v11/labels --ihc_dir $ROOT/predictions/val_synapses/production_2026-09-25/v7`.
 2. Score test v11 at the selected setting, and once at the median setting of the three seeds.
+   `scripts_synapses/evaluate_synapse_v11.sbatch` runs rules 1 and 2.
 3. Baseline: v5, v5-rep1…4, v7 and v7-latest at their `cons` setting, see "Rescoring rerun
    (2026-10-26)": mean F1 0.874, worst seed 0.835 (v5-rep1).
 4. Make the recipe the default when all of these are true:

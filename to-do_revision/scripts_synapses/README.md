@@ -122,7 +122,8 @@ prediction, because a silent CPU fallback is about 50x slower and never finishes
 | `train_synapse_v11.sbatch` | Three seeds of the refined recipe: fixed target, cosine LR over 3e4 iterations, consensus val crops |
 | `synapse_detect_ihc11_F1val.sbatch` | Score the baselines and v7 to v10 against IHC v11 |
 | `synapse_detect_v5-variation_F1val.sbatch` | Run the four v5 fold models over the six test crops |
-| `rescore_operating_point.sbatch` | Select the detection setting on the consensus and the old val crops, score test v6 |
+| `rescore_operating_point.sbatch` | Select the detection setting on the consensus and the old val crops, score test v11 |
+| `evaluate_synapse_v11.sbatch` | Select the setting of the v11 seeds on the consensus val crops, score test v11 at it and at the median setting |
 | `synapse_process_GLR000301R.sbatch` | Single-job prediction + detection + IHC matching, G301R |
 | `synapse_process_GLR000302R.sbatch` | The same for G302R |
 | `distance_unet_checkpoint.py` | Load only the inference model from a torch-em checkpoint |
