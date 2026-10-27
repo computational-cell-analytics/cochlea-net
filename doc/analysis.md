@@ -424,6 +424,86 @@ python scripts/analysis/create_main_table.py --input MLR153L_tonotopic.tsv \
     --output MLR153L_filtered.tsv
 ```
 
+## Synapse colocalization
+
+`scripts/measurements/synapse_colocalization.py` compares the synapses of a co-stain with the synapses of a reference stain.
+The co-stain is the test stain, for example Homer1, Bsn, or RibA. The reference stain is usually CtBP2.
+The input tables are the synapse detections that are mapped to the IHCs, with the coordinates `x`, `y`, `z` in micrometer and the column `matched_ihc`.
+The script matches the synapses one to one. `--max_dist` sets the maximum distance of a match (default 2 micrometer).
+
+The test stain takes the role of the detections and the reference stain takes the role of the ground truth:
+- `recall` is the fraction of reference synapses with a test partner.
+- `precision` is the fraction of test synapses with a reference partner.
+- `accuracy` is TP / (TP + FP + FN), because point matching has no true negatives.
+
+Give `--ihc_table` to use only the synapses of valid IHCs.
+`-c` selects the valid IHCs by their value in `--ihc_column` (default `component_labels`).
+Without `--ihc_table`, the script uses all synapses, also the synapses of instances outside the IHC components.
+
+### Example
+
+The cochlea `M_AMD_000117_L` has the stains CtBP2 and Homer1.
+The IHC_v11 table on the bucket has no component labels yet.
+Thus, first label the components with the parameters of the processing file:
+```bash
+flamingo_tools.label_components --json_info reproducibility/processing/M_AMD_000117_L_IHC.json -o M_AMD_000117_L_IHC_v11.tsv --s3
+```
+The command reads the table from the bucket and writes the output locally.
+`--s3` applies to all tables of the colocalization script, so copy the synapse tables to the same location:
+```bash
+rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/synapses_v3_IHC_v11/default.tsv M_AMD_000117_L_synapses_v3_IHC_v11.tsv
+rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/Homer1_synapses_v3_IHC_v11/default.tsv M_AMD_000117_L_Homer1_synapses_v3_IHC_v11.tsv
+```
+Then compare Homer1 with CtBP2 on the IHCs of the components 1, 3, and 2:
+```bash
+python scripts/measurements/synapse_colocalization.py \
+    -r M_AMD_000117_L_synapses_v3_IHC_v11.tsv \
+    -t M_AMD_000117_L_Homer1_synapses_v3_IHC_v11.tsv \
+    --ihc_table M_AMD_000117_L_IHC_v11.tsv -c 1 3 2 \
+    -o M_AMD_000117_L_Homer1_colocalization.json \
+    --ihc_counts M_AMD_000117_L_Homer1_ihc_counts.tsv
+```
+The script writes the result to the JSON file and to the terminal:
+```
+"n_synapses_reference": 7755,
+"n_synapses_test": 14857,
+"n_ihcs": 651,
+"n_ihcs_reference": 523,
+"n_ihcs_test": 589,
+"n_ihcs_shared": 522,
+"tp": 7208,
+"fp": 7649,
+"fn": 547,
+"precision": 0.485,
+"recall": 0.929,
+"f1-score": 0.638,
+"accuracy": 0.468
+```
+93 % of the CtBP2 synapses have a Homer1 partner, but only 49 % of the Homer1 synapses have a CtBP2 partner.
+- `n_ihcs` is the number of valid IHCs.
+- `n_ihcs_reference` and `n_ihcs_test` are the numbers of IHCs with at least one synapse of the stain.
+- `n_ihcs_shared` is the number of IHCs with synapses of both stains.
+
+The table of `--ihc_counts` has one row for each valid IHC, also for an IHC without synapses.
+Its columns are `label_id`, `n_reference`, `n_test`, and `n_matched`.
+A matched pair counts for the IHC of its reference synapse.
+
+After the upload of the labeled IHC table, all three tables are on the bucket. Then give the bucket paths and `--s3`.
+
+### RibA and CTBP2 of M_LR_000215_R
+
+The older tables of `M_LR_000215_R` mark the valid IHCs with the column `is_ihc`:
+```bash
+python scripts/measurements/synapse_colocalization.py \
+    -r M_LR_000215_R/tables/CTBP2_synapse_v3_ihc_v4b/default.tsv \
+    -t M_LR_000215_R/tables/RibA_synapse_v3_ihc_v4b/default.tsv \
+    --ihc_table M_LR_000215_R/tables/IHC_v4b/default.tsv --ihc_column is_ihc -c 1 \
+    -o M_LR_000215_R_RibA_colocalization.json --s3
+```
+The result has 486 valid IHCs, 6701 CTBP2 synapses, 3371 RibA synapses, and 3119 matched pairs.
+Thus, 92.5 % of the RibA synapses and 46.5 % of the CTBP2 synapses colocalize.
+The docstring of `fig_06d` in `scripts/figures/plot_fig6.py` has the same numbers, but with the two stains swapped.
+
 ## Upload the tables to the S3 bucket
 
 Copy the tables of the analysis to the S3 bucket with `rclone`.
