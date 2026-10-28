@@ -23,7 +23,6 @@ from glob import glob
 from pathlib import Path
 from typing import Tuple
 
-import numpy as np
 import pandas as pd
 
 from elf.io import open_file
@@ -46,7 +45,6 @@ COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 _IHC_MODEL = os.path.join(COCHLEA_DIR, "trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20")
 _SYNAPSE_MODELS_DIR = os.path.join(COCHLEA_DIR, "trained_models/Synapses")
 _TEST_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
-_TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels")
 VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
 # Production values, kept in one place so a pipeline change is easy to mirror. The detect_synapses
@@ -66,7 +64,6 @@ _PROD_PRED_ROOT = os.path.join(COCHLEA_DIR, "predictions/val_synapses/production
 def _entry(model_name: str, version: str) -> dict:
     return {
         "image_root": _TEST_IMAGE_ROOT,
-        "ref_root": _TEST_REF_ROOT,
         "pred_root": os.path.join(_PROD_PRED_ROOT, version),
         "synapse_model": os.path.join(_SYNAPSE_MODELS_DIR, model_name),
         "ihc_model": _IHC_MODEL,
@@ -252,72 +249,8 @@ def filter_synapses(
         _filter_synapse_impl(synapses, ihc, output_path)
 
 
-def filter_gt(
-    input_root: str,
-    gt_root: str,
-    output_root: str,
-):
-    """Filter synapses of ground truth reference based on IHC proximity.
-    """
-    input_files = sorted(glob(os.path.join(input_root, "*.zarr")))
-    for ff in input_files:
-        # Paired by crop name, so that an input folder with a subset of the crops works.
-        gt = os.path.join(gt_root, f"{Path(ff).stem}.csv")
-        ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
-        # Written below the output root. This used to land next to the source CSV, which writes
-        # into the shared ground truth directory and fails as soon as it is not writable.
-        output_path = os.path.join(output_root, f"{Path(gt).stem}_gt_filtered.tsv")
-
-        gt = pd.read_csv(gt)
-        gt = gt.rename(columns={"axis-0": "z", "axis-1": "y", "axis-2": "x"})
-        gt.insert(0, "spot_id", np.arange(1, len(gt) + 1))
-
-        # Consensus annotations are stored in voxel coordinates, while
-        # map_and_filter_detections expects physical coordinates in µm.
-        gt["x"] *= VOXEL_SIZE[0]
-        gt["y"] *= VOXEL_SIZE[1]
-        gt["z"] *= VOXEL_SIZE[2]
-
-        _filter_synapse_impl(gt, ihc, output_path)
-
-
-def _check_prediction(input_file, ihc_file, detection_file):
-    import napari
-
-    synapses = pd.read_csv(detection_file, sep="\t")[["z", "y", "x"]].values
-
-    vglut = open_file(input_file)["raw_ihc"][:]
-    ctbp2 = open_file(input_file)["raw"][:]
-    ihcs = open_file(ihc_file)["segmentation"][:]
-
-    v = napari.Viewer()
-    v.add_image(vglut)
-    v.add_image(ctbp2)
-    v.add_labels(ihcs)
-    v.add_points(synapses)
-    napari.run()
-
-
-def check_predictions_multi(
-    input_root: str,
-    output_root: str,
-):
-    """Check multiple detections of synapses and the respective IHC segmentation.
-
-    Args:
-        input_root: Directory containing data of CTBP2 and IHC channel.
-        output_root: Output folder where the predicted synapses, IHC segmentation and filtered synapses are saved.
-    """
-    input_files = sorted(glob(os.path.join(input_root, "*.zarr")))
-    for ff in input_files:
-        ihc = os.path.join(output_root, f"{Path(ff).stem}_ihc", "segmentation.zarr")
-        synapses = os.path.join(output_root, Path(ff).stem, "synapse_detection_filtered.tsv")
-        _check_prediction(ff, ihc, synapses)
-
-
 def process_everything(
     input_root: str,
-    gt_root: str,
     output_root: str,
     synapse_model_path: str,
     ihc_model_path: str,
@@ -328,7 +261,6 @@ def process_everything(
 
     Args:
         input_root: Directory containing data of CTBP2 and IHC channel.
-        gt_root: Folder that contains the ground truth data of the synapses.
         output_root: Output path where the predicted synapses, IHC segmentation and filtered synapses are saved.
         synapse_model_path: File path to synapse detection model.
         ihc_model_path: File path to IHC segmentation model.
@@ -340,7 +272,6 @@ def process_everything(
     )
     predict_ihcs(input_root, output_root, ihc_model_path)
     filter_synapses(input_root, output_root)
-    filter_gt(input_root, gt_root, output_root)
 
 
 def main():
@@ -354,10 +285,6 @@ def main():
     parser.add_argument(
         "-i", "--input_root", type=str, default=None,
         help="Folder that contains the data of the CTBP2 [raw] and the IHC stain [raw_ihc] channel."
-    )
-    parser.add_argument(
-        "-g", "--gt_root", type=str, default=None,
-        help="Folder that contains the ground truth data of the synapses."
     )
     parser.add_argument(
         "-o", "--output_root", type=str, default=None,
@@ -395,7 +322,6 @@ def main():
         # silently dropped.
         entry = PREDICTION_DICT[args.version]
         input_root = args.input_root or entry["image_root"]
-        gt_root = args.gt_root or entry["ref_root"]
         # The version name is appended, so one root can hold several versions the way the
         # registry's own prediction root does.
         output_root = entry["pred_root"] if args.output_root is None else os.path.join(
@@ -405,14 +331,12 @@ def main():
         ihc_model = args.model_ihc or entry["ihc_model"]
     else:
         input_root = args.input_root
-        gt_root = args.gt_root
         output_root = args.output_root
         synapse_model = args.model_synapse
         ihc_model = args.model_ihc
 
     process_everything(
         input_root=input_root,
-        gt_root=gt_root,
         output_root=output_root,
         synapse_model_path=synapse_model,
         ihc_model_path=ihc_model,

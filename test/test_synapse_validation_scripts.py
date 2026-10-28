@@ -39,7 +39,7 @@ class TestSynapseModelRegistry(unittest.TestCase):
         )
 
     def test_entries_are_complete(self):
-        expected = {"image_root", "ref_root", "pred_root", "synapse_model", "ihc_model"}
+        expected = {"image_root", "pred_root", "synapse_model", "ihc_model"}
         for version, entry in self.prediction.PREDICTION_DICT.items():
             self.assertEqual(set(entry), expected, msg=version)
 
@@ -97,11 +97,10 @@ class TestPredictionRoots(unittest.TestCase):
 
     def test_every_entry_field_is_overridable(self):
         recorded = self._run([
-            "-v", "v7", "-i", "/tmp/img", "-g", "/tmp/gt",
+            "-v", "v7", "-i", "/tmp/img",
             "--model_synapse", "/tmp/syn.pt", "--model_ihc", "/tmp/ihc",
         ])
         self.assertEqual(recorded["input_root"], "/tmp/img")
-        self.assertEqual(recorded["gt_root"], "/tmp/gt")
         self.assertEqual(recorded["synapse_model_path"], "/tmp/syn.pt")
         self.assertEqual(recorded["ihc_model_path"], "/tmp/ihc")
 
@@ -114,25 +113,6 @@ class TestPredictionRoots(unittest.TestCase):
     def test_without_a_version_the_output_root_is_exact(self):
         recorded = self._run(["-i", "/tmp/img", "-o", "/tmp/out", "--model_synapse", "/tmp/syn.pt"])
         self.assertEqual(recorded["output_root"], "/tmp/out")
-
-    def test_gt_is_paired_by_crop_name(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            images, refs = os.path.join(tmp_dir, "images"), os.path.join(tmp_dir, "refs")
-            os.makedirs(os.path.join(images, "crop.zarr"))
-            os.makedirs(refs)
-            # A reference crop without an image sorts first, as a held-out crop does.
-            for name, value in (("another", 1.0), ("crop", 2.0)):
-                with open(os.path.join(refs, f"{name}.csv"), "w", newline="") as f:
-                    csv.writer(f).writerows([["axis-0", "axis-1", "axis-2"], [value] * 3])
-
-            calls = []
-            with mock.patch.object(self.prediction, "_filter_synapse_impl", lambda *args: calls.append(args)):
-                self.prediction.filter_gt(images, refs, tmp_dir)
-
-        (gt, ihc, output_path), = calls
-        self.assertEqual(os.path.basename(output_path), "crop_gt_filtered.tsv")
-        self.assertIn("crop_ihc", ihc)
-        self.assertAlmostEqual(gt["z"].item(), 2.0 * self.prediction.VOXEL_SIZE[2])
 
 
 class TestEvaluationRoots(unittest.TestCase):
