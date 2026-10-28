@@ -59,7 +59,7 @@ def train(
     transform_class = CsvHeatmapFlowTransform if use_flow else CsvHeatmapTransform
     out_channels = 5 if use_flow else 1
     # Every model up to v10 has a target whose peak height depends on the patch. The legacy recipe
-    # keeps it, see "Target defect and v11" in to-do_revision/synapses.md.
+    # keeps it, see "Key findings" in to-do_revision/synapses.md.
     label_transform = transform_class(sigma=1.0, eps=1e-5, fixed_target=not legacy_recipe)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
