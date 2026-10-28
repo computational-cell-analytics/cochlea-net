@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from elf.io import open_file
 
+from flamingo_tools.synapse_detection.detection_dataset import read_csv_points
 from flamingo_tools.validation import match_detections
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
@@ -53,13 +54,13 @@ def _entries(versions, pred_root):
 SYNAPSE_DICT = _entries(_PRODUCTION_VERSIONS, _PROD_PRED_ROOT)
 LEGACY_SYNAPSE_DICT = _entries(_LEGACY_VERSIONS, _LEGACY_PRED_ROOT)
 
-# marker_detection() writes 'synapse_detection_filtered.tsv'; the validation script used to write
-# 'filtered_synapse_detection.tsv'. Both are accepted, otherwise whole-cochlea style output would
-# silently fall through to the unfiltered detections.
 # Matching distance in um, shared by the evaluation and the viewer so that what is displayed is
 # what was scored.
 _MATCH_DISTANCE = 3
 
+# marker_detection() writes 'synapse_detection_filtered.tsv'; the validation script used to write
+# 'filtered_synapse_detection.tsv'. Both are accepted, otherwise whole-cochlea style output would
+# silently fall through to the unfiltered detections.
 _DETECTION_FILENAMES = (
     "synapse_detection_filtered.tsv",
     "filtered_synapse_detection.tsv",
@@ -115,17 +116,8 @@ def _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, save_path):
 
 
 def _read_gt(gt_path, voxel_size):
-    """Read a consensus annotation CSV and return its points in physical coordinates."""
-    # Consensus files also contain unmatched annotations from individual annotators.
-    # These rows are useful for auditing the consensus, but are not part of the
-    # consensus ground truth used to evaluate predictions.
-    gt = pd.read_csv(gt_path, sep=",")
-    if "annotator" in gt.columns:
-        gt = gt.loc[gt["annotator"] == "consensus"].copy()
-
-    for axis in range(3):
-        gt[f"axis-{axis}"] *= voxel_size
-    return gt[["axis-0", "axis-1", "axis-2"]].values
+    """Read the consensus points of an annotation CSV in physical coordinates."""
+    return read_csv_points(gt_path).astype(float) * voxel_size
 
 
 def evaluate_synapse_detections(
