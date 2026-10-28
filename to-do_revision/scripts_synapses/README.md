@@ -51,9 +51,9 @@ v8 and v9. That tag also holds the one-off cluster jobs of the investigation:
 `synapse_detect_ihc11_F1val.sbatch`, `rescore_operating_point.sbatch`,
 `evaluate_synapse_v11.sbatch` and `train_synapse_v9.sbatch`.
 
-`train_synapse_v11.sbatch` trains the three seeds `v11-1…3` of the v11 recipe, the default of
-`train_synapse_detection.py` since 2026-10-28. One seed takes about 5.7 A100 hours. v11-2
-`latest.pt` is the standard network.
+`train_synapse_v11.sbatch` trains the three seeds `v11-1` to `v11-3` of the v11 recipe, the
+default of `train_synapse_detection.py` since 2026-10-28. One seed takes about 5.7 A100 hours.
+v11-2 `latest.pt` is the standard network.
 
 ## What the seed experiment found
 
