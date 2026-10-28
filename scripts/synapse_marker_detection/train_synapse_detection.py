@@ -18,16 +18,18 @@ SAVE_ROOT = "/mnt/lustre-rzg/workspaces/ws/nim00007/u12086-flamingo-tools/networ
 
 
 def train(
-    root_data_dir, version="v5", val_sample_size=3, model_suffix=None, random_state=None,
-    use_flow=False, sampler_name=None, n_iterations=int(1e5), save_root=SAVE_ROOT,
-    legacy_recipe=False, sigma=1.0, fixed_target=False, split_path=None, lr_schedule="plateau",
+    root_data_dir, version="v11", val_sample_size=3, model_suffix=None, random_state=None,
+    use_flow=False, n_iterations=None, save_root=SAVE_ROOT, legacy_recipe=False, split_path=None,
 ):
-    if use_flow and sigma != 1:
-        # The flow correction at inference assumes the target sigma (_HEATMAP_FLOW_SIGMA = 1 in
-        # flamingo_tools/segmentation/synapse_detection.py) and would shift every detection.
-        raise ValueError(f"The flow targets need sigma 1, got {sigma}.")
-    if legacy_recipe and fixed_target:
-        raise ValueError("--legacy_recipe reproduces v3 and v5, which were trained without --fixed_target.")
+    # The legacy runs used the plateau schedule over 1e5 iterations. The cosine decay over 3e4
+    # iterations covers the latest best.pt epoch of those runs.
+    if n_iterations is None:
+        n_iterations = int(1e5) if legacy_recipe else 30000
+    lr_schedule = "plateau" if legacy_recipe else "cosine"
+    # A data folder with a fixed split, such as the consensus val crops of v11, keeps it.
+    default_split = os.path.join(root_data_dir, version, "train_val_split.json")
+    if split_path is None and not legacy_recipe and os.path.exists(default_split):
+        split_path = default_split
 
     if model_suffix is None:
         model_suffix = version
@@ -41,9 +43,8 @@ def train(
         print(f"Using random state {random_state}.")
 
     # The heatmap-only legacy runs (v3, v6-1) had no sampler, because the czii-protein-challenge
-    # version used for v3 silently dropped it. Every other recipe uses it, v7 included.
-    if sampler_name is None:
-        sampler_name = "none" if (legacy_recipe and not use_flow) else "minpoint"
+    # version used for v3 silently dropped it. Every other recipe uses it.
+    sampler_name = "none" if (legacy_recipe and not use_flow) else "minpoint"
     # MinPointSampler accepts a patch when n_points > min_points, so min_points=1 needs two annotations.
     sampler = MinPointSampler(min_points=1, p_reject=0.8) if sampler_name == "minpoint" else None
 
@@ -57,7 +58,9 @@ def train(
 
     transform_class = CsvHeatmapFlowTransform if use_flow else CsvHeatmapTransform
     out_channels = 5 if use_flow else 1
-    label_transform = transform_class(sigma=sigma, eps=1e-5, fixed_target=fixed_target)
+    # Every model up to v10 has a target whose peak height depends on the patch. The legacy recipe
+    # keeps it, see "Target defect and v11" in to-do_revision/synapses.md.
+    label_transform = transform_class(sigma=1.0, eps=1e-5, fixed_target=not legacy_recipe)
     loss = DetectionLoss(flow_weight=0.1 if use_flow else 0.0)
     # v3 and v5 selected best.pt with an unweighted mean squared error over every output channel,
     # and they redrew the validation patches on every epoch. The legacy recipe restores both.
@@ -83,11 +86,9 @@ def train(
         "val": [os.path.splitext(os.path.basename(f))[0] for f in val_paths],
         "flow": use_flow,
         "sampler": sampler_name,
-        "sigma": sigma,
-        "fixed_target": fixed_target,
         "legacy_recipe": legacy_recipe,
         "val_patch_seed": val_patch_seed,
-        "lr_schedule": lr_schedule,
+        "n_iterations": n_iterations,
     }
 
     with open(json_path, "w") as f:
@@ -97,7 +98,7 @@ def train(
     print(len(train_paths), "tomograms for training")
     print(len(val_paths), "tomograms for validation")
     print(f"{out_channels} output channels, flow: {use_flow}, sampler: {sampler_name}")
-    print(f"Fixed target: {fixed_target}, legacy recipe: {legacy_recipe}, lr schedule: {lr_schedule}")
+    print(f"Legacy recipe: {legacy_recipe}, iterations: {n_iterations}, lr schedule: {lr_schedule}")
 
     supervised_training(
         name=model_name,
@@ -130,47 +131,33 @@ def main():
     )
 
     parser.add_argument("-i", "--input_dir", type=str, default=ROOT_SYNAPSE_DATA)
-    parser.add_argument("-v", "--version", type=str, default="v5")
+    parser.add_argument("-v", "--version", type=str, default="v11")
     parser.add_argument("-r", "--random_state", type=int, default=None,
                         help="Random state for train and validation split, and for the validation "
                              "patches. Default: 42 for fixed versions.")
     parser.add_argument("--split", type=str, default=None,
                         help="JSON file with the crop names of the 'train' and 'val' lists, in the "
                              "format this script writes. With it, --random_state only fixes the "
-                             "validation patches. Default: a random split by --random_state.")
+                             "validation patches. Default: train_val_split.json of the data folder, "
+                             "if it exists and without --legacy_recipe, else a random split by "
+                             "--random_state.")
     parser.add_argument("-m", "--model_suffix", type=str, default=None,
                         help="Custom suffix for model name. Default: Same as version.")
     parser.add_argument("--use_flow", action="store_true",
                         help="Train the 4 stereographic flow channels in addition to the heatmap. "
                              "Default: train the heatmap only, the output layout of "
                              "synapse_detection_v3.")
-    parser.add_argument("--sampler", type=str, default=None, choices=["none", "minpoint"],
-                        help="Sampler to reject patches with too few points. "
-                             "Default: none with --legacy_recipe and without --use_flow, else minpoint.")
-    parser.add_argument("-n", "--n_iterations", type=int, default=int(1e5),
-                        help="Number of training iterations. Default: 100000.")
-    parser.add_argument("--sigma", type=float, default=1.0,
-                        help="Standard deviation in voxels of the Gaussian target around each "
-                             "annotation. A smaller value keeps adjacent synapses apart in the "
-                             "target. Default: 1, the value of every model except v10. Only 1 "
-                             "works with --use_flow.")
-    parser.add_argument("--fixed_target", action="store_true",
-                        help="Give every isolated annotation the same target peak, and keep the "
-                             "Gaussians of the annotations just outside the patch. Every model up "
-                             "to v10 was trained without it. Cannot be combined with --legacy_recipe.")
-    parser.add_argument("--lr_schedule", type=str, default="plateau", choices=["plateau", "cosine"],
-                        help="'plateau' halves the learning rate when the validation metric stops "
-                             "improving, as for every model up to v10. It reaches its floor early. "
-                             "'cosine' decays it to zero over the whole run; use latest.pt with it. "
-                             "Default: plateau.")
+    parser.add_argument("-n", "--n_iterations", type=int, default=None,
+                        help="Number of training iterations. Default: 30000, or 100000 with --legacy_recipe.")
     parser.add_argument("-s", "--save_root", type=str, default=SAVE_ROOT,
                         help=f"Folder for the checkpoints. Default: {SAVE_ROOT}.")
     parser.add_argument("--legacy_recipe", action="store_true",
                         help="Reproduce the training recipe of synapse_detection_v3 and v5: an "
                              "unweighted mean squared error over all output channels as the "
                              "validation metric, validation patches that are redrawn on every "
-                             "epoch, and no sampler without --use_flow. Required to retrain those "
-                             "models.")
+                             "epoch, no sampler without --use_flow, the target of every model up "
+                             "to v10, and the plateau learning rate schedule over 100000 "
+                             "iterations. Required to retrain those models.")
 
     args = parser.parse_args()
     train(
@@ -179,14 +166,10 @@ def main():
         model_suffix=args.model_suffix,
         random_state=args.random_state,
         use_flow=args.use_flow,
-        sampler_name=args.sampler,
         n_iterations=args.n_iterations,
         save_root=args.save_root,
         legacy_recipe=args.legacy_recipe,
-        sigma=args.sigma,
-        fixed_target=args.fixed_target,
         split_path=args.split,
-        lr_schedule=args.lr_schedule,
     )
 
 
