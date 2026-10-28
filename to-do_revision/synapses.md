@@ -188,7 +188,7 @@ python -m flamingo_tools.synapse_detection.gridsearch -m <checkpoint>/latest.pt 
 # Score test v11 once, at the production setting. Use a new output root for every run.
 OUT=$ROOT/predictions/val_synapses/production_<date>/<name>
 python scripts/validation/synapses/prediction.py -o $OUT -i $DATA/test_data/v11/images \
-    -g $DATA/test_data/v11/labels --model_synapse <checkpoint>/latest.pt --model_ihc $IHC
+    --model_synapse <checkpoint>/latest.pt --model_ihc $IHC
 python scripts/validation/synapses/run_evaluation.py -p $OUT -o reproducibility/model_accuracy/ \
     -c $DATA/test_data/v11/images -r $ROOT/AnnotatedImageCrops/Synapses_2026-04/consensus_annotation
 ```
