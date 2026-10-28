@@ -49,7 +49,7 @@ _TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/
 VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
 # Production values, kept in one place so a pipeline change is easy to mirror.
-PRODUCTION_THRESHOLD = 0.5  # detect_synapse_peaks_template.sbatch and the marker_detection default.
+PRODUCTION_THRESHOLD = 0.5  # detect_synapses template of slurm-workflows and the marker_detection default.
 # synapse_detection_from_prediction default. Two synapses closer than this merge into one peak,
 # which is most of the missed annotations; select another value with
 # flamingo_tools/synapse_detection/gridsearch.py on the validation crops, not on these.

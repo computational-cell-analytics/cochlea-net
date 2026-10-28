@@ -192,13 +192,11 @@ class TestPhase1Ingest(unittest.TestCase):
         import tempfile
         with tempfile.TemporaryDirectory() as tmp:
             _make_n5(tmp)
-            rec = Recorder()  # preflight ls + bulk mput both succeed
+            rec = Recorder()  # preflight + bulk mput both succeed
             with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "verify_and_repair_upload"):
-                with self.assertRaises(SystemExit) as cm:
-                    smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", None)
-        self.assertEqual(cm.exception.code, 0)
-        self.assertIn(['cd "P"', "ls"], rec.command_lists)          # preflight
+                smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", None)
+        self.assertIn(['cd "P"'], rec.command_lists)          # preflight
         self.assertIn(['cd "P"', "recurse", "prompt", "mput n5"], rec.command_lists)
 
     def test_bulk_filtered(self):
@@ -208,8 +206,7 @@ class TestPhase1Ingest(unittest.TestCase):
             rec = Recorder()
             with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "verify_and_repair_upload"):
-                with self.assertRaises(SystemExit):
-                    smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", ["setup0"])
+                smb._run_ingest(self._args(), "p", "P", "n5", tmp, "log.txt", ["setup0"])
         self.assertIn(['mkdir "P/n5"'], rec.command_lists)
         self.assertIn(['cd "P/n5"', "put attributes.json", "recurse", "prompt", "mput setup0"],
                       rec.command_lists)
@@ -328,6 +325,39 @@ class TestDownloadUnchanged(unittest.TestCase):
         self.assertEqual(rec.command_lists[0], ['cd "R"', "recurse", "prompt", "mget setup0"])
 
 
+class TestIterativeDownload(unittest.TestCase):
+    def test_min_scale(self):
+        listing = {
+            "P/n5": ["setup0"],
+            "P/n5/setup0/timepoint0": ["s0", "s1", "s2", "s4"],
+            "P/n5/setup0/timepoint0/s2": ["0"],
+        }
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch_both("list_remote_dirs", side_effect=lambda u, p, path, *a, **k: listing[path]), \
+             patch_both("transfer_path") as tp:
+            smb.iterative_n5_transfer("u", "p", "P", "n5", tmp, min_scale=2)
+        fetched = [(c.kwargs["remote_cd"], c.kwargs["mget_target"]) for c in tp.call_args_list]
+        self.assertEqual(fetched, [
+            ("P/n5", "attributes.json"),
+            ("P/n5/setup0", "attributes.json"),
+            ("P/n5/setup0/timepoint0", "attributes.json"),
+            ("P/n5/setup0/timepoint0/s2", "attributes.json"),
+            ("P/n5/setup0/timepoint0/s2", "0"),
+            ("P/n5/setup0/timepoint0", "s4"),
+        ])
+
+    def test_empty_listing_is_logged(self):
+        # A failed listing returns [] without a disconnect; the skipped scale must reach the log.
+        listing = {"P/n5": ["setup0"], "P/n5/setup0/timepoint0": ["s2"], "P/n5/setup0/timepoint0/s2": []}
+        with tempfile.TemporaryDirectory() as tmp, \
+             patch_both("list_remote_dirs", side_effect=lambda u, p, path, *a, **k: listing[path]), \
+             patch_both("transfer_path"):
+            log_file = os.path.join(tmp, "log.txt")
+            smb.iterative_n5_transfer("u", "p", "P", "n5", tmp, log_file=log_file)
+            with open(log_file) as f:
+                self.assertIn("no chunk directories found in P/n5/setup0/timepoint0/s2", f.read())
+
+
 class TestDetection(unittest.TestCase):
     def test_looks_like_n5_local(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -352,8 +382,15 @@ class TestDetection(unittest.TestCase):
 
     def test_looks_like_n5_remote_disconnect_is_false(self):
         rec = Recorder([([], True, 0)])
-        with patch_run_smbclient(rec):
+        with patch_run_smbclient(rec), mock.patch.object(dtu.time, "sleep"):
             self.assertFalse(smb._looks_like_n5_remote("u", "p", "P/data", "."))
+
+    def test_list_remote_dirs_retries_disconnect(self):
+        ls = ["  setup0   D   0  Mon Jul 21 10:00:00 2025"]
+        rec = Recorder([([], True, 0), (ls, False, 0)])
+        with patch_run_smbclient(rec), mock.patch.object(dtu.time, "sleep"):
+            self.assertEqual(smb.list_remote_dirs("u", "p", "P/n5", "."), ["setup0"])
+        self.assertEqual(len(rec.calls), 2)
 
 
 class TestGenericDownload(unittest.TestCase):
@@ -413,7 +450,8 @@ class TestGenericUpload(unittest.TestCase):
 
 @contextmanager
 def _patch_download(is_n5):
-    with mock.patch.object(smb, "_looks_like_n5_remote", return_value=is_n5), \
+    with mock.patch.object(smb, "require_remote_dir"), \
+         mock.patch.object(smb, "_looks_like_n5_remote", return_value=is_n5), \
          mock.patch.object(smb, "iterative_n5_transfer") as it_n5, \
          mock.patch.object(smb, "generic_iterative_download") as it_gen, \
          mock.patch.object(smb, "verify_and_repair_n5") as v_n5, \
@@ -429,8 +467,7 @@ class TestDownloadDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with _patch_download(is_n5=True) as (it_n5, it_gen, v_n5, v_gen), \
                  patch_run_smbclient(Recorder([([], False, 0)])):
-                with self.assertRaises(SystemExit):
-                    smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
+                smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
         v_n5.assert_called_once()
         v_gen.assert_not_called()
         it_n5.assert_not_called()
@@ -442,8 +479,7 @@ class TestDownloadDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             with _patch_download(is_n5=False) as (it_n5, it_gen, v_n5, v_gen), \
                  patch_run_smbclient(Recorder([([], False, 0)])):
-                with self.assertRaises(SystemExit):
-                    smb._run_download(self._args(), "p", "P", "data", tmp, "log", None)
+                smb._run_download(self._args(), "p", "P", "data", tmp, "log", None)
         v_gen.assert_called_once()
         v_n5.assert_not_called()
 
@@ -465,6 +501,13 @@ class TestDownloadDispatch(unittest.TestCase):
         it_n5.assert_not_called()
         v_gen.assert_called_once()
 
+    def test_missing_remote_dir_aborts(self):
+        rec = Recorder([(["cd \\P\\n5\\: NT_STATUS_OBJECT_NAME_NOT_FOUND"], False, 1)])
+        with tempfile.TemporaryDirectory() as tmp, patch_run_smbclient(rec):
+            with self.assertRaises(SystemExit):
+                smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
+        self.assertEqual(rec.command_lists, [['cd "P/n5"']])
+
     def test_generic_flag_forces_generic(self):
         with tempfile.TemporaryDirectory() as tmp:
             with _patch_download(is_n5=True) as (it_n5, it_gen, v_n5, v_gen), \
@@ -484,7 +527,7 @@ class TestIngestDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             make_tree(tmp)
             with patch_run_smbclient(Recorder([([], True, 0)])), \
-                 mock.patch.object(smb, "remote_dir_exists", return_value=True), \
+                 mock.patch.object(smb, "require_remote_dir"), \
                  mock.patch.object(smb, "iterative_n5_upload") as up_n5, \
                  mock.patch.object(smb, "generic_iterative_upload") as up_gen, \
                  mock.patch.object(smb, "verify_and_repair_upload") as v_up:

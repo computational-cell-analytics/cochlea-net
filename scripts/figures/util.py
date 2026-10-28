@@ -167,6 +167,10 @@ COLOR_RIGHT = "#DB0063"
 # Color of the untreated reference, drawn as a band or a pair of bounds.
 COLOR_UNTREATED = "#DB7B00"
 
+# Style of the synapse counts of Meyer et al. 2009.
+MEYER_COLOR = "black"
+MEYER_MARKER = "s"
+
 
 def custom_formatter(precision=1):
     """Get a tick formatter that prints 0 and 1 without decimals.
@@ -208,6 +212,41 @@ def export_legend(legend, filename="legend.png", extra_artists=None):
     fig.savefig(filename, bbox_inches=bbox, dpi=png_dpi)
 
 
+def save_legend(handles, labels, save_path, **kwargs):
+    """Draw a legend without a plot and save it as its own image file.
+
+    Args:
+        handles: Legend handles.
+        labels: One label per handle.
+        save_path: Output path.
+        kwargs: Arguments for plt.legend. They override loc=3, framealpha=1 and frameon=False.
+    """
+    legend = plt.legend(handles, labels, **{"loc": 3, "framealpha": 1, "frameon": False, **kwargs})
+    export_legend(legend, save_path)
+    legend.remove()
+    plt.close()
+
+
+def save_figure(save_path, plot=False, **kwargs):
+    """Save the current figure, then show or close it.
+
+    A PNG gets a small padding and png_dpi. Every other format is cropped without padding.
+
+    Args:
+        save_path: Output path.
+        plot: Show the figure after saving instead of closing it.
+        kwargs: Additional arguments for plt.savefig.
+    """
+    if ".png" in save_path:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0.1, dpi=png_dpi, **kwargs)
+    else:
+        plt.savefig(save_path, bbox_inches="tight", pad_inches=0, **kwargs)
+    if plot:
+        plt.show()
+    else:
+        plt.close()
+
+
 def get_marker_handle(color, marker, edgecolors=None):
     """Get function handle for plotting external legend without plot.
     """
@@ -226,7 +265,7 @@ def animal_colors(cochleae_dict, use_alias=True):
     """Map every animal to the color that its left and right cochlea share.
 
     The animal is the plot label without the side suffix, which is the grouping that
-    plot_fig4.group_lr returns. A cochlea without a color in the registry falls back to
+    group_lr returns. A cochlea without a color in the registry falls back to
     prism_palette.
 
     Args:
@@ -264,6 +303,86 @@ def cochlea_colors(cochleae_dict, names=None, use_alias=True):
         label = cochlea_label(name, meta, use_alias)
         colors[label] = meta.get("color", prism_palette[len(colors) % len(prism_palette)])
     return colors
+
+
+def plot_cochlea_legend(save_path, cochleae_dict, ncol=2, meyer=False):
+    """Plot a legend with one round marker per cochlea.
+
+    Args:
+        save_path: Output path.
+        cochleae_dict: Mapping of cochlea name to its metadata, in legend order.
+        ncol: Number of legend columns.
+        meyer: Add the entry for the synapse counts of Meyer et al. 2009.
+    """
+    color_dict = cochlea_colors(cochleae_dict)
+    colors = list(color_dict.values())
+    labels = list(color_dict)
+    markers = ["o"] * len(labels)
+    if meyer:
+        colors.append(MEYER_COLOR)
+        labels.append("Meyer et al. 2009")
+        markers.append(MEYER_MARKER)
+    handles = [get_marker_handle(c, m) for (c, m) in zip(colors, markers)]
+    save_legend(handles, labels, save_path, ncol=ncol)
+
+
+def group_lr(
+    names_lr: List[str],
+    values: List[float],
+):
+    """Group values of left and right cochleae.
+
+    Args:
+        names_lr: List of cochleae names or aliases with "L" or "R" appendix.
+        values: List of values.
+
+    Returns:
+        Sorted animal names or aliases.
+        Values of left cochleae.
+        Values of right cochleae.
+    """
+    assert len(names_lr) == len(values)
+    names = []
+    values_left, values_right = {}, {}
+    for name_lr, val in zip(names_lr, values):
+        name, side = name_lr[:-1], name_lr[-1]
+        names.append(name)
+        if side == "R":
+            values_right[name] = val
+        elif side == "L":
+            values_left[name] = val
+        else:
+            raise RuntimeError
+    names = sorted(list(set(names)))
+
+    values_left = [values_left.get(name, np.nan) for name in names]
+    values_right = [values_right.get(name, np.nan) for name in names]
+
+    return names, values_left, values_right
+
+
+def paired_x_positions(n_values, x_center, offset):
+    """Get the x positions of n_values points that share one column, offset apart."""
+    return [x_center - n_values // 2 * offset + offset * i for i in range(n_values)]
+
+
+def documented_counts(cochleae, structure, source_name):
+    """Get the documented instance count of every cochlea from VALUE_DICT.
+
+    Args:
+        cochleae: Cochlea names.
+        structure: "SGN" or "IHC".
+        source_name: Segmentation source key, e.g. "SGN_v2" or "IHC_v11".
+
+    Returns:
+        One count per cochlea, in the given order.
+    """
+    counts = []
+    for cochlea in cochleae:
+        if cochlea not in VALUE_DICT:
+            raise ValueError(f"Cochlea {cochlea} is not in value dictionary.")
+        counts.append(VALUE_DICT[cochlea][structure][source_name]["count"])
+    return counts
 
 
 def iteration_statistics(
@@ -410,6 +529,57 @@ def frequency_mapping(
     return value_by_band
 
 
+def band_table(binned):
+    """Collect per-cochlea octave band values into one long table.
+
+    Args:
+        binned: Mapping of plot label to the values per octave band, as returned by
+            frequency_mapping.
+
+    Returns:
+        Table with the columns cochlea, octave_band, value and x_pos, where x_pos is the index
+        of the octave band.
+        The octave band labels, in plot order.
+    """
+    result = {"cochlea": [], "octave_band": [], "value": []}
+    for label, octave_binned in binned.items():
+        result["cochlea"].extend([label] * len(octave_binned))
+        result["octave_band"].extend(octave_binned.axes[0].values.tolist())
+        result["value"].extend(octave_binned.values.tolist())
+    result = pd.DataFrame(result)
+    bin_labels = pd.unique(result["octave_band"])
+    band_to_x = {band: i for i, band in enumerate(bin_labels)}
+    result["x_pos"] = result["octave_band"].map(band_to_x)
+    return result, bin_labels
+
+
+def band_trendline(trend_dict, side=None):
+    """Get the mean and standard deviation of several per-band curves as a step line.
+
+    Every band becomes a flat segment from the leftmost to the rightmost point of that band.
+
+    Args:
+        trend_dict: Mapping of a curve name to a dict with "x_sorted" and "y_sorted", and a
+            "side" ("L" or "R") when side is given. All curves have the same number of points.
+        side: Only average the curves of this side.
+
+    Returns:
+        X values, mean, mean + standard deviation, and mean - standard deviation. Each list holds
+        two values per band.
+    """
+    curves = [curve for curve in trend_dict.values() if side is None or curve["side"] == side]
+    x_values, y_center, y_upper, y_lower = [], [], [], []
+    for num in range(len(curves[0]["x_sorted"])):
+        x_band = [curve["x_sorted"][num] for curve in curves]
+        y_band = [curve["y_sorted"][num] for curve in curves]
+        mean, std = np.mean(y_band), np.std(y_band)
+        x_values += [min(x_band), max(x_band)]
+        y_center += [mean, mean]
+        y_upper += [mean + std, mean + std]
+        y_lower += [mean - std, mean - std]
+    return x_values, y_center, y_upper, y_lower
+
+
 def average_by_fraction(length_fraction, syn_count, n_bins=10):
     """Average syn_per_IHC within equally spaced fractional bins."""
     # Define bins and labels
@@ -511,8 +681,8 @@ def density_by_sliding_window(length_fraction, total_length, window=0.05, n_poin
 # Reference intervals from the literature, per species and structure. SGN and IHC are instance
 # counts per cochlea, synapse is the number of synapses per IHC.
 _LITERATURE_REFERENCE_VALUES = {
-    "mouse": {"SGN": (9141, 11736), "IHC": (656, 681), "synapse": (9.1, 20.7)},
-    "gerbil": {"SGN": (22933, 26267), "IHC": (1081, 1130), "synapse": (15.8, 25.6)},
+    "mouse": {"SGN": (8894, 11153), "IHC": (662, 693), "synapse": (13.69, 16.48)},
+    "gerbil": {"SGN": (25173, 26828), "IHC": (1081, 1130), "synapse": (21.57, 22.68)},
 }
 
 
@@ -622,11 +792,11 @@ def cohort_postnatal(cohort):
 # through cochlea_components() or cochleae_for(), never by indexing the nested dicts directly.
 # Only the (structure, version) pairs that a figure script needs are listed, so an unintended
 # lookup raises instead of filtering on a guessed component list.
-# TODO: plot_fig6.py still defines its own COCHLEAE_DICT_LaVision. Its LaVision cochleae are not
+# TODO: data.py still defines its own LAVISION_COCHLEAE_DICT. Its LaVision cochleae are not
 # in this registry, and plot_lavision.py holds a third, conflicting component list for them.
 COCHLEA_DICT = {
     # iDISCO reference cochleae. The IHC component lists were validated on IHC_v11. IHC_v4c
-    # reuses them, which is what plot_mwfls.py already did through the old plot_fig3 registry.
+    # reuses them for the iDISCO data of plot_mwfls.py.
     "M_LR_000226_L": {
         "alias": "M_01L", "color": "#9C5027",
         "SGN": {"SGN_v2": {"component": [1]}},

@@ -2,28 +2,104 @@
 """
 
 import argparse
+import importlib
 import os
+import tempfile
 from typing import Dict, Optional, Union
 
 import pooch
 import torch
 from .file_utils import get_cache_dir
 
-MODEL_REGISTRY = {
-    "SGN": "3058690b49015d6210a8e8414eb341c34189fee660b8fac438f1fdc41bdfff98",
-    "IHC": "752dab7995b076ec4b8526b0539d1b33ade5de9251aaf6863d9bd8cc9cd036b6",
-    "Synapses": "2a42712b056f082b4794f15cf41b15678aab0bec1acc922ff9f0dc76abe6747e",
-    "SGN-lowres": "2c773792f0ef6022c7d052c452071cf7bf45dfce6b498b408ad6cd1cc3a30d35",
-    "IHC-lowres": "537f1d4afc5a582771b87adeccadfa5635e1defd13636702363992188ef5bdbd",
+_UNET3D_KWARGS = {
+    "in_channels": 1,
+    "out_channels": 3,
+    "depth": 4,
+    "initial_features": 32,
+    "gain": 2,
+    "final_activation": "Sigmoid",
 }
 
-MODEL_URLS = {
-    "SGN": "https://owncloud.gwdg.de/index.php/s/NZ2vv7hxX1imITG/download",
-    "IHC": "https://owncloud.gwdg.de/index.php/s/wB7d2MjV5LRTP06/download",
-    "Synapses": "https://owncloud.gwdg.de/index.php/s/A9W5NmOeBxiyZgY/download",
-    "SGN-lowres": "https://owncloud.gwdg.de/index.php/s/OS7985CKaTTBT5g/download",
-    "IHC-lowres": "https://owncloud.gwdg.de/index.php/s/EhnV4brhpvFbSsy/download",
+_ANISOTROPIC_UNET_KWARGS = {
+    "in_channels": 1,
+    "scale_factors": [[1, 2, 2], [2, 2, 2], [2, 2, 2], [2, 2, 2]],
+    "initial_features": 32,
+    "gain": 2,
+    "anisotropic_kernel": False,
 }
+
+# The CochleaNet models on BioImage.IO. The sha256 is the hash of the 'pytorch_state_dict' weights.
+# The model class and the model kwargs give the architecture of these weights.
+MODELS = {
+    "SGN": {
+        "bioimageio_id": "knowledgeable-mouse",
+        "version": "v0",
+        "sha256": "fb25affdbf7b05d9ea02458e44125866ceb93dadcc35389ae7d2c7c368887f52",
+        "model_class": "torch_em.model.unet.UNet3d",
+        "model_kwargs": _UNET3D_KWARGS,
+    },
+    "IHC": {
+        "bioimageio_id": "content-fish",
+        "version": "v0",
+        "sha256": "8c345996ea30256eb479553b0121a4f2ea978d11b596c19477881b67f8174a09",
+        "model_class": "torch_em.model.unet.UNet3d",
+        "model_kwargs": _UNET3D_KWARGS,
+    },
+    "Synapses": {
+        "bioimageio_id": "loyal-ant",
+        "version": "v0",
+        "sha256": "37c435e34665df08b67673835f5fa0e69388d99fe3a46717f5d052a19a749856",
+        "model_class": "torch_em.model.unet.AnisotropicUNet",
+        "model_kwargs": {**_ANISOTROPIC_UNET_KWARGS, "out_channels": 1, "final_activation": None},
+    },
+    "SGN-lowres": {
+        "bioimageio_id": "nervous-shark",
+        "version": "v0",
+        "sha256": "2fe193929460a5933550b087c8221950fb92fcf313bb695d94e7c40fed7c0e17",
+        "model_class": "torch_em.model.unet.AnisotropicUNet",
+        "model_kwargs": {**_ANISOTROPIC_UNET_KWARGS, "out_channels": 3, "final_activation": "Sigmoid"},
+    },
+    "IHC-lowres": {
+        "bioimageio_id": "confused-cow",
+        "version": "v0",
+        "sha256": "77785144b839af15f95f2542946f04fab86061dd793a76798fdd8169eee60014",
+        "model_class": "torch_em.model.unet.UNet3d",
+        "model_kwargs": _UNET3D_KWARGS,
+    },
+}
+
+BIOIMAGEIO_FILE_URL = (
+    "https://hypha.aicell.io/bioimage-io/artifacts/{bioimageio_id}/files/{file_name}?version={version}"
+)
+
+
+def get_model_url(model_type: str, file_name: str = "weights.pt") -> str:
+    """Get the BioImage.IO download URL for a file of a pretrained model.
+
+    Args:
+        model_type: The model type.
+        file_name: The file of the BioImage.IO model, for example 'weights.pt' or 'rdf.yaml'.
+
+    Returns:
+        The download URL.
+    """
+    model = _get_model_spec(model_type)
+    return BIOIMAGEIO_FILE_URL.format(
+        bioimageio_id=model["bioimageio_id"], file_name=file_name, version=model["version"]
+    )
+
+
+def _get_model_spec(model_type):
+    if model_type not in MODELS:
+        raise ValueError(f"Invalid model: {model_type}. Choose one of {list(MODELS.keys())}.")
+    return MODELS[model_type]
+
+
+def _create_model(model_type):
+    model = _get_model_spec(model_type)
+    module_path, class_name = model["model_class"].rsplit(".", 1)
+    model_class = getattr(importlib.import_module(module_path), class_name)
+    return model_class(**model["model_kwargs"])
 
 
 def _get_default_device():
@@ -73,30 +149,39 @@ def get_device(device: Optional[Union[str, torch.device]] = None) -> Union[str, 
     return device
 
 
-# FIXME: SGN-lowres seems to be the wrong model and doesn't work well on the sample data.
-def get_model_registry() -> pooch.Pooch:
-    """Get the model registry for downloading pre-trained CochleaNet models."""
-    cache_dir = get_cache_dir()
-    return pooch.create(
-        path=os.path.join(cache_dir, "models"),
-        base_url="",
-        registry=MODEL_REGISTRY,
-        urls=MODEL_URLS,
-    )
-
-
 def get_model_path(model_type: str) -> str:
     """Get the local path to a pretrained model.
 
+    The first call downloads the model weights from BioImage.IO. It saves the weights together with the
+    model architecture as a torch_em checkpoint in the model directory of the CochleaNet cache.
+
     Args:
-        The model type.
+        model_type: The model type.
 
     Returns:
-        The local path to the model.
+        The local path to the model checkpoint.
     """
-    model_registry = get_model_registry()
-    model_path = model_registry.fetch(model_type)
-    return model_path
+    model = _get_model_spec(model_type)
+    model_dir = os.path.join(get_cache_dir(), "models")
+    checkpoint_path = os.path.join(model_dir, f"{model_type}-{model['bioimageio_id']}-{model['version']}.pt")
+    if os.path.exists(checkpoint_path):
+        return checkpoint_path
+
+    os.makedirs(model_dir, exist_ok=True)
+    # Download to a separate directory for each call, so that parallel jobs do not share a partial download.
+    with tempfile.TemporaryDirectory(dir=model_dir) as download_dir:
+        weights_path = pooch.retrieve(
+            get_model_url(model_type), known_hash=f"sha256:{model['sha256']}",
+            fname="weights.pt", path=download_dir,
+        )
+        checkpoint = {
+            "init": {"model_class": model["model_class"], "model_kwargs": model["model_kwargs"]},
+            "model_state": torch.load(weights_path, map_location="cpu", weights_only=True),
+        }
+        tmp_checkpoint_path = os.path.join(download_dir, "checkpoint.pt")
+        torch.save(checkpoint, tmp_checkpoint_path)
+        os.replace(tmp_checkpoint_path, checkpoint_path)
+    return checkpoint_path
 
 
 def get_model(model_type: str, device: Optional[Union[str, torch.device]] = None) -> torch.nn.Module:
@@ -112,8 +197,9 @@ def get_model(model_type: str, device: Optional[Union[str, torch.device]] = None
     """
     if device is None:
         device = get_device(device)
-    model_path = get_model_path(model_type)
-    model = torch.load(model_path, weights_only=False)
+    checkpoint = torch.load(get_model_path(model_type), map_location="cpu", weights_only=True)
+    model = _create_model(model_type)
+    model.load_state_dict(checkpoint["model_state"])
     model.to(device)
     return model
 
@@ -128,6 +214,7 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
         Dictionary with the default segmentation settings.
     """
     all_default_kwargs = {
+        # The values of SGN_v2, the BioImage.IO SGN model.
         "SGN": {
             "center_distance_threshold": 0.4,
             "boundary_distance_threshold": 0.5,
@@ -142,11 +229,12 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
             "distance_smoothing": 0.0,
             "seg_class": "sgn_low",
         },
+        # The grid search result of IHC_v11, the BioImage.IO IHC model (best_best_params.json of the checkpoint).
         "IHC": {
-            "center_distance_threshold": 0.5,
+            "center_distance_threshold": 0.7,
             "boundary_distance_threshold": 0.6,
             "fg_threshold": 0.5,
-            "distance_smoothing": 0.6,
+            "distance_smoothing": 1.0,
             "seg_class": "ihc",
         },
         "IHC-lowres": {
@@ -213,7 +301,7 @@ def download_model():
     Use this in environments where internet access is not available at inference time
     (e.g. restricted HPC compute nodes). Run on a login node before submitting jobs.
     """
-    all_models = list(MODEL_REGISTRY.keys())
+    all_models = list(MODELS.keys())
 
     parser = argparse.ArgumentParser(
         description="Download pre-trained CochleaNet models to the local cache. "

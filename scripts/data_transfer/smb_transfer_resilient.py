@@ -30,23 +30,22 @@ import posixpath
 import re
 import sys
 import time  # noqa: F401  (tests patch smb.time.sleep)
-import warnings
 from typing import Optional
 
 # The generic SMB primitives live in the package so that flamingo_tools.convert_data can use
 # the same implementation. Importing them by name keeps them patchable through this module.
 from flamingo_tools.data_transfer_utils import (
     MAX_RETRIES,
-    RETRY_DELAY,
     SMB_SERVER,
-    UKON_OLD,
     UPLOAD_ERROR_TOKENS,
     append_log,
     build_remote_size_map,
     ensure_remote_path,
     list_remote_dirs,
-    remote_dir_exists,
+    log_size,
+    normalize_remote_dir,
     remote_size_map_with_retry,
+    require_remote_dir,
     run_smbclient,
     run_with_retry,
     transfer_path,
@@ -59,6 +58,12 @@ _run_with_retry = run_with_retry
 
 def _sort_key(name):
     return int(name) if name.isdigit() else name
+
+
+def _log_warning(log_file: Optional[str], message: str) -> None:
+    """Print a warning about skipped data and log it, so that the run exits with an error."""
+    print(f"  {message}")
+    append_log(log_file, message)
 
 
 def _normalize_setup(value: str) -> str:
@@ -152,7 +157,7 @@ def verify_and_repair_n5(
     local_n5 = os.path.join(output_dir, n5_name)
 
     if not os.path.isdir(local_n5):
-        print(f"  [warn] local N5 directory not found for verification: {local_n5}")
+        _log_warning(log_file, f"[warn] local N5 directory not found for verification: {local_n5}")
         return
 
     for attempt in range(1, max_passes + 1):
@@ -196,11 +201,14 @@ def iterative_n5_transfer(
     log_file: Optional[str] = None,
     smb_server: str = SMB_SERVER,
     setup_filter: Optional[list[str]] = None,
+    min_scale: int = 0,
 ):
     """Phase 2: transfer an N5 dataset setup-by-setup, scale-by-scale.
     For s0, s1, s2, and s3 (highest resolutions) each top-level chunk directory is transferred
     individually so a single disconnect only affects one small piece.
     All other scales are transferred as a single unit.
+    The attributes.json of the root, each setup, timepoint and per-chunk-dir scale is fetched
+    explicitly, because the per-chunk transfer does not include it.
 
     Args:
         username: GWDG username.
@@ -211,6 +219,7 @@ def iterative_n5_transfer(
         log_file: Log file to store files which were not transferred.
         setup_filter: Restrict transfer to these setup(s) (e.g. ["setup0"]). Transfers
             all discovered setups when not given.
+        min_scale: Skip the scale levels below this index, e.g. 2 skips s0 and s1.
 
     """
     # Normalise separators
@@ -218,24 +227,27 @@ def iterative_n5_transfer(
     full_remote = f"{remote_dir}/{n5_name}"
     local_n5 = os.path.join(output_dir, n5_name)
 
+    def fetch_attributes(remote_cd, local_cwd):
+        transfer_path(username, password, remote_cd=remote_cd, mget_target="attributes.json",
+                      local_cwd=local_cwd, log_file=log_file, smb_server=smb_server)
+
     print("\n=== Iterative N5 transfer mode ===")
 
-    # Root attributes.json
     print(f"\n-- {n5_name}/attributes.json")
-    transfer_path(username, password, remote_dir, f"{n5_name}/attributes.json", output_dir, smb_server=smb_server)
+    fetch_attributes(full_remote, local_n5)
 
     # Discover setups
     setups = list_remote_dirs(username, password, full_remote, output_dir,
                               local_fallback=local_n5, smb_server=smb_server)
     setup_names = sorted(s for s in setups if re.match(r"^setup\d+$", s))
     if not setup_names:
-        print("  [warn] no setup* directories found — nothing to transfer")
+        _log_warning(log_file, f"[warn] no setup* directories found in {full_remote} — nothing to transfer")
         return
 
     if setup_filter:
         missing = [s for s in setup_filter if s not in setup_names]
         for s in missing:
-            print(f"  [warn] requested setup not found remotely: {s}")
+            _log_warning(log_file, f"[warn] requested setup not found remotely: {full_remote}/{s}")
         setup_names = [s for s in setup_names if s in setup_filter]
         if not setup_names:
             print("  [warn] none of the requested setups were found remotely — nothing to transfer")
@@ -249,15 +261,17 @@ def iterative_n5_transfer(
         setup_remote = f"{full_remote}/{setup}"
         tp_remote = f"{setup_remote}/timepoint0"
         tp_local = os.path.join(local_n5, setup, "timepoint0")
+        fetch_attributes(setup_remote, os.path.join(local_n5, setup))
+        fetch_attributes(tp_remote, tp_local)
 
         # Discover scales
         scales = list_remote_dirs(
             username, password, tp_remote, output_dir,
             local_fallback=tp_local, smb_server=smb_server,
         )
-        scale_names = sorted(s for s in scales if re.match(r"^s\d+$", s))
+        scale_names = sorted(s for s in scales if re.match(r"^s\d+$", s) and int(s[1:]) >= min_scale)
         if not scale_names:
-            print(f"  [warn] no scale directories found in {setup}/timepoint0")
+            _log_warning(log_file, f"[warn] no scale directories found in {tp_remote}")
             continue
 
         print(f"  Scales: {scale_names}")
@@ -269,13 +283,14 @@ def iterative_n5_transfer(
             if scale in ["s0", "s1", "s2", "s3"]:
                 # Enumerate top-level chunk directories and transfer individually
                 print(f"\n  -- {setup}/timepoint0/{scale}  (per-subdirectory mode)")
+                fetch_attributes(scale_remote, scale_local)
                 subdirs = list_remote_dirs(
                     username, password, scale_remote, output_dir,
                     local_fallback=scale_local, smb_server=smb_server,
                 )
                 chunk_dirs = sorted(subdirs, key=_sort_key)
                 if not chunk_dirs:
-                    print(f"  [warn] no chunk directories found in {scale}")
+                    _log_warning(log_file, f"[warn] no chunk directories found in {scale_remote}")
                     continue
 
                 print(f"{scale} chunk directories: {chunk_dirs[0]} … {chunk_dirs[-1]} ({len(chunk_dirs)} total)")
@@ -392,13 +407,13 @@ def iterative_n5_upload(
 
     setup_names = _local_dirs(local_n5, r"^setup\d+$")
     if not setup_names:
-        print("  [warn] no setup* directories found locally — nothing to transfer")
+        _log_warning(log_file, f"[warn] no setup* directories found in {local_n5} — nothing to transfer")
         return
 
     if setup_filter:
         missing = [s for s in setup_filter if s not in setup_names]
         for s in missing:
-            print(f"  [warn] requested setup not found locally: {s}")
+            _log_warning(log_file, f"[warn] requested setup not found locally: {local_n5}/{s}")
         setup_names = [s for s in setup_names if s in setup_filter]
         if not setup_names:
             print("  [warn] none of the requested setups were found locally — nothing to transfer")
@@ -426,7 +441,7 @@ def iterative_n5_upload(
 
             scale_names = _local_dirs(tp_local, r"^s\d+$")
             if not scale_names:
-                print(f"  [warn] no scale directories found in {setup}/{tp}")
+                _log_warning(log_file, f"[warn] no scale directories found in {tp_local}")
                 continue
 
             print(f"  Scales: {scale_names}")
@@ -444,7 +459,7 @@ def iterative_n5_upload(
                                          log_file=log_file, smb_server=smb_server)
                     chunk_dirs = _local_dirs(scale_local)
                     if not chunk_dirs:
-                        print(f"  [warn] no chunk directories found in {scale}")
+                        _log_warning(log_file, f"[warn] no chunk directories found in {scale_local}")
                         continue
                     print(f"{scale} chunk directories: {chunk_dirs[0]} … {chunk_dirs[-1]} "
                           f"({len(chunk_dirs)} total)")
@@ -512,7 +527,7 @@ def verify_and_repair_upload(
     base = base if base is not None else remote_dir
 
     if not os.path.isdir(local_n5):
-        print(f"  [warn] local N5 directory not found for verification: {local_n5}")
+        _log_warning(log_file, f"[warn] local N5 directory not found for verification: {local_n5}")
         return
 
     def _local_rel_files() -> list[str]:
@@ -645,7 +660,7 @@ def generic_iterative_download(
     size_map = _remote_size_map_with_retry(username, password, full_remote, output_dir,
                                            smb_server=smb_server)
     if not size_map:
-        print("  [warn] could not list the remote tree — nothing transferred")
+        _log_warning(log_file, f"[warn] could not list the remote tree {full_remote} — nothing transferred")
         return
 
     print(f"  Found {len(size_map)} file(s) to transfer")
@@ -793,6 +808,7 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
     both use the matching path. A generic tree is transferred and verified per file.
     """
     full_remote = f"{remote_dir}/{n5_name}"
+    require_remote_dir(args.username, password, full_remote, output_dir, smb_server=args.smb_server)
     is_n5 = not args.generic and (
         bool(setup_filter) or
         _looks_like_n5_remote(args.username, password, full_remote, output_dir,
@@ -826,9 +842,9 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
         if setup_filter:
             for s in setup_filter:
                 if not os.path.isdir(os.path.join(output_dir, n5_name, s)):
-                    print(f"  [warn] requested setup not found after transfer: {s}")
+                    _log_warning(log_file, f"[warn] requested setup not found after transfer: {full_remote}/{s}")
         _verify()
-        sys.exit(0)
+        return
 
     if not had_disconnect:
         print(f"Transfer failed (exit code {rc}).")
@@ -851,9 +867,6 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     the Phase-2 fallback; verification is size-based for both (verify_and_repair_upload).
     """
     local_n5 = os.path.join(source_dir, n5_name)
-    if not os.path.isdir(local_n5):
-        raise SystemExit(f"Local dataset not found: {local_n5}")
-
     is_n5 = not args.generic and (bool(setup_filter) or _looks_like_n5_local(local_n5))
 
     # The parent directory must exist so mput does not dump the dataset into the
@@ -862,14 +875,8 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     if args.create_parents:
         ensure_remote_path(args.username, password, base="", target=remote_dir,
                            local_cwd=source_dir, smb_server=args.smb_server)
-    else:
-        exists = remote_dir_exists(args.username, password, remote_dir, source_dir,
-                                   smb_server=args.smb_server)
-        if exists is False:
-            raise SystemExit(
-                f"Remote parent directory does not exist: {remote_dir}\n"
-                "Create it first or pass --create-parents to create it automatically."
-            )
+    require_remote_dir(args.username, password, remote_dir, source_dir, smb_server=args.smb_server,
+                       hint="Create a missing parent directory first, or pass --create-parents.")
 
     print("Connecting to SMB server and starting bulk ingest...")
     full_remote = f"{remote_dir}/{n5_name}"
@@ -892,7 +899,7 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
         verify_and_repair_upload(args.username, password, remote_dir, n5_name, source_dir,
                                  log_file=log_file, smb_server=args.smb_server,
                                  setup_filter=setup_filter, base=base)
-        sys.exit(0)
+        return
 
     if not had_disconnect:
         print("Bulk ingest reported an error — switching to iterative ingest mode.")
@@ -915,9 +922,9 @@ def main():
         description="Resilient SMB transfer for N5 data with automatic disconnect recovery. "
                     "Downloads from the share by default; pass --ingest to upload."
     )
-    parser.add_argument("-u", "--username", help="GWDG username, e.g. schilling40")
-    parser.add_argument("-p", "--remote_parent_dir", help="Remote parent directory on the SMB share")
-    parser.add_argument("-d", "--remote_data", help="N5 root directory name (on the share and locally)")
+    parser.add_argument("-u", "--username", required=True, help="GWDG username, e.g. schilling40")
+    parser.add_argument("-p", "--remote_parent_dir", required=True, help="Remote parent directory on the SMB share")
+    parser.add_argument("-d", "--remote_data", required=True, help="N5 root directory name (on the share and locally)")
     parser.add_argument("-o", "--output-dir", default=os.getcwd(),
                         help="Local directory. Download: destination for the dataset. "
                              "Ingest: parent directory that contains the dataset to upload. "
@@ -943,21 +950,17 @@ def main():
     if args.generic and args.setup:
         parser.error("--generic and --setup are mutually exclusive (--setup applies to N5 data only)")
 
+    # The name is an mget/mput mask and a local folder name, so drop a trailing separator.
+    n5_name = args.remote_data.rstrip("/\\")
     output_dir = os.path.realpath(args.output_dir)
     if not args.ingest:
         os.makedirs(output_dir, exist_ok=True)
-    elif not os.path.isdir(output_dir):
-        parser.error(f"local source directory does not exist: {output_dir}")
+    elif not os.path.isdir(os.path.join(output_dir, n5_name)):
+        parser.error(f"local dataset does not exist: {os.path.join(output_dir, n5_name)}")
 
-    password = getpass.getpass("Enter password: ")
-
-    if "\\" not in args.remote_parent_dir:
-        warnings.warn("Ensure that path to parent directory contains double \\ or is quoted.")
-
-    p = pathlib.PureWindowsPath(args.remote_parent_dir)
-    remote_dir = p.as_posix()
-    n5_name = args.remote_data
+    remote_dir = normalize_remote_dir(args.remote_parent_dir)
     log_file = args.log_file if args.log_file is not None else os.path.join(output_dir, "transfer_log.txt")
+    log_start = log_size(log_file)
 
     setup_filter = None
     if args.setup:
@@ -966,10 +969,13 @@ def main():
         except ValueError as e:
             parser.error(str(e))
 
+    password = getpass.getpass("Enter password: ")
     if args.ingest:
         _run_ingest(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     else:
         _run_download(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
+    if log_size(log_file) > log_start:
+        raise SystemExit(f"\n[error] Some transfers failed. See {log_file}")
 
 
 if __name__ == "__main__":

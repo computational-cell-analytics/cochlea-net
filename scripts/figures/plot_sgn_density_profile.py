@@ -6,23 +6,20 @@ absolute length. The x-axis can instead show the absolute run length in µm.
 """
 
 import argparse
-import json
 import os
-import pickle
-from typing import Dict, List, Optional, Sequence
+from typing import List, Optional, Sequence
 
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 from matplotlib.patches import Rectangle
 from matplotlib.transforms import Bbox
-from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
 
+from data import get_sgn_length_data
 from util import (
     COCHLEA_DICT,
     COHORT_DICT,
     cochlea_colors,
-    cochlea_components,
     cochlea_label,
     cohort_cochleae,
     export_legend,
@@ -31,14 +28,12 @@ from util import (
     density_by_sliding_window,
     get_flatline_handle,
     get_marker_handle,
-    length_column,
     png_dpi,
     prism_palette,
     prism_style,
     total_run_length,
 )
 
-SOURCE_NAME = "SGN_v2"
 FILE_EXTENSION = "png"
 
 # The cochleae of every cohort come from util.COHORT_DICT. chreef_mouse is the exception: the
@@ -86,7 +81,7 @@ WT_GERBIL_NORMALIZED_EXCLUDE = {"G_EK_000233_L"}
 # Style of a wild type trendline that is carried into an optogenetic therapy figure.
 REFERENCE_STYLE = {"color": "black", "linestyle": "solid", "marker": "o", "label": "WT trendline"}
 
-# Trendline per cochlea side for the ChReef cohorts, following fig_04e and fig_e_gerbil.
+# Trendline per cochlea side for the ChReef cohorts, following gene_therapy.plot_efficiency_per_band.
 # The left cochlea is injected, the right one is not.
 SIDE_TRENDLINES = {
     "L": {"label": "Injected", "color": "grey", "linestyle": "dashed", "alpha": 0.6},
@@ -98,71 +93,6 @@ GREENWOOD = {
     "mouse": {"A": 1.46, "a": 1.77, "k": 0.0, "ticks": [2, 4, 8, 16, 32, 64]},
     "gerbil": {"A": 0.35, "a": 2.1, "k": 0.7, "ticks": [0.5, 1, 2, 4, 8, 16, 32]},
 }
-
-
-def get_sgn_length_data(
-    cochleae: List[str],
-    source_name: str = SOURCE_NAME,
-    cache_path: Optional[str] = None,
-    force_download: bool = False,
-) -> Dict[str, pd.DataFrame]:
-    """Load the run length of every SGN of the given cochleae from the S3 segmentation tables.
-
-    Args:
-        cochleae: Names of the cochleae to load.
-        source_name: Name of the SGN segmentation source in the MoBIE dataset.
-        cache_path: Path for the pickle cache. Defaults to "./sgn_length_data_<source_name>.pkl".
-        force_download: Ignore the cached pickle and fetch the tables from S3 again.
-
-    Returns:
-        Mapping of cochlea name to a table with the columns label_id, length_fraction and
-        length[µm].
-    """
-    if cache_path is None:
-        cache_path = f"./sgn_length_data_{source_name}.pkl"
-
-    cached = {}
-    if not force_download and os.path.exists(cache_path):
-        with open(cache_path, "rb") as f:
-            cached = pickle.load(f)
-        if all(cochlea in cached for cochlea in cochleae):
-            return {cochlea: cached[cochlea] for cochlea in cochleae if cached[cochlea] is not None}
-
-    s3 = create_s3_target()
-    for cochlea in cochleae:
-        if cochlea in cached:
-            continue
-        print("Processing cochlea:", cochlea)
-        content = s3.open(f"{BUCKET_NAME}/{cochlea}/dataset.json", mode="r", encoding="utf-8")
-        info = json.loads(content.read())
-        if source_name not in info["sources"]:
-            print(f"Cochlea {cochlea} has no source {source_name}, it will be skipped.")
-            cached[cochlea] = None
-            continue
-        source = info["sources"][source_name]["segmentation"]
-        rel_path = source["tableData"]["tsv"]["relativePath"]
-
-        table_content = s3.open(os.path.join(BUCKET_NAME, cochlea, rel_path, "default.tsv"), mode="rb")
-        table = pd.read_csv(table_content, sep="\t")
-
-        # The tonotopic mapping sets the length fraction of instances outside of the mapped
-        # components to 0. Without this filter they pile up in the first bin at the apex.
-        table = table[table.component_labels.isin(cochlea_components(cochlea, "SGN", source_name))]
-
-        try:
-            length_col = length_column(table)
-            values = table[["label_id", "length_fraction", length_col]]
-        except KeyError:
-            print(f"Cochlea {cochlea} has no run length columns, it will be skipped. "
-                  "Run flamingo_tools.tonotopic_mapping for it first.")
-            cached[cochlea] = None
-            continue
-
-        cached[cochlea] = values.rename(columns={length_col: "length[µm]"})
-
-    with open(cache_path, "wb") as f:
-        pickle.dump(cached, f)
-    return {cochlea: cached[cochlea] for cochlea in cochleae if cached[cochlea] is not None}
 
 
 def build_plot_metadata(cochleae: List[str], cohort: Optional[str] = None) -> dict:
@@ -411,7 +341,7 @@ def plot_legend_sgn_density(
     same mode, trendline and reference arguments that the figure was drawn with.
 
     Args:
-        length_data: Mapping of cochlea name to its table, as passed to fig_sgn_density_profile.
+        length_data: Mapping of cochlea name to its table, as passed to plot_sgn_density_profile.
         save_path: Save path for the legend.
         cochleae_dict: Per-cochlea plot metadata, as built by build_plot_metadata.
         mode: Density calculation of the figure. Either 'bins' or 'sliding'.
@@ -461,7 +391,7 @@ def plot_legend_sgn_density(
     plt.close()
 
 
-def fig_sgn_density_profile(
+def plot_sgn_density_profile(
     length_data: dict,
     save_path: str,
     mode: str = "bins",
@@ -727,8 +657,7 @@ def export_wt_gerbil_legend(
 
     handles = []
     labels = []
-    for cochlea in COHORTS["wt_gerbil"]:
-        meta = cochleae_dict[cochlea]
+    for cochlea, meta in cochleae_dict.items():
         handles.append(get_marker_handle(meta["color"], meta["marker"]))
         labels.append(cochlea_label(cochlea, meta, use_alias))
 
@@ -795,7 +724,7 @@ def main():
         cohort = "idisco"
         mode = "bins"
         n_bins = 20
-        idisco_trend = fig_sgn_density_profile(
+        idisco_trend = plot_sgn_density_profile(
             length_data[cohort],
             save_path=os.path.join(
                 args.figure_dir, f"sgn_density_{cohort}_{mode}{runlength_suffix}.{FILE_EXTENSION}",
@@ -822,7 +751,7 @@ def main():
                 cochlea: values for cochlea, values in length_data[cohort].items()
                 if cochlea not in WT_GERBIL_NORMALIZED_EXCLUDE
             }
-        wt_gerbil_trend = fig_sgn_density_profile(
+        wt_gerbil_trend = plot_sgn_density_profile(
             panel_data,
             save_path=os.path.join(
                 args.figure_dir, f"sgn_density_{cohort}_{mode}{runlength_suffix}.{FILE_EXTENSION}",
@@ -847,7 +776,7 @@ def main():
         cohort = "chreef_mouse"
         mode = "bins"
         n_bins = 10
-        fig_sgn_density_profile(
+        plot_sgn_density_profile(
             length_data[cohort],
             save_path=os.path.join(
                 args.figure_dir, f"sgn_density_{cohort}_{mode}{runlength_suffix}.{FILE_EXTENSION}",
@@ -867,7 +796,7 @@ def main():
         cohort = "fchrimson_gerbil"
         mode = "bins"
         n_bins = 10
-        fig_sgn_density_profile(
+        plot_sgn_density_profile(
             length_data[cohort],
             save_path=os.path.join(
                 args.figure_dir, f"sgn_density_{cohort}_{mode}{runlength_suffix}.{FILE_EXTENSION}",

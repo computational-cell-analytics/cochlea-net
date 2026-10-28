@@ -1,231 +1,61 @@
-# Processing - Segmentation, detection, and object measures
+# Processing - Segmentation and detection
 
-The segmentation can be performed locally or using Slurm and the GWDG resources.
+Run the segmentation and the detection as Slurm jobs on the GWDG cluster, or on a local machine.
+
+### Using Slurm
+
+The Slurm templates and pipelines for the GWDG cluster are in the repository [slurm-workflows](https://github.com/computational-cell-analytics/slurm-workflows).
+Its pipelines run the segmentation of SGNs and IHCs and the detection of ribbon synapses as chains of Slurm jobs.
+See its [documentation of the processing pipelines](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_03_processing_pipelines.md) for the usage.
 
 ### Locally
 
-The data can be processed locally using the command line interface.
+Use the command line interface to process data on a local machine.
+The examples use short paths. Replace them with the paths of your data.
 
-#### SGN
+#### SGN and IHC
+
 ```bash
-INPUT_PATH="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup0/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/SGN_v2"
-MODEL_TYPE=SGN
-flamingo_tools.run_segmentation  --input_path "$INPUT_PATH" \
-    --input_key "$INPUT_KEY" \
-    --output_folder "$OUTPUT_FOLDER" \
-    --model_type "$MODEL_TYPE" \
-    --min_size 1000
+flamingo_tools.run_segmentation -i M_AMD_N162_L.n5 -k setup0/timepoint0/s0 -o SGN_v2 -m SGN --min_size 1000
+flamingo_tools.run_segmentation -i M_AMD_N162_L.n5 -k setup1/timepoint0/s0 -o IHC_v11 -m IHC --min_size 1000
 ```
 
-#### IHC
-```bash
-INPUT_PATH="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup1/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/IHC_v4b"
-MODEL_TYPE=IHC
-flamingo_tools.run_segmentation  --input_path "$INPUT_PATH" \
-    --input_key "$INPUT_KEY" \
-    --output_folder "$OUTPUT_FOLDER" \
-    --model_type "$MODEL_TYPE" \
-    --min_size 1000
-```
+The command writes the segmentation to `segmentation.zarr` in the output folder.
+`--min_size` removes instances with fewer voxels.
+The pipelines of slurm-workflows use 1000. The default is 250.
 
 #### Synapses
-Synapse detection of a CTBP2 stain, matched to an IHC segmentation. This is the standard case:
-the segmentation is dilated into a mask, and the prediction only runs on the blocks inside it.
-On a full cochlea that is about 3 % of the volume.
-```bash
-MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
-INPUT_PATH="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup2/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/synapses_v3"
-MASK_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/IHC_v4b.ome.zarr"
-flamingo_tools.run_detection  --input_path "$INPUT_PATH" \
-    --input_key "$INPUT_KEY" \
-    --mask_path "$MASK_PATH" \
-    --output_folder "$OUTPUT_FOLDER"
-```
-This writes `synapse_detection.tsv` with all detections, and `synapse_detection_filtered.tsv` with
-the detections matched to an IHC and closer to it than `--max_distance` (3 micrometer by default).
 
-The two mask keys select different resolutions of the same IHC segmentation: `--mask_input_key`
-(default `s4`) is the downscaled level that builds the inference mask, and `--mask_key`
-(default `s0`) is the full-resolution level used to match the detections. The mask is dilated by
-`--dilation_iterations` (default 4) voxels of `--mask_input_key`, which is 24 micrometer at `s4`.
-The dilation has to stay above `--max_distance`, otherwise a synapse near the border of an IHC is
-never predicted. The command warns when it does not.
+The standard case matches the detections of a CTBP2 stain to an IHC segmentation:
 
-Without an IHC segmentation the prediction falls back to the full volume, which is far more
-expensive, and the detections are not matched. The command warns about this too.
 ```bash
-flamingo_tools.run_detection  --input_path "$INPUT_PATH" \
-    --input_key "$INPUT_KEY" \
-    --output_folder "$OUTPUT_FOLDER"
+flamingo_tools.run_detection -i M_AMD_N162_L.n5 -k setup2/timepoint0/s0 -o synapses --mask_path IHC_v11.ome.zarr
 ```
 
-The image data and the segmentation are resolved independently, so the CTBP2 data can be read from
-a local file while the IHC segmentation is read from the S3 bucket:
+The command writes two tables to the output folder:
+- `synapse_detection.tsv` contains all detections.
+- `synapse_detection_filtered.tsv` contains the detections that are closer to an IHC than `--max_distance` (default 3 micrometer).
+
+The command uses two resolution levels of the IHC segmentation:
+- `--mask_input_key` (default `s4`) is the downscaled level. The command dilates it into a mask and runs the prediction only on the blocks inside the mask. On a full cochlea, these blocks are approximately 3 % of the volume.
+- `--mask_key` (default `s0`) is the full-resolution level. The command uses it to match the detections to the IHCs.
+
+`--dilation_iterations` (default 4) sets the dilation in voxels of `--mask_input_key`. At `s4`, 4 voxels are 24 micrometer.
+Keep the dilation larger than `--max_distance`. Otherwise, the command does not predict synapses near the border of an IHC.
+The command shows a warning if the dilation is too small.
+
+Without `--mask_path`, the command predicts on the full volume and does not match the detections.
+This prediction is much slower. The command shows a warning.
+
+The command reads the image data and the segmentation independently:
+- `--s3_input` reads the image data from the S3 bucket.
+- `--s3_mask` reads the IHC segmentation from the S3 bucket.
+
 ```bash
-flamingo_tools.run_detection  --input_path "$INPUT_PATH" --input_key s0 \
-    --mask_path "$COCHLEA"/images/ome-zarr/IHC_v11.ome.zarr --s3_mask \
-    --output_folder "$OUTPUT_FOLDER" --checkpoint_path "$MODEL" --max_distance 8
+flamingo_tools.run_detection -i M_AMD_N162_L.n5 -k setup2/timepoint0/s0 -o synapses \
+    --mask_path M_AMD_N162_L/images/ome-zarr/IHC_v11.ome.zarr --s3_mask
 ```
-Add `--s3_input` to read the image data from the bucket as well.
 
 #### Object measures
-The calculation of object measures requires a segmentation, e.g. SGN.
 
-```bash
-MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
-
-IMAGE_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/PV.ome.zarr"
-SEG_TABLE="$MOBIE_DIR""/M_AMD_N162_L/tables/SGN_v2/default.tsv"
-SEG_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr"
-OUTPUT="M-AMD-N162-L_PV_SGN-v2_object-measures.tsv"
-
-flamingo_tools.object_measures  --image_paths "$IMAGE_PATH" \
-    -t "$SEG_TABLE" \
-    -s "$SEG_PATH" \
-    --output "$OUTPUT"
-```
-or with data on the S3 bucket
-```bash
-MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
-
-IMAGE_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/PV.ome.zarr"
-SEG_TABLE="$MOBIE_DIR""/M_AMD_N162_L/tables/SGN_v2/default.tsv"
-SEG_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr"
-OUTPUT="M-AMD-N162-L_PV_SGN-v2_object-measures.tsv"
-
-flamingo_tools.object_measures  --image_paths "$IMAGE_PATH" \
-    -t "$SEG_TABLE" \
-    -s "$SEG_PATH" \
-    --output "$OUTPUT" \
-    --s3
-```
-
-### Using Slurm
-Slurm is the batch system for submitting jobs on the GWDH HPC cluster: https://docs.hpc.gwdg.de/how_to_use/slurm/index.html
-
-Because it is more efficient to split the network prediction into multiple jobs, the processing workflow is divided into three steps:
-* Mask the image data based on intensity and calculate the mean and standard deviation of the intensity
-* Apply CochleaNet
-* Segment the prediction of CochleaNet
-
-#### SGN
-```bash
-SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup0/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/SGN_v2"
-
-# --- Masking and calculating mean and standard deviation ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_SGN_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-
-# --- Applying CochleaNet ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_unet_SGN_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-
-# --- Segmenting prediction ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/segment_unet_SGN_template.sbatch $OUTPUT_FOLDER
-```
-or for the full workflow without splitting up the prediction step
-```bash
-SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_R/MAMD_N162R_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup0/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_R/SGN_v2"
-
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/process_SGN_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-```
-
-#### IHC
-```bash
-SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-# --- Masking and calculating mean and standard deviation ---
-DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup1/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/IHC_v4b"
-# --- Masking and calculating mean and standard deviation ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_IHC_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-
-# --- Applying CochleaNet ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_unet_IHC_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-
-# --- Segmenting prediction ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/segment_unet_IHC_template.sbatch $OUTPUT_FOLDER
-```
-
-or for the full workflow without splitting up the prediction step
-```bash
-SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_R/MAMD_N162R_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup1/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_R/IHC_v4b"
-
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/process_IHC_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-```
-
-#### Synapses
-The synapse prediction is split up in the same way. The peak detection replaces the segmentation
-as the third step, and needs no GPU.
-
-```bash
-SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_L/MAMD_N162L_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup2/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_L/synapses_v5"
-
-# --- Calculating mean and standard deviation ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-
-# --- Applying CochleaNet ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/apply_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER
-
-# --- Detecting the synapse markers ---
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/detect_synapse_peaks_template.sbatch $OUTPUT_FOLDER
-```
-
-Submit each step only after the previous one finished. The first step writes `mean_std.json`, which
-all tasks of the prediction array read so that they normalize the input identically.
-The size of the array (`#SBATCH -a`) and `PREDICTION_INSTANCES` in
-`apply_synapse_template.sbatch` must match.
-
-Pass an IHC segmentation to the first step. It is dilated into the mask that restricts the
-prediction to the region around the IHCs, which is the standard case: on a full cochlea it skips
-about 97 % of the blocks. The synapses are matched to the IHCs within `MAX_DISTANCE` later on, so
-this discards no detection that survives that filter. Without a segmentation the prediction falls
-back to the full volume, and the first step warns about it.
-
-Data on the S3 bucket is reached through `s3_input` and `s3_mask`, the same two flags the CLI has.
-They are independent, so a local image can be combined with a segmentation on the bucket. Pass
-`s3_input` to the first two steps, and `s3_mask` to the first and the third; the prediction array
-has no `s3_mask` because it reads the mask from `mask.zarr` in the output folder. The jobs that
-read from the bucket need `#SBATCH --constraint=inet`.
-
-```bash
-MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
-MASK_PATH="$MOBIE_DIR""/M_AMD_N162_L/images/ome-zarr/IHC_v4b.ome.zarr"
-
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/mean_std_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER $MASK_PATH
-```
-
-Pass the same segmentation at full resolution to the third step to also write
-`synapse_detection_filtered.tsv`, with the detections matched to the IHCs.
-
-```bash
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/detect_synapse_peaks_template.sbatch $OUTPUT_FOLDER $MASK_PATH s0
-```
-
-or for the full workflow without splitting up the prediction step. The fourth argument is the IHC
-segmentation; omit it to predict on the full volume.
-```bash
-SCRIPT_DIR="/user/schilling40/u15000/flamingo-tools"
-MOBIE_DIR="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/mobie_project/cochlea-lightsheet"
-DATA="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/M_AMD_N162_R/MAMD_N162R_PV_Vglut3_CTBP2_fused.n5"
-INPUT_KEY="setup2/timepoint0/s0"
-OUTPUT_FOLDER="/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/M_AMD_N162_R/synapses_v3"
-MASK_PATH="$MOBIE_DIR""/M_AMD_N162_R/images/ome-zarr/IHC_v4b.ome.zarr"
-sbatch "$SCRIPT_DIR"/reproducibility/templates_processing/detect_synapse_template.sbatch $DATA $INPUT_KEY $OUTPUT_FOLDER $MASK_PATH
-```
+See [Calculation of object measures](analysis.md#2---calculation-of-object-measures) in the analysis documentation.

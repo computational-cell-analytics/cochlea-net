@@ -18,12 +18,14 @@ import matplotlib.ticker as mticker
 import numpy as np
 import pandas as pd
 
-from util import (cochlea_label, export_legend, get_flatline_handle, get_marker_handle, prism_cleanup_axes,
-                  prism_palette, prism_style)
-from plot_fig4 import COCHLEAE_DICT
+from util import (cochlea_label, cochleae_for, cohort_cochleae, export_legend, get_flatline_handle,
+                  get_marker_handle, prism_cleanup_axes, prism_palette, prism_style)
 
 FILE_EXTENSION = "png"
 png_dpi = 300
+
+# The ChReef cochleae, for the alias and the x-axis order of a plotted cochlea.
+COCHLEAE_DICT = cochleae_for(cohort_cochleae("chreef_mouse"), "SGN", "SGN_v2")
 
 # Display names for the annotators. The order also fixes the marker shape and the x offset.
 # The marker annotations and the subtype annotations use a different key for the same annotator.
@@ -61,10 +63,16 @@ def _class_names(scenario: dict) -> List[str]:
     return [key[len("percent_"):] for key in scenario if key.startswith("percent_")]
 
 
-def _cochlea_label(cochlea: str, use_alias: bool) -> str:
+def _cochlea_label(cochlea: str, use_alias: bool, cochleae_dict: dict) -> str:
     # An unregistered cochlea has no alias, so it always falls back to the shortened name.
-    use_alias = use_alias and cochlea in COCHLEAE_DICT
-    return cochlea_label(cochlea, COCHLEAE_DICT.get(cochlea, {}), use_alias)
+    use_alias = use_alias and cochlea in cochleae_dict
+    return cochlea_label(cochlea, cochleae_dict.get(cochlea, {}), use_alias)
+
+
+def _cochlea_order(cochleae: Sequence[str], cochleae_dict: dict) -> List[str]:
+    """Order the registered cochleae as in cochleae_dict, followed by the others in sorted order."""
+    known = [name for name in cochleae_dict if name in cochleae]
+    return known + sorted(name for name in cochleae if name not in cochleae_dict)
 
 
 def load_variance_records(
@@ -73,6 +81,7 @@ def load_variance_records(
     pattern: str = "*_variance.json",
     use_alias: bool = True,
     min_crops: int = 5,
+    cochleae_dict: Optional[dict] = None,
 ) -> pd.DataFrame:
     """Read the variance JSON files of a directory into a long-form table.
 
@@ -82,11 +91,14 @@ def load_variance_records(
         pattern: Glob pattern for the variance files.
         use_alias: Use the cochlea alias for the x axis label.
         min_crops: Minimal number of annotated crops to include annotator.
+        cochleae_dict: Mapping of cochlea name to its metadata, for the alias. Defaults to
+            COCHLEAE_DICT.
 
     Returns:
         Table with one row per cochlea, series, and annotator. The consensus scenario is marked
         with `is_mean`.
     """
+    cochleae_dict = COCHLEAE_DICT if cochleae_dict is None else cochleae_dict
     paths = sorted(glob.glob(os.path.join(input_dir, pattern)))
     if len(paths) == 0:
         raise ValueError(f"No file matching '{pattern}' in {input_dir}.")
@@ -119,7 +131,7 @@ def load_variance_records(
                     continue
                 records.append({
                     "cochlea": cochlea,
-                    "label": _cochlea_label(cochlea, use_alias),
+                    "label": _cochlea_label(cochlea, use_alias, cochleae_dict),
                     "marker": marker_name,
                     "class_name": class_name,
                     "series": f"{marker_name} {class_name}" if prefix_marker else class_name,
@@ -280,6 +292,7 @@ def plot_annotator_variance(
     show_legend: bool = True,
     ylim: Optional[Tuple[float, float]] = None,
     figsize: Tuple[float, float] = (12, 6),
+    cochleae_dict: Optional[dict] = None,
     plot: bool = False,
 ) -> None:
     """Plot the marker percentage per cochlea, with one point per annotator.
@@ -314,8 +327,7 @@ def plot_annotator_variance(
         df = df[~df["is_mean"]]
 
     cochleae = list(dict.fromkeys(df["cochlea"]))
-    known = [name for name in COCHLEAE_DICT if name in cochleae]
-    cochleae = known + sorted(name for name in cochleae if name not in COCHLEAE_DICT)
+    cochleae = _cochlea_order(cochleae, COCHLEAE_DICT if cochleae_dict is None else cochleae_dict)
     labels = [df.loc[df["cochlea"] == name, "label"].iloc[0] for name in cochleae]
 
     series_names = list(dict.fromkeys(df["series"]))
@@ -425,6 +437,7 @@ def plot_annotator_offset(
     default_ylim: Tuple[float, float] = (-5.0, 5.0),
     show_legend: bool = True,
     figsize: Tuple[float, float] = (12, 5),
+    cochleae_dict: Optional[dict] = None,
     plot: bool = False,
 ) -> None:
     """Plot the deviation of the annotators from the mean, with the mean as the zero reference.
@@ -478,8 +491,7 @@ def plot_annotator_offset(
     df = pd.concat(offsets, ignore_index=True)
 
     cochleae = list(dict.fromkeys(df["cochlea"]))
-    known = [name for name in COCHLEAE_DICT if name in cochleae]
-    cochleae = known + sorted(name for name in cochleae if name not in COCHLEAE_DICT)
+    cochleae = _cochlea_order(cochleae, COCHLEAE_DICT if cochleae_dict is None else cochleae_dict)
     labels = [df.loc[df["cochlea"] == name, "label"].iloc[0] for name in cochleae]
 
     series_names = list(dict.fromkeys(df["series"]))

@@ -255,13 +255,11 @@ class TestPredictionInstances(unittest.TestCase):
     def _predict(self, data_path, data_key, model_path, output_folder, prediction_instances):
         from flamingo_tools.segmentation.unet_prediction import prediction_impl
 
-        # A fixed mean and std, so that the tasks cannot disagree on the normalization.
         for task_id in range(prediction_instances):
             prediction_impl(
                 data_path, data_key, output_folder, model_path, scale=None,
                 block_shape=self.block_shape, halo=self.halo,
                 prediction_instances=prediction_instances, slurm_task_id=task_id,
-                mean=127.0, std=73.0,
             )
         with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
             return f["prediction"][:]
@@ -290,3 +288,21 @@ class TestPredictionInstances(unittest.TestCase):
 
         covered = sorted(block_id for task in assignments for block_id in task)
         self.assertEqual(covered, list(range(n_blocks)))
+
+
+class TestClippedTiling(unittest.TestCase):
+    def test_odd_slice_count(self):
+        """A 61-slice volume clips the block to 61, and 61 + 2 * 16 is not divisible by 16."""
+        from flamingo_tools.segmentation.unet_prediction import prediction_impl
+
+        shape = (61, 64, 64)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            model_path = os.path.join(tmp_dir, "model.pt")
+            torch.save(UNet3d(in_channels=1, out_channels=3, initial_features=4, depth=4), model_path)
+            data_path = os.path.join(tmp_dir, "data.tif")
+            imageio.imwrite(data_path, np.random.randint(0, 255, size=shape).astype("uint8"))
+
+            _, prediction = prediction_impl(
+                data_path, None, None, model_path, scale=None, block_shape=None, halo=None,
+            )
+        self.assertEqual(prediction.shape, (3,) + shape)
