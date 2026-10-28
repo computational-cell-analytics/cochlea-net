@@ -12,6 +12,7 @@ import sys
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.colors import LogNorm
 
 from flamingo_tools.analysis.central_path_utils import mean_by_offset
 from flamingo_tools.s3_utils import create_s3_target
@@ -31,20 +32,25 @@ def load_cochlea(s3, cochlea: str, sgn_version: str) -> pd.DataFrame:
     return table
 
 
-def plot_heatmaps(cells: pd.DataFrame, cohorts: list, min_count: int, save_path: str):
+def plot_heatmaps(cells: pd.DataFrame, cohorts: list, min_count: int, min_cochleae: int, save_path: str):
     """Plot the mean normalized intensity per window and offset bin, one heatmap per cohort.
 
     Each cochlea has equal weight in the cohort mean. Outliers and cells with fewer than
-    `min_count` instances are left out.
+    `min_count` instances are left out. A grid cell needs `min_cochleae` cochleae.
+
+    The color scale is logarithmic and symmetric around 1. Its limits are the 98th percentile
+    of the deviation from 1, so that a few extreme cells do not compress the scale.
     """
     cells = cells[~cells["outlier"] & (cells["n"] >= min_count)]
-    grids = {
-        cohort: cells[cells["cohort"] == cohort].groupby(
-            ["offset_bin", "length_bin"], observed=False
-        )["intensity_norm"].mean().unstack()
-        for cohort in cohorts
-    }
-    deviation = np.nanmax([np.nanmax(np.abs(grid.values - 1)) for grid in grids.values()])
+    grids = {}
+    for cohort in cohorts:
+        grouped = cells[cells["cohort"] == cohort].groupby(["offset_bin", "length_bin"], observed=False)
+        grid = grouped["intensity_norm"].mean().where(grouped["cochlea"].nunique() >= min_cochleae)
+        grids[cohort] = grid.unstack()
+    ratios = np.concatenate([grid.values.ravel() for grid in grids.values()])
+    ratios = ratios[np.isfinite(ratios) & (ratios > 0)]
+    deviation = np.percentile(np.maximum(ratios, 1 / ratios), 98)
+    norm = LogNorm(vmin=1 / deviation, vmax=deviation)
     cmap = plt.get_cmap("RdBu_r").copy()
     cmap.set_bad("#bdbdbd")
 
@@ -53,14 +59,20 @@ def plot_heatmaps(cells: pd.DataFrame, cohorts: list, min_count: int, save_path:
     for ax, (cohort, grid) in zip(axes[0], grids.items()):
         n_offset_bins = len(grid.index)
         image = ax.imshow(grid.values, origin="lower", aspect="auto", extent=(0, 1, 0, n_offset_bins),
-                          cmap=cmap, vmin=1 - deviation, vmax=1 + deviation)
+                          cmap=cmap, norm=norm)
         n_cochleae = cells.loc[cells["cohort"] == cohort, "cochlea"].nunique()
         ax.set_title(f"{COHORT_DICT[cohort]['label']} ({n_cochleae} cochleae)")
         ax.set_xlabel("Length fraction")
-        ax.set_yticks(range(n_offset_bins), [f"{edge:g}" for edge in grid.index])
+        labels = [f"{edge:g}" for edge in grid.index]
+        labels[-1] = f"≥{labels[-1]}"
+        ax.set_yticks(range(n_offset_bins), labels)
     axes[0, 0].set_ylabel("Offset [µm]")
-    fig.colorbar(image, ax=axes[0], label="PV intensity / cochlea median")
-    fig.suptitle(f"Gray: fewer than {min_count} SGNs", fontsize="small", x=0.01, ha="left")
+    colorbar = fig.colorbar(image, ax=axes[0], label="PV intensity / cochlea median", extend="both")
+    ticks = [t for t in (0.5, 0.67, 0.8, 1, 1.25, 1.5, 2) if 1 / deviation <= t <= deviation]
+    colorbar.set_ticks(ticks, labels=[f"{t:g}" for t in ticks])
+    colorbar.minorticks_off()
+    fig.suptitle(f"Gray: fewer than {min_count} SGNs per cochlea or fewer than {min_cochleae} cochleae",
+                 fontsize="small", x=0.01, ha="left")
 
     plt.savefig(save_path, dpi=PNG_DPI)
     plt.close()
@@ -73,6 +85,8 @@ def main():
                         help="Cohorts to compare. Keys of SGN_VERSION in scripts/figures/plot_mwfls.py.")
     parser.add_argument("--min_count", type=int, default=10,
                         help="Minimal number of SGNs in a cell of a cochlea for the plot.")
+    parser.add_argument("--min_cochleae", type=int, default=2,
+                        help="Minimal number of cochleae in a cell of the cohort heatmap.")
     args = parser.parse_args()
 
     s3 = create_s3_target()
@@ -94,7 +108,8 @@ def main():
     os.makedirs(args.output_dir, exist_ok=True)
     summary.to_csv(os.path.join(args.output_dir, "SGN_cochlea_intensity.tsv"), sep="\t", index=False)
     cells.to_csv(os.path.join(args.output_dir, "SGN_offset_intensity.tsv"), sep="\t", index=False)
-    plot_heatmaps(cells, args.cohorts, args.min_count, os.path.join(args.output_dir, "SGN_offset_intensity.png"))
+    plot_heatmaps(cells, args.cohorts, args.min_count, args.min_cochleae,
+                  os.path.join(args.output_dir, "SGN_offset_intensity.png"))
     print(summary.to_string(index=False))
 
 
