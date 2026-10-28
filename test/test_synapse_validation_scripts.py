@@ -225,37 +225,48 @@ class TestTrainingRecipe(unittest.TestCase):
             os.path.join(REPO_ROOT, "scripts", "synapse_marker_detection", "train_synapse_detection.py"),
         )
 
-    def _train(self, **kwargs):
+    def _train(self, folder_split=None, **kwargs):
         recorded = {}
         with tempfile.TemporaryDirectory() as tmp_dir:
             for folder, ext in (("images", ".zarr"), ("labels", ".csv")):
                 os.makedirs(os.path.join(tmp_dir, "v0", folder))
                 for name in ("a", "b", "c"):
                     open(os.path.join(tmp_dir, "v0", folder, name + ext), "w").close()
+            if folder_split is not None:
+                with open(os.path.join(tmp_dir, "v0", "train_val_split.json"), "w") as f:
+                    json.dump(folder_split, f)
             with mock.patch.object(self.training, "supervised_training", lambda **kw: recorded.update(kw)), \
                  mock.patch("flamingo_tools.synapse_detection.detection_dataset._spotiflow_available", True):
                 self.training.train(tmp_dir, version="v0", val_sample_size=1, **kwargs)
         return recorded
 
-    def test_default_is_the_v7_recipe(self):
+    def test_default_is_the_v11_recipe(self):
         recorded = self._train()
         self.assertEqual(recorded["sampler"].min_points, 1)
         self.assertIsNone(recorded["metric"])
         self.assertEqual(recorded["val_patch_seed"], 42)
-        self.assertFalse(recorded["label_transform"].fixed_target)
+        self.assertTrue(recorded["label_transform"].fixed_target)
+        self.assertEqual(recorded["lr_schedule"], "cosine")
+        self.assertEqual(recorded["n_iterations"], 30000)
 
     def test_legacy_recipe(self):
         recorded = self._train(legacy_recipe=True)
         self.assertIsNone(recorded["sampler"])
         self.assertIsInstance(recorded["metric"], torch.nn.MSELoss)
         self.assertIsNone(recorded["val_patch_seed"])
+        self.assertFalse(recorded["label_transform"].fixed_target)
+        self.assertEqual(recorded["lr_schedule"], "plateau")
+        self.assertEqual(recorded["n_iterations"], int(1e5))
         # v5 and v3-flow-1 used the sampler.
         self.assertIsNotNone(self._train(legacy_recipe=True, use_flow=True)["sampler"])
 
-    def test_fixed_target(self):
-        self.assertTrue(self._train(fixed_target=True)["label_transform"].fixed_target)
-        with self.assertRaises(ValueError):
-            self._train(legacy_recipe=True, fixed_target=True)
+    def test_split_of_the_data_folder(self):
+        split = {"train": ["a", "b"], "val": ["c"]}
+        recorded = self._train(folder_split=split)
+        self.assertEqual([os.path.basename(p) for p in recorded["val_paths"]], ["c.zarr"])
+        # The legacy runs keep their random split, which takes "a" for random state 42.
+        recorded = self._train(folder_split=split, legacy_recipe=True)
+        self.assertEqual([os.path.basename(p) for p in recorded["val_paths"]], ["a.zarr"])
 
     def test_split_file(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
