@@ -1,12 +1,11 @@
 """Compare the PV intensity of SGNs against their offset to the central path of Rosenthal's canal.
 
-The script reads the SGN_v2 segmentation table of each cochlea from S3. The table holds the median
-PV intensity with background mask in the column 'PV_bg-mask_median'. The script maps the table in
-memory with the default central path method of `tonotopic_mapping` and the component list of the
-processing JSON, because the mapping on S3 is missing or out of date for these cochleae.
+The script reads the SGN segmentation table of each cochlea from S3, in the version of
+plot_mwfls.SGN_VERSION, and the median PV intensity with background mask from its object measures.
+It maps the table in memory with the default central path method of `tonotopic_mapping` and the
+component list of util.COCHLEA_DICT, because the mapping on S3 can be missing or out of date.
 """
 import argparse
-import json
 import os
 import sys
 
@@ -15,30 +14,19 @@ import numpy as np
 import pandas as pd
 
 from flamingo_tools.analysis.central_path_utils import mean_by_offset
-from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping
-from flamingo_tools.s3_utils import get_s3_path
+from flamingo_tools.s3_utils import create_s3_target
 
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "figures"))
 from util import COHORT_DICT, OUTLIER_DICT, cohort_cochleae  # noqa: E402
+from data import get_mapped_table  # noqa: E402
+from plot_mwfls import SGN_VERSION  # noqa: E402
 
-PROCESSING_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "reproducibility", "processing")
 PNG_DPI = 300
 
 
-def load_cochlea(cochlea: str) -> pd.DataFrame:
+def load_cochlea(s3, cochlea: str, sgn_version: str) -> pd.DataFrame:
     """Load the mapped SGNs of a cochlea with their absolute and normalized PV intensity."""
-    s3_path, fs = get_s3_path(f"{cochlea}/tables/SGN_v2/default.tsv")
-    with fs.open(s3_path, "r") as f:
-        table = pd.read_csv(f, sep="\t")
-    with open(os.path.join(PROCESSING_DIR, f"{cochlea}_SGN.json")) as f:
-        component_list = json.load(f)["component_list"]
-    table, _ = tonotopic_mapping(table, component_label=component_list, cell_type="sgn")
-
-    table = table[table["offset"] >= 0].rename(columns={"PV_bg-mask_median": "intensity"})
-    n_missing = table["intensity"].isna().sum()
-    if n_missing > 0:
-        raise ValueError(f"{cochlea}: {n_missing} mapped instances have no PV intensity.")
-
+    table = get_mapped_table(s3, cochlea, "SGN", sgn_version, stain="PV")
     table["intensity_norm"] = table["intensity"] / table["intensity"].median()
     return table
 
@@ -81,16 +69,17 @@ def plot_heatmaps(cells: pd.DataFrame, cohorts: list, min_count: int, save_path:
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output_dir", type=str, required=True, help="Output directory for tables and plot.")
-    parser.add_argument("--cohorts", type=str, nargs="+", default=["idisco", "mwfls"],
-                        help="Cohorts to compare. Keys of COHORT_DICT in scripts/figures/util.py.")
+    parser.add_argument("--cohorts", type=str, nargs="+", default=["idisco", "mwfls"], choices=list(SGN_VERSION),
+                        help="Cohorts to compare. Keys of SGN_VERSION in scripts/figures/plot_mwfls.py.")
     parser.add_argument("--min_count", type=int, default=10,
                         help="Minimal number of SGNs in a cell of a cochlea for the plot.")
     args = parser.parse_args()
 
+    s3 = create_s3_target()
     summary, cells = [], []
     for cohort in args.cohorts:
         for cochlea in cohort_cochleae(cohort):
-            table = load_cochlea(cochlea)
+            table = load_cochlea(s3, cochlea, SGN_VERSION[cohort])
             outlier = cochlea in OUTLIER_DICT["SGN"]
             summary.append({"cochlea": cochlea, "cohort": cohort, "outlier": outlier, "n": len(table),
                             "median_intensity": table["intensity"].median()})
