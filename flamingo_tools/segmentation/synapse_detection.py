@@ -297,7 +297,7 @@ def synapse_detection_from_prediction(
     Returns:
         The detections in MoBIE compatible format, with coordinates in micrometer.
     """
-    print(f"Using detection threshold: {threshold:.3f}")
+    print(f"Using detection threshold {threshold:.3f} and min_distance {min_distance}.")
     n_threads = min(16, _available_cpus()) if n_threads is None else n_threads
 
     if not os.path.exists(detection_path) or force_overwrite:

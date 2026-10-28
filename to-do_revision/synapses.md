@@ -35,10 +35,11 @@ its summary.
 ## Network application
 Potentially relevant for a new synapse network.
 
-The standard network is v11-2 `latest.pt`. The detection defaults (threshold 0.5,
-`min_distance` 1) are in `flamingo_tools.model_utils.get_default_detection_settings`. The
-`detect_synapses` template of slurm-workflows passes the threshold and keeps the default
-`min_distance`.
+The standard network is v11-2 `latest.pt`. Production still applies v3 (`get_model("Synapses")`
+and `synapses_v3` in slurm-workflows) until the open items below are done. The detection defaults
+(threshold 0.5, `min_distance` 1) are in `flamingo_tools.model_utils.get_default_detection_settings`.
+The `detect_synapses` template of slurm-workflows passes the threshold and keeps the default
+`min_distance`, so v3 also detects with `min_distance` 1 since 2026-10-28.
 
 An example script for cochlea `G_LR_000302_R` is `synapse_process_GLR000302R.sbatch`.
 The volume can be masked based on an IHC segmentation, which can be local or on the S3 bucket.
@@ -221,7 +222,9 @@ A registered version scores with `prediction.py -v <version>` and `run_evaluatio
 
 - Compare (0.5, 1) with (0.5, 2) on one whole cochlea (`syn_per_IHC`). Predict it with v11-2 and
   keep `predictions.zarr` (`--no-cleanup` in slurm-workflows). Then run only the detection stage,
-  once per `min_distance`.
+  once per `min_distance`. The template has no `min_distance` and overwrites the tables in the
+  same folder: copy the tables of the first run aside, and call
+  `run_synapse_detection_slurm(..., min_distance=2)` by hand for the second.
 - Copy the v11 checkpoints to `trained_models/Synapses/synapse_detection_v11-<i>[-latest].pt`, the
   paths of `PREDICTION_DICT`, and add `synapses_v11` to the slurm-workflows project settings.
 - Publish v11-2 on BioImage.IO (loyal-ant v1). Then bump `MODELS["Synapses"]` in
