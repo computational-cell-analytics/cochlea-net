@@ -86,6 +86,18 @@ either. The v7 recipe stays the standard, and it is the default of `train_synaps
 since 2026-10-21. The settings of every version are in the table "Settings of every model
 version" in the same file.
 
+## v11: the refined recipe
+
+`train_synapse_v11.sbatch` trains three seeds (`v11-1…3`) of the v7 recipe with the fixed target,
+a cosine learning rate over 3e4 iterations and the two consensus val crops. One seed takes about
+5.7 A100 hours. Decision on 2026-10-28: v11 becomes the training default, v11-2 `latest.pt` the
+standard network, and (0.5, 1) the production setting. See "Final state (2026-10-28)" in
+[`../synapses.md`](../synapses.md).
+
+These jobs served only the investigation: `train_synapse_v9.sbatch` (broken since the mask
+removal, check out `4da9e70`), `synapse_detect_ihc11_F1val.sbatch`,
+`rescore_operating_point.sbatch` and `evaluate_synapse_v11.sbatch`.
+
 ## What the seed experiment found
 
 Full numbers in [`v3_training_dynamics_report.md`](v3_training_dynamics_report.md), on the six

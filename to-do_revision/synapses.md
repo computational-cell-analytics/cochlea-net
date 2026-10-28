@@ -195,6 +195,45 @@ The v3 seed replicates are trained and scored, see `scripts_synapses/README.md` 
 `scripts_synapses/v3_training_dynamics_report.md`. `plot_fig2.py` reads their accuracy from
 `reproducibility/model_accuracy/synapses.json`. These entries were scored against IHC v4.
 
+### Final state (2026-10-28)
+
+The investigation is closed. Decision (Martin, 2026-10-28):
+
+- The v11 recipe becomes the training default: heatmap only, `DetectionLoss` as loss and
+  metric, `MinPointSampler(1, 0.8)`, fixed validation patches, the fixed target, a cosine
+  learning rate over 3e4 iterations, and the consensus val crops apex1 and base1. Use `latest.pt`.
+- v11-2 `latest.pt` becomes the standard network.
+- Production detects at threshold 0.5 and `min_distance` 1.
+- Open: compare (0.5, 1) with (0.5, 2) on one whole cochlea (`syn_per_IHC`), and publish v11-2
+  on BioImage.io.
+
+Test v11 (4 crops, 733 points), F1. `cons` is the setting that the gridsearch with `--ihc_dir`
+selects on the consensus val crops:
+
+| Model | (0.5, 2) | (0.5, 1) | `cons` |
+|---|---:|---:|---|
+| v5, v5-rep1…4, `best.pt` | 0.840 to 0.878, mean 0.861 | | 0.835 to 0.890, mean 0.868 |
+| v7-latest | 0.881 | | (0.35, 1), 0.896 |
+| v10 | 0.873 | | (0.15, 1), 0.901 |
+| v11-1-latest | 0.882 | 0.894 | (0.10, 1), 0.883 |
+| v11-2-latest | 0.889 | 0.907 | (0.20, 1), 0.908 |
+| v11-3-latest | 0.888 | 0.902 | (0.10, 1), 0.900 |
+
+The sections below are the chronological record. Each one corrects or extends the one before:
+
+| Section | Result |
+|---|---|
+| "Evaluating v7 and v8, and the IHC v11 switch" | Scores against IHC v11 are not comparable to the IHC v4 entries. |
+| "v7 against v8, and the candidate-exclusion mask" | The cube mask of v8 destroys the precision (0.97 to 0.63). |
+| "v9 and the recall limit" | v9 gives no gain. Close pairs that merge into one peak limit the recall. `min_distance` 1 helps. |
+| "v10 and the narrower target" | sigma 0.7 does not separate the close pairs. |
+| "Target defect and v11" | The target of every model up to v10 depends on the patch. `--fixed_target` fixes it. |
+| "Training robustness" | The LR collapses early. The old val crops are sparse. The models are at human level. New split. |
+| "Rescoring result" | Do not select on the old val crops. Use a cosine decay and `latest.pt`. Rules for v11. |
+| "Rescoring rerun" | The v5 seed spread and the baseline of the v11 rules. |
+| "v11 result" | v11 beats every earlier model at (0.5, 2), with a small seed spread and 5.6 times less training. |
+| "v11 selection" | Rule 5 chooses v11-2. `min_distance` 1 gives the gain, the low threshold does not. |
+
 ### Evaluating v7 and v8, and the IHC v11 switch (2026-09-24)
 
 `v7` and `v8` are the unmasked and masked pair of the 2026-09-21 recipe. Four entries are
@@ -358,7 +397,8 @@ python scripts/validation/synapses/run_evaluation.py -p $OUT -o reproducibility/
 
 `run_evaluation.py` without `--version` stores the result under the folder name,
 `v7-latest_md1`. The whole-cochlea entry points still detect with `min_distance` 2. Pass the
-option on to them once the validation selects another value.
+option on to them once the validation selects another value. Decided on 2026-10-28: (0.5, 1), see
+"Final state (2026-10-28)".
 
 **v10: a narrower target.** For two annotations 3 voxels (1.1 um) apart, the sigma-1
 target falls only to 73 % of the peak between them, and the trained heatmap merges such pairs.
@@ -823,7 +863,8 @@ gridsearch):
 
 The three seeds of the refined recipe (`train_synapse_v11.sbatch`, array `v11-1…3`) are trained.
 The production pipeline scored `best.pt` (`v11-<i>`) and `latest.pt` (`v11-<i>-latest`) at (0.5, 2)
-on the six consensus crops. `evaluate_synapse_v11.sbatch` (rules 1 and 2) has not run yet.
+on the six consensus crops. `evaluate_synapse_v11.sbatch` (rules 1 and 2) ran later, see
+"v11 selection (2026-10-28)".
 
 Test v11 at (0.5, 2), P / R / F1 and F1 per crop:
 
@@ -878,7 +919,78 @@ is cheaper, and the known defects (target, learning rate schedule, val split) ar
 - the production setting: v11 is already the best model at (0.5, 2). For the v5 replicates, the
   cons selection gained only +0.004 on average and lost in 3 of 8 runs. Keep (0.5, 2), unless the
   three seeds select the same setting and gain clearly;
-- the training default and the released model do not change yet.
+- the training default and the released model do not change yet. Decided on 2026-10-28, see
+  "Final state (2026-10-28)".
+
+### v11 selection (2026-10-28)
+
+`evaluate_synapse_v11.sbatch` ran rules 1 and 2 for `latest.pt` of v11-1…3. The local copy is
+`v11_2026-10-26/` in the repository root. The gridsearch on the consensus val crops (apex1 and base1,
+416 points) with `--ihc_dir` selects (0.10, 1) for v11-1 and v11-3, and (0.20, 1) for v11-2. The
+median setting is (0.10, 1), so the `median` rows of v11-1 and v11-3 equal their `cons` rows.
+
+**Local completion.** The job keeps the selected setting, but not the val F1. The stored heatmaps of
+`production_2026-09-25/v11-<i>-latest` are identical to the heatmaps of the job, and their IHC
+segmentations are identical to the test IHC of the job. The gridsearch on the stored heatmaps (a
+replaced heatmap loader, `gridsearch()` unchanged) gives the same three settings. On the test crops,
+it gives the counts of every `v11_2026-10-26` entry and of the production entries at (0.5, 2).
+
+Test v11, P / R / F1, and the val F1 at the `cons` setting:
+
+| Run | (0.5, 2) | `cons`: setting, P / R / F1 | `median` (0.10, 1), F1 | Val F1 at `cons` |
+|---|---:|---|---:|---:|
+| v11-1 | 0.882 | (0.10, 1), 0.920 / 0.849 / 0.883 | 0.883 | 0.909 |
+| v11-2 | 0.889 | (0.20, 1), 0.963 / 0.859 / 0.908 | 0.905 | 0.925 |
+| v11-3 | 0.888 | (0.10, 1), 0.963 / 0.844 / 0.900 | 0.900 | 0.916 |
+
+- Rule 4.1 passes: the mean F1 is 0.897 (0.896 at the median setting), the limit is 0.864.
+- Rule 4.2 passes: the worst seed is 0.883, the limit is 0.835.
+- Rule 4.3 is not met as written. All three seeds select `min_distance` 1, but the thresholds are
+  0.10, 0.20 and 0.10. For v11-2, the val F1 is 0.913 at 0.10 and 0.925 at 0.20, so the two
+  thresholds are not a tie on the val crops. On the test crops, the median setting costs v11-2 0.003.
+- Rule 5 chooses v11-2 (val F1 0.925, then v11-3 0.916 and v11-1 0.909). v11-2 is also first on the
+  val crops at (0.5, 2) and at (0.5, 1). At the median setting, v11-3 is 0.003 higher.
+- The selection gains +0.001, +0.019 and +0.012 over (0.5, 2), mean +0.011. The gain is recall (0.80
+  to 0.82 changes to 0.84 to 0.86), and the precision decreases (0.97 to 0.98 changes to 0.92 to
+  0.96). mid2 is still the weakest crop (0.865 to 0.874).
+- The selection increases the seed spread: SD 0.004 at (0.5, 2), 0.013 at `cons`. The v5 seeds
+  showed the same effect (0.016 to 0.023).
+
+**`min_distance` 1 gives the gain, the low threshold does not.** F1 at three settings (the test
+values are a diagnostic, not a selection):
+
+| Run | Val (0.5, 2) | Val (0.5, 1) | Val `cons` | Test (0.5, 2) | Test (0.5, 1) | Test `cons` |
+|---|---:|---:|---:|---:|---:|---:|
+| v11-1 | 0.901 | 0.908 | 0.909 | 0.882 | 0.894 | 0.883 |
+| v11-2 | 0.912 | 0.922 | 0.925 | 0.889 | 0.907 | 0.908 |
+| v11-3 | 0.895 | 0.908 | 0.916 | 0.888 | 0.902 | 0.900 |
+
+- On the val crops, `min_distance` 1 at threshold 0.5 gains +0.007 to +0.013. The change from 0.5 to
+  the selected threshold adds +0.001 to +0.008.
+- On the test crops, `min_distance` 1 gains +0.012 to +0.018. The change to the selected threshold
+  gives -0.011 to +0.001. This agrees with "v9 and the recall limit": `min_distance` 1 helps every
+  model by about 0.01.
+- The low threshold adds false positives that the two val crops do not show. v11-1 at (0.10, 1) has
+  precision 0.975 on the val crops and 0.920 on the test crops. Its base2 crop has 37 false
+  positives, against 3 at (0.5, 2). Threshold 0.10 is 2.5 % of the target peak (about 4) and one
+  step above the lowest value of the grid.
+- At (0.5, 1), the test F1 is 0.894 to 0.907 (mean 0.901, SD 0.006) at precision 0.97 to 0.98.
+
+**Against the earlier models.** At (0.5, 2), v11 was 0.001 to 0.008 above the best earlier model.
+After the selection, the v11 mean (0.897) is at the level of the best earlier models at their `cons`
+setting (v7-latest 0.896, v10 0.901). The test set has no headroom for a larger difference (human
+level, bootstrap +-0.01). These advantages stay: no weak seed (worst seed 0.883, v5 recipe 0.835),
+5.6 times less training, and no known defects.
+
+**Status.** Rules 4.1 and 4.2 pass, rule 4.3 fails on the threshold, and rule 5 chooses v11-2.
+Recommendation, open for a decision:
+
+- make the v11 recipe the training default, and release v11-2 `latest.pt`;
+- use (0.5, 1) as the production setting. The selection supports `min_distance` 1 for every seed.
+  At threshold 0.5, every seed is within 0.008 of its best val F1, the precision stays at 0.97 or
+  more, and the threshold is the current default of the whole-cochlea entry points;
+- before the switch, compare (0.5, 1) with (0.5, 2) on one whole cochlea. `min_distance` 1 changes
+  the synapse count per IHC (`syn_per_IHC`), and this is not tested.
 
 ### Settings of every model version
 
@@ -908,7 +1020,7 @@ six consensus test crops.
 | v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained; commit `4da9e70` | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10; commit `4da9e70` | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
 | v10 | `v7` | heatmap, target sigma 0.7 | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
-| v11-1 … v11-3 | `v11` = `v7` + 2 consensus val crops; split file, the 3 old val crops train | heatmap, fixed target | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 3e4, cosine learning rate | `best.pt` and `latest.pt` | production, IHC v11, see "v11 result (2026-10-27)"; gridsearch on the consensus val crops not run yet |
+| v11-1 … v11-3 | `v11` = `v7` + 2 consensus val crops; split file, the 3 old val crops train | heatmap, fixed target | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 3e4, cosine learning rate | `best.pt` and `latest.pt` | production, IHC v11, see "v11 result (2026-10-27)"; selected on the consensus val crops: (0.10, 1), (0.20, 1), (0.10, 1), see "v11 selection (2026-10-28)" |
 
 `MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
 probability 0.2. v7 to v10 standardize the raw input, which is a no-op for this network; whether
