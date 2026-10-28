@@ -1,9 +1,5 @@
 """Selection of the peak-detection settings for the synapse heatmap.
 
-Replaces the czii-protein-challenge gridsearch with flamingo-tools-compatible
-equivalents: CSV label files instead of CZII JSON, prediction_impl instead of
-get_prediction_torch_em, and inlined metric_coords.
-
 Run it on the validation crops of a training run, never on the test crops that
 scripts/validation/synapses/run_evaluation.py reports.
 """
@@ -16,8 +12,6 @@ import tempfile
 import numpy as np
 import pandas as pd
 import zarr
-from scipy.optimize import linear_sum_assignment
-from scipy.spatial.distance import cdist
 from skimage.feature import peak_local_max
 
 from flamingo_tools.segmentation.synapse_detection import (
@@ -29,6 +23,7 @@ from flamingo_tools.segmentation.synapse_detection import (
 )
 from flamingo_tools.segmentation.unet_prediction import prediction_impl
 from flamingo_tools.synapse_detection.detection_dataset import read_csv_points
+from flamingo_tools.validation import match_detections
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
 DATA_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v11")
@@ -36,40 +31,12 @@ TRAIN_ROOT = os.path.join(DATA_ROOT, "images")
 LABEL_ROOT = os.path.join(DATA_ROOT, "labels")
 VOXEL_SIZE = 0.38  # µm per voxel, isotropic.
 
-# The reported metric matches a detection to an annotation within 3 µm
-# (_MATCH_DISTANCE in scripts/validation/synapses/run_evaluation.py), so the selection does too.
+# The selection matches as the reported metric does: match_detections within 3 µm
+# (_MATCH_DISTANCE in scripts/validation/synapses/run_evaluation.py), here in voxels.
 MATCH_DISTANCE = 3.0 / VOXEL_SIZE
 # The evaluation drops every detection further than this many µm from the IHC segmentation
 # (PRODUCTION_MAX_DISTANCE in scripts/validation/synapses/prediction.py).
 IHC_MAX_DISTANCE = 3.0
-
-# ---------------------------------------------------------------------------
-# Coordinate matching metric (inlined from czii evaluation_metrics.py)
-# ---------------------------------------------------------------------------
-
-
-def _true_positives(gts, preds, match_distance):
-    """Count the one-to-one matches within *match_distance* voxels (Hungarian matching).
-
-    Args:
-        gts: (N, 3) array of ground-truth coordinates [z, y, x].
-        preds: (M, 3) array of predicted coordinates [z, y, x].
-        match_distance: Maximum voxel distance for a valid match.
-
-    Returns:
-        The number of true positives.
-    """
-    if len(gts) == 0 or len(preds) == 0:
-        return 0
-
-    dist = cdist(gts, preds, metric="euclidean")
-    if not np.any(dist < match_distance):
-        return 0
-
-    max_d = dist.max()
-    costs = -(dist < match_distance).astype(float) - (max_d - dist) / (max_d + 1e-8)
-    row_ind, col_ind = linear_sum_assignment(costs)
-    return int(np.count_nonzero(dist[row_ind, col_ind] < match_distance))
 
 
 # ---------------------------------------------------------------------------
@@ -184,7 +151,7 @@ def gridsearch(
                 records.append({
                     "min_distance": min_distance, "threshold": float(threshold),
                     "n_pred": len(pred_coords), "n_gt": len(label_coords),
-                    "tp": _true_positives(label_coords, pred_coords, MATCH_DISTANCE),
+                    "tp": len(match_detections(pred_coords, label_coords, MATCH_DISTANCE)[0]),
                 })
 
     scores = pd.DataFrame(records).groupby(["min_distance", "threshold"]).sum()
