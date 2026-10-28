@@ -17,8 +17,9 @@ suffix and would resample the split, confounding seed noise with split noise.
 `flamingo_tools/synapse_detection/training.py` and gained two changes that apply to every run
 without flags: the validation metric is the weighted combined loss instead of an unweighted mean
 squared error over all channels, and the validation patches are fixed instead of redrawn every
-epoch. Since 2026-10-21 the `MinPointSampler` is also on by default. `--legacy_recipe` restores
-all three, and is required to reproduce the recipe of any model listed here. See
+epoch. Since 2026-10-21 the `MinPointSampler` is also on by default, and since 2026-10-28 the
+fixed target and a cosine learning rate over 3e4 iterations (the v11 recipe). `--legacy_recipe`
+restores all of these, and is required to reproduce the recipe of any model listed here. See
 [`../synapses.md`](../synapses.md).
 
 ## The runs
@@ -41,62 +42,18 @@ which switches to 5 output channels, the combined heatmap+flow loss and `MinPoin
 production settings v6-1 loses 0.163 recall against v3 while v5 gains 0.191 against v6-1, so the
 two effects nearly cancel and neither run separates them alone.
 
-## The 2026-09 pair: v7 and v8
+## v7 to v11
 
-`v7` and `v8` share their training data and both run the recipe introduced on 2026-09-21: the
-validation patches fixed by `--random_state`, and `DetectionLoss` as loss and as metric. They
-were launched directly, so there are no sbatch wrappers for them. The mask options of v8 and v9
-were removed after commit `4da9e70`. Check out that commit to retrain v8 or v9:
+`v7` to `v10` were launched directly, so there are no sbatch wrappers for them. Their recipes
+and results are in [`../synapses.md`](../synapses.md). Their options were removed: check out the
+tag `synapse-detection-investigation` to retrain v7 to v10, and commit `4da9e70` for the masks of
+v8 and v9. That tag also holds the one-off cluster jobs of the investigation:
+`synapse_detect_ihc11_F1val.sbatch`, `rescore_operating_point.sbatch`,
+`evaluate_synapse_v11.sbatch` and `train_synapse_v9.sbatch`.
 
-```bash
-python $SCRIPT_DIR/train_synapse_detection.py -v v7 --random_state 42 -s $SAVE_ROOT --sampler minpoint
-python $SCRIPT_DIR/train_synapse_detection.py -v v8 --random_state 42 --mask_radius 16 -s $SAVE_ROOT
-```
-
-`v8` is the masked run and `v7` its unmasked counterpart, but **the pair is not a single-variable
-ablation**. `MinPointSampler` accepts a patch when `n_points > min_points`, and the script sets
-`min_points` to 1 without a mask and 0 with one, so `v7` needed two annotations per training
-patch and `v8` only one. Neither is a single step from `v6-1` either, which ran with no sampler
-and redrawn validation patches.
-
-Four checkpoints are registered for evaluation: `v7` and `v8` are the `best.pt` exports,
-`v7-latest` and `v8-latest` the `latest.pt` ones. The two `best.pt` were selected by different
-metrics, which is why the final checkpoints are scored alongside them. Their predictions are
-filtered against an IHC v11 segmentation, unlike every earlier entry in `synapses.json`; see
-[`../synapses.md`](../synapses.md).
-
-**v8 failed.** Its precision fell from 0.97 to 0.63 at almost the same recall. The cube mask
-removes the supervision at the borders of the zero regions and in the dim tissue, and v8 fires
-there. `v9` repeats `v7` with the candidate-exclusion mask instead, which ignores only small
-cubes around the unannotated CTBP2 spots:
-
-```bash
-python $SCRIPT_DIR/train_synapse_detection.py -v v7 -m v9 --random_state 42 -s $SAVE_ROOT \
-    --sampler minpoint --ignore_percentile 10
-```
-
-`synapse_detect_ihc11_F1val.sbatch` scored them again on 2026-09-25 and reproduced the
-2026-09-24 detections. The diagnosis is in [`../synapses.md`](../synapses.md), section
-"v7 against v8".
-
-**v9 gave no gain either** (F1 0.875 against 0.876 for v7). Recall is limited by adjacent
-synapses that merge into one peak, not by the supervision of unannotated spots, see
-"v9 and the recall limit". **v10** (`--sigma 0.7`) gave no gain at the production setting
-either. The v7 recipe stays the standard, and it is the default of `train_synapse_detection.py`
-since 2026-10-21. The settings of every version are in the table "Settings of every model
-version" in the same file.
-
-## v11: the refined recipe
-
-`train_synapse_v11.sbatch` trains three seeds (`v11-1…3`) of the v7 recipe with the fixed target,
-a cosine learning rate over 3e4 iterations and the two consensus val crops. One seed takes about
-5.7 A100 hours. Decision on 2026-10-28: v11 becomes the training default, v11-2 `latest.pt` the
-standard network, and (0.5, 1) the production setting. See "Final state (2026-10-28)" in
-[`../synapses.md`](../synapses.md).
-
-These jobs served only the investigation: `train_synapse_v9.sbatch` (broken since the mask
-removal, check out `4da9e70`), `synapse_detect_ihc11_F1val.sbatch`,
-`rescore_operating_point.sbatch` and `evaluate_synapse_v11.sbatch`.
+`train_synapse_v11.sbatch` trains the three seeds `v11-1…3` of the v11 recipe, the default of
+`train_synapse_detection.py` since 2026-10-28. One seed takes about 5.7 A100 hours. v11-2
+`latest.pt` is the standard network.
 
 ## What the seed experiment found
 
@@ -130,12 +87,8 @@ prediction, because a silent CPU fallback is about 50x slower and never finishes
 | `train_synapse_v3-5.sbatch` … `v3-7` | The same at 10k iterations, on cheaper queues |
 | `train_synapse_v3-flow-1.sbatch` | v3 data with the v5 recipe (`--use_flow`) |
 | `train_synapse_v6-1.sbatch` | v6 data with the v3 recipe |
-| `train_synapse_v9.sbatch` | v7 with the candidate-exclusion mask |
-| `train_synapse_v11.sbatch` | Three seeds of the refined recipe: fixed target, cosine LR over 3e4 iterations, consensus val crops |
-| `synapse_detect_ihc11_F1val.sbatch` | Score the baselines and v7 to v10 against IHC v11 |
+| `train_synapse_v11.sbatch` | Three seeds of the v11 recipe, the training default |
 | `synapse_detect_v5-variation_F1val.sbatch` | Run the four v5 fold models over the six test crops |
-| `rescore_operating_point.sbatch` | Select the detection setting on the consensus and the old val crops, score test v11 |
-| `evaluate_synapse_v11.sbatch` | Select the setting of the v11 seeds on the consensus val crops, score test v11 at it and at the median setting |
 | `synapse_process_GLR000301R.sbatch` | Single-job prediction + detection + IHC matching, G301R |
 | `synapse_process_GLR000302R.sbatch` | The same for G302R |
 | `distance_unet_checkpoint.py` | Load only the inference model from a torch-em checkpoint |

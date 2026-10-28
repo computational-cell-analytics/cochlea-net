@@ -17,7 +17,7 @@ class TestDetectionGridsearch(unittest.TestCase):
     # A spot far from every annotation, in the unannotated part of a training crop.
     unannotated = (10, 120, 120)
 
-    def _run(self, extra_peaks=(), **kwargs):
+    def _run(self, extra_peaks=(), ihc_at_unannotated=False, ihc_at_isolated=True):
         # The prediction of the crop zero-padded to the production block shape.
         heatmap = np.zeros((64, 256, 256), dtype="float32")
         for point, value in zip(self.annotations + [self.unannotated], (2.0, 1.5, 2.0, 2.0)):
@@ -34,20 +34,21 @@ class TestDetectionGridsearch(unittest.TestCase):
             pd.DataFrame(self.annotations, columns=["axis-0", "axis-1", "axis-2"]).to_csv(
                 os.path.join(label_dir, "crop.csv"), index=False
             )
-            if kwargs.pop("with_ihc", False):
-                # One IHC next to the pair and one next to the unannotated spot, none next to the
-                # isolated annotation.
-                segmentation = np.zeros(self.shape, dtype="uint32")
-                segmentation[8:13, 16:26, 16:26] = 1
-                segmentation[8:13, 116:124, 116:124] = 2
-                ihc_dir = os.path.join(tmp_dir, "ihc")
-                zarr.open(store=os.path.join(ihc_dir, "crop_ihc", "segmentation.zarr"), mode="w").create_array(
-                    "segmentation", data=segmentation
-                )
-                kwargs["ihc_dir"] = ihc_dir
+            # One IHC next to the pair, and optionally one next to the isolated annotation and one
+            # next to the unannotated spot.
+            segmentation = np.zeros(self.shape, dtype="uint32")
+            segmentation[8:13, 16:26, 16:26] = 1
+            if ihc_at_isolated:
+                segmentation[8:13, 56:64, 56:64] = 2
+            if ihc_at_unannotated:
+                segmentation[8:13, 116:124, 116:124] = 3
+            ihc_dir = os.path.join(tmp_dir, "ihc")
+            zarr.open(store=os.path.join(ihc_dir, "crop_ihc", "segmentation.zarr"), mode="w").create_array(
+                "segmentation", data=segmentation
+            )
             with mock.patch.object(gs, "prediction_impl", return_value=(None, heatmap)):
                 return gs.gridsearch(
-                    "model.pt", image_dir=image_dir, label_dir=label_dir, out_channels=1, **kwargs
+                    "model.pt", ihc_dir, image_dir=image_dir, label_dir=label_dir, out_channels=1
                 )
 
     def test_min_distance_one_separates_the_pair(self):
@@ -57,17 +58,17 @@ class TestDetectionGridsearch(unittest.TestCase):
         self.assertEqual(scores.loc[(1, 0.5), "recall"], 1.0)
         self.assertAlmostEqual(scores.loc[(2, 0.5), "recall"], 2 / 3)
 
-    def test_unannotated_region_is_not_scored(self):
+    def test_detections_far_from_the_ihcs_are_not_scored(self):
         _, _, scores = self._run()
         self.assertEqual(scores.loc[(1, 0.5), "precision"], 1.0)
 
-        _, _, scores = self._run(annotated_radius=None)
+        # Next to an IHC, the unannotated spot is a false positive.
+        _, _, scores = self._run(ihc_at_unannotated=True)
         self.assertEqual(scores.loc[(1, 0.5), "precision"], 0.75)
 
-    def test_ihc_filter_replaces_the_radius(self):
-        _, _, scores = self._run(with_ihc=True)
-        # The pair and the unannotated spot are kept, the isolated annotation is lost.
-        self.assertEqual(scores.loc[(1, 0.5), "n_pred"], 3)
+        # Without an IHC, the isolated annotation is lost.
+        _, _, scores = self._run(ihc_at_isolated=False)
+        self.assertEqual(scores.loc[(1, 0.5), "n_pred"], 2)
         self.assertEqual(scores.loc[(1, 0.5), "tp"], 2)
 
     def test_padding_is_not_scored(self):

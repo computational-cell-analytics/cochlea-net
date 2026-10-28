@@ -24,22 +24,14 @@ _LEGACY_PRED_ROOT = os.path.join(COCHLEA_DIR, "predictions/val_synapses")
 
 _IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
 
-# v3 / v3-1: heatmap-only, 15-crop v3 training data (v3-1 is a second seed).
-# v5 / v6-1: same 29-crop training data; v5 adds the flow channels and the MinPointSampler,
-# v6-1 is heatmap-only. So v5 vs v6-1 isolates the architecture and v3 vs v6-1 the data.
-# v7 / v8: the recipe of 2026-09-21, with the raw input standardized per crop and the validation
-# patches fixed. v7 is unmasked, v8 uses --mask_radius 16. The plain keys are the best.pt exports
-# and '-latest' the latest.pt ones. See prediction.py for why the pair is not a clean ablation.
-# The v7 and v8 predictions are filtered against an IHC v11 segmentation, every earlier entry in
-# synapses.json against v4, so they are only comparable to baselines that were re-predicted.
-# Those are 'v3-ihc11' and 'v5-ihc11'; the plain 'v3' and 'v5' entries stay on IHC v4.
-# v9 is the v7 recipe with the candidate-exclusion mask, see prediction.py. v10 is the v7 recipe
-# with a Gaussian target of sigma 0.7 instead of 1.
+# The versions of PREDICTION_DICT in prediction.py. Every entry from v7 on, and the '-ihc11'
+# entries, are filtered against an IHC v11 segmentation; the earlier plain entries against v4.
 _PRODUCTION_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
     "v3-flow-1-best", "v3-flow-1-latest",
     "v7", "v7-latest", "v8", "v8-latest", "v9", "v9-latest",
     "v10", "v10-latest",
+    "v11-1", "v11-1-latest", "v11-2", "v11-2-latest", "v11-3", "v11-3-latest",
     "v3-ihc11", "v5-ihc11",
 )
 _LEGACY_VERSIONS = (
