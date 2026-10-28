@@ -677,5 +677,20 @@ class TestS3Resolution(unittest.TestCase):
         ])
 
 
+class TestDetectionSettings(unittest.TestCase):
+    def test_detection_stage_passes_min_distance(self):
+        from unittest import mock
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_detection_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir, mock.patch(
+            "flamingo_tools.segmentation.synapse_detection.synapse_detection_from_prediction",
+            return_value=pd.DataFrame(),
+        ) as detect:
+            run_synapse_detection_slurm(tmp_dir)
+            # slurm-workflows passes the settings as strings.
+            run_synapse_detection_slurm(tmp_dir, min_distance="2")
+        self.assertEqual([call.kwargs["min_distance"] for call in detect.call_args_list], [1, 2])
+
+
 if __name__ == "__main__":
     unittest.main()

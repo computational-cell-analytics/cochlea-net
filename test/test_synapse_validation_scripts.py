@@ -107,9 +107,9 @@ class TestPredictionRoots(unittest.TestCase):
 
     def test_detection_settings_reach_the_prediction(self):
         recorded = self._run(["-v", "v7"])
-        self.assertEqual((recorded["threshold"], recorded["min_distance"]), (0.5, 2))
-        recorded = self._run(["-v", "v7", "--threshold", "0.4", "--min_distance", "1"])
-        self.assertEqual((recorded["threshold"], recorded["min_distance"]), (0.4, 1))
+        self.assertEqual((recorded["threshold"], recorded["min_distance"]), (0.5, 1))
+        recorded = self._run(["-v", "v7", "--threshold", "0.4", "--min_distance", "2"])
+        self.assertEqual((recorded["threshold"], recorded["min_distance"]), (0.4, 2))
 
     def test_without_a_version_the_output_root_is_exact(self):
         recorded = self._run(["-i", "/tmp/img", "-o", "/tmp/out", "--model_synapse", "/tmp/syn.pt"])
