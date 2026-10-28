@@ -39,7 +39,7 @@ class MinPointSampler:
         self.min_points = min_points
         self.p_reject = p_reject
 
-    def __call__(self, x: np.ndarray, y: np.ndarray, rng=np.random) -> bool:
+    def __call__(self, x: np.ndarray, y: np.ndarray, rng: np.random.Generator) -> bool:
         """Check the sample.
 
         Args:
@@ -47,7 +47,7 @@ class MinPointSampler:
             y: The label data as returned by the label transform (heatmap, or multi-channel
                heatmap+flow array with shape (C, Z, Y, X)).
             rng: The generator for the rejection draw. Pass a seeded generator to make the
-                decision reproducible. The default uses the global numpy generator.
+                decision reproducible.
 
         Returns:
             Whether to accept this sample.
@@ -167,30 +167,15 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
 class DetectionDataset(torch.utils.data.Dataset):
     max_sampling_attempts = 500
 
-    @staticmethod
-    def compute_len(shape, patch_shape):
-        if patch_shape is None:
-            return 1
-        else:
-            n_samples = int(np.prod([float(sh / csh) for sh, csh in zip(shape, patch_shape)]))
-            return n_samples
-
     def __init__(
         self,
         raw_path,
         raw_key,
         label_path,
         patch_shape,
-        raw_transform=None,
-        label_transform=None,
-        label_transform2=None,
-        transform=None,
-        dtype=torch.float32,
-        label_dtype=torch.float32,
+        label_transform,
         n_samples=None,
         sampler=None,
-        eps=1e-8,
-        sigma=None,
         patch_seed=None,
     ):
         self.raw_path = raw_path
@@ -201,20 +186,11 @@ class DetectionDataset(torch.utils.data.Dataset):
         assert len(patch_shape) == self._ndim
         self.patch_shape = patch_shape
 
-        self.raw_transform = raw_transform
-        # `sigma` and `eps` only feed this fallback, for a dataset constructed without a transform.
-        if label_transform is None:
-            label_transform = CsvHeatmapTransform(sigma, eps)
         self.label_transform = label_transform
-        self.label_transform2 = label_transform2
-        self.transform = transform
         self.sampler = sampler
         # Makes the patch for a given index reproducible, for the validation set. Leave it unset
         # for training, where every access should see a new patch.
         self.patch_seed = patch_seed
-
-        self.dtype = dtype
-        self.label_dtype = label_dtype
 
         # Buffer added around each sampled patch before calling the label transform. The label
         # transform declares how much context it needs: the flow and the fixed target.
@@ -229,7 +205,9 @@ class DetectionDataset(torch.utils.data.Dataset):
         else:
             self.shape = full_shape
 
-        self._len = self.compute_len(self.shape, self.patch_shape) if n_samples is None else n_samples
+        if n_samples is None:
+            n_samples = int(np.prod([sh / psh for sh, psh in zip(self.shape, self.patch_shape)]))
+        self._len = n_samples
 
     def __len__(self):
         return self._len
@@ -312,16 +290,6 @@ class DetectionDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         raw, labels = self._get_sample(index)
-
-        if self.raw_transform is not None:
-            raw = self.raw_transform(raw)
-
-        if self.transform is not None:
-            raw, labels = self.transform(raw, labels)
-
-        if self.label_transform2 is not None:
-            labels = self.label_transform2(labels)
-
-        raw = ensure_tensor_with_channels(raw, ndim=self._ndim, dtype=self.dtype)
-        labels = ensure_tensor_with_channels(labels, ndim=self._ndim, dtype=self.label_dtype)
+        raw = ensure_tensor_with_channels(raw, ndim=self._ndim, dtype=torch.float32)
+        labels = ensure_tensor_with_channels(labels, ndim=self._ndim, dtype=torch.float32)
         return raw, labels

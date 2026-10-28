@@ -125,21 +125,6 @@ class TestDetectionDataset(unittest.TestCase):
                 self.assertEqual(tuple(raw.shape), (1, *self.patch_shape))
                 self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
 
-    def test_dataset_default_label_transform(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            raw_path, label_path = self._create_data(tmp_dir)
-            ds = DetectionDataset(
-                raw_path=raw_path, raw_key="raw", label_path=label_path,
-                patch_shape=self.patch_shape, sigma=1, n_samples=1,
-            )
-
-            self.assertIs(type(ds.label_transform), CsvHeatmapTransform)
-            self.assertEqual(ds.halo, 0)
-
-            raw, labels = ds[0]
-            self.assertEqual(tuple(raw.shape), (1, *self.patch_shape))
-            self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
-
     def test_dataset_halo_from_label_transform(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             raw_path, label_path = self._create_data(tmp_dir)
@@ -157,8 +142,9 @@ class TestDetectionDataset(unittest.TestCase):
             labels = CsvHeatmapTransform(sigma=1, eps=1e-5)(label_path, self.shape, self.bb, self.bb)
             raw = np.zeros(self.patch_shape, dtype="float32")
 
-            self.assertTrue(MinPointSampler(min_points=1, p_reject=1.0)(raw, labels))
-            self.assertFalse(MinPointSampler(min_points=1000, p_reject=1.0)(raw, labels))
+            rng = np.random.default_rng(0)
+            self.assertTrue(MinPointSampler(min_points=1, p_reject=1.0)(raw, labels, rng))
+            self.assertFalse(MinPointSampler(min_points=1000, p_reject=1.0)(raw, labels, rng))
 
             # The sampler must not reject every patch when it is used in the dataset.
             ds = self._make_dataset(
@@ -225,9 +211,6 @@ class TestDetectionDataset(unittest.TestCase):
         sampler = MinPointSampler(min_points=1, p_reject=0.5)
         raw = np.zeros(self.patch_shape, dtype="float32")
         labels = np.zeros((1, *self.patch_shape), dtype="float32")
-
-        # The two argument call still works, and draws from the global generator.
-        self.assertIn(sampler(raw, labels), (True, False))
 
         decisions = [sampler(raw, labels, np.random.default_rng((42, i))) for i in range(8)]
         repeated = [sampler(raw, labels, np.random.default_rng((42, i))) for i in range(8)]
