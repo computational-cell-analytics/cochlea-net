@@ -9,6 +9,7 @@ from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
 from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.analysis.central_path_utils import export_central_paths
 from flamingo_tools.analysis.density_utils import calc_sgn_density
 
 # Shared by the two commands that find a central path, so the two cannot drift apart.
@@ -411,6 +412,59 @@ def tonotopic_mapping():
         component_list=args.components,
         include_gap=args.include_gap,
         path_method=args.path_method,
+        s3=args.s3,
+        s3_credentials=args.s3_credentials,
+        s3_bucket_name=args.s3_bucket_name,
+        s3_service_endpoint=args.s3_service_endpoint,
+    )
+
+
+def central_path_tifs():
+    parser = argparse.ArgumentParser(
+        description="Export the central paths v1 ('edt') and v2 ('edt_refined') through Rosenthal's canal "
+        "as TIF files for napari: <cochlea>_<seg>_seg.tif, <cochlea>_<seg>_intensity.tif, "
+        "<cochlea>_<seg>_path-v1.tif and <cochlea>_<seg>_path-v2.tif, for example "
+        "M-AMD-000126-L_SGN-v2_path-v1.tif. Each name part has dashes in place of underscores. "
+        "<seg> comes from a table path <cochlea>/tables/<seg>/default.tsv or a file name "
+        "<cochlea>_<SGN|IHC>_<version>.tsv. Without a version, the names leave out <seg>.")
+
+    parser.add_argument("-i", "--input", type=str, required=True, help="Input path to SGN segmentation table.")
+    parser.add_argument("-o", "--output_dir", type=str, required=True, help="Output directory for the TIF files.")
+    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
+    parser.add_argument("--cochlea", type=str, default=None,
+                        help="Cochlea part of the output file names. Default: The cochlea of a table path "
+                        "<cochlea>/tables/<seg>/default.tsv or of a file name <cochlea>_<SGN|IHC>_<version>.tsv, "
+                        "or else the file name of the table. Give it to split a file name <cochlea>_<seg>.tsv "
+                        "with a prefixed <seg>, such as PV_SGN_v2.")
+    parser.add_argument("--scale_factor", type=int, default=10,
+                        help="Scale factor of the output grid in micrometer per voxel. The central paths always "
+                        "use the 10 µm default of the path methods. Default: 10")
+    parser.add_argument("--napari", action="store_true",
+                        help="Use napari image viewer for visualizing the central paths.")
+
+    # options for S3 bucket
+    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
+    parser.add_argument("--s3_credentials", type=str, default=None,
+                        help="Input file containing S3 credentials. "
+                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
+    parser.add_argument("--s3_bucket_name", type=str, default=None,
+                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
+    parser.add_argument("--s3_service_endpoint", type=str, default=None,
+                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
+
+    args = parser.parse_args()
+    if args.scale_factor < 1:
+        parser.error("--scale_factor must be at least 1.")
+
+    export_central_paths(
+        table_path=args.input,
+        output_dir=args.output_dir,
+        component_list=args.components,
+        cochlea=args.cochlea,
+        scale_factor=args.scale_factor,
+        use_napari=args.napari,
+        force_overwrite=args.force,
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,

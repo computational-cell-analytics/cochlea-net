@@ -1207,7 +1207,14 @@ def _centroids_per_component(table: pd.DataFrame, component_label: List[int]) ->
 
     The order of `component_label` is kept, because it is the order in which the components are
     linked along the cochlea.
+
+    Raises:
+        ValueError: If a component label has no instances in the table.
     """
+    present = set(table["component_labels"])
+    missing = [label for label in component_label if label not in present]
+    if missing:
+        raise ValueError(f"The component labels {missing} are not in the table. Available: {sorted(present - {0})}.")
     centroids_components = []
     for label in component_label:
         subset = table[table["component_labels"] == label]
