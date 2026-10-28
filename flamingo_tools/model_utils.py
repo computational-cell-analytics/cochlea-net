@@ -261,8 +261,9 @@ def get_default_detection_settings(model_type: str) -> Dict[str, Union[int, floa
         Dictionary with the threshold and the min_distance of the peak detection.
     """
     all_default_kwargs = {
-        # Selected for synapse v11-2 on the consensus validation crops (2026-10-28, see
-        # to-do_revision/synapses.md). It is also the selection for v3, the BioImage.IO model.
+        # Every v11 seed and v3, the BioImage.IO model, select min_distance 1 on the consensus
+        # validation crops. Their selected thresholds disagree, so 0.5 stays (2026-10-28, see
+        # "The v11 decision rules" in to-do_revision/synapses.md).
         "Synapses": {"threshold": 0.5, "min_distance": 1},
     }
     if model_type not in all_default_kwargs:
