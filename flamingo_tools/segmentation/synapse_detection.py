@@ -67,12 +67,6 @@ def _normalize_voxel_size(voxel_size):
 
 def _get_model_out_channels(model_path):
     """Return the number of output channels of a model file or trainer checkpoint."""
-    try:
-        import sys
-        import flamingo_tools.synapse_detection.detection_dataset as _dd
-        sys.modules.setdefault("detection_dataset", _dd)
-    except ImportError:
-        pass
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         obj = torch.load(model_path, map_location="cpu", weights_only=False)
