@@ -73,54 +73,36 @@ def _entry(model_name: str, version: str) -> dict:
 
 
 PREDICTION_DICT = {
-    # v3 and v3-1 are heatmap-only models trained on the 15-crop v3 data (v3-1 is a second seed).
+    # The recipe and the data of every version are in the table "Settings of every model version"
+    # of to-do_revision/synapses.md. The plain keys from v7 on are the best.pt exports, '-latest'
+    # the latest.pt ones.
     "v3": _entry("synapse_detection_model_v3.pt", "v3"),
-    # v3-1 .. v3-4 are seed replicates: identical training data and split (random_state 42),
-    # differing only in weight initialization and patch order, which are not seeded.
+    # v3-1 .. v3-4 are seed replicates of v3, with the same split (random_state 42).
     "v3-1": _entry("synapse_detection_model_v3-1.pt", "v3-1"),
     "v3-2": _entry("synapse_detection_model_v3-2.pt", "v3-2"),
     "v3-3": _entry("synapse_detection_model_v3-3.pt", "v3-3"),
     "v3-4": _entry("synapse_detection_model_v3-4.pt", "v3-4"),
     "v4": _entry("synapse_detection_model_v4.pt", "v4"),
-    # v5 and v6-1 share the same 29-crop training data. v5 adds the four stereographic flow
-    # channels (and the MinPointSampler that comes with them); v6-1 is heatmap-only like v3.
-    # v5 vs v6-1 therefore isolates the architecture/recipe, v3 vs v6-1 the training data.
     "v5": _entry("synapse_detection_model_v5.pt", "v5"),
     "v6-1": _entry("synapse_detection_model_v6-1.pt", "v6-1"),
-    # v3 data with the v5 recipe (flow + MinPointSampler), the missing cell of the
-    # data x architecture grid. Its validation metric (the combined heatmap+flow loss) bottoms
-    # out at iteration 900 and never improves, so 'best' is an almost untrained checkpoint;
-    # 'latest' is evaluated alongside it to test whether the selection metric is at fault.
     "v3-flow-1-best": _entry("synapse_detection_model_v3-flow-1-best.pt", "v3-flow-1-best"),
     "v3-flow-1-latest": _entry("synapse_detection_model_v3-flow-1-latest.pt", "v3-flow-1-latest"),
-    # v7 and v8 share their training data and both use the recipe introduced on 2026-09-21: the
-    # raw input is standardized per crop (a no-op for this network), the validation patches are
-    # fixed by --random_state, and DetectionLoss is used as loss and as metric. The masked loss of
-    # v8 is on a different scale from the v3, v5 and v6-1 runs.
-    #
-    # v7 is heatmap-only with no loss mask; v8 adds --mask_radius 16, which restricts the loss to
-    # cubes of 33 voxels around each annotation. v7 is the closest unmasked baseline for v8, but
-    # the pair is not a single-variable ablation: MinPointSampler accepts a patch when
-    # n_points > min_points, and min_points is 1 without a mask and 0 with one, so v7 needed two
-    # annotations per training patch and v8 only one. Neither is a single step from v6-1 either,
-    # which ran with no sampler and redrawn validation patches.
-    #
-    # The plain keys are the best.pt exports and '-latest' the latest.pt exports. Both are
-    # registered because the two best checkpoints were selected by different metrics, the masked
-    # criterion for v8 and the unmasked one for v7.
     "v7": _entry("synapse_detection_v7.pt", "v7"),
     "v7-latest": _entry("synapse_detection_v7-latest.pt", "v7-latest"),
     "v8": _entry("synapse_detection_v8.pt", "v8"),
     "v8-latest": _entry("synapse_detection_v8-latest.pt", "v8-latest"),
-    # The v7 recipe with the candidate-exclusion mask (--ignore_percentile 10) instead of the cube
-    # mask of v8, and v7's sampler. The mask is the only intended difference to v7; v9 was trained
-    # after the patch sampling fix, so its fixed validation patches are other draws.
     "v9": _entry("synapse_detection_v9.pt", "v9"),
     "v9-latest": _entry("synapse_detection_v9-latest.pt", "v9-latest"),
-    # The v7 recipe with a narrower Gaussian target (--sigma 0.7 instead of 1), to separate
-    # adjacent synapses. Its heatmap is calibrated lower, so threshold 0.5 is strict for it.
     "v10": _entry("synapse_detection_v10.pt", "v10"),
     "v10-latest": _entry("synapse_detection_v10-latest.pt", "v10-latest"),
+    # The v11 files are trainer checkpoints, not pickled exports, which fail in torch_em >= 0.10.7.
+    # v11-2-latest is the standard network since 2026-10-28.
+    "v11-1": _entry("synapse_detection_v11-1.pt", "v11-1"),
+    "v11-1-latest": _entry("synapse_detection_v11-1-latest.pt", "v11-1-latest"),
+    "v11-2": _entry("synapse_detection_v11-2.pt", "v11-2"),
+    "v11-2-latest": _entry("synapse_detection_v11-2-latest.pt", "v11-2-latest"),
+    "v11-3": _entry("synapse_detection_v11-3.pt", "v11-3"),
+    "v11-3-latest": _entry("synapse_detection_v11-3-latest.pt", "v11-3-latest"),
     # The released baselines scored against the IHC v11 segmentation, for the comparison with v7
     # and later. The plain 'v3' and 'v5' keys of synapses.json stay on IHC v4, because Figure 2c
     # and Supplementary Figure 2 compare them with other IHC v4 entries.

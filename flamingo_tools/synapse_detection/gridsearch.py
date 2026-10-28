@@ -17,7 +17,6 @@ import numpy as np
 import pandas as pd
 import zarr
 from scipy.optimize import linear_sum_assignment
-from scipy.spatial import cKDTree
 from scipy.spatial.distance import cdist
 from skimage.feature import peak_local_max
 
@@ -32,17 +31,14 @@ from flamingo_tools.segmentation.unet_prediction import prediction_impl
 from flamingo_tools.synapse_detection.detection_dataset import read_csv_points
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
-TRAIN_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v7/images")
-LABEL_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v7/labels")
+DATA_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/training_data/v11")
+TRAIN_ROOT = os.path.join(DATA_ROOT, "images")
+LABEL_ROOT = os.path.join(DATA_ROOT, "labels")
 VOXEL_SIZE = 0.38  # µm per voxel, isotropic.
 
 # The reported metric matches a detection to an annotation within 3 µm
 # (_MATCH_DISTANCE in scripts/validation/synapses/run_evaluation.py), so the selection does too.
 MATCH_DISTANCE = 3.0 / VOXEL_SIZE
-# The training crops are annotated only around the IHCs. A detection further than this from every
-# annotation is not scored, which is the "spatially distant" class of the 2026-08-27 diagnostics
-# in to-do_revision/synapses.md.
-ANNOTATED_RADIUS = 40
 # The evaluation drops every detection further than this many µm from the IHC segmentation
 # (PRODUCTION_MAX_DISTANCE in scripts/validation/synapses/prediction.py).
 IHC_MAX_DISTANCE = 3.0
@@ -110,6 +106,7 @@ def _filter_by_ihc(peaks, segmentation_path):
 
 def gridsearch(
     model_path,
+    ihc_dir,
     json_val_path=None,
     image_dir=TRAIN_ROOT,
     label_dir=LABEL_ROOT,
@@ -117,8 +114,6 @@ def gridsearch(
     out_channels=None,
     min_distances=(1, 2),
     thresholds=None,
-    annotated_radius=ANNOTATED_RADIUS,
-    ihc_dir=None,
 ):
     """Find the peak-detection threshold and min_distance that maximise F1 on the validation set.
 
@@ -135,6 +130,11 @@ def gridsearch(
 
     Args:
         model_path: Path to the model checkpoint or exported model file.
+        ihc_dir: Folder with the IHC segmentation of each crop at `<crop>_ihc/segmentation.zarr`,
+            the layout of scripts/validation/synapses/prediction.py. The detections are filtered
+            by their distance to the IHCs, as in the evaluation. A radius filter around the
+            annotations selects too low a threshold on the consensus crops, and no filter too
+            high a threshold.
         json_val_path: Path to the JSON train/val split file.
         image_dir: Directory containing the validation zarr files.
         label_dir: Directory containing the matching CSV label files.
@@ -143,13 +143,6 @@ def gridsearch(
         min_distances: The minimum voxel distances between detected peaks to compare.
         thresholds: The absolute heatmap thresholds to compare. Default: 0.05 to 2.95 in steps
             of 0.05.
-        annotated_radius: Detections further than this many voxels from every annotation are not
-            scored. None scores every detection.
-        ihc_dir: Folder with the IHC segmentation of each crop at `<crop>_ihc/segmentation.zarr`,
-            the layout of scripts/validation/synapses/prediction.py. With it, the detections are
-            filtered by their distance to the IHCs as in the evaluation, and `annotated_radius` is
-            not used. Use it for the consensus crops: on them, the radius filter selects too low a
-            threshold, and no filter too high a threshold.
 
     Returns:
         The best threshold, the best min_distance, and a table with the precision, recall and F1
@@ -183,13 +176,7 @@ def gridsearch(
             # padding are those of the production peak detection; peaks in the padding are dropped.
             peaks = peak_local_max(heatmap, min_distance=min_distance, threshold_abs=min(thresholds))
             peaks = peaks[np.all(peaks < np.array(shape), axis=1)]
-            if ihc_dir is not None:
-                peaks = _filter_by_ihc(peaks, os.path.join(ihc_dir, f"{val_name}_ihc", "segmentation.zarr"))
-            elif annotated_radius is not None:
-                if len(label_coords) == 0:
-                    peaks = peaks[:0]
-                else:
-                    peaks = peaks[cKDTree(label_coords).query(peaks)[0] <= annotated_radius]
+            peaks = _filter_by_ihc(peaks, os.path.join(ihc_dir, f"{val_name}_ihc", "segmentation.zarr"))
             values = heatmap[tuple(peaks.T)]
 
             for threshold in thresholds:
@@ -219,16 +206,17 @@ def main():
         description="Select the synapse detection threshold and min_distance on the validation crops."
     )
     parser.add_argument("-m", "--model", required=True, help="The model file or trainer checkpoint.")
-    parser.add_argument("-s", "--split", default=None,
-                        help="The train_val_split*.json of the training run. Default: every crop in --image_dir.")
+    parser.add_argument("-s", "--split", default=os.path.join(DATA_ROOT, "train_val_split.json"),
+                        help="The train_val_split*.json of the training run. Default: the split of the v11 data.")
     parser.add_argument("-i", "--image_dir", default=TRAIN_ROOT)
     parser.add_argument("-l", "--label_dir", default=LABEL_ROOT)
-    parser.add_argument("--ihc_dir", default=None,
+    parser.add_argument("--ihc_dir", required=True,
                         help="Folder with <crop>_ihc/segmentation.zarr for each crop, as prediction.py writes "
-                             "it. Filters the detections by their distance to the IHCs, as the evaluation does. "
-                             "Default: score the detections within 40 voxels of an annotation.")
+                             "it. Filters the detections by their distance to the IHCs, as the evaluation does.")
     args = parser.parse_args()
-    gridsearch(args.model, args.split, image_dir=args.image_dir, label_dir=args.label_dir, ihc_dir=args.ihc_dir)
+    gridsearch(
+        args.model, args.ihc_dir, json_val_path=args.split, image_dir=args.image_dir, label_dir=args.label_dir,
+    )
 
 
 if __name__ == "__main__":
