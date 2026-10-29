@@ -39,7 +39,7 @@ MAIN_TICK_SIZE = 16
 SUB_LABEL_SIZE = 16
 
 
-def load_tables(cohorts=COHORTS, intensity=True):
+def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
     """Load the SGN and IHC instances of every cochlea of the cohorts.
 
     The tables are mapped again in memory, see data.get_mapped_table. The IHC tables get the
@@ -47,7 +47,7 @@ def load_tables(cohorts=COHORTS, intensity=True):
 
     Args:
         cohorts: Keys of COHORT_DICT.
-        intensity: Add the column 'intensity' from the object measures of the stain.
+        intensity: Structures that get the column 'intensity' from the object measures of their stain.
 
     Returns:
         Mapping of structure ("SGN" / "IHC") to a mapping of cochlea name to table.
@@ -59,7 +59,8 @@ def load_tables(cohorts=COHORTS, intensity=True):
             versions = {"SGN": SGN_VERSION[cohort], "IHC": SYNAPSE_DICT[cochlea]["ihc_table_name"]}
             for structure, version in versions.items():
                 print("Loading", cochlea, version)
-                table = get_mapped_table(s3, cochlea, structure, version, STAINS[structure] if intensity else None)
+                stain = STAINS[structure] if structure in intensity else None
+                table = get_mapped_table(s3, cochlea, structure, version, stain)
                 expected = VALUE_DICT[cochlea][structure][version]["count"]
                 if len(table) != expected:
                     raise ValueError(
@@ -201,33 +202,39 @@ def fig_mwfls_synapses(
     )
 
 
-def plot_intensity_boxplot(structure_tables: dict, title: str, save_path: str, plot: bool = False):
-    """Box plot of the stain intensity of every instance, one box per cohort.
+def plot_intensity_boxplot(
+    structure_tables: dict, title: str, save_path: str, per_cochlea: bool = True, plot: bool = False,
+):
+    """Box plot of the stain intensity, one box per cohort.
 
-    The boxes pool all instances of all cochleae of a cohort. The fliers are hidden, because a box
-    holds tens of thousands of instances.
+    By default, a box holds the mean intensity of each cochlea of the cohort. Without per_cochlea, a
+    box pools all instances of all cochleae of the cohort. The fliers of this variant are hidden,
+    because a box holds thousands of instances.
 
     Args:
         structure_tables: Tables of one structure, a value of load_tables.
         title: Title of the plot.
         save_path: Output file path.
+        per_cochlea: Use the mean intensity of each cochlea instead of every instance.
         plot: Show interactive plot.
     """
     prism_style()
     x_positions = [1, 2]
     fig, ax = plt.subplots(figsize=(4, 4.5))
     for pos, cohort in zip(x_positions, COHORTS):
-        values = np.concatenate([structure_tables[c]["intensity"].values for c in cohort_cochleae(cohort)])
+        intensities = [structure_tables[c]["intensity"].values for c in cohort_cochleae(cohort)]
+        values = [i.mean() for i in intensities] if per_cochlea else np.concatenate(intensities)
         box = ax_prism_boxplot(ax, values, positions=[pos], color=COHORT_DICT[cohort]["color"])
-        for flier in box["fliers"]:
-            flier.set_visible(False)
+        if not per_cochlea:
+            for flier in box["fliers"]:
+                flier.set_visible(False)
     ax.relim(visible_only=True)
     ax.autoscale_view()
     ax.set_ylim(bottom=0)
 
     _set_cohort_xaxis(ax, x_positions)
     ax.tick_params(axis="y", labelsize=MAIN_TICK_SIZE)
-    ax.set_ylabel("Intensity [a.u.]", fontsize=MAIN_LABEL_SIZE)
+    ax.set_ylabel("Mean intensity [a.u.]" if per_cochlea else "Intensity [a.u.]", fontsize=MAIN_LABEL_SIZE)
     ax.set_title(title, fontsize=MAIN_LABEL_SIZE, pad=10)
     prism_cleanup_axes(ax)
     plt.tight_layout()
@@ -321,8 +328,9 @@ def main():
     parser.add_argument("--figure_dir", "-f", type=str, default="./panels/mwfls",
                         help="Output directory for plots.")
     parser.add_argument("--plot", action="store_true")
-    parser.add_argument("--skip_intensity", action="store_true",
-                        help="Skip the intensity plots (use when the object measures are not on S3).")
+    parser.add_argument("--intensity", nargs="*", choices=["SGN", "IHC"], default=["SGN", "IHC"],
+                        help="Structures whose intensity panels to plot. Leave out a structure whose object "
+                             "measures are not on S3.")
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
@@ -330,23 +338,32 @@ def main():
     def out(name):
         return os.path.join(args.figure_dir, f"{name}.{FILE_EXTENSION}")
 
-    tables = load_tables(intensity=not args.skip_intensity)
+    tables = load_tables(intensity=args.intensity)
 
-    if not args.skip_intensity:
-        plot_intensity_boxplot(tables["SGN"], "PV@SGNs", out("fig_2d_sgn_intensity"), plot=args.plot)
-        plot_intensity_by_offset(tables["SGN"], out("fig_2e_sgn_intensity_offset"), plot=args.plot)
-        plot_intensity_boxplot(tables["IHC"], "VGlut3@IHCs", out("fig_2f_ihc_intensity"), plot=args.plot)
-        plot_intensity_along_cochlea(tables["IHC"], out("fig_2g_ihc_intensity_tonotopy"), plot=args.plot)
-    else:
-        print("Skipping intensity figures (--skip_intensity).")
+    if "SGN" in args.intensity:
+        plot_intensity_boxplot(tables["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort"), plot=args.plot)
+        plot_intensity_boxplot(
+            tables["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort_all_instances"), per_cochlea=False,
+            plot=args.plot,
+        )
+        plot_intensity_by_offset(tables["SGN"], out("fig_02e_sgn_intensity_by_rc_offset"), plot=args.plot)
+    if "IHC" in args.intensity:
+        plot_intensity_boxplot(tables["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort"), plot=args.plot)
+        plot_intensity_boxplot(
+            tables["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort_all_instances"), per_cochlea=False,
+            plot=args.plot,
+        )
+        plot_intensity_along_cochlea(tables["IHC"], out("fig_02g_ihc_intensity_by_tonotopy"), plot=args.plot)
 
-    fig_cohort_boxplot(tables, out("fig_3a_cohort_boxplot"), plot=args.plot)
-    fig_cohort_boxplot(tables, out("fig_3a_cohort_boxplot_outlier"), plot=args.plot, remove_outliers=True)
-    fig_mwfls_synapses(tables, out("fig_3b_synapses"), plot=args.plot, top_axis=True)
-    fig_mwfls_synapses(tables, out("fig_3b_synapses_trendline"), plot=args.plot, trendline=True, top_axis=True)
+    fig_cohort_boxplot(tables, out("fig_03a_counts_by_cohort"), plot=args.plot)
+    fig_cohort_boxplot(tables, out("fig_03a_counts_by_cohort_outlier"), plot=args.plot, remove_outliers=True)
+    fig_mwfls_synapses(tables, out("fig_03b_synapses_by_tonotopy"), plot=args.plot, top_axis=True)
     fig_mwfls_synapses(
-        tables, out("fig_3b_synapses_trendline_legend"), plot=args.plot, trendline=True, top_axis=True,
-        show_legend=True,
+        tables, out("fig_03b_synapses_by_tonotopy_trendline"), plot=args.plot, trendline=True, top_axis=True,
+    )
+    fig_mwfls_synapses(
+        tables, out("fig_03b_synapses_by_tonotopy_trendline_legend"), plot=args.plot, trendline=True,
+        top_axis=True, show_legend=True,
     )
 
 
