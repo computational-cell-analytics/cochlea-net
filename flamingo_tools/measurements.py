@@ -216,6 +216,23 @@ def _morphology_features(seg_id, table, image, segmentation, voxel_size, **kwarg
     return measures
 
 
+def _ellipsoid_features(seg_id, table, image, segmentation, voxel_size, **kwargs):
+    """Fit the ellipsoid with the same second moments as the object.
+
+    The semi-axes a >= b >= c are in micrometer: a solid ellipsoid has the variance a^2 / 5 along an axis.
+    The main axis is the unit direction of a in (x, y, z) order. Its sign is arbitrary.
+    """
+    bb, _ = _get_bounding_box_and_center(table, seg_id, voxel_size, segmentation.shape, dilation=0)
+    coords = np.argwhere(segmentation[bb] == seg_id)[:, ::-1] * np.array(voxel_size)
+    measures = {"label_id": seg_id}
+    if len(coords) < 4:
+        return {**measures, **dict.fromkeys(["a", "b", "c", "axis_x", "axis_y", "axis_z"], np.nan)}
+    eigenvalues, eigenvectors = np.linalg.eigh(np.cov(coords.T))
+    measures.update(zip(["a", "b", "c"], np.sqrt(5 * np.clip(eigenvalues[::-1], 0, None))))
+    measures.update(zip(["axis_x", "axis_y", "axis_z"], eigenvectors[:, -1]))
+    return measures
+
+
 def _regionprops_features(
     seg_id: int,
     table: pd.DataFrame,
@@ -282,6 +299,7 @@ FEATURE_FUNCTIONS = {
     "default_background_norm": partial(_default_object_features, background_radius=75, norm=np.divide),
     "default_background_subtract": partial(_default_object_features, background_radius=75, norm=np.subtract),
     "morphology": _morphology_features,
+    "ellipsoid": _ellipsoid_features,
 }
 """The different feature functions that are supported in `compute_object_measures` and
 that can be selected via the feature_set argument. Currently this supports:
@@ -289,6 +307,8 @@ that can be selected via the feature_set argument. Currently this supports:
 - 'skimage': The scikit image regionprops features.
 - 'default_background_norm': The default features with background normalization.
 - 'default_background_subtract': The default features with background subtraction.
+- 'ellipsoid': The semi-axes and the main axis of the moment ellipsoid. It does not read the image, so the
+  segmentation can be passed as the image.
 
 For the background normalized measures, we compute the background intensity in a sphere with radius of 75 micrometer
 around each object.
