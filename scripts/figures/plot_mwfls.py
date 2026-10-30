@@ -20,7 +20,7 @@ from tonotopic_mapping import add_frequency_axis, plot_synapses_along_cochlea
 
 FILE_EXTENSION = "png"
 
-COHORTS = ["idisco", "mwfls"]
+COHORTS = ["mwfls", "idisco"]
 # The SGN segmentation of each cohort. The IHC segmentation and the synapse detection of a
 # cochlea come from SYNAPSE_DICT.
 SGN_VERSION = {"idisco": "SGN_v2", "mwfls": "SGN_v3"}

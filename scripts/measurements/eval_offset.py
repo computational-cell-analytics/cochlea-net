@@ -20,7 +20,7 @@ from flamingo_tools.s3_utils import create_s3_target
 sys.path.append(os.path.join(os.path.dirname(__file__), "..", "figures"))
 from util import COHORT_DICT, OUTLIER_DICT, cohort_cochleae  # noqa: E402
 from data import get_mapped_table  # noqa: E402
-from plot_mwfls import SGN_VERSION  # noqa: E402
+from plot_mwfls import COHORTS, SGN_VERSION  # noqa: E402
 
 PNG_DPI = 300
 
@@ -81,7 +81,7 @@ def plot_heatmaps(cells: pd.DataFrame, cohorts: list, min_count: int, min_cochle
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("-o", "--output_dir", type=str, required=True, help="Output directory for tables and plot.")
-    parser.add_argument("--cohorts", type=str, nargs="+", default=["idisco", "mwfls"], choices=list(SGN_VERSION),
+    parser.add_argument("--cohorts", type=str, nargs="+", default=COHORTS, choices=list(SGN_VERSION),
                         help="Cohorts to compare. Keys of SGN_VERSION in scripts/figures/plot_mwfls.py.")
     parser.add_argument("--min_count", type=int, default=10,
                         help="Minimal number of SGNs in a cell of a cochlea for the plot.")
