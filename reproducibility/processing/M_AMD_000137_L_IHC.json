@@ -6,11 +6,19 @@
 		"Vglut3"
 	],
 	"component_list": [
-		1,
-		2
+		1
 	],
 	"label_components": {
-		"max_edge_distance": 30
+		"component_list_path": [
+			1,
+			2,
+			3,
+			7
+		],
+		"min_component_length": 10,
+		"min_size": 5000,
+		"max_path_deviation": 15,
+		"refine_row": true
 	},
 	"tonotopic_mapping": {},
 	"object_measures": {
