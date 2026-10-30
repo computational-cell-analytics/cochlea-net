@@ -251,6 +251,26 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
     return default_kwargs
 
 
+def get_default_detection_settings(model_type: str) -> Dict[str, Union[int, float]]:
+    """Get the default settings for the peak detection of a given detection model.
+
+    Args:
+        model_type: The model. Only 'Synapses'.
+
+    Returns:
+        Dictionary with the threshold and the min_distance of the peak detection.
+    """
+    all_default_kwargs = {
+        # Every v11 seed and v3, the BioImage.IO model, select min_distance 1 on the consensus
+        # validation crops. Their selected thresholds disagree, so 0.5 stays (2026-10-28, see
+        # "The v11 decision rules" in to-do_revision/synapses.md).
+        "Synapses": {"threshold": 0.5, "min_distance": 1},
+    }
+    if model_type not in all_default_kwargs:
+        raise ValueError(f"Invalid model: {model_type}. Choose one of {list(all_default_kwargs.keys())}.")
+    return all_default_kwargs[model_type]
+
+
 def get_default_tiling() -> Dict[str, Dict[str, int]]:
     """Determine the tile shape and halo depending on the available VRAM.
 

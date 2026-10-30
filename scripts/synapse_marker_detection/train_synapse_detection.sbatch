@@ -22,11 +22,12 @@ SCRIPT_REPO=${SCRIPT_REPO:-$HOME/cochlea-net}
 export PYTHONPATH="$SCRIPT_REPO:$PYTHONPATH"
 
 # Directory for the checkpoints. train_synapse_detection.py writes to
-# ./checkpoints/synapse_detection_<MODEL_SUFFIX>, so the job must run inside it.
+# $WORK_DIR/checkpoints/synapse_detection_<MODEL_SUFFIX>.
 WORK_DIR=$1
-# Version of the training data below the training_data/synapses/training_data folder, e.g. v5
+# Version of the training data below the training_data/synapses/training_data folder, e.g. v11
 VERSION=$2
-# Suffix of the model name, e.g. v6. Also seeds the train / validation split.
+# Suffix of the model name, e.g. v12. Also seeds the train / validation split if the data folder
+# has no train_val_split.json.
 MODEL_SUFFIX=$3
 # Optional random state for the split. Pass 42 to reuse the split of a fixed version.
 RANDOM_STATE=$4
@@ -42,8 +43,9 @@ if [ -n "$RANDOM_STATE" ]; then
 	split_args+=(-r "$RANDOM_STATE")
 fi
 
-# Trains the heatmap only, as for synapse_detection_v3. Add --use_flow for the 5 channel
-# heatmap and flow training of synapse_detection_v5, and --sampler to override the default
-# sampler of the selected mode.
+# Trains the v11 recipe: heatmap only, MinPointSampler, fixed validation patches, the fixed
+# target, and a cosine learning rate schedule over 3e4 iterations. The train_val_split.json of the
+# data folder fixes the split, for v11 the two consensus val crops. Use latest.pt. To retrain v3
+# or v5, add --legacy_recipe, and --use_flow for the 5 channel heatmap and flow training of v5.
 python "$SCRIPT_REPO"/scripts/synapse_marker_detection/train_synapse_detection.py \
-	-v "$VERSION" -m "$MODEL_SUFFIX" "${split_args[@]}"
+	-v "$VERSION" -m "$MODEL_SUFFIX" -s "$WORK_DIR" "${split_args[@]}"

@@ -8,6 +8,7 @@ import numpy as np
 import pandas as pd
 from elf.io import open_file
 
+from flamingo_tools.synapse_detection.detection_dataset import read_csv_points
 from flamingo_tools.validation import match_detections
 
 COCHLEA_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
@@ -24,12 +25,15 @@ _LEGACY_PRED_ROOT = os.path.join(COCHLEA_DIR, "predictions/val_synapses")
 
 _IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/images")
 
-# v3 / v3-1: heatmap-only, 15-crop v3 training data (v3-1 is a second seed).
-# v5 / v6-1: same 29-crop training data; v5 adds the flow channels and the MinPointSampler,
-# v6-1 is heatmap-only. So v5 vs v6-1 isolates the architecture and v3 vs v6-1 the data.
+# The versions of PREDICTION_DICT in prediction.py. Every entry from v7 on, and the '-ihc11'
+# entries, are filtered against an IHC v11 segmentation; the earlier plain entries against v4.
 _PRODUCTION_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v6-1",
     "v3-flow-1-best", "v3-flow-1-latest",
+    "v7", "v7-latest", "v8", "v8-latest", "v9", "v9-latest",
+    "v10", "v10-latest",
+    "v11-1", "v11-1-latest", "v11-2", "v11-2-latest", "v11-3", "v11-3-latest",
+    "v3-ihc11", "v5-ihc11",
 )
 _LEGACY_VERSIONS = (
     "v3", "v3-1", "v3-2", "v3-3", "v3-4", "v4", "v5", "v5-f1", "v5-f2", "v5-f3", "v5-f4",
@@ -49,6 +53,10 @@ def _entries(versions, pred_root):
 
 SYNAPSE_DICT = _entries(_PRODUCTION_VERSIONS, _PROD_PRED_ROOT)
 LEGACY_SYNAPSE_DICT = _entries(_LEGACY_VERSIONS, _LEGACY_PRED_ROOT)
+
+# Matching distance in um, shared by the evaluation and the viewer so that what is displayed is
+# what was scored.
+_MATCH_DISTANCE = 3
 
 # marker_detection() writes 'synapse_detection_filtered.tsv'; the validation script used to write
 # 'filtered_synapse_detection.tsv'. Both are accepted, otherwise whole-cochlea style output would
@@ -107,6 +115,11 @@ def _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, save_path):
     imageio.imwrite(save_path, arr, compression="zlib")
 
 
+def _read_gt(gt_path, voxel_size):
+    """Read the consensus points of an annotation CSV in physical coordinates."""
+    return read_csv_points(gt_path).astype(float) * voxel_size
+
+
 def evaluate_synapse_detections(
     pred_path: str,
     gt_path: str,
@@ -128,21 +141,9 @@ def evaluate_synapse_detections(
     fname = os.path.basename(gt_path)
 
     pred = pd.read_csv(pred_path, sep="\t")[["z", "y", "x"]].values
+    gt = _read_gt(gt_path, voxel_size)
 
-    # Consensus files also contain unmatched annotations from individual annotators.
-    # These rows are useful for auditing the consensus, but are not part of the
-    # consensus ground truth used to evaluate predictions.
-    gt = pd.read_csv(gt_path, sep=",")
-    if "annotator" in gt.columns:
-        gt = gt.loc[gt["annotator"] == "consensus"].copy()
-
-    # scale gt to physical coordinates
-    gt["axis-0"] *= voxel_size
-    gt["axis-1"] *= voxel_size
-    gt["axis-2"] *= voxel_size
-    gt = gt[["axis-0", "axis-1", "axis-2"]].values
-
-    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=3)
+    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=_MATCH_DISTANCE)
 
     if match_array_path is not None:
         _save_match_array(pred, gt, tps_pred, fps, fns, voxel_size, match_array_path)
@@ -152,7 +153,23 @@ def evaluate_synapse_detections(
     })
 
 
-def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, match_array_dir=None):
+def _existing_keys(output_file):
+    if output_file is None or not os.path.isfile(output_file):
+        return {}
+    with open(output_file, "r") as f:
+        return json.load(f)
+
+
+def run_evaluation(
+    pred_files, gt_files, output_file=None, version_key=None, match_array_dir=None, overwrite=False,
+):
+    # A silent overwrite once replaced the IHC v4 'v3' entry that Figure 2c compares with other
+    # IHC v4 entries by an IHC v11 score.
+    if version_key in _existing_keys(output_file) and not overwrite:
+        raise ValueError(
+            f"{output_file} already has an entry '{version_key}'. Pass --overwrite to replace it."
+        )
+
     results = []
     for pred, gt in zip(pred_files, gt_files):
         match_array_path = None
@@ -179,11 +196,7 @@ def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, mat
     print("F1-Score:", f1_score)
 
     if output_file is not None and version_key is not None:
-        data = {}
-        if os.path.isfile(output_file):
-            with open(output_file, "r") as f:
-                data = json.load(f)
-
+        data = _existing_keys(output_file)
         data[version_key] = {
             "crops": results["name"].tolist(),
             "tp": [int(v) for v in results["tp"].tolist()],
@@ -199,17 +212,18 @@ def run_evaluation(pred_files, gt_files, output_file=None, version_key=None, mat
             os.makedirs(out_dir, exist_ok=True)
         with open(output_file, "w") as f:
             json.dump(data, f, indent="\t", separators=(",", ": "))
+            f.write("\n")
         print(f"Saved results to {output_file}")
 
 
-def visualize_synapse_detections(pred, gt, heatmap_path=None, ctbp2_path=None):
+def visualize_synapse_detections(pred, gt, heatmap_path=None, ctbp2_path=None, voxel_size=0.38):
     import napari
 
     fname = os.path.basename(gt)
 
     pred = pd.read_csv(pred, sep="\t")[["z", "y", "x"]].values
-    gt = pd.read_csv(gt, sep="\t")[["z", "y", "x"]].values
-    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=4)
+    gt = _read_gt(gt, voxel_size)
+    tps_pred, tps_gt, fps, fns = match_detections(pred, gt, max_dist=_MATCH_DISTANCE)
 
     tps = pred[tps_pred]
     fps = pred[fps]
@@ -254,18 +268,21 @@ def main():
     parser.add_argument("-v", "--version", type=str, default=None,
                         help="Use pre-defined directories for a specific network version, e.g. v3, v4, ...")
     parser.add_argument("-p", "--pred_root", type=str, default=None,
-                        help="Directory containing sub-directories with predicted data.")
+                        help="Directory containing sub-directories with predicted data. With "
+                             "--version the version name is appended, so this takes the same "
+                             "directory that was passed to prediction.py --output_root.")
     parser.add_argument("-r", "--ref_root", type=str, default=None, nargs="+",
                         help="Directory containing reference labels in CSV format.")
     parser.add_argument("-c", "--image_root", type=str,
                         help="Directory containing image data in ZARR format.")
-    parser.add_argument("--sgn_version", type=str, default="SGN_v2",
-                        help="SGN segmentation version.")
     parser.add_argument("-o", "--output_dir", type=str, default=None,
                         help="Optional directory to save accuracy JSON file (synapses.json).")
     parser.add_argument("--match_array_dir", type=str, default=None,
                         help="Optional directory to save per-crop uint8 TIF arrays marking "
                              "TP (1), FP (2), and FN (3) synapse positions.")
+    parser.add_argument("--overwrite", action="store_true",
+                        help="Replace an existing entry of synapses.json. Without it an existing "
+                             "entry is an error.")
     parser.add_argument("--visualize", action="store_true")
     parser.add_argument("--legacy", action="store_true",
                         help="Evaluate the older predictions in predictions/val_synapses/<version> "
@@ -281,12 +298,14 @@ def main():
         if args.version not in valid_versions:
             raise ValueError(f"Version {args.version} is not supported. Supported versions: {valid_versions}")
 
-        image_root = version_dict[args.version]["image_root"]
-        if args.ref_root is None:
-            ref_roots = [version_dict[args.version]["ref_root"]]
-        else:
-            ref_roots = args.ref_root
-        pred_root = version_dict[args.version]["pred_root"]
+        # The version supplies defaults only, so that an override is never silently dropped.
+        entry = version_dict[args.version]
+        image_root = args.image_root or entry["image_root"]
+        ref_roots = args.ref_root or [entry["ref_root"]]
+        # Appends the version, so that -p takes the same directory as prediction.py -o.
+        pred_root = entry["pred_root"] if args.pred_root is None else os.path.join(
+            args.pred_root, args.version
+        )
 
     else:
         image_root = args.image_root
@@ -301,7 +320,9 @@ def main():
             version_key = f"{Path(pred_root).name}_{ref_root.split(os.path.sep)[-2]}"
 
         ctbp2_files = sorted(glob(os.path.join(image_root, "*.zarr")))
-        gt_files = sorted(glob(os.path.join(ref_root, "*.csv")))
+        # Pair by crop name, so that an image folder with a subset of the reference crops scores
+        # that subset.
+        gt_files = [os.path.join(ref_root, f"{Path(ff).stem}.csv") for ff in ctbp2_files]
 
         pred_files = []
         for ff in ctbp2_files:
@@ -324,7 +345,7 @@ def main():
             run_evaluation(
                 pred_files, gt_files,
                 output_file=output_file, version_key=version_key,
-                match_array_dir=args.match_array_dir,
+                match_array_dir=args.match_array_dir, overwrite=args.overwrite,
             )
 
 

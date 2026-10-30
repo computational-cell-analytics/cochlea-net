@@ -22,6 +22,7 @@ from scipy.ndimage import binary_dilation
 from elf.parallel.local_maxima import find_local_maxima
 from elf.parallel.distance_transform import map_points_to_objects
 from flamingo_tools.file_utils import read_image_data
+from flamingo_tools.model_utils import get_default_detection_settings
 from flamingo_tools.segmentation.unet_prediction import (
     _available_cpus, _load_mean_std, prediction_impl, SelectChannel,
 )
@@ -29,6 +30,8 @@ import flamingo_tools.s3_utils as s3_utils
 
 # Must match the sigma used in CsvHeatmapFlowTransform during training.
 _HEATMAP_FLOW_SIGMA = 1
+
+_DETECTION_SETTINGS = get_default_detection_settings("Synapses")
 
 # Peak detection reads whole chunks. A block that equals one chunk makes the halo
 # dominate the read volume, so grow the block until it reaches this voxel budget.
@@ -64,18 +67,45 @@ def _normalize_voxel_size(voxel_size):
 
 def _get_model_out_channels(model_path):
     """Return the number of output channels of a model file or trainer checkpoint."""
-    try:
-        import sys
-        import flamingo_tools.synapse_detection.detection_dataset as _dd
-        sys.modules.setdefault("detection_dataset", _dd)
-    except ImportError:
-        pass
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         obj = torch.load(model_path, map_location="cpu", weights_only=False)
     if isinstance(obj, dict) and "model_state" in obj:
         return obj["init"]["model_kwargs"].get("out_channels", 1)
     return obj.state_dict()["out_conv.bias"].shape[0]
+
+
+def pad_to_block_shape(input_path: str, input_key: str, output_folder: str) -> Tuple[str, Tuple[int, ...]]:
+    """Zero-pad a crop up to a multiple of the production block shape.
+
+    `prediction_impl` hands the U-Net blocks of `block_shape + 2 * halo`, whose shape has to be
+    divisible by the U-Net's downsampling factors. A whole cochlea satisfies this because it is
+    far larger than one block, but the validation and training crops are not, so the production
+    block shape fails on them without padding. The padded region predicts as background, and
+    the caller must drop any detection that lands in it.
+
+    Args:
+        input_path: Path to the crop in ZARR format.
+        input_key: Key of the image data inside the crop.
+        output_folder: Folder to write the padded copy into.
+
+    Returns:
+        The path to the padded copy and the shape of the original, unpadded data.
+    """
+    raw = np.asarray(zarr.open(store=input_path, mode="r")[input_key][:])
+    shape = raw.shape
+    target = tuple(int(np.ceil(s / b) * b) for s, b in zip(shape, _PREDICTION_BLOCK_SHAPE))
+    if target == shape:
+        return input_path, shape
+
+    # Always written again: a copy left by a killed job reads its missing chunks as zeros.
+    padded_path = os.path.join(output_folder, "padded_input.zarr")
+    padded = np.zeros(target, dtype=raw.dtype)
+    padded[: shape[0], : shape[1], : shape[2]] = raw
+    f = zarr.open(store=padded_path, mode="w")
+    f.create_array(input_key, data=padded, chunks=(64, 128, 128))
+    print(f"Padded {tuple(shape)} to {target} for the production block shape.")
+    return padded_path, shape
 
 
 def _detection_block_shape(chunks):
@@ -234,9 +264,10 @@ def synapse_detection_from_prediction(
     prediction_key: str = "prediction",
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
     force_overwrite: bool = False,
-    threshold: float = 0.5,
+    threshold: float = _DETECTION_SETTINGS["threshold"],
     n_threads: Optional[int] = None,
     save_no_flow: bool = False,
+    min_distance: int = _DETECTION_SETTINGS["min_distance"],
 ) -> pd.DataFrame:
     """Run synapse detection for prediction.
 
@@ -254,11 +285,13 @@ def synapse_detection_from_prediction(
             (before sub-voxel flow correction) to a sibling file next to
             *detection_path*, named `<name>_no-flow<ext>`. Written only when
             *detection_path* is (re)computed, not when it is loaded from cache.
+        min_distance: Minimum distance in voxels between two detected peaks. Two adjacent
+            synapses closer than this merge into one detection.
 
     Returns:
         The detections in MoBIE compatible format, with coordinates in micrometer.
     """
-    print(f"Using detection threshold: {threshold:.3f}")
+    print(f"Using detection threshold {threshold:.3f} and min_distance {min_distance}.")
     n_threads = min(16, _available_cpus()) if n_threads is None else n_threads
 
     if not os.path.exists(detection_path) or force_overwrite:
@@ -266,7 +299,7 @@ def synapse_detection_from_prediction(
         # Use the spatial chunk shape (drop the leading channel dim for multi-channel predictions).
         det_block_shape = block_shape or _detection_block_shape(pred.chunks[-3:])
         coords, no_flow_coords = _flow_corrected_detections(
-            pred, min_distance=2, threshold_abs=threshold,
+            pred, min_distance=min_distance, threshold_abs=threshold,
             block_shape=det_block_shape, n_threads=n_threads,
         )
         detections = _to_mobie_format(coords, voxel_size)
@@ -535,7 +568,8 @@ def run_synapse_prediction_slurm(
 def run_synapse_detection_slurm(
     output_folder: str,
     voxel_size: Union[float, Tuple[float, float, float]] = (0.38, 0.38, 0.38),
-    threshold: float = 0.5,
+    threshold: float = _DETECTION_SETTINGS["threshold"],
+    min_distance: int = _DETECTION_SETTINGS["min_distance"],
     n_threads: Optional[int] = None,
     mask_path: Optional[str] = None,
     mask_key: str = "s0",
@@ -556,6 +590,7 @@ def run_synapse_detection_slurm(
             It must contain the 'predictions.zarr' written by the prediction array.
         voxel_size: The voxel size of the data in micrometer.
         threshold: Threshold for peak detection.
+        min_distance: Minimum distance in voxels between two detected peaks.
         n_threads: The number of threads for peak detection, flow correction, and the matching
             to the IHCs. By default it is derived from the number of cores available to the job.
         mask_path: Path to an IHC segmentation. If given, the detections are matched to the
@@ -572,6 +607,7 @@ def run_synapse_detection_slurm(
     """
     voxel_size = _normalize_voxel_size(voxel_size)
     threshold = float(threshold)
+    min_distance = int(min_distance)
     n_threads = None if n_threads is None else int(n_threads)
     mask_path = s3_utils.resolve_path(
         mask_path, s3_mask, bucket_name=s3_bucket_name,
@@ -582,7 +618,7 @@ def run_synapse_detection_slurm(
     detection_path = os.path.join(output_folder, "synapse_detection.tsv")
     detections = synapse_detection_from_prediction(
         prediction_path, detection_path, prediction_key="prediction",
-        voxel_size=voxel_size, threshold=threshold, n_threads=n_threads,
+        voxel_size=voxel_size, threshold=threshold, min_distance=min_distance, n_threads=n_threads,
         force_overwrite=force_overwrite,
     )
 
@@ -608,7 +644,8 @@ def marker_detection(
     dilation_iterations: int = 4,
     max_distance: float = 3.0,
     voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
-    threshold: float = 0.5,
+    threshold: float = _DETECTION_SETTINGS["threshold"],
+    min_distance: int = _DETECTION_SETTINGS["min_distance"],
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
     n_threads: Optional[int] = None,
@@ -639,6 +676,7 @@ def marker_detection(
         max_distance: The maximal distance in micrometer for a valid match of synapse markers to IHCs.
         voxel_size: The voxel size of the data in micrometer.
         threshold: Threshold for peak detection.
+        min_distance: Minimum distance in voxels between two detected peaks.
         block_shape: The block-shape for running the prediction.
         halo: The halo (= block overlap) to use for prediction.
         n_threads: The number of threads for peak detection and flow correction.
@@ -689,7 +727,7 @@ def marker_detection(
     # 3.) Detect the maxima, and match them to the IHCs when a segmentation is given.
     # A fresh prediction invalidates an existing table, so it is always recomputed with it.
     run_synapse_detection_slurm(
-        output_folder, voxel_size=voxel_size, threshold=threshold, n_threads=n_threads,
-        mask_path=mask_path, mask_key=mask_key, max_distance=max_distance,
+        output_folder, voxel_size=voxel_size, threshold=threshold, min_distance=min_distance,
+        n_threads=n_threads, mask_path=mask_path, mask_key=mask_key, max_distance=max_distance,
         force_overwrite=predicted,
     )

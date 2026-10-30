@@ -4,7 +4,7 @@ import argparse
 
 from .unet_prediction import run_unet_prediction
 from .synapse_detection import marker_detection
-from ..model_utils import get_model_path, get_default_segmentation_settings
+from ..model_utils import get_model_path, get_default_detection_settings, get_default_segmentation_settings
 
 
 def _get_model_path(model_type, checkpoint_path=None):
@@ -179,8 +179,15 @@ def run_detection():
         "-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38"
     )
+    default_settings = get_default_detection_settings("Synapses")
     parser.add_argument(
-        "--threshold", type=float, default=0.5, help="Threshold for peak detection."
+        "--threshold", type=float, default=default_settings["threshold"],
+        help=f"Threshold for peak detection. Default: {default_settings['threshold']}."
+    )
+    parser.add_argument(
+        "--min_distance", type=int, default=default_settings["min_distance"],
+        help="Minimum distance in voxels between two detected peaks. "
+        f"Default: {default_settings['min_distance']}."
     )
 
     parser.add_argument("--s3_input", action="store_true", help="Read the image data from the S3 bucket.")
@@ -210,7 +217,7 @@ def run_detection():
         mask_input_key=args.mask_input_key, mask_key=args.mask_key,
         dilation_iterations=args.dilation_iterations,
         max_distance=args.max_distance, voxel_size=args.voxel_size,
-        threshold=args.threshold,
+        threshold=args.threshold, min_distance=args.min_distance,
         # The image and the segmentation are resolved independently, so the image can be read
         # from a local file while the segmentation is read from the bucket.
         s3_input=args.s3_input, s3_mask=args.s3_mask,

@@ -14,6 +14,20 @@ except ImportError:
     _spotiflow_available = False
 
 
+def read_csv_points(label_path: str) -> np.ndarray:
+    """Read Napari CSV point annotations as an (N, 3) array in voxel coordinates, in ZYX order.
+
+    A consensus annotation also lists the points that only one annotator marked, in an `annotator`
+    column. Only the `consensus` rows are returned for such a file.
+    """
+    points_df = pd.read_csv(label_path)
+    if "annotator" in points_df.columns:
+        points_df = points_df[points_df["annotator"] == "consensus"]
+    return np.stack([
+        points_df["axis-0"].values, points_df["axis-1"].values, points_df["axis-2"].values,
+    ], axis=1).astype(np.float32)
+
+
 class MinPointSampler:
     """A sampler to reject samples with too few foreground points.
 
@@ -25,13 +39,15 @@ class MinPointSampler:
         self.min_points = min_points
         self.p_reject = p_reject
 
-    def __call__(self, x: np.ndarray, y: np.ndarray) -> bool:
+    def __call__(self, x: np.ndarray, y: np.ndarray, rng: np.random.Generator) -> bool:
         """Check the sample.
 
         Args:
             x: The raw data.
             y: The label data as returned by the label transform (heatmap, or multi-channel
                heatmap+flow array with shape (C, Z, Y, X)).
+            rng: The generator for the rejection draw. Pass a seeded generator to make the
+                decision reproducible.
 
         Returns:
             Whether to accept this sample.
@@ -40,7 +56,7 @@ class MinPointSampler:
         n_points = len(peak_local_max(heatmap, min_distance=2, threshold_rel=0.3))
         if n_points > self.min_points:
             return True
-        return np.random.rand() > self.p_reject
+        return rng.random() > self.p_reject
 
 
 class CsvHeatmapTransform:
@@ -53,24 +69,34 @@ class CsvHeatmapTransform:
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
+        fixed_target: Give every isolated annotation a peak of 4, and load the annotations up to
+            3 sigma beyond the patch. Without it, the target of every model up to v10 is
+            reproduced: the heatmap is divided by its patch maximum, and an annotation on the
+            border of the loaded box raises that maximum, which lowers every other peak in the
+            patch to 2.28. An annotation just outside the patch also loses its Gaussian.
     """
 
-    # Context that DetectionDataset must load around each patch. Only the flow needs any.
+    # Context that DetectionDataset must load around each patch. Only the flow and the fixed
+    # target need any.
     halo = 0
 
-    def __init__(self, sigma: float, eps: float = 1e-8):
+    def __init__(self, sigma: float, eps: float = 1e-8, fixed_target: bool = False):
         self.sigma = sigma
         self.eps = eps
+        self.fixed_target = fixed_target
+        if fixed_target:
+            # `self.halo` reads the class attribute and shadows it per instance.
+            self.halo = max(self.halo, int(np.ceil(3 * sigma)))
+            radius = int(np.ceil(4 * sigma))
+            delta = np.zeros((2 * radius + 1,) * 3, dtype=np.float32)
+            delta[radius, radius, radius] = 1
+            self._peak = float(gaussian(delta, sigma, mode="constant").max())
 
     @staticmethod
     def _local_points(label_path, bb):
         """Load the CSV points inside `bb` and return them in patch-local coordinates."""
         local_shape = tuple(s.stop - s.start for s in bb)
-        points_df = pd.read_csv(label_path)
-        points = np.stack([
-            points_df["axis-0"].values, points_df["axis-1"].values, points_df["axis-2"].values,
-        ], axis=1).astype(np.float32)
-
+        points = read_csv_points(label_path)
         offset = np.array([s.start for s in bb], dtype=np.float32)
         mask = np.all(
             (points >= offset) & (points < np.array([s.stop for s in bb], dtype=np.float32)), axis=1
@@ -85,9 +111,12 @@ class CsvHeatmapTransform:
                 for coord, size in zip(local_points.T, local_shape)
             )
             heatmap[coords] = 1
-            heatmap = gaussian(heatmap, self.sigma)
-            heatmap /= (heatmap.max() + self.eps)
-            heatmap *= 4
+            if self.fixed_target:
+                heatmap = gaussian(heatmap, self.sigma, mode="constant") * (4 / self._peak)
+            else:
+                heatmap = gaussian(heatmap, self.sigma)
+                heatmap /= (heatmap.max() + self.eps)
+                heatmap *= 4
         return heatmap
 
     def __call__(self, label_path, shape, bb_labels, bb_for_loading):
@@ -107,18 +136,19 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
     Args:
         sigma: Gaussian standard deviation (in voxels) for the heatmap.
         eps: Small constant added when normalizing the heatmap.
+        fixed_target: See `CsvHeatmapTransform`.
     """
 
     # The flow needs points beyond the patch border to be correct close to the border.
     halo = 10
 
-    def __init__(self, sigma: float, eps: float = 1e-8):
+    def __init__(self, sigma: float, eps: float = 1e-8, fixed_target: bool = False):
         if not _spotiflow_available:
             raise ImportError(
                 "spotiflow is required for flow computation. "
                 'Install it with: pip install ".[flow]" in the cochlea-net repository.'
             )
-        super().__init__(sigma, eps)
+        super().__init__(sigma, eps, fixed_target)
 
     def __call__(self, label_path, shape, bb_labels, bb_for_loading):
         bb = bb_for_loading[-3:] if len(bb_for_loading) > 3 else bb_for_loading
@@ -137,33 +167,16 @@ class CsvHeatmapFlowTransform(CsvHeatmapTransform):
 class DetectionDataset(torch.utils.data.Dataset):
     max_sampling_attempts = 500
 
-    @staticmethod
-    def compute_len(shape, patch_shape):
-        if patch_shape is None:
-            return 1
-        else:
-            n_samples = int(np.prod([float(sh / csh) for sh, csh in zip(shape, patch_shape)]))
-            return n_samples
-
     def __init__(
         self,
         raw_path,
         raw_key,
         label_path,
         patch_shape,
-        raw_transform=None,
-        label_transform=None,
-        label_transform2=None,
-        transform=None,
-        dtype=torch.float32,
-        label_dtype=torch.float32,
+        label_transform,
         n_samples=None,
         sampler=None,
-        eps=1e-8,
-        sigma=None,
-        lower_bound=None,
-        upper_bound=None,
-        **kwargs,
+        patch_seed=None,
     ):
         self.raw_path = raw_path
         self.label_path = label_path
@@ -173,25 +186,14 @@ class DetectionDataset(torch.utils.data.Dataset):
         assert len(patch_shape) == self._ndim
         self.patch_shape = patch_shape
 
-        self.raw_transform = raw_transform
-        # The upstream loader always supplies a label transform. Fall back to the plain heatmap
-        # target when the dataset is constructed directly.
-        if label_transform is None:
-            label_transform = CsvHeatmapTransform(sigma, eps)
         self.label_transform = label_transform
-        self.label_transform2 = label_transform2
-        self.transform = transform
         self.sampler = sampler
-
-        self.dtype = dtype
-        self.label_dtype = label_dtype
-
-        # Accepted because the upstream loader always passes them; the label transform owns them.
-        self.lower_bound = lower_bound
-        self.upper_bound = upper_bound
+        # Makes the patch for a given index reproducible, for the validation set. Leave it unset
+        # for training, where every access should see a new patch.
+        self.patch_seed = patch_seed
 
         # Buffer added around each sampled patch before calling the label transform. The label
-        # transform declares how much context it needs; only the flow computation needs any.
+        # transform declares how much context it needs: the flow and the fixed target.
         self.halo = getattr(label_transform, "halo", 10)
 
         f = zarr.open(self.raw_path, mode="r")
@@ -203,7 +205,9 @@ class DetectionDataset(torch.utils.data.Dataset):
         else:
             self.shape = full_shape
 
-        self._len = self.compute_len(self.shape, self.patch_shape) if n_samples is None else n_samples
+        if n_samples is None:
+            n_samples = int(np.prod([sh / psh for sh, psh in zip(self.shape, self.patch_shape)]))
+        self._len = n_samples
 
     def __len__(self):
         return self._len
@@ -212,22 +216,20 @@ class DetectionDataset(torch.utils.data.Dataset):
     def ndim(self):
         return self._ndim
 
-    def _sample_bounding_box(self):
+    def _sample_bounding_box(self, rng):
         if any(sh < psh for sh, psh in zip(self.shape, self.patch_shape)):
             raise NotImplementedError(
                 f"Image padding is not supported yet. Data shape {self.shape}, patch shape {self.patch_shape}"
             )
-        bb_start = [
-            np.random.randint(0, max(1, sh - psh - 2 * self.halo))
-            for sh, psh in zip(self.shape, self.patch_shape)
-        ]
+        # The halo needs no margin here: `_get_desired_raw_and_labels` clamps it to the volume.
+        bb_start = [rng.integers(0, sh - psh + 1) for sh, psh in zip(self.shape, self.patch_shape)]
         return tuple(slice(start, start + psh) for start, psh in zip(bb_start, self.patch_shape))
 
-    def _get_desired_raw_and_labels(self):
+    def _get_desired_raw_and_labels(self, rng):
         raw = zarr.open(self.raw_path, mode="r")[self.raw_key]
         have_raw_channels = raw.ndim == 4
 
-        bb = self._sample_bounding_box()
+        bb = self._sample_bounding_box(rng)
 
         # Extend the patch bounding box with halo on each side, clamped to the volume.
         bb_for_loading = tuple(
@@ -257,10 +259,8 @@ class DetectionDataset(torch.utils.data.Dataset):
         else:
             raw_patch = raw_patch[slices_crop]
 
-        # The label transform is the label loader (e.g. HeatmapFlowTransform from the upstream
-        # czii-protein-challenge repo). It receives the path and bounding box and returns an array
-        # covering bb_for_loading; we then crop the halo back out. The upstream transforms return
-        # (Z, Y, X) for a plain heatmap and (C, Z, Y, X) with flow.
+        # The label transform is the label loader. It receives the path and bounding box and
+        # returns an array covering bb_for_loading; we then crop the halo back out.
         labels = self.label_transform(self.label_path, self.shape, bb_for_loading, bb_for_loading)
         if labels.ndim == 4:
             labels = labels[(slice(None),) + slices_crop]
@@ -270,12 +270,16 @@ class DetectionDataset(torch.utils.data.Dataset):
         return raw_patch, labels
 
     def _get_sample(self, index):
-        raw, labels = self._get_desired_raw_and_labels()
+        # With a patch seed the patch is a pure function of (patch_seed, index), so the same
+        # index gives the same patch in every epoch and in every data loader worker. Without one
+        # every access draws a new patch, which is what training wants.
+        rng = np.random.default_rng(None if self.patch_seed is None else (self.patch_seed, index))
+        raw, labels = self._get_desired_raw_and_labels(rng)
 
         if self.sampler is not None:
             sample_id = 0
-            while not self.sampler(raw, labels):
-                raw, labels = self._get_desired_raw_and_labels()
+            while not self.sampler(raw, labels, rng):
+                raw, labels = self._get_desired_raw_and_labels(rng)
                 sample_id += 1
                 if sample_id > self.max_sampling_attempts:
                     raise RuntimeError(
@@ -286,16 +290,6 @@ class DetectionDataset(torch.utils.data.Dataset):
 
     def __getitem__(self, index):
         raw, labels = self._get_sample(index)
-
-        if self.raw_transform is not None:
-            raw = self.raw_transform(raw)
-
-        if self.transform is not None:
-            raw, labels = self.transform(raw, labels)
-
-        if self.label_transform2 is not None:
-            labels = self.label_transform2(labels)
-
-        raw = ensure_tensor_with_channels(raw, ndim=self._ndim, dtype=self.dtype)
-        labels = ensure_tensor_with_channels(labels, ndim=self._ndim, dtype=self.label_dtype)
+        raw = ensure_tensor_with_channels(raw, ndim=self._ndim, dtype=torch.float32)
+        labels = ensure_tensor_with_channels(labels, ndim=self._ndim, dtype=torch.float32)
         return raw, labels
