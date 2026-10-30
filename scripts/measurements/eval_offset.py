@@ -27,7 +27,7 @@ PNG_DPI = 300
 
 def load_cochlea(s3, cochlea: str, sgn_version: str) -> pd.DataFrame:
     """Load the mapped SGNs of a cochlea with their absolute and normalized PV intensity."""
-    table = get_mapped_table(s3, cochlea, "SGN", sgn_version, stain="PV")
+    table = get_mapped_table(s3, cochlea, "SGN", sgn_version, stain="PV").dropna(subset=["intensity"])
     table["intensity_norm"] = table["intensity"] / table["intensity"].median()
     return table
 

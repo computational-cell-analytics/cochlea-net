@@ -339,21 +339,29 @@ def main():
         return os.path.join(args.figure_dir, f"{name}.{FILE_EXTENSION}")
 
     tables = load_tables(intensity=args.intensity)
+    # The intensity panels leave out the instances without an object measure. The count and
+    # synapse panels keep them.
+    measured = {
+        structure: {name: table.dropna(subset=["intensity"]) for name, table in tables[structure].items()}
+        for structure in args.intensity
+    }
 
     if "SGN" in args.intensity:
-        plot_intensity_boxplot(tables["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort"), plot=args.plot)
+        plot_intensity_boxplot(measured["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort"), plot=args.plot)
         plot_intensity_boxplot(
-            tables["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort_all_instances"), per_cochlea=False,
+            measured["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort_all_instances"), per_cochlea=False,
             plot=args.plot,
         )
-        plot_intensity_by_offset(tables["SGN"], out("fig_02e_sgn_intensity_by_rc_offset"), plot=args.plot)
+        plot_intensity_by_offset(measured["SGN"], out("fig_02e_sgn_intensity_by_rc_offset"), plot=args.plot)
     if "IHC" in args.intensity:
-        plot_intensity_boxplot(tables["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort"), plot=args.plot)
         plot_intensity_boxplot(
-            tables["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort_all_instances"), per_cochlea=False,
+            measured["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort"), plot=args.plot,
+        )
+        plot_intensity_boxplot(
+            measured["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort_all_instances"), per_cochlea=False,
             plot=args.plot,
         )
-        plot_intensity_along_cochlea(tables["IHC"], out("fig_02g_ihc_intensity_by_tonotopy"), plot=args.plot)
+        plot_intensity_along_cochlea(measured["IHC"], out("fig_02g_ihc_intensity_by_tonotopy"), plot=args.plot)
 
     fig_cohort_boxplot(tables, out("fig_03a_counts_by_cohort"), plot=args.plot)
     fig_cohort_boxplot(tables, out("fig_03a_counts_by_cohort_outlier"), plot=args.plot, remove_outliers=True)
