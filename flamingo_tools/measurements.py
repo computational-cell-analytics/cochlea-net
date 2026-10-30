@@ -171,8 +171,9 @@ def _default_object_features(
     bb, center = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation)
 
     local_image = image[bb]
-    mask = segmentation[bb] == seg_id
-    assert mask.sum() > 0, f"Segmentation ID {seg_id} is empty."
+    object_mask = segmentation[bb] == seg_id
+    assert object_mask.sum() > 0, f"Segmentation ID {seg_id} is empty."
+    mask = object_mask
     if dilation is not None and dilation > 0:
         mask = binary_dilation(mask, iterations=dilation)
     masked_intensity = local_image[mask]
@@ -196,9 +197,10 @@ def _default_object_features(
         radius_in_pixel = background_radius / voxel_size[1]
         measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm)
 
-    # Do the volume and surface measurement.
+    # Do the volume and surface measurement on the object itself. The dilated mask reaches the faces
+    # of the bounding box, so its mesh is open and has no volume.
     if not median_only:
-        volume, surface = _measure_volume_and_surface(mask, voxel_size)
+        volume, surface = _measure_volume_and_surface(object_mask, voxel_size)
         measures["volume"] = volume
         measures["surface"] = surface
     return measures

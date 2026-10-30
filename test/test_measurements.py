@@ -128,6 +128,14 @@ class TestMeasurements(unittest.TestCase):
         # A constant offset does not change a spread.
         self.assertAlmostEqual(raw["stdev"], subtracted["stdev"], places=9)
 
+        # The dilation widens the intensity mask only, the volume and surface stay those of the object.
+        dilated = _default_object_features(
+            1, table, image, segmentation, voxel_size=voxel_size,
+            background_radius=0.38 * 20, norm=np.subtract, dilation=4,
+        )
+        self.assertAlmostEqual(dilated["volume"], raw["volume"], places=6)
+        self.assertAlmostEqual(dilated["surface"], raw["surface"], places=6)
+
         percentiles = [
             subtracted[name] for name in
             ("percentile-5", "percentile-10", "percentile-25", "median",

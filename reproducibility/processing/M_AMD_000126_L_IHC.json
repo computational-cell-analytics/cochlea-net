@@ -1,24 +1,47 @@
-{
-	"dataset_name": "M_AMD_000126_L",
-	"segmentation_channel": "IHC_v9",
-	"cell_type": "ihc",
-	"image_channel": [
-		"Vglut3"
-	],
-	"component_list": [
-		1
-	],
-	"label_components": {
-		"component_list_path": [
-			1,
-			2,
-			6
+[
+	{
+		"dataset_name": "M_AMD_000126_L",
+		"segmentation_channel": "IHC_v9",
+		"cell_type": "ihc",
+		"image_channel": [
+			"Vglut3"
 		],
-		"min_component_length": 10,
-		"min_size": 20000
+		"component_list": [
+			1
+		],
+		"label_components": {
+			"component_list_path": [
+				1,
+				2,
+				6
+			],
+			"min_component_length": 10,
+			"min_size": 20000
+		},
+		"tonotopic_mapping": {},
+		"object_measures": {
+			"use_bg_mask": "yes"
+		}
 	},
-	"tonotopic_mapping": {},
-	"object_measures": {
-		"use_bg_mask": "yes"
+	{
+		"dataset_name": "M_AMD_000126_L",
+		"segmentation_channel": "IHC_v11",
+		"cell_type": "ihc",
+		"image_channel": [
+			"Vglut3"
+		],
+		"component_list": [
+			1
+		],
+		"label_components": {
+			"component_list_path": [
+				1
+			],
+			"min_component_length": 10,
+			"min_size": 5000,
+			"max_path_deviation": 15,
+			"refine_row": true
+		},
+		"tonotopic_mapping": {}
 	}
-}
+]
