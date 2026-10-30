@@ -64,7 +64,7 @@ Section keys:
 
 | Section | Keys |
 |---|---|
-| `label_components` | `component_list_path`, `max_edge_distance`, `min_component_length`, `min_size`, `custom_dic`, `max_path_deviation` |
+| `label_components` | `component_list_path`, `max_edge_distance`, `min_component_length`, `min_size`, `custom_dic`, `max_path_deviation`, `refine_row` |
 | `tonotopic_mapping` | `apex_position`, `component_mapping`, `include_gap`, `animal`, `otof` |
 | `object_measures` | `use_bg_mask` |
 
@@ -143,6 +143,8 @@ The commands write the tables to `<out-dir>`. To copy them to the S3 bucket, see
 The labeling can erode the segmentation to exclude artifacts. It can also vary the minimal number
 of nodes in a component, and the minimal distance between two nodes of the same component. For an
 IHC segmentation, `--path_file` and `--max_path_deviation` add the central-path deviation filter.
+`--refine_row` makes the IHC row one component: the listed components guide the central path, and
+every instance of at least `--min_size` pixels near the path joins the row.
 
 ```bash
 flamingo_tools.label_components --json_info <JSON-file> -o <out-dir> --s3
