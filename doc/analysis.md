@@ -451,14 +451,14 @@ flamingo_tools.label_components --json_info reproducibility/processing/M_AMD_000
 The command reads the table from the bucket and writes the output locally.
 `--s3` applies to all tables of the colocalization script, so copy the synapse tables to the same location:
 ```bash
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/synapses_v3_IHC_v11/default.tsv M_AMD_000117_L_synapses_v3_IHC_v11.tsv
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/Homer1_synapses_v3_IHC_v11/default.tsv M_AMD_000117_L_Homer1_synapses_v3_IHC_v11.tsv
+rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv M_AMD_000117_L_synapse_v3_ihc_v11.tsv
+rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv M_AMD_000117_L_Homer1_synapse_v3_ihc_v11.tsv
 ```
 Then compare Homer1 with CtBP2 on the IHCs of the components 1, 3, and 2:
 ```bash
 python scripts/measurements/synapse_colocalization.py \
-    -r M_AMD_000117_L_synapses_v3_IHC_v11.tsv \
-    -t M_AMD_000117_L_Homer1_synapses_v3_IHC_v11.tsv \
+    -r M_AMD_000117_L_synapse_v3_ihc_v11.tsv \
+    -t M_AMD_000117_L_Homer1_synapse_v3_ihc_v11.tsv \
     --ihc_table M_AMD_000117_L_IHC_v11.tsv -c 1 3 2 \
     -o M_AMD_000117_L_Homer1_colocalization.json \
     --ihc_counts M_AMD_000117_L_Homer1_ihc_counts.tsv
