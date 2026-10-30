@@ -244,12 +244,20 @@ def label_components():
     parser.add_argument(
         "--path_file", type=str, default=None,
         help="Path to central path TSV for IHC deviation filtering. "
-             "If the file does not exist, the path is computed on-the-fly and saved here. Default: None",
+             "If the file does not exist, the path is computed on-the-fly and saved here. "
+             "With --refine_row, the path of the refined row is saved here. Default: None",
     )
     parser.add_argument(
         "--max_path_deviation", type=float, default=None,
         help="Max deviation in µm from the central IHC path. "
              "Instances farther than this are removed (component_labels=0). Requires --cell_type ihc. Default: None",
+    )
+    parser.add_argument(
+        "--refine_row", action="store_true",
+        help="Make the IHC row one component (label 1). The components of --components guide the central path. "
+             "Each instance with at least --min_size pixels within --max_path_deviation µm of the path (default 15) "
+             "joins the row, and the path is updated until the row is stable. Requires --cell_type ihc. With "
+             "--napari, a prompt after the view asks for the row components.",
     )
 
     # options for S3 bucket
@@ -278,6 +286,7 @@ def label_components():
         use_napari=args.napari,
         scale_factor=args.scale_factor,
         max_path_deviation=args.max_path_deviation,
+        refine_row=args.refine_row,
     )
 
     if args.json_info is None:

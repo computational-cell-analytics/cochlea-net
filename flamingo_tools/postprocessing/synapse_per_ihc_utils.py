@@ -130,5 +130,9 @@ SYNAPSE_DICT = {
                        "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
     "M_AMD_000127_R": {"synapse_table_name": "synapse_v3_ihc_v9", "ihc_table_name": "IHC_v9",
                        "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
+    "M_AMD_000137_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
+                       "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
+    "M_AMD_000137_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
+                       "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
 
 }

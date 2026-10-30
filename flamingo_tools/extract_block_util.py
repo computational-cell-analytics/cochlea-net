@@ -11,7 +11,7 @@ import zarr
 from skimage.transform import rescale
 
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
+from flamingo_tools.s3_utils import MOBIE_FOLDER
 from flamingo_tools.analysis.density_utils import hull_to_mask
 
 
@@ -80,8 +80,9 @@ def extract_block_single(
 
         output_path = os.path.join(output_path, output_name)
 
-    if os.path.isfile(output_path) and not force_overwrite:
+    if os.path.isfile(output_path) and not force_overwrite and label_ids is None:
         print(f"Skipping block extration because {output_path} already exists.")
+        return
 
     coords = np.array(coords).astype("float")
     if not isinstance(voxel_size, float):
@@ -90,18 +91,19 @@ def extract_block_single(
     coords = coords / voxel_size
     coords = np.round(coords).astype(np.int32)
 
-    roi = tuple(slice(co - rh, co + rh) for co, rh in zip(coords, roi_halo))
-
     data_ = read_image_data(input_path, input_key, from_s3=s3,
                             bucket_name=s3_bucket_name,
                             service_endpoint=s3_service_endpoint,
                             credential_file=s3_credentials)
 
-    for (dim, co, rh) in zip(data_.shape, coords, roi_halo):
-        if co - rh < 0 or co + rh > dim:
-            print(f"Skipping block extraction for {coords} because ROI is {dim} for shape {data_.shape}.")
-
+    # Pad the part of the ROI outside the volume with zeros. The crop then starts at center - halo and has
+    # the shape 2 * halo, which the hull mask of save_mask_from_hull_vertices expects.
+    roi = tuple(slice(max(co - rh, 0), min(co + rh, dim)) for co, rh, dim in zip(coords, roi_halo, data_.shape))
+    padding = [(max(rh - co, 0), max(co + rh - dim, 0)) for co, rh, dim in zip(coords, roi_halo, data_.shape)]
     data_roi = data_[roi]
+    if np.any(padding):
+        print(f"Padding the ROI of block {coords} with halo {roi_halo} to the shape {data_.shape}.")
+        data_roi = np.pad(data_roi, padding)
     if scale_factor is not None:
         kwargs = {"preserve_range": True}
         # Check if this is a segmentation.
