@@ -688,6 +688,16 @@ def _compute_path_from_table(
     return total_distance, path_dict
 
 
+def _central_path_table(path_dict: dict, total_distance: float) -> pd.DataFrame:
+    """Convert a path_dict without a frequency mapping to a central path table."""
+    from flamingo_tools.postprocessing.cochlea_mapping import path_dict_to_central_path_table
+
+    for item in path_dict.values():
+        item["length[µm]"] = item["length_fraction"] * total_distance
+        item["frequency[kHz]"] = 0.0
+    return path_dict_to_central_path_table(path_dict)
+
+
 def filter_ihc_by_path_deviation(
     table: pd.DataFrame,
     max_path_deviation: float,
@@ -715,10 +725,7 @@ def filter_ihc_by_path_deviation(
         The table with outlier instances set to component_labels=0, and either None
         (when path was loaded from file) or a path DataFrame (when computed on-the-fly).
     """
-    from flamingo_tools.postprocessing.cochlea_mapping import (
-        central_path_table_to_path_dict,
-        path_dict_to_central_path_table,
-    )
+    from flamingo_tools.postprocessing.cochlea_mapping import central_path_table_to_path_dict
 
     computed_path_df = None
 
@@ -729,10 +736,7 @@ def filter_ihc_by_path_deviation(
     else:
         total_distance, path_dict_raw = _compute_path_from_table(table, component_list)
         path_coords = np.array([v["pos"] for v in path_dict_raw.values()])
-        for key in path_dict_raw:
-            path_dict_raw[key]["length[µm]"] = path_dict_raw[key]["length_fraction"] * total_distance
-            path_dict_raw[key]["frequency[kHz]"] = 0.0
-        computed_path_df = path_dict_to_central_path_table(path_dict_raw)
+        computed_path_df = _central_path_table(path_dict_raw, total_distance)
 
     path_tree = cKDTree(path_coords)
     mask = table["component_labels"].isin(component_list)
@@ -745,6 +749,83 @@ def filter_ihc_by_path_deviation(
     print(f"Filtered {len(far_ids)} IHCs with path deviation > {max_path_deviation} µm.")
 
     return table, computed_path_df
+
+
+def ihc_row_path(centroids: np.ndarray) -> np.ndarray:
+    """Compute the central path through the centroids of an IHC row.
+
+    The path is the shortest path between the two most distant centroids. The edges are as long as the
+    largest gap of the row, so the squared length is the edge weight: the path then follows the cells
+    instead of long chords across the curved row. The path is resampled at 1 micrometer, because
+    neighbouring path nodes can be a gap apart. The path ends are row centroids, so an off-row centroid
+    past a row end becomes a path end.
+
+    Args:
+        centroids: The row centroids in micrometers, in (x, y, z) order.
+
+    Returns:
+        The path in micrometers, in (x, y, z) order, resampled at 1 micrometer.
+    """
+    from flamingo_tools.postprocessing.cochlea_mapping import (
+        _auto_max_edge_distance, _component_graph, find_most_distant_nodes, resample_path,
+    )
+
+    graph = _component_graph(centroids, _auto_max_edge_distance([centroids]))
+    nodes = nx.shortest_path(graph, *find_most_distant_nodes(graph), weight=lambda u, v, edge: edge["weight"] ** 2)
+    return resample_path(centroids[nodes], 1.0)
+
+
+def refine_ihc_row(
+    table: pd.DataFrame,
+    component_list: List[int],
+    min_size: int = 10000,
+    max_path_deviation: float = 15.0,
+    n_iterations: int = 5,
+) -> Tuple[pd.DataFrame, np.ndarray]:
+    """Make the IHC row one component, guided by the central path through the given components.
+
+    The instances of all listed components form one set, so the path bridges the gaps between them in
+    any order. An instance joins the row if it has at least `min_size` pixels and its center is within
+    `max_path_deviation` micrometers of the path (`ihc_row_path`), also if it was in no component. Then the
+    path is computed again from the new row, until the row does not change. An off-row instance past a row
+    end stays in the row, because it is a path end.
+
+    Args:
+        table: Segmentation table with a 'component_labels' column.
+        component_list: The components that form the IHC row.
+        min_size: Minimal number of pixels of a row instance.
+        max_path_deviation: Maximal distance in micrometers between the center of a row instance and the path.
+        n_iterations: Maximal number of path updates.
+
+    Returns:
+        The table, with component label 1 for the row and 0 for all other instances.
+        The central path through the returned row in micrometers, in (x, y, z) order, resampled at 1 micrometer.
+
+    Raises:
+        ValueError: If the listed components or the refined row hold less than 2 instances.
+    """
+    coords = table[["anchor_x", "anchor_y", "anchor_z"]].values
+    row = table["component_labels"].isin(component_list).values
+    if row.sum() < 2:
+        raise ValueError(f"The components {component_list} hold {row.sum()} instances. A path needs at least 2.")
+    large = table["n_pixels"].values >= min_size
+    for _ in range(n_iterations):
+        # ponytail: the path ends are row instances, so an off-row instance past a row end is never removed.
+        # Upgrade: drop an end instance by its sideways deviation from the row, validated on the MWfLS cochleae.
+        path = ihc_row_path(coords[row])
+        distances, _ = cKDTree(path).query(coords)
+        new_row = large & (distances <= max_path_deviation)
+        if (new_row == row).all():
+            break
+        if new_row.sum() < 2:
+            raise ValueError(f"The refined row holds {new_row.sum()} instances. A path needs at least 2.")
+        row = new_row
+    else:
+        print(f"Warning: the IHC row did not converge in {n_iterations} iterations.")
+        path = ihc_row_path(coords[row])
+    table["component_labels"] = row.astype(int)
+    print(f"The refined IHC row has {row.sum()} instances.")
+    return table, path
 
 
 def label_custom_components(tsv_table, custom_dict):
@@ -806,6 +887,24 @@ def label_custom_components(tsv_table, custom_dict):
     return tsv_table
 
 
+def _show_components(table: pd.DataFrame, scale_factor: int, layers: dict):
+    """Show the down-scaled centroids in napari, with one label layer per entry of `layers`.
+
+    Each entry of `layers` maps a layer name to one component label per row of the table.
+    """
+    import napari
+
+    centroids = list(zip(table["anchor_x"], table["anchor_y"], table["anchor_z"]))
+    viewer = napari.Viewer()
+    viewer.add_image(downscaled_centroids(centroids, scale_factor=scale_factor, downsample_mode="accumulated"),
+                     name="3D Volume")
+    for name, component_labels in layers.items():
+        viewer.add_labels(downscaled_centroids(centroids, scale_factor=scale_factor,
+                                               component_labels=list(component_labels),
+                                               downsample_mode="components"), name=name)
+    napari.run()
+
+
 def label_components_single(
     table_path: str,
     out_path: Optional[str] = None,
@@ -824,6 +923,7 @@ def label_components_single(
     scale_factor: int = 20,
     path_file: Optional[str] = None,
     max_path_deviation: Optional[float] = None,
+    refine_row: bool = False,
     **_
 ):
     """Process a single cochlea using one set of parameters or a custom dictionary.
@@ -854,11 +954,19 @@ def label_components_single(
             if max_path_deviation is set and the file exists, the path is loaded from it;
             if max_path_deviation is set and the file does not exist, the path is computed and
             saved here; if max_path_deviation is None, the path is always computed from the
-            current components and saved here (no filtering). Only used when cell_type='ihc'.
+            current components and saved here (no filtering). With refine_row, the path of the
+            refined row is saved here. Only used when cell_type='ihc'.
         max_path_deviation: Maximum allowed deviation in µm from the central IHC path. Instances
             farther than this are set to component_labels=0. Requires cell_type='ihc'.
             If None and path_file is set, the path is computed and saved without filtering.
+        refine_row: Make the IHC row one component with `refine_ihc_row`. The components of `component_list`
+            guide the path, and `max_path_deviation` (15 micrometers if None) limits the distance to it.
+            Requires cell_type='ihc'. With use_napari, a prompt after each view asks for the row components,
+            so a row can be chosen and checked without this flag.
     """
+    if refine_row and cell_type != "ihc":
+        raise ValueError(f"refine_row requires cell_type='ihc', not '{cell_type}'.")
+
     # overwrite input segmentation table with labeled version
     if out_path is None:
         if s3:
@@ -897,7 +1005,12 @@ def label_components_single(
             else:
                 raise ValueError("Choose a supported cell type. Either 'sgn' or 'ihc'.")
 
-        if cell_type == "ihc" and max_path_deviation is not None:
+        labeled = tsv_table.copy()
+        row_deviation = 15.0 if max_path_deviation is None else max_path_deviation
+        row_path = None
+        if cell_type == "ihc" and refine_row:
+            tsv_table, row_path = refine_ihc_row(tsv_table, component_list, min_size, row_deviation)
+        elif cell_type == "ihc" and max_path_deviation is not None:
             tsv_table, computed_path_df = filter_ihc_by_path_deviation(
                 tsv_table, max_path_deviation, component_list, path_file
             )
@@ -905,40 +1018,58 @@ def label_components_single(
                 computed_path_df.to_csv(path_file, sep="\t", index=False)
                 print(f"Saved computed path to {path_file}.")
         elif cell_type == "ihc" and path_file is not None and max_path_deviation is None:
-            from flamingo_tools.postprocessing.cochlea_mapping import path_dict_to_central_path_table
             total_distance, path_dict_raw = _compute_path_from_table(tsv_table, component_list)
-            for key in path_dict_raw:
-                path_dict_raw[key]["length[µm]"] = path_dict_raw[key]["length_fraction"] * total_distance
-                path_dict_raw[key]["frequency[kHz]"] = 0.0
-            path_dict_to_central_path_table(path_dict_raw).to_csv(path_file, sep="\t", index=False)
+            _central_path_table(path_dict_raw, total_distance).to_csv(path_file, sep="\t", index=False)
             print(f"Saved computed path to {path_file}.")
         elif max_path_deviation is not None and cell_type != "ihc":
             print("Warning: --max_path_deviation is only supported for cell_type='ihc'. Skipping path filtering.")
 
-        custom_comp = len(tsv_table[tsv_table["component_labels"].isin(component_list)])
+        # Write the table before the napari prompt, so an interrupted prompt keeps the result.
+        tsv_table.to_csv(out_path, sep="\t", index=False)
+        if use_napari:
+            layers = {"components": tsv_table["component_labels"]}
+            if cell_type == "ihc" and refine_row:
+                layers = {"components": labeled["component_labels"], "IHC row": tsv_table["component_labels"]}
+            _show_components(labeled, scale_factor, layers)
+            # Choose the row components after the view, and check the refined row in the next view.
+            while cell_type == "ihc":
+                answer = input("IHC row components (space separated), Enter to accept: ").split()
+                if not answer:
+                    break
+                try:
+                    tsv_table, row_path = refine_ihc_row(
+                        labeled.copy(), [int(c) for c in answer], min_size, row_deviation
+                    )
+                except ValueError as error:
+                    print(error)
+                    continue
+                component_list, refine_row = [int(c) for c in answer], True
+                _show_components(labeled, scale_factor, {
+                    "components": labeled["component_labels"], "IHC row": tsv_table["component_labels"],
+                })
+            if cell_type == "ihc" and refine_row:
+                print("Replay with: --cell_type ihc --refine_row -c " + " ".join(str(comp) for comp in component_list)
+                      + f" --min_size {min_size} --min_component_length {min_component_length}"
+                      + f" --max_edge_distance {max_edge_distance} --max_path_deviation {row_deviation}")
+            tsv_table.to_csv(out_path, sep="\t", index=False)
+
+        if row_path is not None and path_file is not None:
+            from flamingo_tools.postprocessing.cochlea_mapping import _path_dict_from_components, arc_length
+            length = arc_length(row_path)[-1]
+            row_path_table = _central_path_table(_path_dict_from_components([row_path], length), length)
+            row_path_table.to_csv(path_file, sep="\t", index=False)
+            print(f"Saved the row path to {path_file}.")
+
+        counted = [1] if cell_type == "ihc" and refine_row else component_list
+        custom_comp = len(tsv_table[tsv_table["component_labels"].isin(counted)])
         print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
-        if component_list == [1]:
+        if counted == [1]:
             print(f"Largest component has {custom_comp} {cell_type.upper()}s.")
         else:
-            for comp in component_list:
+            for comp in counted:
                 num_instances = len(tsv_table[tsv_table["component_labels"] == comp])
                 print(f"Component {comp} has {num_instances} instances.")
             print(f"Custom component(s) have {custom_comp} {cell_type.upper()}s.")
-
-        tsv_table.to_csv(out_path, sep="\t", index=False)
-
-        if use_napari:
-            import napari
-            centroids = list(zip(tsv_table["anchor_x"], tsv_table["anchor_y"], tsv_table["anchor_z"]))
-            component_labels = list(tsv_table["component_labels"])
-            array_downscaled = downscaled_centroids(centroids=centroids, scale_factor=scale_factor,
-                                                    component_labels=component_labels, downsample_mode="components")
-            image_downscaled = downscaled_centroids(centroids, scale_factor=scale_factor,
-                                                    downsample_mode="accumulated")
-            viewer = napari.Viewer()
-            viewer.add_image(image_downscaled, name='3D Volume')
-            viewer.add_labels(array_downscaled, name="components")
-            napari.run()
 
 
 def label_components_json_wrapper(

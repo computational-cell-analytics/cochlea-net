@@ -64,7 +64,7 @@ COMMON_KEYS = frozenset({
 STEP_KEYS: Dict[str, frozenset] = {
     "label_components": frozenset({
         "component_list_path", "max_edge_distance", "min_component_length", "min_size",
-        "custom_dic", "max_path_deviation",
+        "custom_dic", "max_path_deviation", "refine_row",
     }),
     "tonotopic_mapping": frozenset({
         "apex_position", "component_mapping", "include_gap", "animal", "otof", "path_method",
