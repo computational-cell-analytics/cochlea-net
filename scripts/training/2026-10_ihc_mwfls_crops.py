@@ -12,6 +12,8 @@ import sys
 import imageio.v3 as imageio
 import numpy as np
 import pandas as pd
+from scipy.ndimage import find_objects
+from scipy.ndimage import label as label_structures
 from scipy.spatial import cKDTree
 
 from flamingo_tools.analysis.training_data_utils import correct_ihc_row, find_crop_centers_missed, ihc_row_reference
@@ -52,6 +54,38 @@ COMMENT_CASES = [
     ("M-AMD-000126-L_crop_1216-0631-0806", "IHC_v9", "removed", [3456, 3457, 3464, 3474, 3556, 3560], None),
     ("M-AMD-000126-L_crop_1084-0437-0642", "IHC_v9", "removed", [2999, 3075, 3076, 3138, 3145, 3147, 3148], None),
     ("M-AMD-000126-L_crop_0541-0868-0259", "IHC_v11", "removed", [377], None),
+]
+# The cases of ~/Documents/MWfLS/ihc_crops/comments_tips.md, with the ids of the proposals of 2026-10-30 in
+# PROPOSAL_FRAME. Other kinds:
+# - balanced: a cells case where each output label has 0.6-1.4 of the reference size;
+# - axis: the output cells of the first ids are within `expected` degree of the axis of the second ids;
+# - tip_cells: each of these napari coordinates (z, y, x) lies in a different output cell.
+# A tuple of cell counts allows each of them.
+PROPOSAL_FRAME = "proposals_2026-10-30"
+TIP_COMMENT_CASES = [
+    ("M-AMD-000126-R_crop_0448-1443-0611", "IHC_v11", "tips",
+     [[492, 220, 133], [469, 234, 131], [452, 240, 131], [428, 248, 128]], None),
+    # The region of 1930, 1997 and 1998 holds 4 IHCs, one at each of these lower tips.
+    ("M-AMD-000126-R_crop_0448-1443-0611", "IHC_v11", "tip_cells",
+     [[492, 220, 133], [469, 234, 131], [452, 240, 131], [428, 248, 128]], None),
+    ("M-AMD-000126-R_crop_0448-1443-0611", "IHC_v11", "balanced", [1750, 1992, 1993], 3),
+    ("M-AMD-000126-R_crop_0448-1443-0611", "IHC_v11", "cells", [1748, 1751], 1),
+    ("M-AMD-000126-R_crop_0448-1443-0611", "IHC_v11", "cells", [1630], 2),
+    ("M-AMD-000126-R_crop_1086-0853-0293", "IHC_v11", "cells", [958, 1280], 3),
+    ("M-AMD-000126-R_crop_1086-0853-0293", "IHC_v11", "cells", [1140], 2),
+    ("M-AMD-000126-R_crop_1086-0853-0293", "IHC_v11", "kept", [1132], None),
+    ("M-AMD-000126-R_crop_0751-0992-0091", "IHC_v11", "axis",
+     ([324, 190, 314], [297, 299, 300, 301, 322, 188, 323, 195]), 20.0),
+    ("M-AMD-000126-L_crop_0541-0868-0259", "IHC_v11", "balanced", [385, 393], 2),
+    ("M-AMD-000126-L_crop_0541-0868-0259", "IHC_v11", "cells", [395, 396], 3),
+    ("M-AMD-000126-L_crop_0541-0868-0259", "IHC_v11", "cells", [407], 2),
+    ("M-AMD-000126-L_crop_0541-0868-0259", "IHC_v11", "cells", [410], 2),
+    ("M-AMD-000126-L_crop_1084-0437-0642", "IHC_v11", "balanced", [1127, 1128], 2),
+    ("M-AMD-000127-L_crop_0826-1150-1139", "IHC_v11", "cells", [1528], (4, 5)),
+    ("M-AMD-000127-L_crop_0826-1150-1139", "IHC_v11", "cells", [1377], 4),
+    ("M-AMD-000127-L_crop_0826-1150-1139", "IHC_v11", "cells", [1383, 1384], 3),
+    ("M-AMD-000127-L_crop_0826-1150-1139", "IHC_v11", "cells", [1406, 1407], 3),
+    ("M-AMD-000127-L_crop_0826-1150-1139", "IHC_v11", "cells", [1251, 1405], 1),
 ]
 
 
@@ -182,7 +216,7 @@ def write_proposals(json_files: list, crop_root: str, tip_method: str = "path") 
                 tips.rename(columns={"z": "axis-0", "y": "axis-1", "x": "axis-2"}).to_csv(
                     f"{prefix}_{version.replace('_', '-')}-tips.csv", index=False
                 )
-                checks.extend(check_comments(name, version, segmentation, labels, tips))
+                checks.extend(check_comments(name, version, segmentation, labels, tips, reference, crop_root))
                 actions = report["action"].value_counts().to_dict()
                 print(f"{name} {version}: reference {reference['n_pixels']:.0f} px, actions {actions}, "
                       f"review {int(report['review'].sum())}")
@@ -193,30 +227,67 @@ def write_proposals(json_files: list, crop_root: str, tip_method: str = "path") 
     report.to_csv(os.path.join(crop_root, "ihc_correction.tsv"), sep="\t", index=False)
     if checks:
         checks = pd.DataFrame(checks)
-        print(f"Cases of comments.md ({tip_method} tips): {int(checks['pass'].sum())} of {len(checks)} pass")
+        print(f"Cases of the comments ({tip_method} tips): {int(checks['pass'].sum())} of {len(checks)} pass")
         print(checks.to_string(index=False))
     return report
 
 
-def check_comments(name: str, version: str, segmentation: np.ndarray, labels: np.ndarray, tips: pd.DataFrame) -> list:
-    """Check the proposal of one crop against the cases of comments.md."""
+def _principal_axis(voxels: np.ndarray) -> np.ndarray:
+    return np.linalg.eigh(np.cov(voxels.T))[1][:, -1]
+
+
+def check_comments(
+    name: str, version: str, segmentation: np.ndarray, labels: np.ndarray, tips: pd.DataFrame, reference: dict,
+    crop_root: str,
+) -> list:
+    """Check the proposal of one crop against the cases of comments.md and comments_tips.md.
+
+    One more row counts the output labels with more than one connected piece.
+    """
+    cases = [(case, segmentation) for case in COMMENT_CASES]
+    frame_path = os.path.join(crop_root, PROPOSAL_FRAME, name.split("_crop")[0].replace("-", "_"),
+                              f"{name}_{version.replace('_', '-')}-proposal.tif")
+    if any(case[:2] == (name, version) for case in TIP_COMMENT_CASES) and os.path.isfile(frame_path):
+        frame = imageio.imread(frame_path)
+        cases += [(case, frame) for case in TIP_COMMENT_CASES]
     rows = []
-    for crop, case_version, kind, items, expected in COMMENT_CASES:
+    for (crop, case_version, kind, items, expected), frame in cases:
         if crop != name or case_version != version:
             continue
         if kind == "tips":
             distances = cKDTree(tips[["z", "y", "x"]].values).query(items)[0] * VOXEL_SIZE
             result, passed = np.round(distances, 1).tolist(), bool((distances <= 3.0).all())
-        elif kind == "cells":
-            outputs = labels[np.isin(segmentation, items)]
+        elif kind == "tip_cells":
+            result = [int(labels[tuple(point)]) for point in items]
+            passed = 0 not in result and len(set(result)) == len(result)
+        elif kind in ("cells", "balanced"):
+            outputs = labels[np.isin(frame, items)]
             cells, counts = np.unique(outputs[outputs > 0], return_counts=True)
-            result = int((counts >= 0.1 * len(outputs)).sum())
-            passed = result == expected and np.mean(outputs > 0) >= 0.8
+            cells = cells[counts >= 0.1 * len(outputs)]
+            result = len(cells)
+            passed = result in np.atleast_1d(expected) and np.mean(outputs > 0) >= 0.8
+            if kind == "balanced":
+                sizes = [np.sum(labels == cell) / reference["n_pixels"] for cell in cells]
+                result = (result, np.round(sizes, 2).tolist())
+                passed = passed and all(0.6 <= size <= 1.4 for size in sizes)
+        elif kind == "axis":
+            checked, good = items
+            axes = [_principal_axis(np.argwhere(frame == i)) for i in good if np.any(frame == i)]
+            axis = np.linalg.eigh(sum(np.outer(a, a) for a in axes))[1][:, -1]
+            outputs = labels[np.isin(frame, checked)]
+            cells, counts = np.unique(outputs[outputs > 0], return_counts=True)
+            angles = [np.degrees(np.arccos(min(1.0, abs(_principal_axis(np.argwhere(labels == cell)) @ axis))))
+                      for cell in cells[counts >= 0.1 * len(outputs)]]
+            result, passed = np.round(angles).tolist(), max(angles, default=0.0) <= expected
         else:
-            fractions = [np.mean(labels[segmentation == i] == (i if kind == "kept" else 0)) for i in items]
+            fractions = [np.mean(labels[frame == i] == (i if kind == "kept" else 0)) for i in items]
             result, passed = np.round(fractions, 2).tolist(), all(f >= 0.95 for f in fractions)
-        rows.append({"Name": name, "Version": version, "case": kind, "ids": items if kind != "tips" else "",
+        rows.append({"Name": name, "Version": version, "case": kind, "ids": items if "tip" not in kind else "",
                      "expected": expected, "result": result, "pass": passed})
+    n_pieces = sum(label_structures(labels[bbox] == label_id)[1] > 1
+                   for label_id, bbox in enumerate(find_objects(labels), start=1) if bbox is not None)
+    rows.append({"Name": name, "Version": version, "case": "pieces", "ids": "", "expected": 0, "result": n_pieces,
+                 "pass": n_pieces == 0})
     return rows
 
 

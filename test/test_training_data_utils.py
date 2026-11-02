@@ -63,7 +63,9 @@ class TestCorrectIhcRow(unittest.TestCase):
                 labels, report, tips = correct_ihc_row(seg, self.path, reference, voxel_size=1.0, tip_method=tip_method)
 
                 classes = dict(zip(report["label_id"], report["class"]))
-                expected = ["normal"] * 6 + ["uncertain"] * 3 + ["off_row", "uncertain", "border", "off_row"]
+                # The short halves 8 and 9 are stacked along the axis, so they are merged first to a normal cell.
+                expected = (["normal"] * 6 + ["uncertain", "normal", "normal", "off_row", "uncertain", "border"]
+                            + ["off_row"])
                 self.assertEqual([classes[i] for i in range(1, 14)], expected)
                 self.assertTrue(np.all(labels[seg == 12] == 12))
                 self.assertTrue(np.all(labels[seg == 13] == 0))
@@ -74,13 +76,48 @@ class TestCorrectIhcRow(unittest.TestCase):
                 for label_id in (7, 11):
                     _, counts = np.unique(labels[seg == label_id], return_counts=True)
                     self.assertEqual(int((counts > 0.3 * counts.sum()).sum()), 2)
-                # The two halves of cell 0 are short. They share the tips of the cell and become one cell.
+                # The two halves of cell 0 become one cell.
                 halves, counts = np.unique(labels[np.isin(seg, [8, 9])], return_counts=True)
                 self.assertIn(halves[np.argmax(counts)], [8, 9])
                 self.assertGreater(counts.max(), 0.95 * counts.sum())
                 self.assertTrue(np.all(labels[seg == 10] == 0))
                 # The small blob 12 can have a tip of its own in the height maps.
                 self.assertEqual(tips.loc[tips["label_id"] != 12, "cell"].nunique(), 11)
+
+    def test_part_of_removed_artifact(self):
+        from flamingo_tools.analysis.training_data_utils import correct_ihc_row, ihc_row_reference
+
+        # A short row fragment (20) that touches only a short off-row artifact (21). The artifact is removed,
+        # so the fragment cannot join it.
+        seg = self.segmentation.copy()
+        seg[34:39, 48:53, 26:31] = 20
+        seg[34:39, 48:53, 31:40] = 21
+        reference = ihc_row_reference([self.segmentation], self.path, voxel_size=1.0)
+        labels, report, _ = correct_ihc_row(seg, self.path, reference, voxel_size=1.0)
+        self.assertEqual(report.set_index("label_id").loc[21, "action"], "remove")
+        self.assertNotIn(21, np.unique(labels))
+
+    def test_trim_leaning_cells(self):
+        from flamingo_tools.analysis.training_data_utils import correct_ihc_row, ihc_row_reference
+
+        # 10 correct IHCs along y. The long axes of the first 5 cells lean 35 degree to +x, the others to -x,
+        # so the crop axis is z and the local axes lean. A trim in the plane of the crop axis cuts the tips.
+        shape = (60, 100, 50)
+        z, y, x = np.indices(shape)
+        centers_y = 10 + 9 * np.arange(10)
+        nearest = np.argmin(np.abs(y[..., None] - centers_y), axis=-1)
+        lean = np.radians(np.where(nearest < 5, 35.0, -35.0))
+        along = (z - 30) * np.cos(lean) + (x - 25) * np.sin(lean)
+        across = -(z - 30) * np.sin(lean) + (x - 25) * np.cos(lean)
+        inside = (along / 14) ** 2 + ((y - centers_y[nearest]) / 5) ** 2 + (across / 4.5) ** 2 <= 1
+        seg = np.where(inside, nearest + 1, 0).astype("uint32")
+        path = np.array([[30.0, 0.0, 25.0], [30.0, 99.0, 25.0]])
+        reference = ihc_row_reference([seg], path, voxel_size=1.0)
+        labels, report, _ = correct_ihc_row(seg, path, reference, voxel_size=1.0, max_radius_factor=0.8)
+        inner = report.loc[report["class"] == "normal", "label_id"]
+        self.assertGreater(len(inner), 5)
+        for label_id in inner:
+            self.assertGreaterEqual(np.mean(labels[seg == label_id] == label_id), 0.99)
 
 
 class TestMergeParts(unittest.TestCase):
@@ -99,10 +136,131 @@ class TestMergeParts(unittest.TestCase):
         points = np.stack([np.full(30, 20.0), np.arange(30.0), np.full(30, 5.0)], axis=1)
         axes = np.tile([1.0, 0.0, 0.0], (30, 1))
 
-        merged, part_of = _merge_parts(segmentation, features, coords, points, axes, max_distance=4.0)
+        merged, part_of = _merge_parts(segmentation, features, coords, points, axes, max_distance=4.0, max_size=2000)
         self.assertEqual(part_of, {1: 2})
         self.assertTrue(np.all(merged[segmentation == 1] == 2))
         self.assertTrue(np.all(merged[segmentation == 3] == 3))
+        # The merged instance would have 1530 voxels.
+        _, part_of = _merge_parts(segmentation, features, coords, points, axes, max_distance=4.0, max_size=1500)
+        self.assertEqual(part_of, {})
+
+
+class TestPartitionAlongPath(unittest.TestCase):
+
+    def setUp(self):
+        # Voxels of 3 cells along the path without a neck: 10 path points per cell, 100 voxels per path point,
+        # with heights from -10 to 9.
+        self.index = np.repeat(np.arange(30), 100)
+        self.height = np.tile(np.repeat(np.arange(-10, 10), 5), 30).astype(float)
+
+    def test_no_neck(self):
+        from flamingo_tools.analysis.training_data_utils import _partition_along_path
+
+        # Two tips on two full cells without a neck: the cells stay apart, because they do not fit in one cell.
+        index, height = self.index[:2000], self.height[:2000]
+        cells = _partition_along_path(index, height, np.array([5.0, 15.0]), 1000, 10, 400, 1600, 1.0)
+        self.assertEqual(np.bincount(cells).tolist(), [1000, 1000])
+        # A false tip on a single cell: both together fit in one cell.
+        index, height = self.index[:1000], self.height[:1000]
+        cells = _partition_along_path(index, height, np.array([2.0, 7.0]), 1000, 10, 400, 1600, 1.0)
+        self.assertEqual(np.bincount(cells).tolist(), [1000])
+
+    def test_size_fallback(self):
+        from flamingo_tools.analysis.training_data_utils import _partition_along_path
+
+        # 3 cells without a tip.
+        cells = _partition_along_path(self.index, self.height, np.array([]), 1000, 10, 400, 1600, 1.0)
+        np.testing.assert_allclose(np.bincount(cells), [1000, 1000, 1000], rtol=0.15)
+        # The same voxels stacked at 10 path points: 3 times the cell size, but the extent of one cell.
+        index = self.index // 3
+        cells = _partition_along_path(index, self.height, np.array([]), 1000, 10, 400, 1600, 1.0)
+        self.assertEqual(cells.max(), 0)
+
+    def test_neck(self):
+        from flamingo_tools.analysis.training_data_utils import _neck
+
+        # A valley in the middle half between the centers 0 and 8 is the boundary.
+        self.assertEqual(_neck(np.array([9.0, 8, 7, 6, 2, 6, 7, 8, 9]), 0, 8), 4)
+        # A valley outside the middle half.
+        self.assertEqual(_neck(np.array([9.0, 2, 7, 8, 9, 9, 9, 9, 9]), 0, 8), 1)
+        # A slope has no valley: the boundary is in the middle.
+        self.assertEqual(_neck(np.array([9.0, 8, 7, 6, 5, 4, 3, 2, 1]), 0, 8), 4)
+
+
+class TestReassignPieces(unittest.TestCase):
+
+    def test_reassign_pieces(self):
+        from flamingo_tools.analysis.training_data_utils import _reassign_pieces
+
+        labels = np.zeros((10, 30, 10), dtype="uint32")
+        labels[2:8, 2:12, 2:8] = 1
+        labels[2:8, 12:22, 2:8] = 2
+        # A piece of label 1 inside label 2, and a large and a small piece of label 2 without a contact.
+        labels[4:6, 16:18, 4:6] = 1
+        labels[2:8, 25:29, 2:8] = 2
+        labels[0, 0, 0] = 2
+        moved = _reassign_pieces(labels, min_size=50, next_id=3)
+        self.assertEqual(moved, {1: 1, 2: 2})
+        self.assertTrue(np.all(labels[2:8, 12:22, 2:8] == 2))
+        self.assertTrue(np.all(labels[2:8, 25:29, 2:8] == 3))
+        self.assertEqual(labels[0, 0, 0], 0)
+
+
+class TestSplitReusedIds(unittest.TestCase):
+
+    def test_split_reused_ids(self):
+        from flamingo_tools.analysis.training_data_utils import split_reused_ids
+
+        labels = np.zeros((12, 60, 12), dtype="uint32")
+        labels[2:10, 2:12, 2:10] = 5
+        labels[2:10, 20:30, 2:10] = 7
+        labels[2:10, 40:50, 2:10] = 5
+        # A small piece of 5 that touches 7, and an isolated small piece of 5.
+        labels[4:6, 30:32, 4:6] = 5
+        labels[11, 57, 11] = 5
+        result, report = split_reused_ids(labels, anchors={5: (6, 45, 6)}, min_size=100)
+        self.assertTrue(np.all(result[2:10, 40:50, 2:10] == 5))
+        self.assertTrue(np.all(result[2:10, 2:12, 2:10] == 8))
+        self.assertTrue(np.all(result[4:6, 30:32, 4:6] == 7))
+        self.assertEqual(result[11, 57, 11], 0)
+        self.assertEqual(sorted(report["action"]), ["merged", "new_id", "removed"])
+        self.assertEqual(labels[2, 2, 2], 5)
+
+        self.assertTrue(report["anchored"].all())
+
+        # Without an anchor, or with an anchor too far away, the largest piece keeps the ID.
+        labels[2:10, 40:44, 2:10] = 0
+        for anchors in [None, {5: (0, 58, 0)}]:
+            result, report = split_reused_ids(labels, anchors=anchors, min_size=100, max_anchor_distance=5)
+            self.assertTrue(np.all(result[2:10, 2:12, 2:10] == 5))
+            self.assertTrue(np.all(result[2:10, 44:50, 2:10] == 8))
+            self.assertFalse(report["anchored"].any())
+
+
+class TestIhcRowReference(unittest.TestCase):
+
+    def test_split_cells(self):
+        from flamingo_tools.analysis.training_data_utils import ihc_row_reference
+
+        # A row of 8 IHCs along y with the long axis z. In the second segmentation, each cell is split into an
+        # upper and a lower half.
+        z, y, x = np.indices((60, 90, 40))
+        centers_y = 10 + 9 * np.arange(8)
+        nearest = np.argmin(np.abs(y[..., None] - centers_y), axis=-1)
+        inside = ((z - 30) / 14) ** 2 + ((y - centers_y[nearest]) / 5) ** 2 + ((x - 20) / 4.5) ** 2 <= 1
+        cells = np.where(inside, nearest + 1, 0)
+        halves = np.where(inside, 2 * nearest + 1 + (z > 30), 0)
+        path = np.array([[30.0, 0.0, 20.0], [30.0, 89.0, 20.0]])
+        full = ihc_row_reference([cells], path, voxel_size=1.0)
+        split = ihc_row_reference([halves], path, voxel_size=1.0)
+        self.assertAlmostEqual(split["n_pixels"] / full["n_pixels"], 1.0, delta=0.2)
+        self.assertAlmostEqual(split["length_axis"] / full["length_axis"], 1.0, delta=0.2)
+
+        # Cells 1-3 and 4-6 are merged. Most of the volume is in the merges, but the tips mark the cells.
+        merges = np.where(inside, np.array([1, 1, 1, 2, 2, 2, 3, 4])[nearest], 0)
+        merged = ihc_row_reference([merges], path, voxel_size=1.0)
+        self.assertAlmostEqual(merged["n_pixels"] / full["n_pixels"], 1.0, delta=0.2)
+        self.assertAlmostEqual(merged["length_path"] / full["length_path"], 1.0, delta=0.2)
 
 
 class TestFindIhcTips(unittest.TestCase):
