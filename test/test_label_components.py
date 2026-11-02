@@ -1,4 +1,8 @@
+import json
+import os
 import unittest
+from tempfile import TemporaryDirectory
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -49,6 +53,36 @@ class TestRefineIhcRow(unittest.TestCase):
 
         with self.assertRaises(ValueError):
             label_components_single("table.tsv", cell_type="sgn", refine_row=True)
+
+    def _label_with_prompt(self, cell_type, answers):
+        from flamingo_tools.json_util import load_processing_params
+        from flamingo_tools.postprocessing.label_components import label_components_single
+
+        with TemporaryDirectory() as tmp_dir:
+            table_path = os.path.join(tmp_dir, "default.tsv")
+            self.table.to_csv(table_path, sep="\t", index=False)
+            with patch("flamingo_tools.postprocessing.label_components._show_components"), \
+                    patch("builtins.input", side_effect=answers):
+                label_components_single(
+                    table_path, cell_type=cell_type, min_size=10000, min_component_length=3, use_napari=True,
+                    dataset_name="M_AMD_000126_L", segmentation_channel=f"{cell_type.upper()}_v11", archive=tmp_dir,
+                )
+            path = os.path.join(tmp_dir, f"M_AMD_000126_L_{cell_type.upper()}.json")
+            with open(path) as f:
+                entry = json.load(f)
+            return entry, load_processing_params(path, "label_components")[0]
+
+    def test_archive_ihc_row_from_prompt(self):
+        entry, params = self._label_with_prompt("ihc", ["1 2", ""])
+        self.assertEqual(entry["component_list"], [1])
+        self.assertEqual(params["component_list"], [1, 2])
+        self.assertTrue(params["refine_row"])
+        self.assertEqual(params["min_size"], 10000)
+
+    def test_archive_sgn_order_from_prompt(self):
+        entry, _ = self._label_with_prompt("sgn", ["x", "3 1"])
+        self.assertEqual(entry["component_list"], [3, 1])
+        self.assertNotIn("component_list_path", entry["label_components"])
 
 
 if __name__ == "__main__":
