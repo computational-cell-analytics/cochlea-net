@@ -164,3 +164,41 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
         params.append(flat)
 
     return params
+
+
+def archive_processing_params(entry: dict, archive: str) -> str:
+    """Write the parameters of a processing run into a shared processing parameter file.
+
+    The entry of the file with the same "dataset_name" and "segmentation_channel" gets the keys of
+    `entry`, so a section in `entry` replaces the whole section of the file. The other keys and
+    sections of the file stay. An entry for another segmentation is added, and the file becomes a list.
+
+    Args:
+        entry: The common keys of the run and the section of one processing step.
+        archive: Parameter file, or a directory that receives the file `<dataset_name>_<CELL_TYPE>.json`.
+
+    Returns:
+        The path of the parameter file.
+    """
+    if not archive.endswith(".json"):
+        os.makedirs(archive, exist_ok=True)
+        archive = os.path.join(archive, f"{entry['dataset_name']}_{entry['cell_type'].upper()}.json")
+
+    entries = []
+    if os.path.isfile(archive):
+        with open(archive, "r") as f:
+            data = json.load(f)
+        entries = data if isinstance(data, list) else [data]
+
+    keys = ("dataset_name", "segmentation_channel")
+    match = next((old for old in entries if all(old.get(key) == entry[key] for key in keys)), None)
+    if match is None:
+        entries.append(entry)
+    else:
+        match.update(entry)
+
+    with open(archive, "w") as f:
+        json.dump(entries[0] if len(entries) == 1 else entries, f, indent='\t', separators=(',', ': '))
+        f.write("\n")
+    print(f"Saved the parameters to {archive}.")
+    return archive

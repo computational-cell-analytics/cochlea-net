@@ -12,7 +12,7 @@ from skimage.draw import line_nd
 
 from flamingo_tools.postprocessing.cochlea_mapping import CENTRAL_PATH_METHODS, _centroids_per_component
 from flamingo_tools.postprocessing.label_components import downscaled_centroids
-from flamingo_tools.s3_utils import read_table
+from flamingo_tools.s3_utils import read_table, split_table_path
 
 
 def insert_coordinate(
@@ -211,9 +211,9 @@ def mean_by_offset(
 
 
 def _output_prefix(table_path: str, cochlea: Optional[str] = None) -> str:
-    parts = Path(table_path).parts
-    if parts[-1] == "default.tsv" and len(parts) >= 4 and parts[-3] == "tables":
-        name, seg_name = parts[-4], parts[-2]
+    layout = split_table_path(table_path)
+    if layout is not None:
+        name, seg_name = layout
     else:
         stem = Path(table_path).stem
         match = re.fullmatch(r"(.+)[_-]((?:SGN|IHC)[_-]v\d+[a-z]?)", stem)

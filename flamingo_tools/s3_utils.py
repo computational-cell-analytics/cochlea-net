@@ -6,6 +6,7 @@ import atexit
 import json
 import os
 import warnings
+from pathlib import Path
 from shutil import which
 from subprocess import run
 from typing import Optional, Tuple, Union
@@ -85,6 +86,24 @@ def default_table_path(
     if s3:
         return f"{cochlea}/tables/{seg_channel}/default.tsv"
     return os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
+
+
+def split_table_path(table_path: str) -> Optional[Tuple[str, str]]:
+    """Get the cochlea and the segmentation channel from a default table path.
+
+    This is the inverse of `default_table_path`, for a path relative to the S3 bucket or a local one.
+
+    Args:
+        table_path: Path of a segmentation table.
+
+    Returns:
+        The cochlea and the segmentation channel of a path `<cochlea>/tables/<seg_channel>/default.tsv`,
+        or None for any other path.
+    """
+    parts = Path(table_path).parts
+    if len(parts) >= 4 and parts[-1] == "default.tsv" and parts[-3] == "tables":
+        return parts[-4], parts[-2]
+    return None
 
 
 def table_name_prefix(cochlea: str, seg_channel: str) -> str:
