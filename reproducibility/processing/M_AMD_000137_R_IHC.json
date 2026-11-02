@@ -9,14 +9,17 @@
 		1
 	],
 	"label_components": {
-		"component_list_path": [
-			1,
-			2,
-			6
-		],
-		"min_component_length": 10,
 		"min_size": 5000,
-		"max_path_deviation": 15,
+		"min_component_length": 10,
+		"max_edge_distance": 30.0,
+		"component_list_path": [
+			2,
+			6,
+			1,
+			4,
+			5
+		],
+		"max_path_deviation": 15.0,
 		"refine_row": true
 	},
 	"tonotopic_mapping": {},
