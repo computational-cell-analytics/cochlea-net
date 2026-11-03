@@ -30,6 +30,7 @@ def export_synapse_detections(
     suffix: Optional[str] = None,
     use_syn_ids: bool = False,
     voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+    points: bool = False,
 ):
     """Export synapse detections from S3.
 
@@ -53,6 +54,9 @@ def export_synapse_detections(
             e.g. a position name such as "apex".
         use_syn_ids: Whether to write the synapse IDs or the matched IHC IDs to the output volume.
         voxel_size: Voxel size of the data in micrometer, in (x, y, z) order.
+        points: Whether to write a CSV point table per scale instead of the TIFF volume.
+            The table has the columns axis-0, axis-1, axis-2 (z, y, x in pixels at the target scale,
+            relative to the crop), spot_id and matched_ihc.
     """
     voxel_size = normalize_voxel_size(voxel_size)
     s3 = create_s3_target()
@@ -90,10 +94,8 @@ def export_synapse_detections(
         shape = f[input_key].shape
 
         # Scale the coordinates according to the scale level.
-        coordinates = syn_table[["z", "y", "x"]].values.astype("float64")
-        coordinates /= np.array(voxel_size[::-1])
-        coordinates /= (2 ** scale)
-        coordinates = np.round(coordinates, 0).astype("int")
+        coords_px = syn_table[["z", "y", "x"]].values / np.array(voxel_size[::-1]) / (2 ** scale)
+        coordinates = np.round(coords_px, 0).astype("int")
 
         ihc_ids = syn_table["matched_ihc"].values
         syn_ids = syn_table["spot_id"].values
@@ -105,8 +107,8 @@ def export_synapse_detections(
             )
 
             mask = ((coordinates >= start) & (coordinates < stop)).all(axis=1)
-            coordinates = coordinates[mask]
-            coordinates -= start
+            coordinates = coordinates[mask] - start
+            coords_px = coords_px[mask] - start
 
             ihc_ids = ihc_ids[mask]
             syn_ids = syn_ids[mask]
@@ -114,6 +116,20 @@ def export_synapse_detections(
             shape = tuple(int(sto - sta) for sta, sto in zip(start, stop))
         else:
             out_suffix = ""
+
+        out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
+        os.makedirs(out_folder, exist_ok=True)
+        offset_suffix = f"_offset{id_offset}" if id_offset != 0 else ""
+        out_stem = os.path.join(out_folder, f"{synapse_name}{offset_suffix}{out_suffix}")
+
+        if points:
+            # The axis-N column names make napari's built-in CSV reader open the file as a points layer.
+            point_table = pd.DataFrame(coords_px, columns=["axis-0", "axis-1", "axis-2"])
+            point_table["spot_id"] = syn_ids
+            point_table["matched_ihc"] = ihc_ids
+            print("Writing synapse points to", f"{out_stem}.csv")
+            point_table.to_csv(f"{out_stem}.csv", index=False)
+            continue
 
         # Create the output.
         output = np.zeros(shape, dtype="float32")
@@ -137,16 +153,8 @@ def export_synapse_detections(
             )
             output[bb][mask[footprint]] = syn_id + id_offset
 
-        # Write the output.
-        out_folder = os.path.join(output_folder, cochlea, f"scale{scale}")
-        os.makedirs(out_folder, exist_ok=True)
-        if id_offset != 0:
-            out_path = os.path.join(out_folder, f"{synapse_name}_offset{id_offset}{out_suffix}.tif")
-        else:
-            out_path = os.path.join(out_folder, f"{synapse_name}{out_suffix}.tif")
-
-        print("Writing synapses to", out_path)
-        tifffile.imwrite(out_path, output, bigtiff=True, compression="zlib")
+        print("Writing synapses to", f"{out_stem}.tif")
+        tifffile.imwrite(f"{out_stem}.tif", output, bigtiff=True, compression="zlib")
 
 
 def main():
@@ -174,6 +182,9 @@ def main():
     parser.add_argument("--use_syn_ids", action="store_true")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
                         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
+    parser.add_argument("--points", action="store_true",
+                        help="Write a CSV point table (z, y, x pixels at each scale) instead of the TIFF volume. "
+                        "napari opens it as a points layer.")
     args = parser.parse_args()
     if args.crop_center is not None:
         if args.roi_halo is None and args.axis is None:
@@ -188,7 +199,7 @@ def main():
         args.max_dist, args.radius,
         args.id_offset, args.filter_ihc_components,
         crop_center=args.crop_center, roi_halo=args.roi_halo, axis=args.axis, suffix=args.suffix,
-        use_syn_ids=args.use_syn_ids, voxel_size=args.voxel_size,
+        use_syn_ids=args.use_syn_ids, voxel_size=args.voxel_size, points=args.points,
     )
 
 
