@@ -411,10 +411,11 @@ def fig5c(args):
              "yticks": list(range(900, 1201, 100)), "n_label": f"n = {len(cochleae)}"},
             {"values": synapse_counts, "label": "Synapses per IHC",
              "literature": literature_reference_values("synapse", animal="gerbil"),
-             "ylim": (-1, 80), "yticks": list(range(0, 81, 20)), "box_zorder": None,
+             "ylim": (-1, 240), "yticks": list(range(0, 241, 40)), "ybreak": (130, 200), "box_zorder": None,
              "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(synapse_cochleae)} cochleae)"},
         ],
         figsize=(8.5, 4.5), tick_size=20, plot=args.plot, force_boxplot=args.force_boxplot,
+        ybreak=not args.no_axis_break,
     )
 
 
@@ -676,6 +677,8 @@ def main():
     parser.add_argument("--no_alias", action="store_true", help="Label cochleae by name instead of alias.")
     parser.add_argument("--force_boxplot", action="store_true",
                         help="Draw box plots in 2d and 5c also for fewer than 5 values.")
+    parser.add_argument("--no_axis_break", action="store_true",
+                        help="Draw the synapse axis of 5c without the break between 130 and 200.")
     parser.add_argument("--refresh_cache", action="store_true",
                         help="Ignore the cached pickles and fetch the data again.")
     parser.add_argument("--cache_dir", default=SCRIPT_DIR,
