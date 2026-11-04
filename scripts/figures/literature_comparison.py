@@ -12,6 +12,7 @@ COLOR_LITERATURE = "#27339C"
 # A box plot of fewer values only shows interpolated quartiles, so these are drawn as points.
 MIN_BOXPLOT_N = 5
 POINT_OFFSET = 0.06
+N_LABEL_SIZE = 10
 
 
 def plot_counts_vs_literature(
@@ -40,7 +41,7 @@ def plot_counts_vs_literature(
             "literature_label": write "literature" into the band (default False),
             "fill_color": color of the band (default COLOR_LITERATURE),
             "box_zorder": zorder of the box plot (default 1, None for the matplotlib default),
-            "n_label": sample size text below the x tick label (default "n = <number of values>").
+            "n_label": sample size text in the upper right corner (default "n = <number of values>").
         figsize: Figure size.
         tick_size: Font size of the y tick labels.
         label_size: Font size of the x tick labels, the y label and the band label.
@@ -68,9 +69,8 @@ def plot_counts_vs_literature(
 
         ax.set_xticks([1])
         ax.set_xticklabels([spec["label"]], fontsize=label_size)
-        ax.annotate(spec.get("n_label", f"n = {len(spec['values'])}"), xy=(1, 0),
-                    xycoords=("data", "axes fraction"), xytext=(0, -1.6 * label_size),
-                    textcoords="offset points", ha="center", va="top", fontsize=0.7 * label_size)
+        ax.text(0.98, 0.98, spec.get("n_label", f"n = {len(values)}"), transform=ax.transAxes,
+                ha="right", va="top", fontsize=N_LABEL_SIZE)
         if num == 0:
             ax.set_ylabel(ylabel, fontsize=label_size)
         y_ticks: List[float] = spec["yticks"]
