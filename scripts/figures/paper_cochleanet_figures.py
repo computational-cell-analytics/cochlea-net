@@ -297,7 +297,7 @@ def fig2d(args):
              "yticks": list(range(0, 91, 10)),
              "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(cochleae)} cochleae)"},
         ],
-        figsize=(10, 4.5), tick_size=16, plot=args.plot,
+        figsize=(10, 4.5), tick_size=16, plot=args.plot, force_boxplot=args.force_boxplot,
     )
 
 
@@ -414,7 +414,7 @@ def fig5c(args):
              "ylim": (-1, 80), "yticks": list(range(0, 81, 20)), "box_zorder": None,
              "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(synapse_cochleae)} cochleae)"},
         ],
-        figsize=(8.5, 4.5), tick_size=20, plot=args.plot,
+        figsize=(8.5, 4.5), tick_size=20, plot=args.plot, force_boxplot=args.force_boxplot,
     )
 
 
@@ -674,6 +674,8 @@ def main():
     parser.add_argument("--napari", action="store_true", help="Show the napari renderings of panels 1a and 3a.")
     parser.add_argument("--plot", action="store_true", help="Show every figure after saving it.")
     parser.add_argument("--no_alias", action="store_true", help="Label cochleae by name instead of alias.")
+    parser.add_argument("--force_boxplot", action="store_true",
+                        help="Draw box plots in 2d and 5c also for fewer than 5 values.")
     parser.add_argument("--refresh_cache", action="store_true",
                         help="Ignore the cached pickles and fetch the data again.")
     parser.add_argument("--cache_dir", default=SCRIPT_DIR,

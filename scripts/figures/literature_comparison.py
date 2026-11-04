@@ -2,11 +2,16 @@
 from typing import List, Sequence, Tuple
 
 import matplotlib.pyplot as plt
+import numpy as np
 
 from util import prism_cleanup_axes, prism_style, save_figure
 
 COLOR_MEASUREMENT = "#9C7427"
 COLOR_LITERATURE = "#27339C"
+
+# A box plot of fewer values only shows interpolated quartiles, so these are drawn as points.
+MIN_BOXPLOT_N = 5
+POINT_OFFSET = 0.06
 
 
 def plot_counts_vs_literature(
@@ -17,8 +22,11 @@ def plot_counts_vs_literature(
     label_size: int = 20,
     ylabel: str = "Count per cochlea",
     plot: bool = False,
+    force_boxplot: bool = False,
 ):
     """Plot one box plot per measured quantity, each with the literature interval as a band.
+
+    A quantity with fewer than MIN_BOXPLOT_N values is drawn as points with a mean line instead.
 
     Args:
         save_path: File path to save the figure.
@@ -38,17 +46,25 @@ def plot_counts_vs_literature(
         label_size: Font size of the x tick labels, the y label and the band label.
         ylabel: Y-axis label of the first axis.
         plot: Plot figure.
+        force_boxplot: Draw a box plot also for fewer than MIN_BOXPLOT_N values.
     """
     prism_style()
     fig, axes = plt.subplots(1, len(axes_specs), figsize=figsize)
 
     xmin, xmax = 0.5, 1.5
     for num, (ax, spec) in enumerate(zip(axes, axes_specs)):
-        box_plot = ax.boxplot(spec["values"], patch_artist=True, zorder=spec.get("box_zorder", 1))
-        for median in box_plot["medians"]:
-            median.set_color(COLOR_MEASUREMENT)
-        for boxcolor in box_plot["boxes"]:
-            boxcolor.set_facecolor("white")
+        values = spec["values"]
+        if len(values) < MIN_BOXPLOT_N and not force_boxplot:
+            # Neighbors in y alternate between the two sides, so that close values do not overlap.
+            offsets = [POINT_OFFSET * (-1) ** (rank + 1) for rank in range(len(values))]
+            ax.scatter([1 + offset for offset in offsets], sorted(values), color="black", s=60, zorder=2)
+            ax.hlines(np.mean(values), 0.8, 1.2, color=COLOR_MEASUREMENT, linewidth=2, zorder=1)
+        else:
+            box_plot = ax.boxplot(values, patch_artist=True, zorder=spec.get("box_zorder", 1))
+            for median in box_plot["medians"]:
+                median.set_color(COLOR_MEASUREMENT)
+            for boxcolor in box_plot["boxes"]:
+                boxcolor.set_facecolor("white")
 
         ax.set_xticks([1])
         ax.set_xticklabels([spec["label"]], fontsize=label_size)
