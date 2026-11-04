@@ -76,7 +76,7 @@ def plot_counts_vs_literature(
             "literature_label": write "literature" into the band (default False),
             "fill_color": color of the band (default COLOR_LITERATURE),
             "box_zorder": zorder of the box plot (default 1, None for the matplotlib default),
-            "n_label": sample size text above the upper right corner (default "n = <number of values>"),
+            "n_label": sample size text in the upper right corner (default "n = <number of values>"),
             "ybreak": the (lower, upper) y range that a broken y-axis leaves out. Only one spec
             can have it.
         figsize: Figure size.
@@ -119,9 +119,9 @@ def plot_counts_vs_literature(
 
         ax.set_xticks([1])
         ax.set_xticklabels([spec["label"]], fontsize=label_size)
-        # Above the axis, because outliers at the top of the axis would collide with the label.
+        # The label is inside the axis: the ylim of each spec must leave room above the highest value.
         top.annotate(spec.get("n_label", f"n = {len(spec['values'])}"), xy=(1, 1), xycoords="axes fraction",
-                     xytext=(0, 4), textcoords="offset points", ha="right", va="bottom", fontsize=N_LABEL_SIZE)
+                     xytext=(0, -2), textcoords="offset points", ha="right", va="top", fontsize=N_LABEL_SIZE)
         if num == 0:
             ax.set_ylabel(ylabel, fontsize=label_size)
         hidden = sum(not any(lower <= value <= upper for _, (lower, upper) in parts) for value in spec["values"])
