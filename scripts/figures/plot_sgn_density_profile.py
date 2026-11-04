@@ -553,12 +553,14 @@ def plot_sgn_density_profile(
 
         ax.plot(x_pos, center_line, linestyle=linestyle, color=color,
                 alpha=line_alphas["center"] if alpha is None else alpha, linewidth=3, zorder=2)
-        ax.plot(x_pos, upper_std, linestyle="solid", color=color,
-                alpha=line_alphas["upper"], zorder=0)
-        ax.plot(x_pos, lower_std, linestyle="solid", color=color,
-                alpha=line_alphas["lower"], zorder=0)
-        ax.fill_between(x_pos, lower_std, upper_std,
-                        color=color, alpha=line_alphas["fill"], interpolate=True)
+        # Without trendline_std, the bounds stay undrawn, so that they do not set the y-limits.
+        if trendline_std:
+            ax.plot(x_pos, upper_std, linestyle="solid", color=color,
+                    alpha=line_alphas["upper"], zorder=0)
+            ax.plot(x_pos, lower_std, linestyle="solid", color=color,
+                    alpha=line_alphas["lower"], zorder=0)
+            ax.fill_between(x_pos, lower_std, upper_std,
+                            color=color, alpha=line_alphas["fill"], interpolate=True)
 
         return {"x": x_pos, "y": center_line, "std": val_std,
                 "color": color, "linestyle": linestyle, "label": label}
