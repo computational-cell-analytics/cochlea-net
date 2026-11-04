@@ -281,19 +281,21 @@ def fig2c_variants(args):
 @panel("2d")
 def fig2d(args):
     cochleae = PAPER_COHORTS["idisco"]
+    synapse_counts = data.load_ribbon_synapse_counts(_synapse_counts_dir(args), cochleae=cochleae)
     literature_comparison.plot_counts_vs_literature(
         out(args, "2d"),
         [
             {"values": documented_counts(cochleae, "SGN", "SGN_v2"), "label": "SGN",
              "literature": literature_reference_values("SGN"), "ylim": (8500, 12500),
-             "yticks": list(range(9000, 12001, 1000)), "literature_label": True, "fill_color": "C0"},
+             "yticks": list(range(9000, 12001, 1000)), "literature_label": True, "fill_color": "C0",
+             "n_label": f"n = {len(cochleae)} cochleae"},
             {"values": documented_counts(cochleae, "IHC", "IHC_v11"), "label": "IHC",
              "literature": literature_reference_values("IHC"), "ylim": (600, 800),
-             "yticks": list(range(600, 801, 100))},
-            {"values": data.load_ribbon_synapse_counts(_synapse_counts_dir(args), cochleae=cochleae),
-             "label": "Synapses per IHC",
-             "literature": literature_reference_values("synapse"), "ylim": (-1, 41),
-             "yticks": [0, 10, 20, 30, 40, 50]},
+             "yticks": list(range(600, 801, 100)), "n_label": f"n = {len(cochleae)} cochleae"},
+            {"values": synapse_counts, "label": "Synapses per IHC",
+             "literature": literature_reference_values("synapse"), "ylim": (-1, 95),
+             "yticks": list(range(0, 91, 10)),
+             "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(cochleae)} cochleae)"},
         ],
         figsize=(10, 4.5), tick_size=16, plot=args.plot,
     )
@@ -393,20 +395,24 @@ def fig4e_variants(args):
 
 @panel("5c")
 def fig5c(args):
+    cochleae = PAPER_COHORTS["wt_gerbil"]
+    synapse_cochleae = PAPER_COHORTS["wt_gerbil_synapses"]
+    synapse_counts = data.load_ribbon_synapse_counts(
+        _synapse_counts_dir(args), cochleae=synapse_cochleae, exclude_zero=True, require_all=True)
     literature_comparison.plot_counts_vs_literature(
         out(args, "5c"),
         [
-            {"values": documented_counts(PAPER_COHORTS["wt_gerbil"], "SGN", "SGN_v2"), "label": "SGN",
+            {"values": documented_counts(cochleae, "SGN", "SGN_v2"), "label": "SGN",
              "literature": literature_reference_values("SGN", animal="gerbil"), "ylim": (14000, 30000),
-             "yticks": list(range(16000, 30001, 4000)), "literature_label": True},
-            {"values": documented_counts(PAPER_COHORTS["wt_gerbil"], "IHC", "IHC_v11"), "label": "IHC",
+             "yticks": list(range(16000, 30001, 4000)), "literature_label": True,
+             "n_label": f"n = {len(cochleae)} cochleae"},
+            {"values": documented_counts(cochleae, "IHC", "IHC_v11"), "label": "IHC",
              "literature": literature_reference_values("IHC", animal="gerbil"), "ylim": (900, 1200),
-             "yticks": list(range(900, 1201, 100))},
-            {"values": data.load_ribbon_synapse_counts(
-                _synapse_counts_dir(args), cochleae=PAPER_COHORTS["wt_gerbil_synapses"], exclude_zero=True,
-                require_all=True),
-             "label": "Synapses per IHC", "literature": literature_reference_values("synapse", animal="gerbil"),
-             "ylim": (-1, 80), "yticks": list(range(0, 81, 20)), "box_zorder": None},
+             "yticks": list(range(900, 1201, 100)), "n_label": f"n = {len(cochleae)} cochleae"},
+            {"values": synapse_counts, "label": "Synapses per IHC",
+             "literature": literature_reference_values("synapse", animal="gerbil"),
+             "ylim": (-1, 80), "yticks": list(range(0, 81, 20)), "box_zorder": None,
+             "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(synapse_cochleae)} cochleae)"},
         ],
         figsize=(8.5, 4.5), tick_size=20, plot=args.plot,
     )

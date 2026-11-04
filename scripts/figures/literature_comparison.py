@@ -31,7 +31,8 @@ def plot_counts_vs_literature(
             and the optional keys
             "literature_label": write "literature" into the band (default False),
             "fill_color": color of the band (default COLOR_LITERATURE),
-            "box_zorder": zorder of the box plot (default 1, None for the matplotlib default).
+            "box_zorder": zorder of the box plot (default 1, None for the matplotlib default),
+            "n_label": sample size text below the x tick label (default "n = <number of values>").
         figsize: Figure size.
         tick_size: Font size of the y tick labels.
         label_size: Font size of the x tick labels, the y label and the band label.
@@ -51,12 +52,18 @@ def plot_counts_vs_literature(
 
         ax.set_xticks([1])
         ax.set_xticklabels([spec["label"]], fontsize=label_size)
+        ax.annotate(spec.get("n_label", f"n = {len(spec['values'])}"), xy=(1, 0),
+                    xycoords=("data", "axes fraction"), xytext=(0, -1.6 * label_size),
+                    textcoords="offset points", ha="center", va="top", fontsize=0.7 * label_size)
         if num == 0:
             ax.set_ylabel(ylabel, fontsize=label_size)
         y_ticks: List[float] = spec["yticks"]
         ax.set_yticks(y_ticks)
         ax.set_yticklabels(y_ticks, rotation=0, fontsize=tick_size)
         ax.set_ylim(*spec["ylim"])
+        hidden = sum(not spec["ylim"][0] <= value <= spec["ylim"][1] for value in spec["values"])
+        if hidden:
+            print(f"Warning: {save_path}, {spec['label']}: {hidden} values lie outside ylim {spec['ylim']}.")
 
         ax.set_xlim(xmin, xmax)
         lower_y, upper_y = spec["literature"]
