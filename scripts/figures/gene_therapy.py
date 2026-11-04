@@ -29,6 +29,17 @@ ADULT_COCHLEAE = [name for name in cohort_cochleae("fchrimson_gerbil") if name n
 MARKER_LEFT = "o"
 MARKER_RIGHT = "^"
 
+# The band is the expected range of single untreated cochleae. It is not a confidence interval of
+# the untreated mean.
+UNTREATED_BAND_LABEL = "untreated cochleae\nmean ± 1.96 SD"
+
+
+def _reference_range(values: Sequence[float]) -> Tuple[float, float]:
+    """Get mean -/+ 1.96 sample SD (ddof=1) of the untreated values."""
+    mean, std = np.mean(values), np.std(values, ddof=1)
+    return mean - 1.96 * std, mean + 1.96 * std
+
+
 # Fraction range along Rosenthal's canal for each cochlear region. A density entry is assigned to
 # a region by its reference_fraction, not by its key in the density JSON, so that a region can
 # hold several measurements. The bounds are inclusive and the first matching region wins, hence
@@ -208,13 +219,13 @@ def plot_count_vs_untreated(
     ylim: Optional[Tuple[float, float]] = None,
     y_ticks: Optional[List[float]] = None,
 ):
-    """Plot the instance count per cochlea against the 95% CI band of untreated cochleae.
+    """Plot the instance count per cochlea against the reference range of untreated cochleae.
 
     Args:
         data: Table per cochlea with one row per instance, so the row count is the instance count.
         save_path: File path to save the figure.
         cochleae_dict: Mapping of cochlea name to its metadata, as returned by util.cochleae_for.
-        reference_values: Counts of the untreated cochleae. The band is mean +/- 1.96 * std.
+        reference_values: Counts of the untreated cochleae. The band is mean +/- 1.96 sample SD.
         plot: Plot figure.
         use_alias: Use alias.
         count_label: Y-axis label.
@@ -237,9 +248,7 @@ def plot_count_vs_untreated(
     _draw_pairs(ax, alias, values_left, values_right, colors_by_animal)
     _pair_xticks(ax, xtick_labels, sub_label_size)
 
-    mean, std = np.mean(reference_values), np.std(reference_values, ddof=1)
-    upper_y = mean + 1.96 * std
-    lower_y = mean - 1.96 * std
+    lower_y, upper_y = _reference_range(reference_values)
     if ylim is None:
         ylim0, ylim1, y_ticks = _count_ylim(values_left + values_right, lower_y, upper_y)
         ylim = (ylim0, ylim1)
@@ -254,7 +263,7 @@ def plot_count_vs_untreated(
 
     plt.hlines([lower_y, upper_y], xmin, xmax, colors=[COLOR_UNTREATED for _ in range(2)], zorder=-1)
     text_offset = (ylim[1] - ylim[0]) / 40
-    plt.text((xmin + xmax) / 2, upper_y + text_offset, "untreated cochleae\n95% CI",
+    plt.text((xmin + xmax) / 2, upper_y + text_offset, UNTREATED_BAND_LABEL,
              color=COLOR_UNTREATED, fontsize=fontsize_untreated, ha="center")
     plt.fill_between([xmin, xmax], lower_y, upper_y, color=COLOR_UNTREATED, alpha=0.05, interpolate=True)
 
@@ -643,11 +652,11 @@ def plot_density_by_region(
         cochleae_dict: Mapping of cochlea name to its metadata. Defaults to FCHRIMSON_COCHLEAE_DICT.
         plot: Plot figure.
         use_alias: Use alias.
-        show_std: Draw the standard deviation of the density positions of a region as error bars.
+        show_std: Draw the sample SD of the density positions of a region as error bars.
             Only regions with more than one position get an error bar.
         reference_values: Optional per-position list of untreated SGN density values
-            [cells/mm^2], as returned by untreated_reference_values. A 95% CI band
-            (mean +/- 1.96 * std) is drawn for any position present with a non-empty list;
+            [cells/mm^2], as returned by untreated_reference_values. A reference range band
+            (mean +/- 1.96 sample SD) is drawn for any position present with a non-empty list;
             positions absent from the dict, or mapped to an empty list, are drawn without a band.
     """
     prism_style()
@@ -709,9 +718,7 @@ def plot_density_by_region(
 
         ref = (reference_values or {}).get(position)
         if ref:
-            ref_arr = np.asarray(ref, dtype=float)
-            mean, std = ref_arr.mean(), ref_arr.std(ddof=1)
-            lower, upper = mean - 1.96 * std, mean + 1.96 * std
+            lower, upper = _reference_range(ref)
             xmin_ref, xmax_ref = x_left - 0.5, x_right + 0.5
             # The band is drawn here so that the y-axis autoscaling includes it. Its label
             # follows below, once the final y limits are known.
@@ -756,7 +763,7 @@ def plot_density_by_region(
         xmin_ref, xmax_ref, upper, region_top = max(clear or bands, key=lambda band: band[2])
         ylim0, ylim1 = ax.get_ylim()
         ax.text((xmin_ref + xmax_ref) / 2, max(upper, region_top) + (ylim1 - ylim0) / 40,
-                "untreated cochleae\n95% CI",
+                UNTREATED_BAND_LABEL,
                 color=COLOR_UNTREATED, fontsize=fontsize_untreated, ha="center")
 
     plt.tight_layout()
