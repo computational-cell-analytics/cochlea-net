@@ -144,6 +144,25 @@ class TestMeasurements(unittest.TestCase):
         )
         self.assertAlmostEqual(measures["median"], 40 - background, places=6)
 
+    def test_ellipsoid_features(self):
+        """The moment ellipsoid of a rotated solid ellipsoid has its semi-axes and its main axis."""
+        from flamingo_tools.measurements import _ellipsoid_features
+        from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly
+
+        voxel_size = 0.38
+        semi_axes = np.array([14.0, 7.0, 5.0])
+        # The unit axes in (x, y, z) order: a in the x-z plane, b along y.
+        axes = np.array([[1.0, 0.0, 1.0], [0.0, 2 ** 0.5, 0.0], [1.0, 0.0, -1.0]]) / 2 ** 0.5
+        coords = np.stack(np.indices((90, 90, 90))[::-1], axis=-1) * voxel_size - 45 * voxel_size
+        inside = (((coords @ axes.T) / semi_axes) ** 2).sum(axis=-1) <= 1
+        segmentation = inside.astype("uint32")
+
+        table = compute_table_on_the_fly(segmentation, voxel_size)
+        measures = _ellipsoid_features(1, table, segmentation, segmentation, voxel_size=(voxel_size,) * 3)
+        np.testing.assert_allclose([measures["a"], measures["b"], measures["c"]], semi_axes, rtol=0.05)
+        axis = np.array([measures["axis_x"], measures["axis_y"], measures["axis_z"]])
+        self.assertLess(np.degrees(np.arccos(min(1.0, abs(axis @ axes[0])))), 3.0)
+
 
 if __name__ == "__main__":
     unittest.main()

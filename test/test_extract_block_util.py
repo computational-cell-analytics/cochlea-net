@@ -88,5 +88,34 @@ class TestExtractDensityCrops(unittest.TestCase):
         self.assertTrue(os.path.isfile(expected))
 
 
+class TestExtractBlockSingle(unittest.TestCase):
+
+    def setUp(self):
+        from flamingo_tools.extract_block_util import extract_block_single
+        self.extract_block_single = extract_block_single
+
+        self.tmpdir = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmpdir.cleanup)
+
+        self.img_data = np.arange(40 ** 3, dtype="uint32").reshape((40, 40, 40))
+        self.img_path = os.path.join(self.tmpdir.name, "PV.tif")
+        imageio.imwrite(self.img_path, self.img_data)
+
+    def test_keeps_existing_file(self):
+        output_path = os.path.join(self.tmpdir.name, "crop.tif")
+        imageio.imwrite(output_path, np.zeros((2, 2, 2), dtype="uint32"))
+        self.extract_block_single(self.img_path, [20, 20, 20], output_path=output_path, voxel_size=1.0,
+                                  roi_halo=[5, 5, 5])
+        self.assertEqual(imageio.imread(output_path).shape, (2, 2, 2))
+
+    def test_pads_roi_outside_volume(self):
+        output_path = os.path.join(self.tmpdir.name, "crop.tif")
+        # (x, y, z) = (37, 20, 2): the halo of 5 reaches below z = 0 and beyond x = 40.
+        self.extract_block_single(self.img_path, [37, 20, 2], output_path=output_path, voxel_size=1.0,
+                                  roi_halo=[5, 5, 5])
+        expected = np.pad(self.img_data[0:7, 15:25, 32:40], ((3, 0), (0, 0), (0, 2)))
+        np.testing.assert_array_equal(imageio.imread(output_path), expected)
+
+
 if __name__ == "__main__":
     unittest.main()

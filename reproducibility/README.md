@@ -64,7 +64,7 @@ Section keys:
 
 | Section | Keys |
 |---|---|
-| `label_components` | `component_list_path`, `max_edge_distance`, `min_component_length`, `min_size`, `custom_dic`, `max_path_deviation` |
+| `label_components` | `component_list_path`, `max_edge_distance`, `min_component_length`, `min_size`, `custom_dic`, `max_path_deviation`, `refine_row` |
 | `tonotopic_mapping` | `apex_position`, `component_mapping`, `include_gap`, `animal`, `otof` |
 | `object_measures` | `use_bg_mask` |
 
@@ -88,8 +88,11 @@ is the reference for which that is, and the IHC main line runs
 lineages and do not compare against it.
 
 To add a cochlea, write a new file with the name above, then add the cochlea to `cohorts.json`.
-Edit these files by hand: `update_json` in `flamingo_tools/json_util.py` merges only top-level
-keys and would replace a whole section.
+`flamingo_tools.label_components --archive reproducibility/processing` writes the labeling
+parameters of a run: the entry of the same cochlea and segmentation gets the new
+`label_components` section and `component_list`, and keeps its other keys and sections. Another
+segmentation is added as a new entry. Edit the other sections by hand: `update_json` in
+`flamingo_tools/json_util.py` merges only top-level keys and would replace a whole section.
 
 ## Cohorts
 
@@ -143,9 +146,20 @@ The commands write the tables to `<out-dir>`. To copy them to the S3 bucket, see
 The labeling can erode the segmentation to exclude artifacts. It can also vary the minimal number
 of nodes in a component, and the minimal distance between two nodes of the same component. For an
 IHC segmentation, `--path_file` and `--max_path_deviation` add the central-path deviation filter.
+`--refine_row` makes the IHC row one component: the listed components guide the central path, and
+every instance of at least `--min_size` pixels near the path joins the row.
 
 ```bash
 flamingo_tools.label_components --json_info <JSON-file> -o <out-dir> --s3
+```
+
+With `--napari`, a prompt after the view asks for the components: the SGN components in the order
+of the cochlea, or the components of the IHC row. `--archive` saves the final parameters to the
+parameter file of the cochlea:
+
+```bash
+flamingo_tools.label_components -i <cochlea>/tables/<segmentation>/default.tsv --s3 -o <out-file> \
+    --cell_type ihc --napari --archive reproducibility/processing
 ```
 
 ### Tonotopic mapping

@@ -8,7 +8,7 @@ from .cochlea_mapping import (CENTRAL_PATH_METHODS, equidistant_centers_json_wra
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
-from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.s3_utils import MOBIE_FOLDER, split_table_path
 from flamingo_tools.analysis.central_path_utils import export_central_paths
 from flamingo_tools.analysis.density_utils import calc_sgn_density
 
@@ -222,6 +222,12 @@ def label_components():
     parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
                         help="Directory containing MoBIE project. Only used for '--json_info'.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
+    parser.add_argument("-a", "--archive", type=str, default=None,
+                        help="Save the parameters to a processing parameter file, see reproducibility/README.md. "
+                        "A directory receives the file <dataset_name>_<SGN|IHC>.json. The entry of the same cochlea "
+                        "and segmentation gets the new 'label_components' section and 'component_list'. Another "
+                        "segmentation is added as a new entry. With --input, the table path must be "
+                        "<cochlea>/tables/<segmentation>/default.tsv.")
 
     # options for post-processing
     parser.add_argument("--cell_type", type=str, default="sgn",
@@ -236,7 +242,8 @@ def label_components():
     )
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true",
-                        help="Use napari image viewer for visualizing labeled components.")
+                        help="Use napari image viewer for visualizing labeled components. A prompt after the view "
+                        "asks for the components, for SGNs in the order of the cochlea.")
     parser.add_argument("--scale_factor", type=int, default=20,
                         help="Scale factor for down-scaling data for visualization in Napari. Default: 20")
 
@@ -244,12 +251,20 @@ def label_components():
     parser.add_argument(
         "--path_file", type=str, default=None,
         help="Path to central path TSV for IHC deviation filtering. "
-             "If the file does not exist, the path is computed on-the-fly and saved here. Default: None",
+             "If the file does not exist, the path is computed on-the-fly and saved here. "
+             "With --refine_row, the path of the refined row is saved here. Default: None",
     )
     parser.add_argument(
         "--max_path_deviation", type=float, default=None,
         help="Max deviation in µm from the central IHC path. "
              "Instances farther than this are removed (component_labels=0). Requires --cell_type ihc. Default: None",
+    )
+    parser.add_argument(
+        "--refine_row", action="store_true",
+        help="Make the IHC row one component (label 1). The components of --components guide the central path. "
+             "Each instance with at least --min_size pixels within --max_path_deviation µm of the path (default 15) "
+             "joins the row, and the path is updated until the row is stable. Requires --cell_type ihc. With "
+             "--napari, a prompt after the view asks for the row components.",
     )
 
     # options for S3 bucket
@@ -278,11 +293,20 @@ def label_components():
         use_napari=args.napari,
         scale_factor=args.scale_factor,
         max_path_deviation=args.max_path_deviation,
+        refine_row=args.refine_row,
+        archive=args.archive,
     )
 
     if args.json_info is None:
+        dataset_name, segmentation_channel = None, None
+        if args.archive is not None:
+            layout = split_table_path(args.input)
+            if layout is None:
+                parser.error("--archive with --input requires the table path <cochlea>/tables/<seg>/default.tsv.")
+            dataset_name, segmentation_channel = layout
         label_components_single(
-            table_path=args.input, out_path=args.output, path_file=args.path_file, **shared,
+            table_path=args.input, out_path=args.output, path_file=args.path_file,
+            dataset_name=dataset_name, segmentation_channel=segmentation_channel, **shared,
         )
     else:
         label_components_json_wrapper(

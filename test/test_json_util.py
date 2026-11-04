@@ -261,5 +261,36 @@ class TestLoadProcessingParams(unittest.TestCase):
             self.assertFalse(overlap, f"{step} section also declares the common key(s) {overlap}")
 
 
+class TestArchiveProcessingParams(unittest.TestCase):
+
+    def test_archive_processing_params(self):
+        from flamingo_tools.json_util import archive_processing_params, load_processing_params
+
+        entry = dict(TestLoadProcessingParams.ENTRY)
+        with TemporaryDirectory() as tmp_dir:
+            path = os.path.join(tmp_dir, "M_AMD_000126_L_IHC.json")
+            with open(path, "w") as f:
+                json.dump(entry, f)
+
+            # The same segmentation replaces the section and keeps the other sections.
+            new_section = {"min_size": 5000, "min_component_length": 10, "max_edge_distance": 30.0}
+            run = {key: entry[key] for key in ("dataset_name", "segmentation_channel", "cell_type")}
+            self.assertEqual(archive_processing_params(
+                {**run, "component_list": [1, 2], "label_components": new_section}, tmp_dir), path)
+            params = load_processing_params(path, "label_components")
+            self.assertEqual(len(params), 1)
+            self.assertEqual(params[0]["component_list"], [1, 2])
+            self.assertEqual(params[0]["min_size"], 5000)
+            self.assertEqual(load_processing_params(path, "object_measures")[0]["use_bg_mask"], "yes")
+
+            # Another segmentation is added as a new entry.
+            archive_processing_params({**run, "segmentation_channel": "IHC_v11", "component_list": [1],
+                                       "label_components": {"component_list_path": [3, 1], "refine_row": True}}, path)
+            with open(path) as f:
+                data = json.load(f)
+            self.assertEqual([e["segmentation_channel"] for e in data], ["IHC_v9", "IHC_v11"])
+            self.assertEqual(load_processing_params(path, "label_components")[1]["component_list"], [3, 1])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -171,6 +171,23 @@ def plot_frequency_colorbar(
     save_figure(save_path, plot, facecolor=fig.get_facecolor(), transparent=False)
 
 
+def add_frequency_axis(ax, tick_size: int, label_size: int):
+    """Add the mouse frequencies as a top x-axis to an axis over the length fraction.
+
+    Call it after the x-limits of `ax` are final.
+    """
+    ax_top = ax.twiny()
+    freq_ticks = np.array([2, 4, 8, 16, 32, 64])  # kHz
+    # Inverse of the mouse Greenwood mapping: length_fraction = log10(f / A) / a
+    var_A = 1.46
+    var_a = 1.77
+    length_positions = np.log10(freq_ticks / var_A) / var_a
+    ax_top.set_xticks(length_positions)
+    ax_top.set_xticklabels([f"{f}" for f in freq_ticks], fontsize=tick_size)
+    ax_top.set_xlabel("Frequency [kHz]", fontsize=label_size)
+    ax_top.set_xlim(ax.get_xlim())
+
+
 def plot_synapses_along_cochlea(
     tonotopic_data: dict,
     save_path: str,
@@ -326,16 +343,7 @@ def plot_synapses_along_cochlea(
         _draw_trendline(ax, _build_trend_dict(non_meyer), "gray")
 
     if top_axis:
-        ax_top = ax.twiny()
-        freq_ticks = np.array([2, 4, 8, 16, 32, 64])  # kHz
-        # Inverse of the mouse Greenwood mapping: length_fraction = log10(f / A) / a
-        var_A = 1.46
-        var_a = 1.77
-        length_positions = np.log10(freq_ticks / var_A) / var_a
-        ax_top.set_xticks(length_positions)
-        ax_top.set_xticklabels([f"{f}" for f in freq_ticks], fontsize=tick_size)
-        ax_top.set_xlabel("Frequency [kHz]", fontsize=main_label_size)
-        ax_top.set_xlim(ax.get_xlim())
+        add_frequency_axis(ax, tick_size, main_label_size)
 
     ax.tick_params(axis='x', labelsize=tick_size)
     ax.tick_params(axis='y', labelsize=tick_size)
