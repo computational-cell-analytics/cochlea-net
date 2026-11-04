@@ -299,7 +299,7 @@ def plot_synapses_along_cochlea(
     def _draw_trendline(ax, trend_dict, color):
         x_pos = list(trend_dict.keys())
         center_line = [sum(v) / len(v) for v in trend_dict.values()]
-        val_std = [np.std(v) for v in trend_dict.values()]
+        val_std = [np.std(v, ddof=1) for v in trend_dict.values()]
         lower_std = [m - s for m, s in zip(center_line, val_std)]
         upper_std = [m + s for m, s in zip(center_line, val_std)]
 

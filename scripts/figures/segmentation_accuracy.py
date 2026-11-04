@@ -145,8 +145,8 @@ def _read_replicate_stats(data_dir: str, file_name: str, keys: list) -> tuple:
         precision, recall, F1-score.
     """
     scores = np.array([_read_scores(data_dir, file_name, key) for key in keys])
-    # np.std's default normalization, to match plot_replicate_variation.
-    return scores.mean(axis=0), scores.std(axis=0)
+    # Sample SD (ddof=1), the same as plot_replicate_variation.
+    return scores.mean(axis=0), scores.std(axis=0, ddof=1)
 
 
 def plot_accuracy_legend(

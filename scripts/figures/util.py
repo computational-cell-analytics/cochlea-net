@@ -398,7 +398,7 @@ def iteration_statistics(
         metric_names: Metrics to average. A metric is skipped for an entry that stores None.
 
     Returns:
-        The mean and the population standard deviation per metric, and the keys found in metrics.
+        The mean and the sample standard deviation (ddof=1) per metric, and the keys found in metrics.
     """
     present = [key for key in keys if key in metrics]
     if not present:
@@ -408,7 +408,7 @@ def iteration_statistics(
     for metric in metric_names:
         values = [metrics[key][metric] for key in present if metrics[key].get(metric) is not None]
         if values:
-            stats[metric] = (float(np.mean(values)), float(np.std(values)))
+            stats[metric] = (float(np.mean(values)), float(np.std(values, ddof=1)))
     return stats, present
 
 
@@ -554,7 +554,7 @@ def band_table(binned):
 
 
 def band_trendline(trend_dict, side=None):
-    """Get the mean and standard deviation of several per-band curves as a step line.
+    """Get the mean and sample standard deviation (ddof=1) of several per-band curves as a step line.
 
     Every band becomes a flat segment from the leftmost to the rightmost point of that band.
 
@@ -572,7 +572,7 @@ def band_trendline(trend_dict, side=None):
     for num in range(len(curves[0]["x_sorted"])):
         x_band = [curve["x_sorted"][num] for curve in curves]
         y_band = [curve["y_sorted"][num] for curve in curves]
-        mean, std = np.mean(y_band), np.std(y_band)
+        mean, std = np.mean(y_band), np.std(y_band, ddof=1)
         x_values += [min(x_band), max(x_band)]
         y_center += [mean, mean]
         y_upper += [mean + std, mean + std]

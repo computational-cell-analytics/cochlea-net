@@ -237,7 +237,7 @@ def plot_count_vs_untreated(
     _draw_pairs(ax, alias, values_left, values_right, colors_by_animal)
     _pair_xticks(ax, xtick_labels, sub_label_size)
 
-    mean, std = np.mean(reference_values), np.std(reference_values)
+    mean, std = np.mean(reference_values), np.std(reference_values, ddof=1)
     upper_y = mean + 1.96 * std
     lower_y = mean - 1.96 * std
     if ylim is None:
@@ -681,7 +681,7 @@ def plot_density_by_region(
             vals = np.asarray([_density_value(entry) for entry in regions[name][position]], dtype=float)
             vals = vals[np.isfinite(vals)]
             means.append(float(np.mean(vals)) if vals.size else np.nan)
-            stds.append(float(np.std(vals)) if vals.size > 1 else np.nan)
+            stds.append(float(np.std(vals, ddof=1)) if vals.size > 1 else np.nan)
 
         animals, values_left, values_right = group_lr(alias, means)
         _, stds_left, stds_right = group_lr(alias, stds)
@@ -710,7 +710,7 @@ def plot_density_by_region(
         ref = (reference_values or {}).get(position)
         if ref:
             ref_arr = np.asarray(ref, dtype=float)
-            mean, std = ref_arr.mean(), ref_arr.std()
+            mean, std = ref_arr.mean(), ref_arr.std(ddof=1)
             lower, upper = mean - 1.96 * std, mean + 1.96 * std
             xmin_ref, xmax_ref = x_left - 0.5, x_right + 0.5
             # The band is drawn here so that the y-axis autoscaling includes it. Its label

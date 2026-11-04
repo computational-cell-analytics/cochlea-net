@@ -547,7 +547,7 @@ def plot_sgn_density_profile(
     def _draw_trendline(ax, trend_dict, color, linestyle="dashed", alpha=None, label=None):
         x_pos = list(trend_dict.keys())
         center_line = [np.nanmean(v) for v in trend_dict.values()]
-        val_std = [np.nanstd(v) for v in trend_dict.values()]
+        val_std = [np.nanstd(v, ddof=1) for v in trend_dict.values()]
         lower_std = [m - s for m, s in zip(center_line, val_std)]
         upper_std = [m + s for m, s in zip(center_line, val_std)]
 
