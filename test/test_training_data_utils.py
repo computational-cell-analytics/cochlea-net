@@ -237,6 +237,46 @@ class TestSplitReusedIds(unittest.TestCase):
             self.assertFalse(report["anchored"].any())
 
 
+class TestEllipsoidSliceBoxes(unittest.TestCase):
+
+    def test_axis_aligned(self):
+        from flamingo_tools.analysis.training_data_utils import ellipsoid_slice_boxes
+
+        z, boxes = ellipsoid_slice_boxes([10, 20, 30], np.eye(3), [5, 3, 2], (40, 40, 40))
+        np.testing.assert_array_equal(z, np.arange(5, 16))
+        np.testing.assert_array_equal(boxes[5], [17, 28, 24, 33])
+        # The boxes shrink towards the ends of the long axis.
+        self.assertTrue(np.all(boxes[0, 2:] - boxes[0, :2] < boxes[5, 2:] - boxes[5, :2]))
+
+    def test_tilted_and_clipped(self):
+        from flamingo_tools.analysis.training_data_utils import ellipsoid_slice_boxes
+
+        # Long axis in the yx plane at 45 degree. Without the clip at y = 0, the middle box would span
+        # x 23-37 (half extent sqrt(10^2 + 2^2) / sqrt(2) = 7.2); the clip removes the part with low x.
+        axes = np.array([[0, 1, 1], [0, 1, -1], [np.sqrt(2), 0, 0]]) / np.sqrt(2)
+        z, boxes = ellipsoid_slice_boxes([1, 2, 30], axes, [10, 2, 1], (3, 40, 40))
+        np.testing.assert_array_equal(z, [0, 1, 2])
+        np.testing.assert_array_equal(boxes[1], [0, 26, 10, 38])
+
+
+class TestApplyPromptedMasks(unittest.TestCase):
+
+    def test_add_move_and_protect(self):
+        from flamingo_tools.analysis.training_data_utils import apply_prompted_masks
+
+        labels = np.zeros((1, 1, 12), dtype="uint32")
+        labels[0, 0, :3], labels[0, 0, 3:5], labels[0, 0, 8] = 1, 2, 3
+        # 1 claims 0-4 (takes 3 from 2, voxel 4 is claimed twice), 2 claims 4-9 (3 is not prompted), 7 is new.
+        mask_1 = np.zeros((1, 1, 6), dtype=bool)
+        mask_1[..., :5] = True
+        box = (slice(0, 1), slice(0, 1))
+        masks = {1: (box + (slice(0, 6),), mask_1), 2: (box + (slice(4, 10),), np.ones((1, 1, 6), dtype=bool)),
+                 7: (box + (slice(11, 12),), np.ones((1, 1, 1), dtype=bool))}
+        out = apply_prompted_masks(labels, masks)
+        np.testing.assert_array_equal(out[0, 0], [1, 1, 1, 1, 2, 2, 2, 2, 3, 2, 0, 7])
+        self.assertEqual(labels[0, 0, 0], 1)
+
+
 class TestIhcRowReference(unittest.TestCase):
 
     def test_split_cells(self):
