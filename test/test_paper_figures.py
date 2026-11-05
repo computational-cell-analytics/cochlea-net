@@ -1,7 +1,10 @@
+import contextlib
 import importlib.util
+import io
 import os
 import re
 import sys
+import tempfile
 import unittest
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -54,6 +57,16 @@ class TestPaperFigures(unittest.TestCase):
         for token in ("7", "S", "2z", "S10"):
             with self.assertRaises(ValueError):
                 select([token])
+
+    def test_hidden_value_warning(self):
+        spec = {"values": [1, 5, 50], "label": "Synapses per IHC", "literature": (13, 16),
+                "ylim": (-1, 41), "yticks": [0, 20, 40]}
+        output = io.StringIO()
+        with tempfile.TemporaryDirectory() as tmp, contextlib.redirect_stdout(output):
+            self.paper.literature_comparison.plot_counts_vs_literature(
+                os.path.join(tmp, "counts.png"), [spec, dict(spec, values=[1, 5])], figsize=(4, 3), tick_size=8)
+        self.assertEqual(output.getvalue().count("Warning"), 1)
+        self.assertIn("1 of 3 values lie outside the y range (-1, 41): 50", output.getvalue())
 
 
 if __name__ == "__main__":
