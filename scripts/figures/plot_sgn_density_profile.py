@@ -547,20 +547,18 @@ def plot_sgn_density_profile(
     def _draw_trendline(ax, trend_dict, color, linestyle="dashed", alpha=None, label=None):
         x_pos = list(trend_dict.keys())
         center_line = [np.nanmean(v) for v in trend_dict.values()]
-        val_std = [np.nanstd(v, ddof=1) for v in trend_dict.values()]
+        val_std = [np.nanstd(v) for v in trend_dict.values()]
         lower_std = [m - s for m, s in zip(center_line, val_std)]
         upper_std = [m + s for m, s in zip(center_line, val_std)]
 
         ax.plot(x_pos, center_line, linestyle=linestyle, color=color,
                 alpha=line_alphas["center"] if alpha is None else alpha, linewidth=3, zorder=2)
-        # Without trendline_std, the bounds stay undrawn, so that they do not set the y-limits.
-        if trendline_std:
-            ax.plot(x_pos, upper_std, linestyle="solid", color=color,
-                    alpha=line_alphas["upper"], zorder=0)
-            ax.plot(x_pos, lower_std, linestyle="solid", color=color,
-                    alpha=line_alphas["lower"], zorder=0)
-            ax.fill_between(x_pos, lower_std, upper_std,
-                            color=color, alpha=line_alphas["fill"], interpolate=True)
+        ax.plot(x_pos, upper_std, linestyle="solid", color=color,
+                alpha=line_alphas["upper"], zorder=0)
+        ax.plot(x_pos, lower_std, linestyle="solid", color=color,
+                alpha=line_alphas["lower"], zorder=0)
+        ax.fill_between(x_pos, lower_std, upper_std,
+                        color=color, alpha=line_alphas["fill"], interpolate=True)
 
         return {"x": x_pos, "y": center_line, "std": val_std,
                 "color": color, "linestyle": linestyle, "label": label}

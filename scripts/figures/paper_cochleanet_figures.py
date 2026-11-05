@@ -281,23 +281,21 @@ def fig2c_variants(args):
 @panel("2d")
 def fig2d(args):
     cochleae = PAPER_COHORTS["idisco"]
-    synapse_counts = data.load_ribbon_synapse_counts(_synapse_counts_dir(args), cochleae=cochleae)
     literature_comparison.plot_counts_vs_literature(
         out(args, "2d"),
         [
             {"values": documented_counts(cochleae, "SGN", "SGN_v2"), "label": "SGN",
              "literature": literature_reference_values("SGN"), "ylim": (8500, 12500),
-             "yticks": list(range(9000, 12001, 1000)), "literature_label": True, "fill_color": "C0",
-             "n_label": f"n = {len(cochleae)}"},
+             "yticks": list(range(9000, 12001, 1000)), "literature_label": True, "fill_color": "C0"},
             {"values": documented_counts(cochleae, "IHC", "IHC_v11"), "label": "IHC",
              "literature": literature_reference_values("IHC"), "ylim": (600, 800),
-             "yticks": list(range(600, 801, 100)), "n_label": f"n = {len(cochleae)}"},
-            {"values": synapse_counts, "label": "Synapses per IHC",
-             "literature": literature_reference_values("synapse"), "ylim": (-1, 100),
-             "yticks": list(range(0, 91, 10)),
-             "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(cochleae)} cochleae)"},
+             "yticks": list(range(600, 801, 100))},
+            {"values": data.load_ribbon_synapse_counts(_synapse_counts_dir(args), cochleae=cochleae),
+             "label": "Synapses per IHC",
+             "literature": literature_reference_values("synapse"), "ylim": (-1, 41),
+             "yticks": [0, 10, 20, 30, 40, 50]},
         ],
-        figsize=(10, 4.5), tick_size=16, plot=args.plot, force_boxplot=args.force_boxplot,
+        figsize=(10, 4.5), tick_size=16, plot=args.plot,
     )
 
 
@@ -395,28 +393,22 @@ def fig4e_variants(args):
 
 @panel("5c")
 def fig5c(args):
-    cochleae = PAPER_COHORTS["wt_gerbil"]
-    synapse_cochleae = PAPER_COHORTS["wt_gerbil_synapses"]
-    synapse_counts = data.load_ribbon_synapse_counts(
-        _synapse_counts_dir(args), cochleae=synapse_cochleae, exclude_zero=True, require_all=True)
     literature_comparison.plot_counts_vs_literature(
         out(args, "5c"),
         [
-            {"values": documented_counts(cochleae, "SGN", "SGN_v2"), "label": "SGN",
+            {"values": documented_counts(PAPER_COHORTS["wt_gerbil"], "SGN", "SGN_v2"), "label": "SGN",
              "literature": literature_reference_values("SGN", animal="gerbil"), "ylim": (14000, 30000),
-             "yticks": list(range(16000, 30001, 4000)), "literature_label": True,
-             "n_label": f"n = {len(cochleae)}"},
-            {"values": documented_counts(cochleae, "IHC", "IHC_v11"), "label": "IHC",
+             "yticks": list(range(16000, 30001, 4000)), "literature_label": True},
+            {"values": documented_counts(PAPER_COHORTS["wt_gerbil"], "IHC", "IHC_v11"), "label": "IHC",
              "literature": literature_reference_values("IHC", animal="gerbil"), "ylim": (900, 1200),
-             "yticks": list(range(900, 1201, 100)), "n_label": f"n = {len(cochleae)}"},
-            {"values": synapse_counts, "label": "Synapses per IHC",
-             "literature": literature_reference_values("synapse", animal="gerbil"),
-             "ylim": (-1, 272 if args.no_axis_break else 262), "yticks": list(range(0, 241, 40)),
-             "ybreak": (130, 220), "box_zorder": None,
-             "n_label": f"n = {len(synapse_counts):,} IHCs\n({len(synapse_cochleae)} cochleae)"},
+             "yticks": list(range(900, 1201, 100))},
+            {"values": data.load_ribbon_synapse_counts(
+                _synapse_counts_dir(args), cochleae=PAPER_COHORTS["wt_gerbil_synapses"], exclude_zero=True,
+                require_all=True),
+             "label": "Synapses per IHC", "literature": literature_reference_values("synapse", animal="gerbil"),
+             "ylim": (-1, 80), "yticks": list(range(0, 81, 20)), "box_zorder": None},
         ],
-        figsize=(8.5, 4.5), tick_size=20, plot=args.plot, force_boxplot=args.force_boxplot,
-        ybreak=not args.no_axis_break,
+        figsize=(8.5, 4.5), tick_size=20, plot=args.plot,
     )
 
 
@@ -676,10 +668,6 @@ def main():
     parser.add_argument("--napari", action="store_true", help="Show the napari renderings of panels 1a and 3a.")
     parser.add_argument("--plot", action="store_true", help="Show every figure after saving it.")
     parser.add_argument("--no_alias", action="store_true", help="Label cochleae by name instead of alias.")
-    parser.add_argument("--force_boxplot", action="store_true",
-                        help="Draw box plots in 2d and 5c also for fewer than 5 values.")
-    parser.add_argument("--no_axis_break", action="store_true",
-                        help="Draw the synapse axis of 5c without the break between 130 and 200.")
     parser.add_argument("--refresh_cache", action="store_true",
                         help="Ignore the cached pickles and fetch the data again.")
     parser.add_argument("--cache_dir", default=SCRIPT_DIR,

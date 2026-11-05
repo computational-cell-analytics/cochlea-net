@@ -299,7 +299,7 @@ def plot_synapses_along_cochlea(
     def _draw_trendline(ax, trend_dict, color):
         x_pos = list(trend_dict.keys())
         center_line = [sum(v) / len(v) for v in trend_dict.values()]
-        val_std = [np.std(v, ddof=1) for v in trend_dict.values()]
+        val_std = [np.std(v) for v in trend_dict.values()]
         lower_std = [m - s for m, s in zip(center_line, val_std)]
         upper_std = [m + s for m, s in zip(center_line, val_std)]
 
@@ -309,8 +309,6 @@ def plot_synapses_along_cochlea(
         if trendline:
             ax.plot(x_pos, center_line, linestyle="dashed", color=color,
                     alpha=line_alphas["center"], linewidth=3, zorder=2)
-        # Without trendline_std, the bounds stay undrawn, so that they do not set the y-limits.
-        if trendline and trendline_std:
             ax.plot(x_pos, upper_std, linestyle="solid", color=color,
                     alpha=line_alphas["upper"], zorder=0)
             ax.plot(x_pos, lower_std, linestyle="solid", color=color,

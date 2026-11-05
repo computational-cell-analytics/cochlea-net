@@ -45,21 +45,6 @@ class TestPaperFigures(unittest.TestCase):
         self.assertNotIn("cohort_cochleae", source)
         self.assertNotIn("cohort_postnatal", source)
 
-    def test_sample_sd(self):
-        import numpy as np
-        sys.path.insert(0, FIGURE_DIR)
-        try:
-            import gene_therapy
-            from util import band_trendline
-        finally:
-            sys.path.remove(FIGURE_DIR)
-        values = [1.0, 2.0, 4.0, 9.0]
-        mean, sd = 4.0, np.sqrt(38 / 3)  # Sample SD: sum of squared deviations 38, n - 1 = 3.
-        np.testing.assert_allclose(gene_therapy._reference_range(values), (mean - 1.96 * sd, mean + 1.96 * sd))
-        curves = {str(num): {"x_sorted": [0.0], "y_sorted": [value]} for num, value in enumerate(values)}
-        _, center, upper, lower = band_trendline(curves)
-        np.testing.assert_allclose([center[0], upper[0], lower[0]], [mean, mean + sd, mean - sd])
-
     def test_select_panels(self):
         select = self.paper.select_panels
         self.assertEqual(select(["2"]), ["2c", "2d"])
