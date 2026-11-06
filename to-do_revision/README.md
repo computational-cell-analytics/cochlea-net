@@ -43,12 +43,10 @@ There are several other minor changes to figure scripts etc.
 
 ## Open decisions / next steps
 
-1. **Do not start another synapse seed comparison with the current training path.** The input is
-   not normalized consistently, validation patches change on every evaluation, and the training
-   volumes contain many plausible but unlabeled CtBP2 spots that are penalized as background.
-   Before retraining, add identical train/inference normalization, fixed detection-level
-   validation, and an ignore mask outside exhaustively annotated/IHC-valid regions. The evidence
-   and proposed ablations are in [synapses.md](synapses.md). The v6/flow comparison machinery is
-   present, but those scores are not in the committed accuracy table.
+1. **The synapse detection work is closed (2026-10-28).** The v11 recipe is the training
+   default, v11-2 `latest.pt` is the standard network, and production detects at threshold 0.5
+   and `min_distance` 1. The normalization and the ignore masks were tested and do not help. Open:
+   a whole-cochlea check of `min_distance` 1 and the BioImage.IO release of v11-2. See
+   [synapses.md](synapses.md).
 
 For transferred inputs and remaining storage locations, see [data_transfer.md](data_transfer.md).

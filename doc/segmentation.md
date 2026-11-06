@@ -36,6 +36,9 @@ The command writes two tables to the output folder:
 - `synapse_detection.tsv` contains all detections.
 - `synapse_detection_filtered.tsv` contains the detections that are closer to an IHC than `--max_distance` (default 3 micrometer).
 
+`--threshold` (default 0.5) and `--min_distance` (default 1 voxel) set the peak detection on the predicted heatmap.
+Two synapses closer than `--min_distance` merge into one detection.
+
 The command uses two resolution levels of the IHC segmentation:
 - `--mask_input_key` (default `s4`) is the downscaled level. The command dilates it into a mask and runs the prediction only on the blocks inside the mask. On a full cochlea, these blocks are approximately 3 % of the volume.
 - `--mask_key` (default `s0`) is the full-resolution level. The command uses it to match the detections to the IHCs.

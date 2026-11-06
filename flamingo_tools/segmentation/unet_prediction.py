@@ -52,7 +52,8 @@ def _load_model(model_path, device=None):
         warnings.simplefilter("ignore")
         if os.path.isdir(model_path):
             return load_model(model_path, device=device)
-        obj = torch.load(model_path, weights_only=False, map_location=device)
+        # The prediction moves the model to its device, so a GPU checkpoint also loads on a CPU node.
+        obj = torch.load(model_path, weights_only=False, map_location="cpu" if device is None else device)
     return _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
 
 

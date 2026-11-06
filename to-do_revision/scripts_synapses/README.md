@@ -13,6 +13,15 @@ own — that is the variability being measured. `--random_state 42` is passed ex
 run so that the train/val split stays *fixed*; without it the default derives from the model
 suffix and would resample the split, confounding seed noise with split noise.
 
+**The runs below need `--legacy_recipe` since 2026-09-21, and their scripts pass it.** The training moved into
+`flamingo_tools/synapse_detection/training.py` and gained two changes that apply to every run
+without flags: the validation metric is the weighted combined loss instead of an unweighted mean
+squared error over all channels, and the validation patches are fixed instead of redrawn every
+epoch. Since 2026-10-21 the `MinPointSampler` is also on by default, and since 2026-10-28 the
+fixed target and a cosine learning rate over 3e4 iterations (the v11 recipe). `--legacy_recipe`
+restores all of these, and is required to reproduce the recipe of any model listed here. See
+[`../synapses.md`](../synapses.md).
+
 ## The runs
 
 `v3-1` … `v3-4` are byte-identical except for `-m`: four seed replicates at the full 100,000
@@ -32,6 +41,19 @@ The last two fill the empty cells of a data-versus-recipe comparison:
 which switches to 5 output channels, the combined heatmap+flow loss and `MinPointSampler`). At
 production settings v6-1 loses 0.163 recall against v3 while v5 gains 0.191 against v6-1, so the
 two effects nearly cancel and neither run separates them alone.
+
+## v7 to v11
+
+`v7` to `v10` were launched directly, so there are no sbatch wrappers for them. Their recipes
+and results are in [`../synapses.md`](../synapses.md). Their options were removed: check out the
+tag `synapse-detection-investigation` to retrain v7 to v10, and commit `4da9e70` for the masks of
+v8 and v9. That tag also holds the one-off cluster jobs of the investigation:
+`synapse_detect_ihc11_F1val.sbatch`, `rescore_operating_point.sbatch`,
+`evaluate_synapse_v11.sbatch` and `train_synapse_v9.sbatch`.
+
+`train_synapse_v11.sbatch` trains the three seeds `v11-1` to `v11-3` of the v11 recipe, the
+default of `train_synapse_detection.py` since 2026-10-28. One seed takes about 5.7 A100 hours.
+v11-2 `latest.pt` is the standard network.
 
 ## What the seed experiment found
 
@@ -65,6 +87,7 @@ prediction, because a silent CPU fallback is about 50x slower and never finishes
 | `train_synapse_v3-5.sbatch` … `v3-7` | The same at 10k iterations, on cheaper queues |
 | `train_synapse_v3-flow-1.sbatch` | v3 data with the v5 recipe (`--use_flow`) |
 | `train_synapse_v6-1.sbatch` | v6 data with the v3 recipe |
+| `train_synapse_v11.sbatch` | Three seeds of the v11 recipe, the training default |
 | `synapse_detect_v5-variation_F1val.sbatch` | Run the four v5 fold models over the six test crops |
 | `synapse_process_GLR000301R.sbatch` | Single-job prediction + detection + IHC matching, G301R |
 | `synapse_process_GLR000302R.sbatch` | The same for G302R |
