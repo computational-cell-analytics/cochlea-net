@@ -780,49 +780,44 @@ def refine_ihc_row(
     component_list: List[int],
     min_size: int = 10000,
     max_path_deviation: float = 15.0,
-    n_iterations: int = 5,
 ) -> Tuple[pd.DataFrame, np.ndarray]:
     """Make the IHC row one component, guided by the central path through the given components.
 
-    The instances of all listed components form one set, so the path bridges the gaps between them in
-    any order. An instance joins the row if it has at least `min_size` pixels and its center is within
-    `max_path_deviation` micrometers of the path (`ihc_row_path`), also if it was in no component. Then the
-    path is computed again from the new row, until the row does not change. An off-row instance past a row
-    end stays in the row, because it is a path end.
+    Each listed component gets its own path (`ihc_row_path`). The paths are linked end to start in the order
+    of the list, as in the tonotopic mapping (`_order_components`), and straight lines bridge the gaps. The
+    order is necessary: a component can pass closer to the middle of another component than to its end, for
+    example on the next turn of the spiral. An instance joins the row if it has at least `min_size` pixels
+    and its center is within `max_path_deviation` micrometers of the path, also if it was in no component.
+    An off-row instance past a row end stays in the row, because it is a path end.
 
     Args:
         table: Segmentation table with a 'component_labels' column.
-        component_list: The components that form the IHC row.
+        component_list: The components that form the IHC row, in the order of the cochlea.
         min_size: Minimal number of pixels of a row instance.
         max_path_deviation: Maximal distance in micrometers between the center of a row instance and the path.
-        n_iterations: Maximal number of path updates.
 
     Returns:
         The table, with component label 1 for the row and 0 for all other instances.
-        The central path through the returned row in micrometers, in (x, y, z) order, resampled at 1 micrometer.
+        The central path through the listed components in micrometers, in (x, y, z) order, resampled at
+        1 micrometer.
 
     Raises:
-        ValueError: If the listed components or the refined row hold less than 2 instances.
+        ValueError: If a listed component holds less than 2 instances.
     """
+    from flamingo_tools.postprocessing.cochlea_mapping import _order_components, resample_path
+
     coords = table[["anchor_x", "anchor_y", "anchor_z"]].values
-    row = table["component_labels"].isin(component_list).values
-    if row.sum() < 2:
-        raise ValueError(f"The components {component_list} hold {row.sum()} instances. A path needs at least 2.")
-    large = table["n_pixels"].values >= min_size
-    for _ in range(n_iterations):
-        # ponytail: the path ends are row instances, so an off-row instance past a row end is never removed.
-        # Upgrade: drop an end instance by its sideways deviation from the row, validated on the MWfLS cochleae.
-        path = ihc_row_path(coords[row])
-        distances, _ = cKDTree(path).query(coords)
-        new_row = large & (distances <= max_path_deviation)
-        if (new_row == row).all():
-            break
-        if new_row.sum() < 2:
-            raise ValueError(f"The refined row holds {new_row.sum()} instances. A path needs at least 2.")
-        row = new_row
-    else:
-        print(f"Warning: the IHC row did not converge in {n_iterations} iterations.")
-        path = ihc_row_path(coords[row])
+    labels = table["component_labels"].values
+    for component in component_list:
+        n_instances = (labels == component).sum()
+        if n_instances < 2:
+            raise ValueError(f"Component {component} holds {n_instances} instances. A path needs at least 2.")
+    # ponytail: the path ends are row instances, so an off-row instance past a row end is never removed.
+    # Upgrade: drop an end instance by its sideways deviation from the row, validated on the MWfLS cochleae.
+    paths = _order_components([ihc_row_path(coords[labels == component]) for component in component_list])
+    path = resample_path(np.concatenate(paths), 1.0)
+    distances, _ = cKDTree(path).query(coords)
+    row = (table["n_pixels"].values >= min_size) & (distances <= max_path_deviation)
     table["component_labels"] = row.astype(int)
     print(f"The refined IHC row has {row.sum()} instances.")
     return table, path
@@ -952,7 +947,7 @@ def label_components_single(
         custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
             results into final components.
         use_napari: Visualize component labels with napari viewer. A prompt after the view asks for the
-            components: for SGNs in the order of the cochlea, for IHCs the components of the row.
+            components in the order of the cochlea: for IHCs the components of the row.
         scale_factor: Scale factor for down-scaling data for visualization in Napari.
         path_file: Path to a central path TSV file. Behaviour depends on max_path_deviation:
             if max_path_deviation is set and the file exists, the path is loaded from it;
@@ -963,8 +958,9 @@ def label_components_single(
         max_path_deviation: Maximum allowed deviation in µm from the central IHC path. Instances
             farther than this are set to component_labels=0. Requires cell_type='ihc'.
             If None and path_file is set, the path is computed and saved without filtering.
-        refine_row: Make the IHC row one component with `refine_ihc_row`. The components of `component_list`
-            guide the path, and `max_path_deviation` (15 micrometers if None) limits the distance to it.
+        refine_row: Make the IHC row one component with `refine_ihc_row`. The components of `component_list`,
+            in the order of the cochlea, guide the path, and `max_path_deviation` (15 micrometers if None)
+            limits the distance to it.
             Requires cell_type='ihc'. With use_napari, a prompt after each view asks for the row components,
             so a row can be chosen and checked without this flag.
         dataset_name: Name of the cochlea. Required for archive.
@@ -1041,9 +1037,9 @@ def label_components_single(
             if cell_type == "ihc" and refine_row:
                 layers = {"components": labeled["component_labels"], "IHC row": tsv_table["component_labels"]}
             _show_components(labeled, scale_factor, layers)
-            # Choose the components after the view. The tonotopic mapping needs the SGN components in the
-            # order of the cochlea. A refined IHC row is checked in the next view.
-            prompt = ("Enter IHC row components (space separated)" if cell_type == "ihc"
+            # Choose the components after the view. The tonotopic mapping and the IHC row path need the
+            # components in the order of the cochlea. A refined IHC row is checked in the next view.
+            prompt = ("Enter IHC row components in order (space separated)" if cell_type == "ihc"
                       else "Enter SGN components in order (space separated)")
             while True:
                 answer = input(prompt + ", Enter to accept the current mapping: ").split()

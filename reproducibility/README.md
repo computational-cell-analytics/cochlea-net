@@ -146,15 +146,16 @@ The commands write the tables to `<out-dir>`. To copy them to the S3 bucket, see
 The labeling can erode the segmentation to exclude artifacts. It can also vary the minimal number
 of nodes in a component, and the minimal distance between two nodes of the same component. For an
 IHC segmentation, `--path_file` and `--max_path_deviation` add the central-path deviation filter.
-`--refine_row` makes the IHC row one component: the listed components guide the central path, and
-every instance of at least `--min_size` pixels near the path joins the row.
+`--refine_row` makes the IHC row one component: the listed components, in the order of the
+cochlea, guide the central path, and every instance of at least `--min_size` pixels near the path
+joins the row.
 
 ```bash
 flamingo_tools.label_components --json_info <JSON-file> -o <out-dir> --s3
 ```
 
-With `--napari`, a prompt after the view asks for the components: the SGN components in the order
-of the cochlea, or the components of the IHC row. `--archive` saves the final parameters to the
+With `--napari`, a prompt after the view asks for the components in the order of the cochlea: the
+SGN components, or the components of the IHC row. `--archive` saves the final parameters to the
 parameter file of the cochlea:
 
 ```bash
