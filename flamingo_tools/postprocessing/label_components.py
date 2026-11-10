@@ -789,6 +789,26 @@ def _show_components(table: pd.DataFrame, scale_factor: int, layers: dict):
     napari.run()
 
 
+def _ask(prompt: str) -> str:
+    """Read one answer from the terminal. Ctrl+C or Ctrl+D aborts the run before anything is written."""
+    try:
+        return input(prompt)
+    except (KeyboardInterrupt, EOFError):
+        raise SystemExit("\nAborted. Nothing was written.")
+
+
+def _ask_components(prompt: str, existing: set) -> List[int]:
+    """Ask for distinct components of `existing`. An empty answer gives an empty list."""
+    while True:
+        try:
+            components = [int(c) for c in _ask(prompt).split()]
+        except ValueError:
+            components = [None]
+        if len(set(components)) == len(components) and existing.issuperset(components):
+            return components
+        print(f"Enter distinct components of {sorted(existing)}, separated by spaces.")
+
+
 def label_components_single(
     table_path: str,
     out_path: Optional[str] = None,
@@ -839,7 +859,8 @@ def label_components_single(
         custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
             results into final components.
         use_napari: Visualize component labels with napari viewer. A prompt after the view asks for the
-            components in the order of the cochlea: for IHCs the components of the row.
+            components in the order of the cochlea: for IHCs the components of the row. Ctrl+C at a prompt
+            aborts the run before anything is written.
         scale_factor: Scale factor for down-scaling data for visualization in Napari.
         path_file: Output path for the central IHC path that the run used: the path of the refined row, of the
             deviation filter, or else the path through the components. Only used when cell_type='ihc'.
@@ -906,35 +927,28 @@ def label_components_single(
     elif max_path_deviation is not None:
         print("Warning: --max_path_deviation is only supported for cell_type='ihc'. Skipping path filtering.")
 
-    # Write the table before the napari prompt, so an interrupted prompt keeps the result.
-    tsv_table.to_csv(out_path, sep="\t", index=False)
     if use_napari:
-        layers = {"components": tsv_table["component_labels"]}
-        if cell_type == "ihc" and refine_row:
-            layers = {"components": labeled["component_labels"], "IHC row": tsv_table["component_labels"]}
-        _show_components(labeled, scale_factor, layers)
-        # Choose the components after the view. The tonotopic mapping and the IHC row path need the
-        # components in the order of the cochlea. A refined IHC row is checked in the next view.
+        # The tonotopic mapping and the IHC row path need the components in the order of the cochlea.
+        # A refined IHC row is checked in the next view.
         prompt = ("Enter IHC row components in order (space separated)" if cell_type == "ihc"
                   else "Enter SGN components in order (space separated)")
+        prompt += ", Enter to accept the current mapping, Ctrl+C to abort: "
+        counts = labeled["component_labels"].value_counts()
+        existing = {int(label) for label, count in counts.items() if label != 0 and count >= 2}
         while True:
-            answer = input(prompt + ", Enter to accept the current mapping: ").split()
-            if not answer:
+            if refine_row:
+                layers = {"components": labeled["component_labels"], "IHC row": tsv_table["component_labels"]}
+            else:
+                layers = {"components": tsv_table["component_labels"]}
+            _show_components(labeled, scale_factor, layers)
+            components = _ask_components(prompt, existing)
+            if not components:
                 break
-            try:
-                components = [int(c) for c in answer]
-                if cell_type == "ihc":
-                    tsv_table, row_path = refine_ihc_row(labeled.copy(), components, min_size, row_deviation)
-            except ValueError as error:
-                print(error)
-                continue
-            if cell_type != "ihc":
+            if cell_type == "sgn":
                 component_list = path_components = components
                 break
             path_components, refine_row = components, True
-            _show_components(labeled, scale_factor, {
-                "components": labeled["component_labels"], "IHC row": tsv_table["component_labels"],
-            })
+            tsv_table, row_path = refine_ihc_row(labeled.copy(), path_components, min_size, row_deviation)
         if custom_dic is None:
             replay = f"--cell_type {cell_type}" + (" --refine_row" if refine_row else "")
             replay += " -c " + " ".join(str(comp) for comp in path_components)
@@ -943,7 +957,8 @@ def label_components_single(
             if refine_row or max_path_deviation is not None:
                 replay += f" --max_path_deviation {row_deviation}"
             print("Replay with: " + replay)
-        tsv_table.to_csv(out_path, sep="\t", index=False)
+
+    tsv_table.to_csv(out_path, sep="\t", index=False)
 
     if cell_type == "ihc" and path_file is not None:
         if refine_row:

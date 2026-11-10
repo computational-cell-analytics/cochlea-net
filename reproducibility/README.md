@@ -155,8 +155,9 @@ flamingo_tools.label_components --json_info <JSON-file> -o <out-dir> --s3
 ```
 
 With `--napari`, a prompt after the view asks for the components in the order of the cochlea: the
-SGN components, or the components of the IHC row. `--archive` saves the final parameters to the
-parameter file of the cochlea:
+SGN components, or the components of the IHC row. Ctrl+C at a prompt aborts the run before
+anything is written.
+`--archive` saves the final parameters to the parameter file of the cochlea:
 
 ```bash
 flamingo_tools.label_components -i <cochlea>/tables/<segmentation>/default.tsv --s3 -o <out-file> \

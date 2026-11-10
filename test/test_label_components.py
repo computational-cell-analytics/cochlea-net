@@ -2,7 +2,7 @@ import json
 import os
 import unittest
 from tempfile import TemporaryDirectory
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import numpy as np
 import pandas as pd
@@ -80,8 +80,11 @@ class TestRefineIhcRow(unittest.TestCase):
             table_path = os.path.join(tmp_dir, "default.tsv")
             path_file = os.path.join(tmp_dir, "path.tsv")
             self.table.to_csv(table_path, sep="\t", index=False)
-            with patch("flamingo_tools.postprocessing.label_components._show_components"), \
-                    patch("builtins.input", side_effect=answers):
+            with patch("flamingo_tools.postprocessing.label_components._show_components") as show, \
+                    patch("flamingo_tools.postprocessing.label_components._ask", side_effect=answers) as ask:
+                calls = Mock()
+                calls.attach_mock(show, "show")
+                calls.attach_mock(ask, "ask")
                 label_components_single(
                     table_path, cell_type=cell_type, min_size=10000, min_component_length=3, use_napari=True,
                     dataset_name="M_AMD_000126_L", segmentation_channel=f"{cell_type.upper()}_v11", archive=tmp_dir,
@@ -91,19 +94,40 @@ class TestRefineIhcRow(unittest.TestCase):
             with open(path) as f:
                 entry = json.load(f)
             self.assertEqual(os.path.isfile(path_file), cell_type == "ihc")
-            return entry, load_processing_params(path, "label_components")[0]
+            return entry, load_processing_params(path, "label_components")[0], [call[0] for call in calls.mock_calls]
 
     def test_archive_ihc_row_from_prompt(self):
-        entry, params = self._label_with_prompt("ihc", ["1 2", ""])
+        entry, params, _ = self._label_with_prompt("ihc", ["1 2", ""])
         self.assertEqual(entry["component_list"], [1])
         self.assertEqual(params["component_list_path"], [1, 2])
         self.assertTrue(params["refine_row"])
         self.assertEqual(params["min_size"], 10000)
 
+    def test_abort_writes_nothing(self):
+        from flamingo_tools.postprocessing.label_components import label_components_single
+
+        with TemporaryDirectory() as tmp_dir:
+            table_path = os.path.join(tmp_dir, "default.tsv")
+            self.table.to_csv(table_path, sep="\t", index=False)
+            with open(table_path) as f:
+                before = f.read()
+            with patch("flamingo_tools.postprocessing.label_components._show_components"), \
+                    patch("builtins.input", side_effect=KeyboardInterrupt), self.assertRaises(SystemExit):
+                label_components_single(
+                    table_path, cell_type="ihc", min_size=10000, min_component_length=3, use_napari=True,
+                    refine_row=True, component_list=[1, 2], path_file=os.path.join(tmp_dir, "path.tsv"),
+                    dataset_name="M_AMD_000126_L", segmentation_channel="IHC_v11", archive=tmp_dir,
+                )
+            with open(table_path) as f:
+                self.assertEqual(f.read(), before)
+            self.assertEqual(os.listdir(tmp_dir), ["default.tsv"])
+
     def test_archive_sgn_order_from_prompt(self):
-        entry, _ = self._label_with_prompt("sgn", ["x", "3 1"])
+        # A word, a missing component and a repeated component are asked again.
+        entry, _, calls = self._label_with_prompt("sgn", ["x", "99", "1 1", "3 1"])
         self.assertEqual(entry["component_list"], [3, 1])
         self.assertNotIn("component_list_path", entry["label_components"])
+        self.assertEqual(calls, ["show", "ask", "ask", "ask", "ask"])
 
     def test_replay_archive_keeps_both_component_lists(self):
         from flamingo_tools.json_util import load_processing_params

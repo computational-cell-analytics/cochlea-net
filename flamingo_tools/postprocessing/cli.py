@@ -243,7 +243,8 @@ def label_components():
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true",
                         help="Use napari image viewer for visualizing labeled components. A prompt after the view "
-                        "asks for the components in the order of the cochlea.")
+                        "asks for the components in the order of the cochlea. Ctrl+C at a prompt aborts the run "
+                        "before anything is written.")
     parser.add_argument("--scale_factor", type=int, default=20,
                         help="Scale factor for down-scaling data for visualization in Napari. Default: 20")
 
