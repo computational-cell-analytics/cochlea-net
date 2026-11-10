@@ -79,14 +79,15 @@ class TestLoadProcessingParams(unittest.TestCase):
             self.assertEqual(measures["use_bg_mask"], "yes")
             self.assertNotIn("use_bg_mask", components)
 
-    def test_component_list_path_overrides_the_common_list(self):
+    def test_component_list_path_keeps_the_common_list(self):
         from flamingo_tools.json_util import load_processing_params
 
         with TemporaryDirectory() as tmp_dir:
             path = self._write(tmp_dir, self.ENTRY)
-            # label_components uses the components of the central path.
-            self.assertEqual(
-                load_processing_params(path, "label_components")[0]["component_list"], [1, 2, 6])
+            # label_components gets both lists, so that an archived run can write both back.
+            params = load_processing_params(path, "label_components")[0]
+            self.assertEqual(params["component_list_path"], [1, 2, 6])
+            self.assertEqual(params["component_list"], [1])
             # The later steps select the labeled component.
             for step in ("tonotopic_mapping", "object_measures"):
                 self.assertEqual(load_processing_params(path, step)[0]["component_list"], [1])
@@ -238,7 +239,7 @@ class TestLoadProcessingParams(unittest.TestCase):
         """Guard STEP_KEYS against drifting away from the functions it feeds."""
         import inspect
 
-        from flamingo_tools.json_util import COMMON_KEYS, STEP_KEYS, STEP_RENAMES
+        from flamingo_tools.json_util import COMMON_KEYS, STEP_KEYS
         from flamingo_tools.measurements import object_measures_single
         from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping_single
         from flamingo_tools.postprocessing.label_components import label_components_single
@@ -251,14 +252,44 @@ class TestLoadProcessingParams(unittest.TestCase):
         self.assertEqual(set(functions), set(STEP_KEYS))
         for step, function in functions.items():
             accepted = set(inspect.signature(function).parameters)
-            renames = STEP_RENAMES.get(step, {})
             for key in STEP_KEYS[step]:
-                self.assertIn(renames.get(key, key), accepted,
+                self.assertIn(key, accepted,
                               f"{step} section key {key!r} is not a parameter of {function.__name__}")
         # No section may claim a common key, which would make the source of a value ambiguous.
         for step, keys in STEP_KEYS.items():
             overlap = keys & COMMON_KEYS
             self.assertFalse(overlap, f"{step} section also declares the common key(s) {overlap}")
+
+
+class TestArchiveProcessingParams(unittest.TestCase):
+
+    def test_archive_processing_params(self):
+        from flamingo_tools.json_util import archive_processing_params, load_processing_params
+
+        entry = dict(TestLoadProcessingParams.ENTRY)
+        with TemporaryDirectory() as tmp_dir:
+            path = os.path.join(tmp_dir, "M_AMD_000126_L_IHC.json")
+            with open(path, "w") as f:
+                json.dump(entry, f)
+
+            # The same segmentation replaces the section and keeps the other sections.
+            new_section = {"min_size": 5000, "min_component_length": 10, "max_edge_distance": 30.0}
+            run = {key: entry[key] for key in ("dataset_name", "segmentation_channel", "cell_type")}
+            self.assertEqual(archive_processing_params(
+                {**run, "component_list": [1, 2], "label_components": new_section}, tmp_dir), path)
+            params = load_processing_params(path, "label_components")
+            self.assertEqual(len(params), 1)
+            self.assertEqual(params[0]["component_list"], [1, 2])
+            self.assertEqual(params[0]["min_size"], 5000)
+            self.assertEqual(load_processing_params(path, "object_measures")[0]["use_bg_mask"], "yes")
+
+            # Another segmentation is added as a new entry.
+            archive_processing_params({**run, "segmentation_channel": "IHC_v11", "component_list": [1],
+                                       "label_components": {"component_list_path": [3, 1], "refine_row": True}}, path)
+            with open(path) as f:
+                data = json.load(f)
+            self.assertEqual([e["segmentation_channel"] for e in data], ["IHC_v9", "IHC_v11"])
+            self.assertEqual(load_processing_params(path, "label_components")[1]["component_list_path"], [3, 1])
 
 
 if __name__ == "__main__":
