@@ -34,13 +34,39 @@ class TestRefineIhcRow(unittest.TestCase):
         })
         self.expected_row = {i + 1 for i in present if i != 48}
 
-    def test_refine_ihc_row(self):
+    def _refine(self, table=None, **kwargs):
         from flamingo_tools.postprocessing.label_components import refine_ihc_row
 
-        table, path = refine_ihc_row(self.table.copy(), [1, 2], min_size=10000, max_path_deviation=15.0)
-        self.assertEqual(set(table.loc[table["component_labels"] == 1, "label_id"]), self.expected_row)
-        self.assertEqual(set(table["component_labels"]), {0, 1})
+        table = self.table.copy() if table is None else table
+        table, path, n_dropped = refine_ihc_row(table, [1, 2], min_size=10000, max_path_deviation=15.0, **kwargs)
+        labels = table["component_labels"]
+        rows = [set(table.loc[labels == label, "label_id"]) for label in range(1, labels.max() + 1)]
+        return rows, path, n_dropped
+
+    def test_refine_ihc_row(self):
+        # Cell 47 is on the bridge, 72 µm from cell 39 and 27 µm from cell 50.
+        rows, path, n_dropped = self._refine(min_component_length=3)
+        self.assertEqual(rows, [set(range(1, 41)), {48} | set(range(51, 101))])
+        self.assertEqual(n_dropped, 0)
         self.assertEqual(path.shape[1], 3)
+
+    def test_refine_ihc_row_bridge_closes_gap(self):
+        rows, _, _ = self._refine(max_edge_distance=80, min_component_length=3)
+        self.assertEqual(rows, [self.expected_row])
+        # Without cell 47, the gap is 99 µm.
+        rows, _, _ = self._refine(self.table[self.table["label_id"] != 48].copy(), max_edge_distance=80,
+                                  min_component_length=3)
+        self.assertEqual(len(rows), 2)
+
+    def test_refine_ihc_row_drops_small_component(self):
+        rows, _, n_dropped = self._refine(min_component_length=45)
+        self.assertEqual(rows, [{48} | set(range(51, 101))])
+        self.assertEqual(n_dropped, 40)
+
+    def test_refine_ihc_row_merge(self):
+        rows, _, n_dropped = self._refine(min_component_length=45, merge_components=True)
+        self.assertEqual(rows, [self.expected_row])
+        self.assertEqual(n_dropped, 0)
 
     def test_refine_ihc_row_missing_component(self):
         from flamingo_tools.postprocessing.label_components import refine_ihc_row
@@ -63,8 +89,8 @@ class TestRefineIhcRow(unittest.TestCase):
             "n_pixels": 20000,
             "component_labels": [1] * len(line) + [2] * len(turn),
         })
-        table, _ = refine_ihc_row(table, [1, 2], min_size=10000, max_path_deviation=15.0)
-        self.assertTrue((table["component_labels"] == 1).all())
+        table, _, _ = refine_ihc_row(table, [1, 2], min_size=10000, max_path_deviation=15.0)
+        np.testing.assert_array_equal(table["component_labels"], [1] * len(line) + [2] * len(turn))
 
     def test_refine_row_requires_ihc(self):
         from flamingo_tools.postprocessing.label_components import label_components_single
@@ -72,7 +98,29 @@ class TestRefineIhcRow(unittest.TestCase):
         with self.assertRaises(ValueError):
             label_components_single("table.tsv", cell_type="sgn", refine_row=True)
 
-    def _label_with_prompt(self, cell_type, answers):
+    def test_merge_components_requires_refine_row(self):
+        from flamingo_tools.postprocessing.label_components import label_components_single
+
+        with self.assertRaises(ValueError):
+            label_components_single("table.tsv", cell_type="ihc", merge_components=True)
+
+    def test_empty_refined_row_writes_nothing(self):
+        from flamingo_tools.postprocessing import label_components
+
+        def refine_nothing(table, *args, **kwargs):
+            table["component_labels"] = 0
+            return table, np.zeros((2, 3)), len(table)
+
+        with TemporaryDirectory() as tmp_dir:
+            table_path, out_path = os.path.join(tmp_dir, "default.tsv"), os.path.join(tmp_dir, "out.tsv")
+            self.table.to_csv(table_path, sep="\t", index=False)
+            with patch.object(label_components, "refine_ihc_row", side_effect=refine_nothing), \
+                    self.assertRaises(ValueError):
+                label_components.label_components_single(table_path, out_path, cell_type="ihc", refine_row=True,
+                                                         min_size=10000, min_component_length=3)
+            self.assertFalse(os.path.exists(out_path))
+
+    def _label_with_prompt(self, cell_type, answers, **kwargs):
         from flamingo_tools.json_util import load_processing_params
         from flamingo_tools.postprocessing.label_components import label_components_single
 
@@ -88,7 +136,7 @@ class TestRefineIhcRow(unittest.TestCase):
                 label_components_single(
                     table_path, cell_type=cell_type, min_size=10000, min_component_length=3, use_napari=True,
                     dataset_name="M_AMD_000126_L", segmentation_channel=f"{cell_type.upper()}_v11", archive=tmp_dir,
-                    path_file=path_file,
+                    path_file=path_file, **kwargs,
                 )
             path = os.path.join(tmp_dir, f"M_AMD_000126_L_{cell_type.upper()}.json")
             with open(path) as f:
@@ -98,10 +146,19 @@ class TestRefineIhcRow(unittest.TestCase):
 
     def test_archive_ihc_row_from_prompt(self):
         entry, params, _ = self._label_with_prompt("ihc", ["1 2", ""])
-        self.assertEqual(entry["component_list"], [1])
+        self.assertEqual(entry["component_list"], [1, 2])
         self.assertEqual(params["component_list_path"], [1, 2])
         self.assertTrue(params["refine_row"])
+        self.assertNotIn("merge_components", params)
         self.assertEqual(params["min_size"], 10000)
+
+    def test_archive_merged_ihc_row_from_prompt(self):
+        # At 25 µm, cell 47 is a component of its own, which the refinement drops. The merge question follows
+        # the view of the split row, and the merged row gets a view before the next prompt.
+        entry, params, calls = self._label_with_prompt("ihc", ["1 2", "y", ""], max_edge_distance=25)
+        self.assertEqual(entry["component_list"], [1])
+        self.assertTrue(params["merge_components"])
+        self.assertEqual(calls, ["show", "ask", "show", "ask", "show", "ask"])
 
     def test_abort_writes_nothing(self):
         from flamingo_tools.postprocessing.label_components import label_components_single

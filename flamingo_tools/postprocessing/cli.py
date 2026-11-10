@@ -261,10 +261,18 @@ def label_components():
     )
     parser.add_argument(
         "--refine_row", action="store_true",
-        help="Make the IHC row one component (label 1). The components of --components, in the order of the "
-             "cochlea, guide the central path. Each instance with at least --min_size pixels within "
-             "--max_path_deviation µm of the path (default 15) joins the row. Requires --cell_type ihc. With "
-             "--napari, a prompt after the view asks for the row components.",
+        help="Refine the IHC row. The components of --components, in the order of the cochlea, guide the "
+             "central path. Each instance with at least --min_size pixels within --max_path_deviation µm of the "
+             "path (default 15) joins the row. The row splits into components 1, 2, ... in the order of the "
+             "path at gaps larger than --max_edge_distance, and components with less than "
+             "--min_component_length instances are dropped. Requires --cell_type ihc. With --napari, a prompt "
+             "after the view asks for the row components.",
+    )
+    parser.add_argument(
+        "--merge_components", action="store_true",
+        help="Make the refined IHC row one component (label 1) and drop no row instance. Requires --refine_row "
+             "or --napari. With --napari, a prompt after the view asks for it when the refinement drops row "
+             "instances.",
     )
 
     # options for S3 bucket
@@ -294,6 +302,7 @@ def label_components():
         scale_factor=args.scale_factor,
         max_path_deviation=args.max_path_deviation,
         refine_row=args.refine_row,
+        merge_components=args.merge_components,
         archive=args.archive,
     )
 

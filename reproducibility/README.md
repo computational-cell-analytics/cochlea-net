@@ -64,7 +64,7 @@ Section keys:
 
 | Section | Keys |
 |---|---|
-| `label_components` | `component_list_path`, `max_edge_distance`, `min_component_length`, `min_size`, `custom_dic`, `max_path_deviation`, `refine_row` |
+| `label_components` | `component_list_path`, `max_edge_distance`, `min_component_length`, `min_size`, `custom_dic`, `max_path_deviation`, `refine_row`, `merge_components` |
 | `tonotopic_mapping` | `apex_position`, `component_mapping`, `include_gap`, `animal`, `otof` |
 | `object_measures` | `use_bg_mask` |
 
@@ -146,17 +146,20 @@ The labeling can erode the segmentation to exclude artifacts. It can also vary t
 of nodes in a component, and the minimal distance between two nodes of the same component. For an
 IHC segmentation, `--max_path_deviation` adds the central-path deviation filter, and `--path_file`
 writes the central path that the run used.
-`--refine_row` makes the IHC row one component: the listed components, in the order of the
-cochlea, guide the central path, and every instance of at least `--min_size` pixels near the path
-joins the row.
+`--refine_row` refines the IHC row: the listed components, in the order of the cochlea, guide the
+central path, and every instance of at least `--min_size` pixels near the path joins the row. The
+row splits into components 1, 2, ... in the order of the path at gaps larger than
+`--max_edge_distance`, so a broken row keeps its pieces. Pieces with less than
+`--min_component_length` instances are dropped. `--merge_components` makes the row one component.
 
 ```bash
 flamingo_tools.label_components --json_info <JSON-file> -o <out-dir> --s3
 ```
 
 With `--napari`, a prompt after the view asks for the components in the order of the cochlea: the
-SGN components, or the components of the IHC row. Ctrl+C at a prompt aborts the run before
-anything is written.
+SGN components, or the components of the IHC row. If a refined row drops instances, a second
+prompt after the view asks whether to merge the row into one component. Ctrl+C at a prompt aborts
+the run before anything is written.
 `--archive` saves the final parameters to the parameter file of the cochlea:
 
 ```bash
