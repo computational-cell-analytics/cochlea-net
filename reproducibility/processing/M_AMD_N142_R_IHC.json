@@ -31,7 +31,8 @@
 				2
 			],
 			"max_path_deviation": 15.0,
-			"refine_row": true
+			"refine_row": true,
+			"merge_components": true
 		}
 	}
 ]

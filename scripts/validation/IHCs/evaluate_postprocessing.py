@@ -5,7 +5,8 @@ the S3 segmentation in each plane like run_evaluation.py (all consensus rows, ma
 these variants of the IHC row:
 - 'components': the objects of the COMPONENT_DICT components, the current state. They must give the scores of
   reproducibility/model_accuracy/IHC_3D.json, else the script stops.
-- 'refined_<min_size>': `refine_ihc_row`, seeded with the same components, with max_path_deviation 15 um.
+- 'refined_<min_size>': `refine_ihc_row`, seeded with the same components, with max_path_deviation 15 um and
+  the row merged into one component.
 - '<variant>+correct': `correct_ihc_row` with its defaults, in 3D windows around the row crossings of the plane.
   A crossing is a run of plane objects along the row path. Its window holds the plane objects and the row
   objects within CONTEXT um along the path, for the reference IHC and the local axis. Only the plane voxels of
@@ -94,7 +95,8 @@ def row_variants(table, components):
     row = table["component_labels"].isin(components).values
     variants = {"components": (label_ids[row], ihc_row_path(table[COLUMNS].values[row]))}
     for min_size in MIN_SIZES:
-        refined, path = refine_ihc_row(table.copy(), components, min_size, MAX_PATH_DEVIATION)
+        refined, path, _ = refine_ihc_row(table.copy(), components, min_size, MAX_PATH_DEVIATION,
+                                          merge_components=True)
         variants[f"refined_{min_size}"] = (label_ids[refined["component_labels"].values == 1], path)
     return variants
 
