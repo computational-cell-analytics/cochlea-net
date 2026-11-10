@@ -43,13 +43,18 @@
 			1
 		],
 		"label_components": {
+			"min_size": 5000,
+			"min_component_length": 10,
+			"max_edge_distance": 30.0,
 			"component_list_path": [
+				4,
+				6,
+				2,
 				1
 			],
-			"min_component_length": 10,
-			"min_size": 5000,
-			"max_path_deviation": 15,
-			"refine_row": true
+			"max_path_deviation": 15.0,
+			"refine_row": true,
+			"merge_components": true
 		},
 		"tonotopic_mapping": {}
 	}

@@ -67,7 +67,7 @@ VALUE_DICT = {
     "M_AMD_000126_R": {
         "IHC": {
             "IHC_v9": {"count": 669},
-            "IHC_v11": {"count": 580},
+            "IHC_v11": {"count": 704},
         },
         "SGN": {
             "SGN_v2": {"count": 10751},
@@ -77,7 +77,7 @@ VALUE_DICT = {
     "M_AMD_000127_L": {
         "IHC": {
             "IHC_v9": {"count": 617},
-            "IHC_v11": {"count": 524},
+            "IHC_v11": {"count": 511},
         },
         "SGN": {
             "SGN_v2": {"count": 1665},
@@ -87,7 +87,7 @@ VALUE_DICT = {
     "M_AMD_000127_R": {
         "IHC": {
             "IHC_v9": {"count": 647},
-            "IHC_v11": {"count": 524},
+            "IHC_v11": {"count": 525},
         },
         "SGN": {
             "SGN_v2": {"count": 7860},
@@ -96,7 +96,7 @@ VALUE_DICT = {
     },
     "M_AMD_000137_L": {
         "IHC": {
-            "IHC_v11": {"count": 609},
+            "IHC_v11": {"count": 601},
         },
         "SGN": {
             "SGN_v3": {"count": 10944},
@@ -104,7 +104,7 @@ VALUE_DICT = {
     },
     "M_AMD_000137_R": {
         "IHC": {
-            "IHC_v11": {"count": 598},
+            "IHC_v11": {"count": 671},
         },
         "SGN": {
             "SGN_v3": {"count": 10612},
