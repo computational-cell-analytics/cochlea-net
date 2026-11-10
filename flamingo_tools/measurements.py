@@ -171,8 +171,9 @@ def _default_object_features(
     bb, center = _get_bounding_box_and_center(table, seg_id, voxel_size, image.shape, dilation)
 
     local_image = image[bb]
-    mask = segmentation[bb] == seg_id
-    assert mask.sum() > 0, f"Segmentation ID {seg_id} is empty."
+    object_mask = segmentation[bb] == seg_id
+    assert object_mask.sum() > 0, f"Segmentation ID {seg_id} is empty."
+    mask = object_mask
     if dilation is not None and dilation > 0:
         mask = binary_dilation(mask, iterations=dilation)
     masked_intensity = local_image[mask]
@@ -196,9 +197,10 @@ def _default_object_features(
         radius_in_pixel = background_radius / voxel_size[1]
         measures = _normalize_background(measures, image, background_mask, center, radius_in_pixel, norm)
 
-    # Do the volume and surface measurement.
+    # Do the volume and surface measurement on the object itself. The dilated mask reaches the faces
+    # of the bounding box, so its mesh is open and has no volume.
     if not median_only:
-        volume, surface = _measure_volume_and_surface(mask, voxel_size)
+        volume, surface = _measure_volume_and_surface(object_mask, voxel_size)
         measures["volume"] = volume
         measures["surface"] = surface
     return measures
@@ -213,6 +215,23 @@ def _morphology_features(seg_id, table, image, segmentation, voxel_size, **kwarg
     volume, surface = _measure_volume_and_surface(mask, voxel_size)
     measures["volume"] = volume
     measures["surface"] = surface
+    return measures
+
+
+def _ellipsoid_features(seg_id, table, image, segmentation, voxel_size, **kwargs):
+    """Fit the ellipsoid with the same second moments as the object.
+
+    The semi-axes a >= b >= c are in micrometer: a solid ellipsoid has the variance a^2 / 5 along an axis.
+    The main axis is the unit direction of a in (x, y, z) order. Its sign is arbitrary.
+    """
+    bb, _ = _get_bounding_box_and_center(table, seg_id, voxel_size, segmentation.shape, dilation=0)
+    coords = np.argwhere(segmentation[bb] == seg_id)[:, ::-1] * np.array(voxel_size)
+    measures = {"label_id": seg_id}
+    if len(coords) < 4:
+        return {**measures, **dict.fromkeys(["a", "b", "c", "axis_x", "axis_y", "axis_z"], np.nan)}
+    eigenvalues, eigenvectors = np.linalg.eigh(np.cov(coords.T))
+    measures.update(zip(["a", "b", "c"], np.sqrt(5 * np.clip(eigenvalues[::-1], 0, None))))
+    measures.update(zip(["axis_x", "axis_y", "axis_z"], eigenvectors[:, -1]))
     return measures
 
 
@@ -282,6 +301,7 @@ FEATURE_FUNCTIONS = {
     "default_background_norm": partial(_default_object_features, background_radius=75, norm=np.divide),
     "default_background_subtract": partial(_default_object_features, background_radius=75, norm=np.subtract),
     "morphology": _morphology_features,
+    "ellipsoid": _ellipsoid_features,
 }
 """The different feature functions that are supported in `compute_object_measures` and
 that can be selected via the feature_set argument. Currently this supports:
@@ -289,6 +309,8 @@ that can be selected via the feature_set argument. Currently this supports:
 - 'skimage': The scikit image regionprops features.
 - 'default_background_norm': The default features with background normalization.
 - 'default_background_subtract': The default features with background subtraction.
+- 'ellipsoid': The semi-axes and the main axis of the moment ellipsoid. It does not read the image, so the
+  segmentation can be passed as the image.
 
 For the background normalized measures, we compute the background intensity in a sphere with radius of 75 micrometer
 around each object.
