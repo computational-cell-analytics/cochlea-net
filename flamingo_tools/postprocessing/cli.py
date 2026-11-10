@@ -230,8 +230,8 @@ def label_components():
                         "<cochlea>/tables/<segmentation>/default.tsv.")
 
     # options for post-processing
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
+    parser.add_argument("--cell_type", type=str, default="sgn", choices=["sgn", "ihc"],
+                        help="Cell type of segmentation. Default: sgn")
     parser.add_argument("--min_size", type=int, default=1000,
                         help="Minimal number of pixels for filtering small instances. Default: 1000")
     parser.add_argument("--min_component_length", type=int, default=50,
