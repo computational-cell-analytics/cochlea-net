@@ -93,7 +93,7 @@ class TestRefineIhcRow(unittest.TestCase):
     def test_archive_ihc_row_from_prompt(self):
         entry, params = self._label_with_prompt("ihc", ["1 2", ""])
         self.assertEqual(entry["component_list"], [1])
-        self.assertEqual(params["component_list"], [1, 2])
+        self.assertEqual(params["component_list_path"], [1, 2])
         self.assertTrue(params["refine_row"])
         self.assertEqual(params["min_size"], 10000)
 
@@ -101,6 +101,29 @@ class TestRefineIhcRow(unittest.TestCase):
         entry, _ = self._label_with_prompt("sgn", ["x", "3 1"])
         self.assertEqual(entry["component_list"], [3, 1])
         self.assertNotIn("component_list_path", entry["label_components"])
+
+    def test_replay_archive_keeps_both_component_lists(self):
+        from flamingo_tools.json_util import load_processing_params
+        from flamingo_tools.postprocessing.label_components import label_components_json_wrapper
+
+        entry = {
+            "dataset_name": "M_AMD_000126_L", "segmentation_channel": "IHC_v9", "cell_type": "ihc",
+            "component_list": [1],
+            "label_components": {"component_list_path": [1, 2], "min_component_length": 3, "min_size": 10000},
+            "tonotopic_mapping": {},
+        }
+        with TemporaryDirectory() as tmp_dir:
+            table_dir = os.path.join(tmp_dir, "M_AMD_000126_L", "tables", "IHC_v9")
+            os.makedirs(table_dir)
+            self.table.to_csv(os.path.join(table_dir, "default.tsv"), sep="\t", index=False)
+            path = os.path.join(tmp_dir, "M_AMD_000126_L_IHC.json")
+            with open(path, "w") as f:
+                json.dump(entry, f)
+            before = load_processing_params(path, "label_components")[0]
+            label_components_json_wrapper(path, out_path=os.path.join(tmp_dir, "out"), mobie_dir=tmp_dir, archive=path)
+            after = load_processing_params(path, "label_components")[0]
+            self.assertEqual(after, {**before, "max_edge_distance": 30})
+            self.assertEqual(load_processing_params(path, "tonotopic_mapping")[0]["component_list"], [1])
 
 
 if __name__ == "__main__":

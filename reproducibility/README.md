@@ -68,9 +68,8 @@ Section keys:
 | `tonotopic_mapping` | `apex_position`, `component_mapping`, `include_gap`, `animal`, `otof` |
 | `object_measures` | `use_bg_mask` |
 
-`component_list_path` is the one key that renames on the way in. `label_components` receives it
-as `component_list`, because there the list defines which components form the central path and
-which instance counts are reported, and for six cochleae that is not the list the later steps
+`component_list_path` lists the components that form the central path of `label_components` and
+that it reports instance counts for. For six cochleae that is not the list the later steps
 select. Where the two agree, only the common `component_list` is given.
 
 `custom_dic` replaces the three plain labeling parameters: it runs the segmentation once per

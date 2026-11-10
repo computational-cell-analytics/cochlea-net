@@ -818,6 +818,7 @@ def label_components_single(
     force_overwrite: bool = False,
     cell_type: str = "sgn",
     component_list: List[int] = [1],
+    component_list_path: Optional[List[int]] = None,
     max_edge_distance: float = 30,
     min_component_length: int = 50,
     min_size: int = 1000,
@@ -848,7 +849,9 @@ def label_components_single(
         out_path: Output path to segmentation table with new column "component_labels".
         force_overwrite: Forcefully overwrite existing output path.
         cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
-        component_list: List of components. Can be passed to obtain the number of instances within the component list.
+        component_list: The components that the later processing steps select.
+        component_list_path: The components that form the central IHC path and that the instance counts are
+            reported for. Default: component_list.
         max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
         min_component_length: Minimal length of nodes of connected component. Filtered out if lower.
         min_size: Minimal number of pixels for filtering small instances.
@@ -870,9 +873,9 @@ def label_components_single(
         max_path_deviation: Maximum allowed deviation in µm from the central IHC path. Instances
             farther than this are set to component_labels=0. Requires cell_type='ihc'.
             If None and path_file is set, the path is computed and saved without filtering.
-        refine_row: Make the IHC row one component with `refine_ihc_row`. The components of `component_list`,
-            in the order of the cochlea, guide the path, and `max_path_deviation` (15 micrometers if None)
-            limits the distance to it.
+        refine_row: Make the IHC row one component with `refine_ihc_row`. The components of
+            `component_list_path`, in the order of the cochlea, guide the path, and `max_path_deviation`
+            (15 micrometers if None) limits the distance to it.
             Requires cell_type='ihc'. With use_napari, a prompt after each view asks for the row components,
             so a row can be chosen and checked without this flag.
         dataset_name: Name of the cochlea. Required for archive.
@@ -918,19 +921,20 @@ def label_components_single(
                                          max_edge_distance=max_edge_distance)
 
     labeled = tsv_table.copy()
+    path_components = component_list_path or component_list
     row_deviation = 15.0 if max_path_deviation is None else max_path_deviation
     row_path = None
     if cell_type == "ihc" and refine_row:
-        tsv_table, row_path = refine_ihc_row(tsv_table, component_list, min_size, row_deviation)
+        tsv_table, row_path = refine_ihc_row(tsv_table, path_components, min_size, row_deviation)
     elif cell_type == "ihc" and max_path_deviation is not None:
         tsv_table, computed_path_df = filter_ihc_by_path_deviation(
-            tsv_table, max_path_deviation, component_list, path_file
+            tsv_table, max_path_deviation, path_components, path_file
         )
         if path_file is not None and computed_path_df is not None:
             computed_path_df.to_csv(path_file, sep="\t", index=False)
             print(f"Saved computed path to {path_file}.")
     elif cell_type == "ihc" and path_file is not None and max_path_deviation is None:
-        total_distance, path_dict_raw = _compute_path_from_table(tsv_table, component_list)
+        total_distance, path_dict_raw = _compute_path_from_table(tsv_table, path_components)
         _central_path_table(path_dict_raw, total_distance).to_csv(path_file, sep="\t", index=False)
         print(f"Saved computed path to {path_file}.")
     elif max_path_deviation is not None and cell_type != "ihc":
@@ -958,16 +962,16 @@ def label_components_single(
             except ValueError as error:
                 print(error)
                 continue
-            component_list = components
             if cell_type != "ihc":
+                component_list = path_components = components
                 break
-            refine_row = True
+            path_components, refine_row = components, True
             _show_components(labeled, scale_factor, {
                 "components": labeled["component_labels"], "IHC row": tsv_table["component_labels"],
             })
         if custom_dic is None:
             replay = f"--cell_type {cell_type}" + (" --refine_row" if refine_row else "")
-            replay += " -c " + " ".join(str(comp) for comp in component_list)
+            replay += " -c " + " ".join(str(comp) for comp in path_components)
             replay += (f" --min_size {min_size} --min_component_length {min_component_length}"
                        f" --max_edge_distance {max_edge_distance}")
             if refine_row or max_path_deviation is not None:
@@ -986,11 +990,15 @@ def label_components_single(
         section = {"min_size": min_size, "min_component_length": min_component_length,
                    "max_edge_distance": max_edge_distance}
         if custom_dic is not None:
-            section = {"custom_dic": custom_dic}
+            # The row refinement uses the parameters next to custom_dic.
+            section = {"custom_dic": custom_dic, **(section if refine_row else {})}
         if refine_row:
-            section.update(component_list_path=component_list, max_path_deviation=row_deviation, refine_row=True)
-        elif max_path_deviation is not None:
-            section["max_path_deviation"] = max_path_deviation
+            section.update(component_list_path=path_components, max_path_deviation=row_deviation, refine_row=True)
+        else:
+            if component_list_path is not None:
+                section["component_list_path"] = path_components
+            if max_path_deviation is not None:
+                section["max_path_deviation"] = max_path_deviation
         archive_processing_params({
             "dataset_name": dataset_name,
             "segmentation_channel": segmentation_channel,
@@ -999,7 +1007,7 @@ def label_components_single(
             "label_components": section,
         }, archive)
 
-    counted = [1] if cell_type == "ihc" and refine_row else component_list
+    counted = [1] if cell_type == "ihc" and refine_row else path_components
     custom_comp = len(tsv_table[tsv_table["component_labels"].isin(counted)])
     print(f"Total {cell_type.upper()}s: {len(tsv_table)}")
     if counted == [1]:
