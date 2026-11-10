@@ -614,53 +614,30 @@ def filter_ihc_by_path_deviation(
     table: pd.DataFrame,
     max_path_deviation: float,
     component_list: List[int] = [1],
-    path_file: Optional[str] = None,
-) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
-    """Filter IHC instances by their deviation from the central path.
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Filter IHC instances by their deviation from the central path through the given components.
 
-    Instances whose centroid is farther than max_path_deviation µm from the nearest
-    point on the central path are assigned component_labels = 0 (background).
-
-    The central path is either loaded from path_file (if provided and exists) or
-    computed on-the-fly via measure_run_length.
+    The path comes from measure_run_length. Instances of the components whose centroid is farther
+    than max_path_deviation µm from the nearest path node get component_labels = 0 (background).
 
     Args:
         table: Segmentation table with a 'component_labels' column.
         max_path_deviation: Maximum allowed distance in µm from the central path.
-        component_list: Component labels whose instances should be filtered.
-        path_file: Optional path to a central path TSV file. If provided and the file
-            exists, the path is loaded from there. If the file does not exist, the path
-            is computed on-the-fly and the caller is responsible for saving the returned
-            DataFrame.
+        component_list: Component labels whose instances form the path and are filtered.
 
     Returns:
-        The table with outlier instances set to component_labels=0, and either None
-        (when path was loaded from file) or a path DataFrame (when computed on-the-fly).
+        The table with outlier instances set to component_labels=0, and the central path table.
     """
-    from flamingo_tools.postprocessing.cochlea_mapping import central_path_table_to_path_dict
-
-    computed_path_df = None
-
-    if path_file is not None and os.path.isfile(path_file):
-        path_df = pd.read_csv(path_file, sep="\t")
-        path_dict = central_path_table_to_path_dict(path_df)
-        path_coords = np.array([v["pos"] for v in path_dict.values()])
-    else:
-        total_distance, path_dict_raw = _compute_path_from_table(table, component_list)
-        path_coords = np.array([v["pos"] for v in path_dict_raw.values()])
-        computed_path_df = _central_path_table(path_dict_raw, total_distance)
-
-    path_tree = cKDTree(path_coords)
-    mask = table["component_labels"].isin(component_list)
-    subset = table[mask]
-    instance_coords = np.array(list(zip(subset["anchor_x"], subset["anchor_y"], subset["anchor_z"])))
-    distances, _ = path_tree.query(instance_coords)
+    total_distance, path_dict = _compute_path_from_table(table, component_list)
+    path_tree = cKDTree(np.array([v["pos"] for v in path_dict.values()]))
+    subset = table[table["component_labels"].isin(component_list)]
+    distances, _ = path_tree.query(subset[["anchor_x", "anchor_y", "anchor_z"]].values)
 
     far_ids = subset["label_id"].values[distances > max_path_deviation]
     table.loc[table["label_id"].isin(far_ids), "component_labels"] = 0
     print(f"Filtered {len(far_ids)} IHCs with path deviation > {max_path_deviation} µm.")
 
-    return table, computed_path_df
+    return table, _central_path_table(path_dict, total_distance)
 
 
 def ihc_row_path(centroids: np.ndarray) -> np.ndarray:
@@ -864,15 +841,10 @@ def label_components_single(
         use_napari: Visualize component labels with napari viewer. A prompt after the view asks for the
             components in the order of the cochlea: for IHCs the components of the row.
         scale_factor: Scale factor for down-scaling data for visualization in Napari.
-        path_file: Path to a central path TSV file. Behaviour depends on max_path_deviation:
-            if max_path_deviation is set and the file exists, the path is loaded from it;
-            if max_path_deviation is set and the file does not exist, the path is computed and
-            saved here; if max_path_deviation is None, the path is always computed from the
-            current components and saved here (no filtering). With refine_row, the path of the
-            refined row is saved here. Only used when cell_type='ihc'.
+        path_file: Output path for the central IHC path that the run used: the path of the refined row, of the
+            deviation filter, or else the path through the components. Only used when cell_type='ihc'.
         max_path_deviation: Maximum allowed deviation in µm from the central IHC path. Instances
             farther than this are set to component_labels=0. Requires cell_type='ihc'.
-            If None and path_file is set, the path is computed and saved without filtering.
         refine_row: Make the IHC row one component with `refine_ihc_row`. The components of
             `component_list_path`, in the order of the cochlea, guide the path, and `max_path_deviation`
             (15 micrometers if None) limits the distance to it.
@@ -923,21 +895,15 @@ def label_components_single(
     labeled = tsv_table.copy()
     path_components = component_list_path or component_list
     row_deviation = 15.0 if max_path_deviation is None else max_path_deviation
-    row_path = None
+    path_df = None
     if cell_type == "ihc" and refine_row:
         tsv_table, row_path = refine_ihc_row(tsv_table, path_components, min_size, row_deviation)
     elif cell_type == "ihc" and max_path_deviation is not None:
-        tsv_table, computed_path_df = filter_ihc_by_path_deviation(
-            tsv_table, max_path_deviation, path_components, path_file
-        )
-        if path_file is not None and computed_path_df is not None:
-            computed_path_df.to_csv(path_file, sep="\t", index=False)
-            print(f"Saved computed path to {path_file}.")
-    elif cell_type == "ihc" and path_file is not None and max_path_deviation is None:
-        total_distance, path_dict_raw = _compute_path_from_table(tsv_table, path_components)
-        _central_path_table(path_dict_raw, total_distance).to_csv(path_file, sep="\t", index=False)
-        print(f"Saved computed path to {path_file}.")
-    elif max_path_deviation is not None and cell_type != "ihc":
+        tsv_table, path_df = filter_ihc_by_path_deviation(tsv_table, max_path_deviation, path_components)
+    elif cell_type == "ihc" and path_file is not None:
+        total_distance, path_dict = _compute_path_from_table(tsv_table, path_components)
+        path_df = _central_path_table(path_dict, total_distance)
+    elif max_path_deviation is not None:
         print("Warning: --max_path_deviation is only supported for cell_type='ihc'. Skipping path filtering.")
 
     # Write the table before the napari prompt, so an interrupted prompt keeps the result.
@@ -979,12 +945,13 @@ def label_components_single(
             print("Replay with: " + replay)
         tsv_table.to_csv(out_path, sep="\t", index=False)
 
-    if row_path is not None and path_file is not None:
-        from flamingo_tools.postprocessing.cochlea_mapping import _path_dict_from_components, arc_length
-        length = arc_length(row_path)[-1]
-        row_path_table = _central_path_table(_path_dict_from_components([row_path], length), length)
-        row_path_table.to_csv(path_file, sep="\t", index=False)
-        print(f"Saved the row path to {path_file}.")
+    if cell_type == "ihc" and path_file is not None:
+        if refine_row:
+            from flamingo_tools.postprocessing.cochlea_mapping import _path_dict_from_components, arc_length
+            length = arc_length(row_path)[-1]
+            path_df = _central_path_table(_path_dict_from_components([row_path], length), length)
+        path_df.to_csv(path_file, sep="\t", index=False)
+        print(f"Saved the central path to {path_file}.")
 
     if archive is not None:
         section = {"min_size": min_size, "min_component_length": min_component_length,
@@ -1040,8 +1007,8 @@ def label_components_json_wrapper(
             input table, which requires local data.
         mobie_dir: Local MoBIE directory used for creating data paths. Ignored when s3 is set.
         s3: Flag for accessing data stored on S3 bucket.
-        path_file: Path to a central path TSV for the IHC deviation filter. A directory out_path
-            turns this into one file per entry.
+        path_file: Output path for the central IHC path. Several entries or a directory out_path
+            turn this into one file per entry.
         kwargs: Further arguments for label_components_single. An entry of the JSON file
             overrides them.
     """
@@ -1071,8 +1038,8 @@ def label_components_json_wrapper(
         save_path, entry_path_file = out_path, path_file
         if out_is_dir:
             save_path = os.path.join(out_path, f"{prefix}.tsv")
-        # Several entries must not share one central path file, or the later cochleae would be
-        # filtered against the first cochlea's spiral.
+        # Several entries must not share one central path file, or each entry would overwrite the
+        # path of the previous one.
         if path_file is not None and len(param_dicts) > 1:
             root = out_path if out_is_dir else os.path.dirname(path_file)
             entry_path_file = os.path.join(root, f"{prefix}_path.tsv")

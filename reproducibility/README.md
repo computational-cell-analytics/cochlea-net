@@ -144,7 +144,8 @@ The commands write the tables to `<out-dir>`. To copy them to the S3 bucket, see
 
 The labeling can erode the segmentation to exclude artifacts. It can also vary the minimal number
 of nodes in a component, and the minimal distance between two nodes of the same component. For an
-IHC segmentation, `--path_file` and `--max_path_deviation` add the central-path deviation filter.
+IHC segmentation, `--max_path_deviation` adds the central-path deviation filter, and `--path_file`
+writes the central path that the run used.
 `--refine_row` makes the IHC row one component: the listed components, in the order of the
 cochlea, guide the central path, and every instance of at least `--min_size` pixels near the path
 joins the row.

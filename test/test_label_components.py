@@ -78,16 +78,19 @@ class TestRefineIhcRow(unittest.TestCase):
 
         with TemporaryDirectory() as tmp_dir:
             table_path = os.path.join(tmp_dir, "default.tsv")
+            path_file = os.path.join(tmp_dir, "path.tsv")
             self.table.to_csv(table_path, sep="\t", index=False)
             with patch("flamingo_tools.postprocessing.label_components._show_components"), \
                     patch("builtins.input", side_effect=answers):
                 label_components_single(
                     table_path, cell_type=cell_type, min_size=10000, min_component_length=3, use_napari=True,
                     dataset_name="M_AMD_000126_L", segmentation_channel=f"{cell_type.upper()}_v11", archive=tmp_dir,
+                    path_file=path_file,
                 )
             path = os.path.join(tmp_dir, f"M_AMD_000126_L_{cell_type.upper()}.json")
             with open(path) as f:
                 entry = json.load(f)
+            self.assertEqual(os.path.isfile(path_file), cell_type == "ihc")
             return entry, load_processing_params(path, "label_components")[0]
 
     def test_archive_ihc_row_from_prompt(self):

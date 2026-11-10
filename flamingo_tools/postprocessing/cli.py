@@ -250,9 +250,8 @@ def label_components():
     # options for path deviation filtering (IHC only)
     parser.add_argument(
         "--path_file", type=str, default=None,
-        help="Path to central path TSV for IHC deviation filtering. "
-             "If the file does not exist, the path is computed on-the-fly and saved here. "
-             "With --refine_row, the path of the refined row is saved here. Default: None",
+        help="Output path for the central IHC path that the run used: the path of the refined row, of the "
+             "deviation filter, or else the path through the components. Requires --cell_type ihc. Default: None",
     )
     parser.add_argument(
         "--max_path_deviation", type=float, default=None,
