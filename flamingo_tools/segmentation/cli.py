@@ -2,6 +2,7 @@
 """
 import argparse
 
+from . import synapse_detection, unet_prediction
 from .unet_prediction import run_unet_prediction
 from .synapse_detection import marker_detection
 from ..model_utils import get_model_path, get_default_segmentation_settings
@@ -217,3 +218,178 @@ def run_detection():
         s3_bucket_name=args.s3_bucket_name, s3_service_endpoint=args.s3_service_endpoint,
         s3_credentials=args.s3_credentials,
     )
+
+
+# The commands below run the steps of the Slurm pipelines of slurm-workflows. Each one forwards its
+# options to the function of the same name, so the option names are the keyword arguments.
+
+
+def _add_io_arguments(parser, input_path=True):
+    if input_path:
+        parser.add_argument("-i", "--input_path", required=True, help="The path to the input data.")
+        parser.add_argument(
+            "-k", "--input_key",
+            help="The key to the input data. This refers to an internal data path for Zarr, HDF5 or N5 data."
+        )
+    parser.add_argument(
+        "-o", "--output_folder", required=True,
+        help="The output folder, which the steps of the pipeline share."
+    )
+
+
+def _add_s3_arguments(parser, flags):
+    for flag, help_text in flags.items():
+        parser.add_argument(f"--{flag}", action="store_true", help=help_text)
+    parser.add_argument(
+        "--s3_credentials", default=None,
+        help="Input file containing S3 credentials. "
+        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported."
+    )
+    parser.add_argument(
+        "--s3_bucket_name", default=None, help="S3 bucket name. Optional if BUCKET_NAME was exported."
+    )
+    parser.add_argument(
+        "--s3_service_endpoint", default=None,
+        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported."
+    )
+
+
+def run_unet_prediction_preprocess_slurm():
+    """private
+    """
+    parser = argparse.ArgumentParser(
+        description="Compute the mask of the parallel U-Net prediction and store it in 'mask.zarr' in the "
+        "output folder. This is the first step of the SGN and IHC segmentation on a Slurm cluster."
+    )
+    _add_io_arguments(parser)
+    parser.add_argument(
+        "--seg_class", help="The segmentation class, 'sgn' or 'ihc'. It selects the exclusion criteria of the mask."
+    )
+    # A string, because the function maps 'None' to a threshold derived from the data.
+    parser.add_argument(
+        "--absolute_threshold",
+        help="The minimal intensity of the mask. 'None' derives the threshold from the data."
+    )
+    _add_s3_arguments(parser, {"s3": "Read the image data from the S3 bucket."})
+    unet_prediction.run_unet_prediction_preprocess_slurm(**vars(parser.parse_args()))
+
+
+def run_unet_prediction_slurm():
+    """private
+    """
+    parser = argparse.ArgumentParser(
+        description="Run one task of the parallel U-Net prediction. Submit it as a Slurm array with as many tasks "
+        "as '--prediction_instances'. This is the second step of the SGN and IHC segmentation on a Slurm cluster."
+    )
+    _add_io_arguments(parser)
+    parser.add_argument("-m", "--model_path", required=True, help="The path to the model.")
+    parser.add_argument(
+        "--prediction_instances", type=int, default=1,
+        help="The number of tasks of the parallel prediction. It must match the size of the Slurm array."
+    )
+    _add_s3_arguments(parser, {"s3": "Read the image data from the S3 bucket."})
+    unet_prediction.run_unet_prediction_slurm(**vars(parser.parse_args()))
+
+
+def run_unet_segmentation_slurm():
+    """private
+    """
+    parser = argparse.ArgumentParser(
+        description="Segment the prediction in the output folder with a seeded watershed. "
+        "This is the third step of the SGN and IHC segmentation on a Slurm cluster."
+    )
+    _add_io_arguments(parser, input_path=False)
+    parser.add_argument(
+        "--min_size", type=int, required=True, help="The minimal size of a segmented object, in voxels."
+    )
+    parser.add_argument(
+        "--center_distance_threshold", type=float, default=0.4,
+        help="The threshold applied to the center distance prediction to derive the seeds."
+    )
+    parser.add_argument(
+        "--boundary_distance_threshold", type=float, default=0.5,
+        help="The threshold applied to the boundary distance prediction to derive the seeds."
+    )
+    parser.add_argument(
+        "--distance_smoothing", type=float, default=0.0,
+        help="The sigma of the gaussian smoothing of the distance predictions. 0 applies no smoothing."
+    )
+    unet_prediction.run_unet_segmentation_slurm(**vars(parser.parse_args()))
+
+
+def run_synapse_prediction_preprocess_slurm():
+    """private
+    """
+    parser = argparse.ArgumentParser(
+        description="Compute the mask of the synapse prediction from the dilated IHC segmentation and store it "
+        "in 'mask.zarr' in the output folder. This is the first step of the synapse detection on a Slurm cluster."
+    )
+    _add_io_arguments(parser)
+    parser.add_argument(
+        "--mask_path",
+        help="The path to the IHC segmentation. Without it the prediction runs on the full volume."
+    )
+    parser.add_argument(
+        "--mask_input_key", default="s4", help="The key to the downscaled IHC segmentation."
+    )
+    parser.add_argument(
+        "--dilation_iterations", type=int, default=4,
+        help="The number of dilation steps of the mask, in voxels of '--mask_input_key'."
+    )
+    parser.add_argument(
+        "--max_distance", type=float, default=3.0,
+        help="The matching distance in micrometer, which the dilated mask has to cover."
+    )
+    _add_s3_arguments(parser, {
+        "s3_input": "Read the image data from the S3 bucket.",
+        "s3_mask": "Read the IHC segmentation from the S3 bucket.",
+    })
+    synapse_detection.run_synapse_prediction_preprocess_slurm(**vars(parser.parse_args()))
+
+
+def run_synapse_prediction_slurm():
+    """private
+    """
+    parser = argparse.ArgumentParser(
+        description="Run one task of the parallel synapse prediction. Submit it as a Slurm array with as many "
+        "tasks as '--prediction_instances'. This is the second step of the synapse detection on a Slurm cluster."
+    )
+    _add_io_arguments(parser)
+    parser.add_argument("-m", "--model_path", required=True, help="The path to the synapse detection model.")
+    parser.add_argument(
+        "--prediction_instances", type=int, default=1,
+        help="The number of tasks of the parallel prediction. It must match the size of the Slurm array."
+    )
+    _add_s3_arguments(parser, {"s3_input": "Read the image data from the S3 bucket."})
+    synapse_detection.run_synapse_prediction_slurm(**vars(parser.parse_args()))
+
+
+def run_synapse_detection_slurm():
+    """private
+    """
+    parser = argparse.ArgumentParser(
+        description="Detect the synapses in the finished prediction of the output folder and match them to the "
+        "IHC segmentation. This is the third step of the synapse detection on a Slurm cluster."
+    )
+    _add_io_arguments(parser, input_path=False)
+    parser.add_argument(
+        "-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
+        help="The voxel size of the data in micrometer. Default: 0.38 0.38 0.38"
+    )
+    parser.add_argument("--threshold", type=float, default=0.5, help="The threshold of the peak detection.")
+    parser.add_argument(
+        "--mask_path",
+        help="The path to the IHC segmentation. If given, the detections are matched to the IHCs and filtered "
+        "by '--max_distance'."
+    )
+    parser.add_argument("--mask_key", default="s0", help="The key to the IHC segmentation at full resolution.")
+    parser.add_argument(
+        "--max_distance", type=float, default=3.0,
+        help="The maximal distance in micrometer of a detection to its IHC."
+    )
+    parser.add_argument(
+        "--force_overwrite", action="store_true",
+        help="Recompute the detections even if the table of an earlier run exists."
+    )
+    _add_s3_arguments(parser, {"s3_mask": "Read the IHC segmentation from the S3 bucket."})
+    synapse_detection.run_synapse_detection_slurm(**vars(parser.parse_args()))

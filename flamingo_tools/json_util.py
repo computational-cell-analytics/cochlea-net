@@ -64,19 +64,12 @@ COMMON_KEYS = frozenset({
 STEP_KEYS: Dict[str, frozenset] = {
     "label_components": frozenset({
         "component_list_path", "max_edge_distance", "min_component_length", "min_size",
-        "custom_dic", "max_path_deviation", "refine_row",
+        "custom_dic", "max_path_deviation", "refine_row", "merge_components",
     }),
     "tonotopic_mapping": frozenset({
         "apex_position", "component_mapping", "include_gap", "animal", "otof", "path_method",
     }),
     "object_measures": frozenset({"use_bg_mask"}),
-}
-
-# Section keys that reach the processing function under a different name.
-# In label_components the component list selects the components that form the central path and
-# that the instance counts are reported for, which is not always the list the later steps select.
-STEP_RENAMES: Dict[str, Dict[str, str]] = {
-    "label_components": {"component_list_path": "component_list"},
 }
 
 # A block extraction entry is recognised by its crop centers, which no processing file has.
@@ -121,7 +114,6 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
     entries = data if isinstance(data, list) else [data]
 
     allowed_top = COMMON_KEYS | set(STEP_KEYS)
-    renames = STEP_RENAMES.get(step, {})
     params = []
     for index, entry in enumerate(entries):
         where = f"{json_file} entry {index}"
@@ -160,7 +152,7 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
             )
 
         flat = {key: value for key, value in entry.items() if key in COMMON_KEYS}
-        flat.update({renames.get(key, key): value for key, value in section.items()})
+        flat.update(section)
         params.append(flat)
 
     return params

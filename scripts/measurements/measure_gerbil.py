@@ -64,7 +64,7 @@ def measure_ihcs(fs):
 
 def measure_synapses(fs):
     print("Synapses:")
-    spot_name = "synapses_v3_IHC_v5"
+    spot_name = "synapse_v3_ihc_v5"
     seg_name = "IHC_v5"
     for dataset in COCHLEAE:
         print("Cochlea:", dataset)

@@ -230,8 +230,8 @@ def label_components():
                         "<cochlea>/tables/<segmentation>/default.tsv.")
 
     # options for post-processing
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
+    parser.add_argument("--cell_type", type=str, default="sgn", choices=["sgn", "ihc"],
+                        help="Cell type of segmentation. Default: sgn")
     parser.add_argument("--min_size", type=int, default=1000,
                         help="Minimal number of pixels for filtering small instances. Default: 1000")
     parser.add_argument("--min_component_length", type=int, default=50,
@@ -243,16 +243,16 @@ def label_components():
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true",
                         help="Use napari image viewer for visualizing labeled components. A prompt after the view "
-                        "asks for the components in the order of the cochlea.")
+                        "asks for the components in the order of the cochlea. Ctrl+C at a prompt aborts the run "
+                        "before anything is written.")
     parser.add_argument("--scale_factor", type=int, default=20,
                         help="Scale factor for down-scaling data for visualization in Napari. Default: 20")
 
     # options for path deviation filtering (IHC only)
     parser.add_argument(
         "--path_file", type=str, default=None,
-        help="Path to central path TSV for IHC deviation filtering. "
-             "If the file does not exist, the path is computed on-the-fly and saved here. "
-             "With --refine_row, the path of the refined row is saved here. Default: None",
+        help="Output path for the central IHC path that the run used: the path of the refined row, of the "
+             "deviation filter, or else the path through the components. Requires --cell_type ihc. Default: None",
     )
     parser.add_argument(
         "--max_path_deviation", type=float, default=None,
@@ -261,10 +261,18 @@ def label_components():
     )
     parser.add_argument(
         "--refine_row", action="store_true",
-        help="Make the IHC row one component (label 1). The components of --components, in the order of the "
-             "cochlea, guide the central path. Each instance with at least --min_size pixels within "
-             "--max_path_deviation µm of the path (default 15) joins the row. Requires --cell_type ihc. With "
-             "--napari, a prompt after the view asks for the row components.",
+        help="Refine the IHC row. The components of --components, in the order of the cochlea, guide the "
+             "central path. Each instance with at least --min_size pixels within --max_path_deviation µm of the "
+             "path (default 15) joins the row. The row splits into components 1, 2, ... in the order of the "
+             "path at gaps larger than --max_edge_distance, and components with less than "
+             "--min_component_length instances are dropped. Requires --cell_type ihc. With --napari, a prompt "
+             "after the view asks for the row components.",
+    )
+    parser.add_argument(
+        "--merge_components", action="store_true",
+        help="Make the refined IHC row one component (label 1) and drop no row instance. Requires --refine_row "
+             "or --napari. With --napari, a prompt after the view asks for it when the refinement drops row "
+             "instances.",
     )
 
     # options for S3 bucket
@@ -294,6 +302,7 @@ def label_components():
         scale_factor=args.scale_factor,
         max_path_deviation=args.max_path_deviation,
         refine_row=args.refine_row,
+        merge_components=args.merge_components,
         archive=args.archive,
     )
 
