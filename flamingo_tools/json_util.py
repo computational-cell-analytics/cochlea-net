@@ -64,19 +64,12 @@ COMMON_KEYS = frozenset({
 STEP_KEYS: Dict[str, frozenset] = {
     "label_components": frozenset({
         "component_list_path", "max_edge_distance", "min_component_length", "min_size",
-        "custom_dic", "max_path_deviation",
+        "custom_dic", "max_path_deviation", "refine_row", "merge_components",
     }),
     "tonotopic_mapping": frozenset({
         "apex_position", "component_mapping", "include_gap", "animal", "otof", "path_method",
     }),
     "object_measures": frozenset({"use_bg_mask"}),
-}
-
-# Section keys that reach the processing function under a different name.
-# In label_components the component list selects the components that form the central path and
-# that the instance counts are reported for, which is not always the list the later steps select.
-STEP_RENAMES: Dict[str, Dict[str, str]] = {
-    "label_components": {"component_list_path": "component_list"},
 }
 
 # A block extraction entry is recognised by its crop centers, which no processing file has.
@@ -121,7 +114,6 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
     entries = data if isinstance(data, list) else [data]
 
     allowed_top = COMMON_KEYS | set(STEP_KEYS)
-    renames = STEP_RENAMES.get(step, {})
     params = []
     for index, entry in enumerate(entries):
         where = f"{json_file} entry {index}"
@@ -160,7 +152,45 @@ def load_processing_params(json_file: str, step: str) -> List[dict]:
             )
 
         flat = {key: value for key, value in entry.items() if key in COMMON_KEYS}
-        flat.update({renames.get(key, key): value for key, value in section.items()})
+        flat.update(section)
         params.append(flat)
 
     return params
+
+
+def archive_processing_params(entry: dict, archive: str) -> str:
+    """Write the parameters of a processing run into a shared processing parameter file.
+
+    The entry of the file with the same "dataset_name" and "segmentation_channel" gets the keys of
+    `entry`, so a section in `entry` replaces the whole section of the file. The other keys and
+    sections of the file stay. An entry for another segmentation is added, and the file becomes a list.
+
+    Args:
+        entry: The common keys of the run and the section of one processing step.
+        archive: Parameter file, or a directory that receives the file `<dataset_name>_<CELL_TYPE>.json`.
+
+    Returns:
+        The path of the parameter file.
+    """
+    if not archive.endswith(".json"):
+        os.makedirs(archive, exist_ok=True)
+        archive = os.path.join(archive, f"{entry['dataset_name']}_{entry['cell_type'].upper()}.json")
+
+    entries = []
+    if os.path.isfile(archive):
+        with open(archive, "r") as f:
+            data = json.load(f)
+        entries = data if isinstance(data, list) else [data]
+
+    keys = ("dataset_name", "segmentation_channel")
+    match = next((old for old in entries if all(old.get(key) == entry[key] for key in keys)), None)
+    if match is None:
+        entries.append(entry)
+    else:
+        match.update(entry)
+
+    with open(archive, "w") as f:
+        json.dump(entries[0] if len(entries) == 1 else entries, f, indent='\t', separators=(',', ': '))
+        f.write("\n")
+    print(f"Saved the parameters to {archive}.")
+    return archive
