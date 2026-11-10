@@ -42,11 +42,29 @@ class TestRefineIhcRow(unittest.TestCase):
         self.assertEqual(set(table["component_labels"]), {0, 1})
         self.assertEqual(path.shape[1], 3)
 
-    def test_refine_ihc_row_too_few_instances(self):
+    def test_refine_ihc_row_missing_component(self):
         from flamingo_tools.postprocessing.label_components import refine_ihc_row
 
         with self.assertRaises(ValueError):
-            refine_ihc_row(self.table.copy(), [1, 2], min_size=50000, max_path_deviation=15.0)
+            refine_ihc_row(self.table.copy(), [1, 9], min_size=10000, max_path_deviation=15.0)
+
+    def test_refine_ihc_row_branch(self):
+        from flamingo_tools.postprocessing.label_components import refine_ihc_row
+
+        # Component 1 runs along x. The row continues past a 300 µm gap with component 2, which comes back to
+        # within 250 µm of the middle of component 1, as on the next turn of the spiral. A path through the
+        # nearest gap would skip the part of component 1 past x = 300 µm.
+        line = np.stack([np.arange(-500, 1001, 10.0), np.zeros(151), np.zeros(151)], axis=1)
+        turn = np.array([1000.0, 300.0, 0.0]) + np.linspace(0, 1, 72)[:, None] * np.array([-700.0, -50.0, 0.0])
+        coords = np.concatenate([line, turn])
+        table = pd.DataFrame({
+            "label_id": np.arange(1, len(coords) + 1),
+            "anchor_x": coords[:, 0], "anchor_y": coords[:, 1], "anchor_z": coords[:, 2],
+            "n_pixels": 20000,
+            "component_labels": [1] * len(line) + [2] * len(turn),
+        })
+        table, _ = refine_ihc_row(table, [1, 2], min_size=10000, max_path_deviation=15.0)
+        self.assertTrue((table["component_labels"] == 1).all())
 
     def test_refine_row_requires_ihc(self):
         from flamingo_tools.postprocessing.label_components import label_components_single

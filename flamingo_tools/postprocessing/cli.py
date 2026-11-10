@@ -243,7 +243,7 @@ def label_components():
     parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
     parser.add_argument("--napari", action="store_true",
                         help="Use napari image viewer for visualizing labeled components. A prompt after the view "
-                        "asks for the components, for SGNs in the order of the cochlea.")
+                        "asks for the components in the order of the cochlea.")
     parser.add_argument("--scale_factor", type=int, default=20,
                         help="Scale factor for down-scaling data for visualization in Napari. Default: 20")
 
@@ -261,9 +261,9 @@ def label_components():
     )
     parser.add_argument(
         "--refine_row", action="store_true",
-        help="Make the IHC row one component (label 1). The components of --components guide the central path. "
-             "Each instance with at least --min_size pixels within --max_path_deviation µm of the path (default 15) "
-             "joins the row, and the path is updated until the row is stable. Requires --cell_type ihc. With "
+        help="Make the IHC row one component (label 1). The components of --components, in the order of the "
+             "cochlea, guide the central path. Each instance with at least --min_size pixels within "
+             "--max_path_deviation µm of the path (default 15) joins the row. Requires --cell_type ihc. With "
              "--napari, a prompt after the view asks for the row components.",
     )
 
