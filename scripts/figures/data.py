@@ -103,7 +103,7 @@ def get_mapped_table(s3, cochlea: str, structure: str, source_name: str, stain: 
         structure: "SGN" or "IHC".
         source_name: Name of the segmentation source, e.g. "SGN_v2".
         stain: Optional stain. The median of its background-masked object measures is added as
-            the column 'intensity'.
+            the column 'intensity'. Instances without a measure keep NaN, and their fraction is printed.
 
     Returns:
         The mapped instances, with the columns of `tonotopic_mapping`.
@@ -122,7 +122,8 @@ def get_mapped_table(s3, cochlea: str, structure: str, source_name: str, stain: 
     )
     n_missing = table["intensity"].isna().sum()
     if n_missing > 0:
-        raise ValueError(f"{cochlea}: {n_missing} mapped instances have no intensity in {measure_name}.")
+        print(f"{cochlea} {source_name}: {n_missing} / {len(table)} ({n_missing / len(table):.2%}) mapped "
+              f"instances have no intensity in {measure_name}.")
     return table
 
 
