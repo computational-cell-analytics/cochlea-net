@@ -7,17 +7,14 @@ file names. It changes only the annotations:
   the IDs and positions (z, y, x in pixels) as napari shows them in the source annotation.
 - `split_reused_ids` makes each ID one connected component. If the crop name gives the crop position, the piece
   at the anchor of the same ID in the S3 table keeps the ID.
-- The micro-sam deltas of 2026-11_ihc_micro_sam.py (MICRO_SAM_DELTAS/<crop>.tif) set the voxels of the accepted
-  micro-sam corrections. 2026-11_ihc_micro_sam.py computes them on the refined annotations without this step: to
-  compute them again, move the deltas away and run the refinement first.
 
 Each change is a row of changes.tsv in the output folder.
 
 The step 'validate_tips' cuts the tips of annotated cells and measures how well `grow_tips` adds them again from
 the Vglut3 signal, for the settings TIP_PERCENTILES x TIP_REACHES. The refinement does not use `grow_tips`: with
 a threshold low enough to restore a cut tip, it also grows the intact cells, and in the crops with many cut tips
-the neighbouring cells give no correct tip signal. The step stays as the baseline for a tip correction with
-micro-sam (point 6 of ihc_segmentation_to-do.md).
+the neighbouring cells give no correct tip signal. Point 6 of ihc_segmentation_to-do.md compared it with micro-sam
+box prompts; the refinement uses neither.
 """
 import argparse
 import glob
@@ -43,8 +40,6 @@ ROOT = os.path.expanduser("~/Documents/lightsheet-cochlea")
 SOURCE = os.path.join(ROOT, "IHC_v11_training_data")
 TARGET = os.path.join(ROOT, "IHC_v11_training_data_refined")
 COMMENTS = os.path.expanduser("~/Documents/MWfLS/ihc_crops/comments_training_data.md")
-# Outside TARGET: the training loaders read every .tif below the data folder.
-MICRO_SAM_DELTAS = os.path.join(ROOT, "ihc_micro_sam", "deltas")
 TRAINING_CROP_JSONS = os.path.join(os.path.dirname(__file__), "..", "..", "reproducibility", "training_crops")
 VOXEL_SIZE = 0.38
 UINT32_MAX = np.iinfo("uint32").max
@@ -427,16 +422,6 @@ def refine_crop(name, path, channels):
     for row in report.itertuples():
         step = f"{row.action}_s3" if row.anchored else row.action
         record(step, row.label_id, [(row.target, row.n_voxels, *np.round([row.z, row.y, row.x]).astype(int))])
-
-    delta_path = os.path.join(MICRO_SAM_DELTAS, f"{name}.tif")
-    if os.path.exists(delta_path):
-        delta = tifffile.imread(delta_path)
-        for label_id in np.unique(delta[delta > 0]):
-            voxels = np.argwhere((delta == label_id) & (labels != label_id))
-            if len(voxels):
-                record("micro_sam", label_id, [(label_id, len(voxels), *_center(voxels))],
-                       "micro-sam box prompt, see ihc_micro_sam/targets.tsv")
-        labels[delta > 0] = delta[delta > 0]
 
     labels, report = split_reused_ids(labels, min_size=MIN_CELL_SIZE)
     for row in report.itertuples():

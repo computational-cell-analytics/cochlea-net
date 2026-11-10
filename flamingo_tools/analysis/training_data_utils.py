@@ -950,66 +950,6 @@ def split_reused_ids(
     return labels, report
 
 
-def ellipsoid_slice_boxes(
-    center: np.ndarray, axes: np.ndarray, semi_axes: np.ndarray, shape: Tuple[int, int, int],
-) -> Tuple[np.ndarray, np.ndarray]:
-    """The box of an oriented ellipsoid in each z-slice, for box prompts of a 2D model such as micro-sam.
-
-    Args:
-        center: The ellipsoid center in pixels, in (z, y, x) order.
-        axes: The unit directions of the semi-axes as rows, in (z, y, x) order.
-        semi_axes: The semi-axis lengths in pixels, in the order of `axes`.
-        shape: The volume shape. The boxes are clipped to it.
-
-    Returns:
-        The z index of each slice that the ellipsoid cuts, and its box (y0, x0, y1, x1) with exclusive ends,
-        the box order of micro-sam.
-    """
-    center, axes, semi_axes = np.asarray(center, float), np.asarray(axes, float), np.asarray(semi_axes, float)
-    # The half extent of the ellipsoid along each array axis.
-    radius = np.sqrt(((semi_axes[:, None] * axes) ** 2).sum(axis=0))
-    start = np.maximum(np.floor(center - radius).astype(int), 0)
-    stop = np.minimum(np.ceil(center + radius).astype(int) + 1, shape)
-    if np.any(stop <= start):
-        return np.zeros(0, dtype=int), np.zeros((0, 4), dtype=int)
-    grid = np.stack(np.meshgrid(*[np.arange(a, b) for a, b in zip(start, stop)], indexing="ij"), axis=-1)
-    inside = ((((grid - center) @ axes.T) / semi_axes) ** 2).sum(axis=-1) <= 1
-    z = np.flatnonzero(inside.any(axis=(1, 2)))
-    boxes = []
-    for plane in inside[z]:
-        y, x = np.flatnonzero(plane.any(axis=1)), np.flatnonzero(plane.any(axis=0))
-        boxes.append((y[0], x[0], y[-1] + 1, x[-1] + 1))
-    return z + start[0], np.array(boxes, dtype=int).reshape(-1, 4) + np.tile(start[1:], 2)
-
-
-def apply_prompted_masks(
-    labels: np.ndarray, masks: Dict[int, Tuple[Tuple[slice, ...], np.ndarray]],
-) -> np.ndarray:
-    """Write the masks of prompted cells into an annotation.
-
-    A voxel that exactly one mask claims goes to the label of that mask, unless another label that has no mask
-    owns it. All other voxels keep their label, so the masks only add voxels or move them between the prompted
-    labels, for example at the boundary of two prompted neighbours.
-
-    Args:
-        labels: The annotation. The function does not change it.
-        masks: The mask of each prompted label, as the slices of its box in `labels` and the binary mask of the
-            box. A label that is not in `labels` adds a new cell.
-
-    Returns:
-        The new annotation.
-    """
-    count = np.zeros(labels.shape, dtype="uint8")
-    owner = np.zeros(labels.shape, dtype=labels.dtype)
-    for label_id, (box, mask) in masks.items():
-        count[box] += mask.astype("uint8")
-        owner[box][mask] = label_id
-    claimed = (count == 1) & ((labels == 0) | np.isin(labels, list(masks)))
-    out = labels.copy()
-    out[claimed] = owner[claimed]
-    return out
-
-
 def filter_annotations(
     input_dir: str,
     output_dir: str,
