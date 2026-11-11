@@ -52,6 +52,9 @@
 			"refine_row": true,
 			"merge_components": true
 		},
-		"tonotopic_mapping": {}
+		"tonotopic_mapping": {},
+		"object_measures": {
+			"use_bg_mask": "yes"
+		}
 	}
 ]

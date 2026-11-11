@@ -993,5 +993,5 @@ def cochleae_for(cochlea_names, structure, version):
 
 
 # Cochleae per structure that a figure draws apart from their cohort. M_AMD_000137_L has less than
-# one synapse per IHC, against about 10 synapses per IHC for the other MWfLS cochleae.
+# one synapse per IHC, and every other MWfLS cochlea has 3.5 or more.
 OUTLIER_DICT = {"SGN": [], "synapse": ["M_AMD_000137_L"]}
