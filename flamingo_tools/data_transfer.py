@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """
 Resilient SMB transfer for N5 data with automatic disconnect recovery.
 
@@ -11,8 +10,8 @@ Download (default): copy an N5 dataset from the SMB share to a local directory.
 Ingest (--ingest): upload a local N5 dataset to the SMB share.
 
 Usage:
-    python smb_transfer_resilient.py -u <username> -p <remote_parent_dir> -d <n5_name> [-o local_dir]
-    python smb_transfer_resilient.py --ingest -u <username> -p <remote_parent_dir> -d <n5_name> -o <local_source_dir>
+    flamingo_tools.transfer_data -u <username> -p <remote_parent_dir> -d <n5_name> [-o local_dir]
+    flamingo_tools.transfer_data --ingest -u <username> -p <remote_parent_dir> -d <n5_name> -o <local_source_dir>
 
 Pass --setup to restrict the transfer to specific setup(s) of the N5 dataset, e.g.
 --setup 0 1 for setup0 and setup1, instead of the whole dataset.
@@ -29,13 +28,10 @@ import pathlib
 import posixpath
 import re
 import sys
-import time  # noqa: F401  (tests patch smb.time.sleep)
 from typing import Optional
 
-# The generic SMB primitives live in the package so that flamingo_tools.convert_data can use
-# the same implementation. Importing them by name keeps them patchable through this module.
-from flamingo_tools.data_transfer_utils import (
-    MAX_RETRIES,
+# Importing the SMB primitives by name keeps them patchable through this module.
+from .data_transfer_utils import (
     SMB_SERVER,
     UPLOAD_ERROR_TOKENS,
     append_log,
@@ -47,13 +43,9 @@ from flamingo_tools.data_transfer_utils import (
     remote_size_map_with_retry,
     require_remote_dir,
     run_smbclient,
-    run_with_retry,
     transfer_path,
     upload_path,
 )
-
-# Kept as a module-level alias: the existing tests and call sites use the private name.
-_run_with_retry = run_with_retry
 
 
 def _sort_key(name):
@@ -615,20 +607,6 @@ def _looks_like_n5_remote(
     return any(re.match(r"^setup\d+$", d) for d in dirs)
 
 
-def _remote_size_map_with_retry(
-    username: str,
-    password: str,
-    full_remote: str,
-    cwd: str,
-    smb_server: str = SMB_SERVER,
-    retries: int = MAX_RETRIES,
-) -> Optional[dict]:
-    """Call build_remote_size_map, retrying on a dropped listing (the listing is cheap metadata)."""
-    return remote_size_map_with_retry(
-        username, password, full_remote, cwd, retries=retries, smb_server=smb_server,
-    )
-
-
 def generic_iterative_download(
     username: str,
     password: str,
@@ -657,8 +635,8 @@ def generic_iterative_download(
     local_root = os.path.join(output_dir, data_name)
 
     print("\n=== Generic per-file download mode ===")
-    size_map = _remote_size_map_with_retry(username, password, full_remote, output_dir,
-                                           smb_server=smb_server)
+    size_map = remote_size_map_with_retry(username, password, full_remote, output_dir,
+                                          smb_server=smb_server)
     if not size_map:
         _log_warning(log_file, f"[warn] could not list the remote tree {full_remote} — nothing transferred")
         return
@@ -917,7 +895,9 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
                              setup_filter=setup_filter, base=base)
 
 
-def main():
+def transfer_data_cli():
+    """@private
+    """
     parser = argparse.ArgumentParser(
         description="Resilient SMB transfer for N5 data with automatic disconnect recovery. "
                     "Downloads from the share by default; pass --ingest to upload."
@@ -976,7 +956,3 @@ def main():
         _run_download(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     if log_size(log_file) > log_start:
         raise SystemExit(f"\n[error] Some transfers failed. See {log_file}")
-
-
-if __name__ == "__main__":
-    main()

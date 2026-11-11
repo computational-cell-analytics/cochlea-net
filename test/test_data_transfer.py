@@ -1,33 +1,28 @@
-"""Unit tests for smb_transfer_resilient.py.
+"""Unit tests for flamingo_tools/data_transfer.py.
 
 `run_smbclient` is replaced by a recorder so the tests need neither a real
-smbclient binary nor a network connection. Run with:
-
-    python -m pytest scripts/data_transfer/test_smb_transfer_resilient.py
-    python -m unittest scripts.data_transfer.test_smb_transfer_resilient   # from repo root
+smbclient binary nor a network connection.
 """
 
 import contextlib
 import os
-import sys
 import tempfile
 import types
 import unittest
 from contextlib import contextmanager
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import smb_transfer_resilient as smb  # noqa: E402
-import flamingo_tools.data_transfer_utils as dtu  # noqa: E402
+import flamingo_tools.data_transfer as smb
+import flamingo_tools.data_transfer_utils as dtu
 
 
 @contextmanager
 def patch_both(name, new=None, **kwargs):
-    """Install one replacement for `name` in both the script and the package module.
+    """Install one replacement for `name` in both data_transfer and data_transfer_utils.
 
     The SMB primitives live in flamingo_tools.data_transfer_utils and are imported by name into
-    smb_transfer_resilient. A moved function resolves its helpers in the package module, while a
-    function that stayed in the script resolves them in the script module. A single shared
+    flamingo_tools.data_transfer. A primitive resolves its helpers in data_transfer_utils, while a
+    driver resolves them in data_transfer. A single shared
     replacement keeps a side_effect sequence consistent no matter which module resolves the call.
     """
     replacement = mock.MagicMock(**kwargs) if new is None else new
@@ -285,8 +280,8 @@ class TestRetryScaffold(unittest.TestCase):
     def test_success_after_disconnects(self):
         rec = Recorder([([], True, 0), ([], True, 0), ([], False, 0)])
         with patch_run_smbclient(rec), \
-             mock.patch.object(smb.time, "sleep"):
-            ok = smb._run_with_retry("u", "p", ["ls"], local_cwd=".", label="x")
+             mock.patch.object(dtu.time, "sleep"):
+            ok = dtu.run_with_retry("u", "p", ["ls"], local_cwd=".", label="x")
         self.assertTrue(ok)
         self.assertEqual(len(rec.calls), 3)
 
@@ -296,9 +291,9 @@ class TestRetryScaffold(unittest.TestCase):
             log = os.path.join(tmp, "log.txt")
             rec = Recorder([([], True, 0)])
             with patch_run_smbclient(rec), \
-                 mock.patch.object(smb.time, "sleep"):
-                ok = smb._run_with_retry("u", "p", ["ls"], local_cwd=".", label="x",
-                                         retries=2, log_file=log)
+                 mock.patch.object(dtu.time, "sleep"):
+                ok = dtu.run_with_retry("u", "p", ["ls"], local_cwd=".", label="x",
+                                        retries=2, log_file=log)
             self.assertFalse(ok)
             with open(log) as f:
                 content = f.read()
@@ -308,9 +303,9 @@ class TestRetryScaffold(unittest.TestCase):
     def test_upload_error_token_fails_unit(self):
         rec = Recorder([(["NT_STATUS_ACCESS_DENIED opening remote file"], False, 0)])
         with patch_run_smbclient(rec), \
-             mock.patch.object(smb.time, "sleep"):
-            ok = smb._run_with_retry("u", "p", ["put x"], local_cwd=".", label="x",
-                                     retries=2, error_tokens=smb.UPLOAD_ERROR_TOKENS)
+             mock.patch.object(dtu.time, "sleep"):
+            ok = dtu.run_with_retry("u", "p", ["put x"], local_cwd=".", label="x",
+                                    retries=2, error_tokens=smb.UPLOAD_ERROR_TOKENS)
         self.assertFalse(ok)
 
 

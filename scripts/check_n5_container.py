@@ -21,7 +21,7 @@ import sys
 from math import ceil, prod
 
 # The minimum size of a valid n5 chunk file: mode (2 bytes) + number of dimensions (2 bytes).
-# Same criterion as 'find_truncated_chunks' in scripts/data_transfer/smb_transfer_resilient.py.
+# Same criterion as 'find_truncated_chunks' in flamingo_tools/data_transfer.py.
 MIN_CHUNK_BYTES = 4
 
 N5_ATTRS = "attributes.json"

@@ -19,6 +19,7 @@ import getpass
 import glob
 import os
 
+from flamingo_tools.data_transfer import iterative_n5_transfer, verify_and_repair_download_generic, verify_and_repair_n5
 from flamingo_tools.data_transfer_utils import (
     SMB_SERVER,
     list_remote_dirs,
@@ -27,7 +28,6 @@ from flamingo_tools.data_transfer_utils import (
     require_remote_dir,
     transfer_path,
 )
-from smb_transfer_resilient import iterative_n5_transfer, verify_and_repair_download_generic, verify_and_repair_n5
 
 INTEREST_POINTS = "interestpoints.n5"
 

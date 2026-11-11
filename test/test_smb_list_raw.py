@@ -1,10 +1,11 @@
-"""Unit test for smb_list_raw.py. Run with `python -m unittest test_smb_list_raw` from this directory."""
+"""Unit test for scripts/data_transfer/smb_list_raw.py."""
 
 import os
 import sys
 import unittest
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "data_transfer")
+sys.path.insert(0, SCRIPTS_DIR)
 import smb_list_raw  # noqa: E402
 
 
