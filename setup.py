@@ -13,6 +13,7 @@ setup(
     entry_points={
         "console_scripts": [
             "flamingo_tools.convert_data = flamingo_tools.data_conversion:convert_lightsheet_to_bdv_cli",
+            "flamingo_tools.transfer_data = flamingo_tools.data_transfer:transfer_data_cli",
             "flamingo_tools.run_segmentation = flamingo_tools.segmentation.cli:run_segmentation",
             "flamingo_tools.run_detection = flamingo_tools.segmentation.cli:run_detection",
             "flamingo_tools.run_unet_prediction_preprocess_slurm = flamingo_tools.segmentation.cli:run_unet_prediction_preprocess_slurm",

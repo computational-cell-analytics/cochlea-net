@@ -1,33 +1,28 @@
-"""Unit tests for smb_transfer_resilient.py.
+"""Unit tests for flamingo_tools/data_transfer.py.
 
 `run_smbclient` is replaced by a recorder so the tests need neither a real
-smbclient binary nor a network connection. Run with:
-
-    python -m pytest scripts/data_transfer/test_smb_transfer_resilient.py
-    python -m unittest scripts.data_transfer.test_smb_transfer_resilient   # from repo root
+smbclient binary nor a network connection.
 """
 
 import contextlib
 import os
-import sys
 import tempfile
 import types
 import unittest
 from contextlib import contextmanager
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import smb_transfer_resilient as smb  # noqa: E402
-import flamingo_tools.data_transfer_utils as dtu  # noqa: E402
+import flamingo_tools.data_transfer as smb
+import flamingo_tools.data_transfer_utils as dtu
 
 
 @contextmanager
 def patch_both(name, new=None, **kwargs):
-    """Install one replacement for `name` in both the script and the package module.
+    """Install one replacement for `name` in both data_transfer and data_transfer_utils.
 
     The SMB primitives live in flamingo_tools.data_transfer_utils and are imported by name into
-    smb_transfer_resilient. A moved function resolves its helpers in the package module, while a
-    function that stayed in the script resolves them in the script module. A single shared
+    flamingo_tools.data_transfer. A primitive resolves its helpers in data_transfer_utils, while a
+    driver resolves them in data_transfer. A single shared
     replacement keeps a side_effect sequence consistent no matter which module resolves the call.
     """
     replacement = mock.MagicMock(**kwargs) if new is None else new
@@ -285,8 +280,8 @@ class TestRetryScaffold(unittest.TestCase):
     def test_success_after_disconnects(self):
         rec = Recorder([([], True, 0), ([], True, 0), ([], False, 0)])
         with patch_run_smbclient(rec), \
-             mock.patch.object(smb.time, "sleep"):
-            ok = smb._run_with_retry("u", "p", ["ls"], local_cwd=".", label="x")
+             mock.patch.object(dtu.time, "sleep"):
+            ok = dtu.run_with_retry("u", "p", ["ls"], local_cwd=".", label="x")
         self.assertTrue(ok)
         self.assertEqual(len(rec.calls), 3)
 
@@ -296,9 +291,9 @@ class TestRetryScaffold(unittest.TestCase):
             log = os.path.join(tmp, "log.txt")
             rec = Recorder([([], True, 0)])
             with patch_run_smbclient(rec), \
-                 mock.patch.object(smb.time, "sleep"):
-                ok = smb._run_with_retry("u", "p", ["ls"], local_cwd=".", label="x",
-                                         retries=2, log_file=log)
+                 mock.patch.object(dtu.time, "sleep"):
+                ok = dtu.run_with_retry("u", "p", ["ls"], local_cwd=".", label="x",
+                                        retries=2, log_file=log)
             self.assertFalse(ok)
             with open(log) as f:
                 content = f.read()
@@ -308,9 +303,9 @@ class TestRetryScaffold(unittest.TestCase):
     def test_upload_error_token_fails_unit(self):
         rec = Recorder([(["NT_STATUS_ACCESS_DENIED opening remote file"], False, 0)])
         with patch_run_smbclient(rec), \
-             mock.patch.object(smb.time, "sleep"):
-            ok = smb._run_with_retry("u", "p", ["put x"], local_cwd=".", label="x",
-                                     retries=2, error_tokens=smb.UPLOAD_ERROR_TOKENS)
+             mock.patch.object(dtu.time, "sleep"):
+            ok = dtu.run_with_retry("u", "p", ["put x"], local_cwd=".", label="x",
+                                    retries=2, error_tokens=smb.UPLOAD_ERROR_TOKENS)
         self.assertFalse(ok)
 
 
@@ -450,7 +445,7 @@ class TestGenericUpload(unittest.TestCase):
 
 @contextmanager
 def _patch_download(is_n5):
-    with mock.patch.object(smb, "require_remote_dir"), \
+    with mock.patch.object(smb, "remote_entry", return_value=(True, 0)), \
          mock.patch.object(smb, "_looks_like_n5_remote", return_value=is_n5), \
          mock.patch.object(smb, "iterative_n5_transfer") as it_n5, \
          mock.patch.object(smb, "generic_iterative_download") as it_gen, \
@@ -506,7 +501,38 @@ class TestDownloadDispatch(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, patch_run_smbclient(rec):
             with self.assertRaises(SystemExit):
                 smb._run_download(self._args(), "p", "P", "n5", tmp, "log", None)
-        self.assertEqual(rec.command_lists, [['cd "P/n5"']])
+        # The file probe finds no file named n5, then the directory check fails.
+        self.assertEqual(rec.command_lists, [['cd "P"', 'ls "n5"'], ['cd "P/n5"']])
+
+    def test_directory_entry_skips_directory_check(self):
+        probe = (["  data                                D        0  Mon Jul 21 10:00:00 2025"], False, 0)
+        rec = Recorder([probe, ([], False, 0)])
+        with tempfile.TemporaryDirectory() as tmp, patch_run_smbclient(rec), \
+             mock.patch.object(smb, "verify_and_repair_download_generic"):
+            smb._run_download(self._args(generic=True), "p", "P", "data", tmp, "log", None)
+        self.assertEqual(rec.command_lists, [
+            ['cd "P"', 'ls "data"'],
+            ['cd "P"', "recurse", "prompt", "mget data"],
+        ])
+
+    def test_file_uses_resumable_download(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(smb, "remote_entry", return_value=(False, 123)), \
+             mock.patch.object(smb, "resumable_download") as download, \
+             patch_run_smbclient(Recorder()) as rec:
+            smb._run_download(self._args(), "p", "P", "big.tif", tmp, "log", None)
+        download.assert_called_once()
+        self.assertEqual(download.call_args.args[2:5], ("P", "big.tif", tmp))
+        self.assertEqual(download.call_args.kwargs["expected_size"], 123)
+        self.assertEqual(rec.calls, [])
+
+    def test_file_rejects_setup(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch.object(smb, "remote_entry", return_value=(False, 123)), \
+             mock.patch.object(smb, "resumable_download") as download:
+            with self.assertRaises(SystemExit):
+                smb._run_download(self._args(), "p", "P", "big.tif", tmp, "log", ["setup0"])
+        download.assert_not_called()
 
     def test_generic_flag_forces_generic(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -545,6 +571,30 @@ class TestIngestDispatch(unittest.TestCase):
         up_gen.assert_called_once()
         up_n5.assert_not_called()
         v_up.assert_called_once()
+
+    def _ingest_file(self, remote_entry):
+        with tempfile.TemporaryDirectory() as tmp:
+            _touch(os.path.join(tmp, "big file.tif"), 10)
+            log = os.path.join(tmp, "log.txt")
+            rec = Recorder()
+            with patch_run_smbclient(rec), \
+                 mock.patch.object(smb, "remote_entry", return_value=remote_entry):
+                smb._run_ingest(self._args(), "p", "P", "big file.tif", tmp, log, None)
+            logged = os.path.exists(log) and os.path.getsize(log) > 0
+        return rec, logged
+
+    def test_file_uses_put(self):
+        rec, logged = self._ingest_file(remote_entry=(False, 10))
+        self.assertEqual(rec.command_lists, [['cd "P"'], ['cd "P"', 'put "big file.tif"']])
+        self.assertFalse(logged)
+
+    def test_file_size_mismatch_is_logged(self):
+        _, logged = self._ingest_file(remote_entry=(False, 4))
+        self.assertTrue(logged)
+
+    def test_file_missing_on_share_is_logged(self):
+        _, logged = self._ingest_file(remote_entry=None)
+        self.assertTrue(logged)
 
 
 class TestSmbQuote(unittest.TestCase):

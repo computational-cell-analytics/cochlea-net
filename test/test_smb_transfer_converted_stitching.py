@@ -1,7 +1,4 @@
-"""Unit tests for smb_transfer_converted_stitching.py.
-
-Run with `python -m unittest test_smb_transfer_converted_stitching` from this directory.
-"""
+"""Unit tests for scripts/data_transfer/smb_transfer_converted_stitching.py."""
 
 import os
 import sys
@@ -10,7 +7,8 @@ import unittest
 from contextlib import ExitStack
 from unittest import mock
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "data_transfer")
+sys.path.insert(0, SCRIPTS_DIR)
 import smb_transfer_converted_stitching as cs  # noqa: E402
 
 

@@ -21,7 +21,6 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-UKON_OLD = "//wfs-medizin.top.gwdg.de/ukon-all$/ukon100"
 SMB_SERVER = "//wfs-medizin-spezial.top.gwdg.de/ukon-all$"
 MAX_RETRIES = 10
 RETRY_DELAY = 5  # seconds
@@ -54,6 +53,10 @@ TRANSPORT_ERROR_TOKENS = (
     "NT_STATUS_USER_SESSION_DELETED",
     "NT_STATUS_UNEXPECTED_NETWORK_ERROR",
 )
+
+# One entry line of `smbclient ls`: name, attribute letters, size. A plain file may list no
+# attribute letters.
+LS_ENTRY_RE = re.compile(r"^\s+(.+?)\s+(?:([DARHSN]+)\s+)?(\d+)\s+\w")
 
 
 def append_log(log_file: Optional[str], message: str) -> None:
@@ -781,14 +784,12 @@ def build_remote_size_map(
 
     size_map: dict = {}
     cur_dir = ""
-    # Attribute letters are optional (a plain file may list only "name size date").
-    entry_re = re.compile(r"^\s+(.+?)\s+(?:([DARHSN]+)\s+)?(\d+)\s+\w")
     for line in lines:
         # smbclient closes each listing with a "N blocks of size M. K blocks available"
         # summary line that would otherwise match the entry pattern.
         if "blocks of size" in line:
             continue
-        m = entry_re.match(line)
+        m = LS_ENTRY_RE.match(line)
         if m:
             name, attrs, size = m.group(1).strip(), m.group(2) or "", m.group(3)
             if name in (".", ".."):
@@ -847,4 +848,41 @@ def remote_size_map_with_retry(
         )
         if size_map is not None:
             return size_map
+    return None
+
+
+def remote_entry(
+    username: str,
+    password: str,
+    remote_dir: str,
+    name: str,
+    cwd: str,
+    retries: int = MAX_RETRIES,
+    smb_server: str = SMB_SERVER,
+) -> Optional[tuple[bool, int]]:
+    """Look up name in remote_dir with one `ls`, with retries on disconnect.
+
+    The name match ignores case, as SMB does.
+
+    Returns:
+        (is_dir, size in bytes) of the entry, or None if name is missing, the login or
+        remote_dir failed, or the listing still drops after the retries.
+    """
+    remote_dir = remote_dir.replace("\\", "/")
+    for attempt in range(1, retries + 1):
+        if attempt > 1:
+            print(f"  [retry {attempt}/{retries}] listing {remote_dir}/{name}")
+            time.sleep(RETRY_DELAY)
+        lines, had_disconnect, _ = run_smbclient(
+            username, password, [f'cd "{remote_dir}"', f'ls "{name}"'], cwd, smb_server=smb_server,
+        )
+        if not had_disconnect:
+            break
+    else:
+        return None
+
+    for line in lines:
+        m = LS_ENTRY_RE.match(line)
+        if m and m.group(1).strip().casefold() == name.casefold():
+            return "D" in (m.group(2) or ""), int(m.group(3))
     return None

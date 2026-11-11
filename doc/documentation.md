@@ -143,6 +143,13 @@ Use `--file_ext .raw` for data in raw files. The extension of the output path (`
 - `.n5` writes the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md). Open it with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5`, or with [BigStitcher](https://imagej.net/plugins/bigstitcher/) as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
 - `.ome.zarr` writes the [ome.zarr format](https://ngff.openmicroscopy.org/).
 
+`flamingo_tools.transfer_data` copies an N5 dataset, a directory or a file from UKON. It retries after a disconnect. Pass `--ingest` to upload to UKON:
+```bash
+flamingo_tools.transfer_data -u <GWDG-username> -p "UKON100\path\to\parent_dir" -d data.n5 -o /local/dest/dir
+```
+
+See the [data transfer documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/data_transfer.md) for all transfer options, and for the conversion over an unstable connection.
+
 `flamingo_tools.run_segmentation` segments cells in volumetric light microscopy data:
 ```bash
 flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -m SGN

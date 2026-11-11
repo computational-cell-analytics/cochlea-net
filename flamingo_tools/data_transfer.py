@@ -1,18 +1,18 @@
-#!/usr/bin/env python3
 """
-Resilient SMB transfer for N5 data with automatic disconnect recovery.
+Resilient SMB transfer of an N5 dataset, a directory or a single file, with automatic
+disconnect recovery.
 
-Transfers an N5 dataset in either direction, falling back from a single bulk
+A directory is transferred in either direction, falling back from a single bulk
 transfer to a per-subdirectory iterative mode when an SMB connection drop is
 detected. Each piece is retried independently without re-prompting for the
 password.
 
-Download (default): copy an N5 dataset from the SMB share to a local directory.
-Ingest (--ingest): upload a local N5 dataset to the SMB share.
+Download (default): copy the data from the SMB share to a local directory.
+Ingest (--ingest): upload local data to the SMB share.
 
 Usage:
-    python smb_transfer_resilient.py -u <username> -p <remote_parent_dir> -d <n5_name> [-o local_dir]
-    python smb_transfer_resilient.py --ingest -u <username> -p <remote_parent_dir> -d <n5_name> -o <local_source_dir>
+    flamingo_tools.transfer_data -u <username> -p <remote_parent_dir> -d <name> [-o local_dir]
+    flamingo_tools.transfer_data --ingest -u <username> -p <remote_parent_dir> -d <name> -o <local_source_dir>
 
 Pass --setup to restrict the transfer to specific setup(s) of the N5 dataset, e.g.
 --setup 0 1 for setup0 and setup1, instead of the whole dataset.
@@ -20,6 +20,9 @@ Pass --setup to restrict the transfer to specific setup(s) of the N5 dataset, e.
 Data directories that are not in N5 format are detected automatically (no top-level
 setupN directories) and transferred file by file, which suits arbitrary trees with a
 few large files on an unstable connection. Pass --generic to force this per-file mode.
+
+When -d names a single file, a download continues an interrupted transfer where it stopped
+(smbclient `reget`), and both directions compare the file size at the end.
 """
 
 import argparse
@@ -29,13 +32,10 @@ import pathlib
 import posixpath
 import re
 import sys
-import time  # noqa: F401  (tests patch smb.time.sleep)
 from typing import Optional
 
-# The generic SMB primitives live in the package so that flamingo_tools.convert_data can use
-# the same implementation. Importing them by name keeps them patchable through this module.
-from flamingo_tools.data_transfer_utils import (
-    MAX_RETRIES,
+# Importing the SMB primitives by name keeps them patchable through this module.
+from .data_transfer_utils import (
     SMB_SERVER,
     UPLOAD_ERROR_TOKENS,
     append_log,
@@ -44,16 +44,14 @@ from flamingo_tools.data_transfer_utils import (
     list_remote_dirs,
     log_size,
     normalize_remote_dir,
+    remote_entry,
     remote_size_map_with_retry,
     require_remote_dir,
+    resumable_download,
     run_smbclient,
-    run_with_retry,
     transfer_path,
     upload_path,
 )
-
-# Kept as a module-level alias: the existing tests and call sites use the private name.
-_run_with_retry = run_with_retry
 
 
 def _sort_key(name):
@@ -615,20 +613,6 @@ def _looks_like_n5_remote(
     return any(re.match(r"^setup\d+$", d) for d in dirs)
 
 
-def _remote_size_map_with_retry(
-    username: str,
-    password: str,
-    full_remote: str,
-    cwd: str,
-    smb_server: str = SMB_SERVER,
-    retries: int = MAX_RETRIES,
-) -> Optional[dict]:
-    """Call build_remote_size_map, retrying on a dropped listing (the listing is cheap metadata)."""
-    return remote_size_map_with_retry(
-        username, password, full_remote, cwd, retries=retries, smb_server=smb_server,
-    )
-
-
 def generic_iterative_download(
     username: str,
     password: str,
@@ -657,8 +641,8 @@ def generic_iterative_download(
     local_root = os.path.join(output_dir, data_name)
 
     print("\n=== Generic per-file download mode ===")
-    size_map = _remote_size_map_with_retry(username, password, full_remote, output_dir,
-                                           smb_server=smb_server)
+    size_map = remote_size_map_with_retry(username, password, full_remote, output_dir,
+                                          smb_server=smb_server)
     if not size_map:
         _log_warning(log_file, f"[warn] could not list the remote tree {full_remote} — nothing transferred")
         return
@@ -806,9 +790,22 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
 
     Detects N5 vs a generic tree once, so the Phase-1-success verify and the Phase-2 fallback
     both use the matching path. A generic tree is transferred and verified per file.
+    A single file is downloaded with resumable_download.
     """
     full_remote = f"{remote_dir}/{n5_name}"
-    require_remote_dir(args.username, password, full_remote, output_dir, smb_server=args.smb_server)
+    entry = remote_entry(args.username, password, remote_dir, n5_name, output_dir,
+                         smb_server=args.smb_server)
+    if entry is None:
+        # Stops with the quoting hint; continues only when the connection drops again.
+        require_remote_dir(args.username, password, full_remote, output_dir, smb_server=args.smb_server)
+    elif not entry[0]:
+        if setup_filter:
+            raise SystemExit(f"--setup applies to an N5 dataset, but {full_remote} is a file.")
+        print(f"Downloading the file {full_remote} ({entry[1]} bytes)...")
+        resumable_download(args.username, password, remote_dir, n5_name, output_dir, expected_size=entry[1],
+                           log_file=log_file, smb_server=args.smb_server)
+        return
+
     is_n5 = not args.generic and (
         bool(setup_filter) or
         _looks_like_n5_remote(args.username, password, full_remote, output_dir,
@@ -865,6 +862,7 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
 
     Detects N5 vs a generic tree from the local source. A generic tree is uploaded per file in
     the Phase-2 fallback; verification is size-based for both (verify_and_repair_upload).
+    A single file is uploaded with one put, then its remote size is compared.
     """
     local_n5 = os.path.join(source_dir, n5_name)
     is_n5 = not args.generic and (bool(setup_filter) or _looks_like_n5_local(local_n5))
@@ -878,8 +876,22 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     require_remote_dir(args.username, password, remote_dir, source_dir, smb_server=args.smb_server,
                        hint="Create a missing parent directory first, or pass --create-parents.")
 
-    print("Connecting to SMB server and starting bulk ingest...")
     full_remote = f"{remote_dir}/{n5_name}"
+    if os.path.isfile(local_n5):
+        print(f"Uploading the file {local_n5}...")
+        upload_path(args.username, password, remote_dir, _smb_quote(n5_name), source_dir,
+                    is_dir=False, ensure=False, log_file=log_file, smb_server=args.smb_server)
+        entry = remote_entry(args.username, password, remote_dir, n5_name, source_dir,
+                             smb_server=args.smb_server)
+        local_size = os.path.getsize(local_n5)
+        if entry is None or entry[0]:
+            _log_warning(log_file, f"[error] cannot read the size of the file {full_remote} on the share")
+        elif entry[1] != local_size:
+            _log_warning(log_file, f"[error] {full_remote} has {entry[1]} bytes on the share, "
+                                   f"the local file has {local_size} bytes")
+        return
+
+    print("Connecting to SMB server and starting bulk ingest...")
     if setup_filter:
         ensure_remote_path(args.username, password, base=base, target=full_remote,
                            local_cwd=local_n5, smb_server=args.smb_server)
@@ -917,17 +929,21 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
                              setup_filter=setup_filter, base=base)
 
 
-def main():
+def transfer_data_cli():
+    """@private
+    """
     parser = argparse.ArgumentParser(
-        description="Resilient SMB transfer for N5 data with automatic disconnect recovery. "
-                    "Downloads from the share by default; pass --ingest to upload."
+        description="Resilient SMB transfer of an N5 dataset, a directory or a single file, with "
+                    "automatic disconnect recovery. Downloads from the share by default; pass --ingest "
+                    "to upload."
     )
     parser.add_argument("-u", "--username", required=True, help="GWDG username, e.g. schilling40")
     parser.add_argument("-p", "--remote_parent_dir", required=True, help="Remote parent directory on the SMB share")
-    parser.add_argument("-d", "--remote_data", required=True, help="N5 root directory name (on the share and locally)")
+    parser.add_argument("-d", "--remote_data", required=True,
+                        help="Name of the N5 dataset, directory or file (on the share and locally)")
     parser.add_argument("-o", "--output-dir", default=os.getcwd(),
-                        help="Local directory. Download: destination for the dataset. "
-                             "Ingest: parent directory that contains the dataset to upload. "
+                        help="Local directory. Download: destination for the data. "
+                             "Ingest: parent directory that contains the data to upload. "
                              "Default: cwd.")
     parser.add_argument("-s", "--smb_server", type=str, default=SMB_SERVER,
                         help=f"SMB server to transfer to/from. Default: {SMB_SERVER}")
@@ -938,7 +954,7 @@ def main():
                              "e.g. '--setup 0 1' for setup0 and setup1. Accepts bare numbers "
                              "or 'setupN'. Default: transfer the entire dataset.")
     parser.add_argument("--ingest", action="store_true",
-                        help="Upload a local N5 dataset to the share instead of downloading.")
+                        help="Upload the local data to the share instead of downloading.")
     parser.add_argument("--create-parents", action="store_true",
                         help="Ingest only: create the remote parent directory chain if it is "
                              "missing, instead of aborting. Use with care on a shared server.")
@@ -953,10 +969,13 @@ def main():
     # The name is an mget/mput mask and a local folder name, so drop a trailing separator.
     n5_name = args.remote_data.rstrip("/\\")
     output_dir = os.path.realpath(args.output_dir)
+    local_data = os.path.join(output_dir, n5_name)
     if not args.ingest:
         os.makedirs(output_dir, exist_ok=True)
-    elif not os.path.isdir(os.path.join(output_dir, n5_name)):
-        parser.error(f"local dataset does not exist: {os.path.join(output_dir, n5_name)}")
+    elif not os.path.exists(local_data):
+        parser.error(f"local data does not exist: {local_data}")
+    elif args.setup and os.path.isfile(local_data):
+        parser.error(f"--setup applies to an N5 dataset, but {local_data} is a file")
 
     remote_dir = normalize_remote_dir(args.remote_parent_dir)
     log_file = args.log_file if args.log_file is not None else os.path.join(output_dir, "transfer_log.txt")
@@ -976,7 +995,3 @@ def main():
         _run_download(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     if log_size(log_file) > log_start:
         raise SystemExit(f"\n[error] Some transfers failed. See {log_file}")
-
-
-if __name__ == "__main__":
-    main()

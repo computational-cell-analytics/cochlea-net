@@ -361,6 +361,50 @@ class TestResumableDownload(unittest.TestCase):
         self.assertEqual(len(fake.calls), 1)
 
 
+class TestRemoteEntry(unittest.TestCase):
+    def _entry(self, *responses, name="big file.tif"):
+        import flamingo_tools.data_transfer_utils as dtu
+
+        responses = list(responses)
+        calls = []
+
+        def fake(username, password, commands, cwd, smb_server=None, timeout=None):
+            calls.append(list(commands))
+            return responses.pop(0) if len(responses) > 1 else responses[0]
+
+        with mock.patch.object(dtu, "run_smbclient", fake), mock.patch("time.sleep"):
+            entry = dtu.remote_entry("u", "p", "P\\dir", name, ".", retries=3)
+        return entry, calls
+
+    def test_file_returns_its_size(self):
+        line = "  big file.tif                        A 17800000000  Mon Jul 21 10:00:00 2025"
+        entry, calls = self._entry(([line], False, 0))
+        self.assertEqual(entry, (False, 17800000000))
+        self.assertEqual(calls, [['cd "P/dir"', 'ls "big file.tif"']])
+
+    def test_directory(self):
+        line = "  data                                D        0  Mon Jul 21 10:00:00 2025"
+        self.assertEqual(self._entry(([line], False, 0), name="data")[0], (True, 0))
+
+    def test_name_match_ignores_case(self):
+        line = "  data.n5                             D        0  Mon Jul 21 10:00:00 2025"
+        self.assertEqual(self._entry(([line], False, 0), name="DATA.N5")[0], (True, 0))
+
+    def test_missing_returns_none(self):
+        self.assertIsNone(self._entry((["NT_STATUS_NO_SUCH_FILE listing \\P\\dir\\x"], False, 1))[0])
+
+    def test_retries_a_dropped_listing(self):
+        line = "  big file.tif                        A       10  Mon Jul 21 10:00:00 2025"
+        entry, calls = self._entry(([], True, 0), ([line], False, 0))
+        self.assertEqual(entry, (False, 10))
+        self.assertEqual(len(calls), 2)
+
+    def test_dropped_listing_returns_none_after_the_retries(self):
+        entry, calls = self._entry(([], True, 0))
+        self.assertIsNone(entry)
+        self.assertEqual(len(calls), 3)
+
+
 class TestWaitForPath(unittest.TestCase):
     def test_missing_path_raises(self):
         from flamingo_tools.data_transfer_utils import RetryConfig, wait_for_path
