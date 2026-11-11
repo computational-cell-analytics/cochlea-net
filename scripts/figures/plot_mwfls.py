@@ -73,6 +73,35 @@ def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
     return tables
 
 
+def print_cohort_averages(tables: dict):
+    """Print the mean and the sample SD over the cochleae of each cohort.
+
+    A cochlea contributes its SGN count, its IHC count and its mean number of synapses per IHC. The
+    pooled mean weights every IHC equally, as the synapse box of fig_cohort_boxplot does.
+
+    Args:
+        tables: Output of load_tables.
+    """
+    for cohort in COHORTS:
+        cochleae = cohort_cochleae(cohort)
+        syn_per_ihc = {name: tables["IHC"][name]["syn_per_IHC"] for name in cochleae}
+        rows = [
+            ("SGN count", [len(tables["SGN"][name]) for name in cochleae], ".0f"),
+            ("IHC count", [len(tables["IHC"][name]) for name in cochleae], ".0f"),
+            ("Synapses per IHC", [values.mean() for values in syn_per_ihc.values()], ".2f"),
+        ]
+        outliers = [name for name in cochleae if name in OUTLIER_DICT["synapse"]]
+        if outliers:
+            rows.append((f"Synapses per IHC without {', '.join(outliers)}",
+                         [values.mean() for name, values in syn_per_ihc.items() if name not in outliers], ".2f"))
+
+        print(f"\n{COHORT_DICT[cohort]['label']}")
+        for label, values, fmt in rows:
+            print(f"  {label}: {np.mean(values):{fmt}} +/- {np.std(values, ddof=1):{fmt}} (n = {len(values)} cochleae)")
+        pooled = pd.concat(syn_per_ihc.values())
+        print(f"  Synapses per IHC, pooled over {len(pooled)} IHCs: {pooled.mean():.2f}")
+
+
 def _set_cohort_xaxis(ax, x_positions):
     ax.set_xlim(x_positions[0] - 0.5, x_positions[-1] + 0.5)
     ax.set_xticks(x_positions)
@@ -339,6 +368,7 @@ def main():
         return os.path.join(args.figure_dir, f"{name}.{FILE_EXTENSION}")
 
     tables = load_tables(intensity=args.intensity)
+    print_cohort_averages(tables)
     # The intensity panels leave out the instances without an object measure. The count and
     # synapse panels keep them.
     measured = {
