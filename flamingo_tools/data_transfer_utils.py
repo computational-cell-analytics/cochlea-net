@@ -21,7 +21,6 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-UKON_OLD = "//wfs-medizin.top.gwdg.de/ukon-all$/ukon100"
 SMB_SERVER = "//wfs-medizin-spezial.top.gwdg.de/ukon-all$"
 MAX_RETRIES = 10
 RETRY_DELAY = 5  # seconds
