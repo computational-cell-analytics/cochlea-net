@@ -54,6 +54,20 @@ TRANSPORT_ERROR_TOKENS = (
     "NT_STATUS_UNEXPECTED_NETWORK_ERROR",
 )
 
+# A rejected login. A retry repeats the failed login, and repeated failed logins can possibly lock
+# the GWDG account, so these tokens stop the program at once. A connection timeout reports
+# NT_STATUS_IO_TIMEOUT instead, which TRANSPORT_ERROR_TOKENS retries. NT_STATUS_ACCESS_DENIED is
+# not in this tuple: it is also the error for a file without permission.
+LOGIN_ERROR_TOKENS = (
+    "NT_STATUS_LOGON_FAILURE",
+    "NT_STATUS_WRONG_PASSWORD",
+    "NT_STATUS_ACCOUNT_LOCKED_OUT",
+    "NT_STATUS_ACCOUNT_DISABLED",
+    "NT_STATUS_ACCOUNT_EXPIRED",
+    "NT_STATUS_PASSWORD_EXPIRED",
+    "NT_STATUS_PASSWORD_MUST_CHANGE",
+)
+
 # One entry line of `smbclient ls`: name, attribute letters, size. A plain file may list no
 # attribute letters.
 LS_ENTRY_RE = re.compile(r"^\s+(.+?)\s+(?:([DARHSN]+)\s+)?(\d+)\s+\w")
@@ -281,6 +295,9 @@ def run_smbclient(
     -D ends the session with exit code 1 before any command runs. A session that reaches its
     final `exit` command always exits 0.
 
+    The password goes to smbclient in its environment variable PASSWD, not on the command line.
+    Every user of the machine can read the command line of a process, e.g. with `ps`.
+
     Args:
         username: GWDG username.
         password: GWDG password.
@@ -293,8 +310,10 @@ def run_smbclient(
       lines, had_disconnect, returncode. `had_disconnect` is True for any token in
       TRANSPORT_ERROR_TOKENS, not only for a dropped connection.
 
+    Raises:
+      SystemExit: The output has a token in LOGIN_ERROR_TOKENS. No caller can retry the login.
     """
-    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}%{password}", "-t", str(timeout)]
+    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}", "-t", str(timeout)]
     if commands and commands[0].startswith("cd "):
         cmd += ["-D", commands[0][3:].strip().strip('"')]
         commands = commands[1:]
@@ -306,6 +325,7 @@ def run_smbclient(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         cwd=cwd,
+        env={**os.environ, "PASSWD": password},
         text=True,
     )
     proc.stdin.write(cmd_input)
@@ -318,6 +338,14 @@ def run_smbclient(
         line = line.rstrip()
         print(line)
         lines.append(line)
+        if any(token in line for token in LOGIN_ERROR_TOKENS):
+            proc.terminate()
+            proc.wait()
+            raise SystemExit(
+                f"smbclient login failed for GWDG/{username}: {line.strip()}\n"
+                "Check the user name and the password. A failed login is not retried, because "
+                "repeated failed logins can possibly lock the GWDG account."
+            )
         if any(token in line for token in TRANSPORT_ERROR_TOKENS) and not had_disconnect:
             had_disconnect = True
             proc.terminate()
@@ -581,8 +609,8 @@ def remote_dir_exists(
 
     Returns:
         True if the directory exists, None if the connection dropped before the answer could be
-        determined, and False otherwise: the path is missing or not a directory, or the login
-        failed.
+        determined, and False otherwise: the path is missing or not a directory. A rejected login
+        stops the program in run_smbclient.
     """
     remote_path = remote_path.replace("\\", "/")
     _, had_disconnect, rc = run_smbclient(
@@ -865,8 +893,9 @@ def remote_entry(
     The name match ignores case, as SMB does.
 
     Returns:
-        (is_dir, size in bytes) of the entry, or None if name is missing, the login or
-        remote_dir failed, or the listing still drops after the retries.
+        (is_dir, size in bytes) of the entry, or None if name is missing, remote_dir failed, or
+        the listing still drops after the retries. A rejected login stops the program in
+        run_smbclient.
     """
     remote_dir = remote_dir.replace("\\", "/")
     for attempt in range(1, retries + 1):
