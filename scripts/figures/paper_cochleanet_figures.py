@@ -137,6 +137,11 @@ PAPER_COHORTS = {
     "wt_gerbil_synapses": ["G_EK_000233_L", "G_LR_000301_R", "G_LR_000302_R"],
 }
 
+# The IHC_v11 counts of the iDISCO cochleae in 2D and 6C. They are the S3 rows before the refined
+# rows of 2026-11-10 (refine_ihc_row, min_size 5000), so util.VALUE_DICT holds other counts. 3C and
+# S4A read the same rows from the cache tonotopic_data_IHC_v11.pkl.
+PAPER_IHC_COUNTS = {"M_LR_000226_L": 687, "M_LR_000226_R": 648, "M_LR_000227_L": 617, "M_LR_000227_R": 640}
+
 # Groups of SGN subtype cochleae (keys of sgn_subtype_utils.COCHLEAE) with a common staining. The
 # key lists the subtypes the staining can distinguish, a suffix after "-" separates groups with the
 # same subtypes. "Type I;Type II" also holds the Type I/II offsets of S4C.
@@ -287,7 +292,7 @@ def fig2d(args):
             {"values": documented_counts(cochleae, "SGN", "SGN_v2"), "label": "SGN",
              "literature": literature_reference_values("SGN"), "ylim": (8500, 12500),
              "yticks": list(range(9000, 12001, 1000)), "literature_label": True, "fill_color": "C0"},
-            {"values": documented_counts(cochleae, "IHC", "IHC_v11"), "label": "IHC",
+            {"values": [PAPER_IHC_COUNTS[cochlea] for cochlea in cochleae], "label": "IHC",
              "literature": literature_reference_values("IHC"), "ylim": (600, 800),
              "yticks": list(range(600, 801, 100))},
             {"values": data.load_ribbon_synapse_counts(_synapse_counts_dir(args), cochleae=cochleae),
@@ -450,7 +455,7 @@ def fig6c(args):
     otof_data = _otof_data(args)
     gene_therapy.plot_count_vs_untreated(
         otof_data, out(args, "6c", "_ihc_count"), OTOF_DICT,
-        documented_counts(PAPER_COHORTS["idisco"], "IHC", "IHC_v11"), plot=args.plot, use_alias=args.use_alias,
+        [PAPER_IHC_COUNTS[cochlea] for cochlea in PAPER_COHORTS["idisco"]], plot=args.plot, use_alias=args.use_alias,
         count_label="IHC count per cochlea", xtick_labels=("Injected", "Non-Injected"),
         ylim=(500, 750), y_ticks=list(range(500, 800, 50)))
     gene_therapy.plot_expression_efficiency(
@@ -669,7 +674,8 @@ def main():
     parser.add_argument("--plot", action="store_true", help="Show every figure after saving it.")
     parser.add_argument("--no_alias", action="store_true", help="Label cochleae by name instead of alias.")
     parser.add_argument("--refresh_cache", action="store_true",
-                        help="Ignore the cached pickles and fetch the data again.")
+                        help="Ignore the cached pickles and fetch the data again. 3C and S4A then show the "
+                        "current S3 IHC rows, not the published ones.")
     parser.add_argument("--cache_dir", default=SCRIPT_DIR,
                         help=f"Directory of the pickle caches. Default: {SCRIPT_DIR}.")
     parser.add_argument("--data_dir", default=os.path.join(REPO_ROOT, "reproducibility", "model_accuracy"),

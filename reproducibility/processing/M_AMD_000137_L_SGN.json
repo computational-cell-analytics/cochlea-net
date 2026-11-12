@@ -2,11 +2,17 @@
 	"dataset_name": "M_AMD_000137_L",
 	"segmentation_channel": "SGN_v3",
 	"cell_type": "sgn",
+	"image_channel": [
+		"PV"
+	],
 	"component_list": [
 		1
 	],
 	"label_components": {
 		"max_edge_distance": 30
 	},
-	"tonotopic_mapping": {}
+	"tonotopic_mapping": {},
+	"object_measures": {
+		"use_bg_mask": "yes"
+	}
 }

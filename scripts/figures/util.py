@@ -20,7 +20,7 @@ VALUE_DICT = {
     "M_LR_000226_L": {
         "IHC": {
             "IHC_v4c": {"count": 712},
-            "IHC_v11": {"count": 687},
+            "IHC_v11": {"count": 654},
         },
         "SGN": {
             "SGN_v2": {"count": 11153},
@@ -29,7 +29,7 @@ VALUE_DICT = {
     "M_LR_000226_R": {
         "IHC": {
             "IHC_v4c": {"count": 710},
-            "IHC_v11": {"count": 648},
+            "IHC_v11": {"count": 633},
         },
         "SGN": {
             "SGN_v2": {"count": 11398},
@@ -38,7 +38,7 @@ VALUE_DICT = {
     "M_LR_000227_L": {
         "IHC": {
             "IHC_v4c": {"count": 721},
-            "IHC_v11": {"count": 617},
+            "IHC_v11": {"count": 615},
         },
         "SGN": {
             "SGN_v2": {"count": 10333},
@@ -47,7 +47,7 @@ VALUE_DICT = {
     "M_LR_000227_R": {
         "IHC": {
             "IHC_v4c": {"count": 675},
-            "IHC_v11": {"count": 640},
+            "IHC_v11": {"count": 635},
         },
         "SGN": {
             "SGN_v2": {"count": 11820},
@@ -57,33 +57,57 @@ VALUE_DICT = {
     "M_AMD_000126_L": {
         "IHC": {
             "IHC_v9": {"count": 665},
+            "IHC_v11": {"count": 584},
         },
         "SGN": {
             "SGN_v2": {"count": 11360},
+            "SGN_v3": {"count": 11671},
         },
     },
     "M_AMD_000126_R": {
         "IHC": {
             "IHC_v9": {"count": 669},
+            "IHC_v11": {"count": 704},
         },
         "SGN": {
             "SGN_v2": {"count": 10751},
+            "SGN_v3": {"count": 11034},
         },
     },
     "M_AMD_000127_L": {
         "IHC": {
             "IHC_v9": {"count": 617},
+            "IHC_v11": {"count": 511},
         },
         "SGN": {
             "SGN_v2": {"count": 1665},
+            "SGN_v3": {"count": 6934},
         },
     },
     "M_AMD_000127_R": {
         "IHC": {
             "IHC_v9": {"count": 647},
+            "IHC_v11": {"count": 525},
         },
         "SGN": {
             "SGN_v2": {"count": 7860},
+            "SGN_v3": {"count": 9646},
+        },
+    },
+    "M_AMD_000137_L": {
+        "IHC": {
+            "IHC_v11": {"count": 601},
+        },
+        "SGN": {
+            "SGN_v3": {"count": 10944},
+        },
+    },
+    "M_AMD_000137_R": {
+        "IHC": {
+            "IHC_v11": {"count": 671},
+        },
+        "SGN": {
+            "SGN_v3": {"count": 10612},
         },
     },
     "G_EK_000233_L": {
@@ -721,7 +745,10 @@ COHORT_DICT = {
     },
     "mwfls": {
         "label": "MWfLS", "animal": "mouse", "color": "#3F69FF",
-        "cochleae": ["M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R"],
+        "cochleae": [
+            "M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R",
+            "M_AMD_000137_L", "M_AMD_000137_R",
+        ],
     },
     # M_LR_000143 is the pilot animal. It has no color in COCHLEA_DICT, so a figure that colors
     # per cochlea rather than per animal leaves it out.
@@ -795,12 +822,12 @@ def cohort_postnatal(cohort):
 # TODO: data.py still defines its own LAVISION_COCHLEAE_DICT. Its LaVision cochleae are not
 # in this registry, and plot_lavision.py holds a third, conflicting component list for them.
 COCHLEA_DICT = {
-    # iDISCO reference cochleae. The IHC component lists were validated on IHC_v11. IHC_v4c
-    # reuses them for the iDISCO data of plot_mwfls.py.
+    # iDISCO reference cochleae. IHC_v4c keeps the component lists of the IHC_v11 rows before the
+    # refined rows of 2026-11-10.
     "M_LR_000226_L": {
         "alias": "M_01L", "color": "#9C5027",
         "SGN": {"SGN_v2": {"component": [1]}},
-        "IHC": {"IHC_v11": {"component": [1, 3]}, "IHC_v4c": {"component": [1, 3]}},
+        "IHC": {"IHC_v11": {"component": [1, 2]}, "IHC_v4c": {"component": [1, 3]}},
     },
     "M_LR_000226_R": {
         "alias": "M_01R", "color": "#279C52",
@@ -820,23 +847,33 @@ COCHLEA_DICT = {
     # MWfLS cochleae.
     "M_AMD_000126_L": {
         "alias": "M_03L", "color": "#5B1CE8",
-        "SGN": {"SGN_v2": {"component": [1]}},
-        "IHC": {"IHC_v9": {"component": [1]}},
+        "SGN": {"SGN_v2": {"component": [1]}, "SGN_v3": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}, "IHC_v11": {"component": [1]}},
     },
     "M_AMD_000126_R": {
         "alias": "M_03R", "color": "#1C1FE8",
-        "SGN": {"SGN_v2": {"component": [1]}},
-        "IHC": {"IHC_v9": {"component": [1]}},
+        "SGN": {"SGN_v2": {"component": [1]}, "SGN_v3": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}, "IHC_v11": {"component": [1]}},
     },
     "M_AMD_000127_L": {
         "alias": "M_04L", "color": "#1C60E9",
-        "SGN": {"SGN_v2": {"component": [1]}},
-        "IHC": {"IHC_v9": {"component": [1]}},
+        "SGN": {"SGN_v2": {"component": [1]}, "SGN_v3": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}, "IHC_v11": {"component": [1]}},
     },
     "M_AMD_000127_R": {
         "alias": "M_04R", "color": "#1CA0E8",
-        "SGN": {"SGN_v2": {"component": [1]}},
-        "IHC": {"IHC_v9": {"component": [1]}},
+        "SGN": {"SGN_v2": {"component": [1]}, "SGN_v3": {"component": [1]}},
+        "IHC": {"IHC_v9": {"component": [1]}, "IHC_v11": {"component": [1]}},
+    },
+    "M_AMD_000137_L": {
+        "alias": "M_05L", "color": "#1CCDE8",
+        "SGN": {"SGN_v3": {"component": [1]}},
+        "IHC": {"IHC_v11": {"component": [1]}},
+    },
+    "M_AMD_000137_R": {
+        "alias": "M_05R", "color": "#1CE8C4",
+        "SGN": {"SGN_v3": {"component": [1]}},
+        "IHC": {"IHC_v11": {"component": [1]}},
     },
     # Mouse cochleae for the OTOF gene therapy. These have no SGN segmentation. The components
     # match the component_list used to generate each
@@ -955,7 +992,6 @@ def cochleae_for(cochlea_names, structure, version):
     return view
 
 
-# The only consumer, plot_mwfls.py, uses these for the IHC_v9 tonotopic data.
-MWFLS_COCHLEAE_DICT = cochleae_for(cohort_cochleae("mwfls"), "IHC", "IHC_v9")
-
-OUTLIER_DICT = {"SGN": ["M_AMD_000127_L"]}
+# Cochleae per structure that a figure draws apart from their cohort. M_AMD_000137_L has less than
+# one synapse per IHC, and every other MWfLS cochlea has 3.5 or more.
+OUTLIER_DICT = {"SGN": [], "synapse": ["M_AMD_000137_L"]}
