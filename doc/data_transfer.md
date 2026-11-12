@@ -27,6 +27,7 @@ For the transfer on the cluster and the transfer to the S3 bucket, see the
 - A leading backslash is optional. `\UKON100\archiv` and `UKON100\archiv` name the same directory.
 - The tools check the login and the remote directory before any transfer. They stop with an error if either check
   fails.
+- A failed login stops the tool at once, without a retry. Repeated failed logins can possibly lock the GWDG account.
 
 ## Errors and the log file
 
