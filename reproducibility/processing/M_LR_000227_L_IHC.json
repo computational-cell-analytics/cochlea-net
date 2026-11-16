@@ -2,11 +2,25 @@
 	"dataset_name": "M_LR_000227_L",
 	"segmentation_channel": "IHC_v11",
 	"cell_type": "ihc",
+	"image_channel": [
+		"Vglut3"
+	],
 	"component_list": [
 		1
 	],
 	"label_components": {
-		"max_edge_distance": 30
+		"min_size": 5000,
+		"min_component_length": 10,
+		"max_edge_distance": 30.0,
+		"component_list_path": [
+			1
+		],
+		"max_path_deviation": 15.0,
+		"refine_row": true,
+		"merge_components": true
 	},
-	"tonotopic_mapping": {}
+	"tonotopic_mapping": {},
+	"object_measures": {
+		"use_bg_mask": "yes"
+	}
 }

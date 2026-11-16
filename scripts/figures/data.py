@@ -10,6 +10,7 @@ from typing import Dict, List, Optional
 
 import numpy as np
 import pandas as pd
+from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping
 from flamingo_tools.postprocessing.sgn_subtype_utils import COCHLEAE as SUBTYPE_COCHLEAE, stain_to_type
 from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target, read_table
 
@@ -56,7 +57,7 @@ def source_table_dir(s3, cochlea: str, source_name: str) -> Optional[str]:
     Args:
         s3: S3 file system, as returned by create_s3_target.
         cochlea: Name of the cochlea.
-        source_name: Name of the segmentation source, e.g. "SGN_v2".
+        source_name: Name of the segmentation or spot source, e.g. "SGN_v2".
 
     Returns:
         The table folder relative to the S3 root, or None if the cochlea has no such source.
@@ -65,7 +66,9 @@ def source_table_dir(s3, cochlea: str, source_name: str) -> Optional[str]:
     sources = json.loads(content.read())["sources"]
     if source_name not in sources:
         return None
-    rel_path = sources[source_name]["segmentation"]["tableData"]["tsv"]["relativePath"]
+    source = sources[source_name]
+    source = source["segmentation"] if "segmentation" in source else source["spots"]
+    rel_path = source["tableData"]["tsv"]["relativePath"]
     return os.path.join(BUCKET_NAME, cochlea, rel_path)
 
 
@@ -85,6 +88,66 @@ def read_source_table(s3, cochlea: str, source_name: str, table_name: str = "def
     if table_dir is None:
         raise KeyError(f"Cochlea {cochlea} has no source {source_name}.")
     return pd.read_csv(s3.open(os.path.join(table_dir, table_name), mode="rb"), sep="\t")
+
+
+def get_mapped_table(s3, cochlea: str, structure: str, source_name: str, stain: Optional[str] = None) -> pd.DataFrame:
+    """Load the instances of the selected components of one segmentation, with a fresh tonotopic mapping.
+
+    The mapping on S3 can be missing or use an old central path, so the table is mapped again in
+    memory with the default central path of `tonotopic_mapping`. The component labels come from
+    util.COCHLEA_DICT.
+
+    Args:
+        s3: S3 file system, as returned by create_s3_target.
+        cochlea: Name of the cochlea.
+        structure: "SGN" or "IHC".
+        source_name: Name of the segmentation source, e.g. "SGN_v2".
+        stain: Optional stain. The median of its background-masked object measures is added as
+            the column 'intensity'. Instances without a measure keep NaN, and their fraction is printed.
+
+    Returns:
+        The mapped instances, with the columns of `tonotopic_mapping`.
+    """
+    table = read_source_table(s3, cochlea, source_name)
+    components = cochlea_components(cochlea, structure, source_name)
+    table, _ = tonotopic_mapping(table, component_label=components, cell_type=structure.lower())
+    table = table[table["offset"] >= 0]
+    if stain is None:
+        return table
+
+    measure_name = f"{stain}_{source_name.replace('_', '-')}_object-measures-bg-mask.tsv"
+    measures = read_source_table(s3, cochlea, source_name, measure_name)
+    table = table.drop(columns="intensity", errors="ignore").merge(
+        measures[["label_id", "median"]].rename(columns={"median": "intensity"}), on="label_id", how="left",
+    )
+    n_missing = table["intensity"].isna().sum()
+    if n_missing > 0:
+        print(f"{cochlea} {source_name}: {n_missing} / {len(table)} ({n_missing / len(table):.2%}) mapped "
+              f"instances have no intensity in {measure_name}.")
+    return table
+
+
+def add_synapses_per_ihc(
+    s3, cochlea: str, table: pd.DataFrame, synapse_source: str, max_distance: float = 3.0,
+) -> pd.DataFrame:
+    """Add the column 'syn_per_IHC' with the number of synapses matched to each IHC.
+
+    The rule is the one of scripts/measurements/measure_synapses.py: a synapse counts for its
+    matched IHC if it is at most `max_distance` micrometers away. An IHC without a synapse gets 0.
+
+    Args:
+        s3: S3 file system, as returned by create_s3_target.
+        cochlea: Name of the cochlea.
+        table: IHC table with the column 'label_id'.
+        synapse_source: Name of the synapse spot source, e.g. "synapse_v3_ihc_v11".
+        max_distance: Maximal distance of a synapse to its IHC in micrometers.
+
+    Returns:
+        A copy of the table with the column 'syn_per_IHC'.
+    """
+    synapses = read_source_table(s3, cochlea, synapse_source)
+    counts = synapses.loc[synapses["distance_to_ihc"] <= max_distance, "matched_ihc"].value_counts()
+    return table.assign(syn_per_IHC=table["label_id"].map(counts).fillna(0).astype(int))
 
 
 def get_tonotopic_data(
