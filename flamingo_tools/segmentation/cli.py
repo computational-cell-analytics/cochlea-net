@@ -97,6 +97,16 @@ def run_segmentation():
         help="Whether to disable intensity-based masking. By default, "
         "segmentation is only applied for parts of the data with foreground signal."
     )
+    parser.add_argument(
+        "--legacy_mask", action="store_true",
+        help="Mask with the percentile rule of flamingo-tools before 2026-11 instead of the default rule "
+        "relative to the background level."
+    )
+    parser.add_argument(
+        "--background_factor", type=float,
+        help="The threshold of the default mask rule as a multiple of the background level. By default, 1.08 "
+        "for SGN and 1.75 for IHC. The low-resolution models and '--legacy_mask' do not accept it."
+    )
     args, extra_kwargs = parser.parse_known_args()
 
     if args.model_type not in segmentation_models:
@@ -107,8 +117,8 @@ def run_segmentation():
     run_unet_prediction(
         input_path=args.input_path, input_key=args.input_key,
         output_folder=args.output_folder, model_path=model_path,
-        min_size=args.min_size, use_mask=not args.disable_masking,
-        **segmentation_kwargs,
+        min_size=args.min_size, use_mask=not args.disable_masking, legacy_mask=args.legacy_mask,
+        background_factor=args.background_factor, **segmentation_kwargs,
     )
 
 
@@ -263,12 +273,23 @@ def run_unet_prediction_preprocess_slurm():
     )
     _add_io_arguments(parser)
     parser.add_argument(
-        "--seg_class", help="The segmentation class, 'sgn' or 'ihc'. It selects the exclusion criteria of the mask."
+        "--seg_class",
+        help="The segmentation class: 'sgn' or 'ihc' select the default rule of the mask, "
+        "'sgn_low' or 'ihc_low' the legacy rule."
+    )
+    parser.add_argument(
+        "--legacy_mask", action="store_true",
+        help="Use the legacy rule of the mask: a block percentile at full resolution above '--absolute_threshold'."
     )
     # A string, because the function maps 'None' to a threshold derived from the data.
     parser.add_argument(
         "--absolute_threshold",
-        help="The minimal intensity of the mask. 'None' derives the threshold from the data."
+        help="The minimal intensity of the legacy rule. 'None' derives the threshold from the data."
+    )
+    parser.add_argument(
+        "--background_factor", type=float,
+        help="The threshold of the default rule as a multiple of the background level. By default, 1.08 for "
+        "'sgn' and 1.75 for 'ihc'."
     )
     _add_s3_arguments(parser, {"s3": "Read the image data from the S3 bucket."})
     unet_prediction.run_unet_prediction_preprocess_slurm(**vars(parser.parse_args()))
@@ -286,6 +307,11 @@ def run_unet_prediction_slurm():
     parser.add_argument(
         "--prediction_instances", type=int, default=1,
         help="The number of tasks of the parallel prediction. It must match the size of the Slurm array."
+    )
+    parser.add_argument(
+        "--seg_class",
+        help="The segmentation class of the mask, if the output folder has no 'mask.zarr' yet. "
+        "Normally, the first step of the pipeline computes the mask."
     )
     _add_s3_arguments(parser, {"s3": "Read the image data from the S3 bucket."})
     unet_prediction.run_unet_prediction_slurm(**vars(parser.parse_args()))

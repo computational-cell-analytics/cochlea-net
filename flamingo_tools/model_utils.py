@@ -242,7 +242,7 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
             "boundary_distance_threshold": 0.6,
             "fg_threshold": 0.5,
             "distance_smoothing": 0.6,
-            "seg_class": "ihc",
+            "seg_class": "ihc_low",
         },
     }
     if model_type not in all_default_kwargs:
