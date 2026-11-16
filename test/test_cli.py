@@ -54,10 +54,19 @@ class TestSlurmCLI(unittest.TestCase):
 
         self.check(unet_prediction, "run_unet_prediction_preprocess_slurm",
                    io + ["--seg_class", "ihc", "--absolute_threshold", "None"],
-                   {**io_kwargs, "seg_class": "ihc", "absolute_threshold": "None", **s3})
+                   {**io_kwargs, "seg_class": "ihc", "absolute_threshold": "None", "legacy_mask": False,
+                    "background_factor": None, **s3})
+        self.check(unet_prediction, "run_unet_prediction_preprocess_slurm",
+                   io + ["--seg_class", "ihc", "--legacy_mask", "--absolute_threshold", "150"],
+                   {**io_kwargs, "seg_class": "ihc", "absolute_threshold": "150", "legacy_mask": True,
+                    "background_factor": None, **s3})
+        self.check(unet_prediction, "run_unet_prediction_preprocess_slurm",
+                   io + ["--seg_class", "sgn", "--background_factor", "1.2"],
+                   {**io_kwargs, "seg_class": "sgn", "absolute_threshold": None, "legacy_mask": False,
+                    "background_factor": 1.2, **s3})
         self.check(unet_prediction, "run_unet_prediction_slurm",
                    io + ["-m", "model", "--prediction_instances", "10"],
-                   {**io_kwargs, "model_path": "model", "prediction_instances": 10, **s3})
+                   {**io_kwargs, "model_path": "model", "prediction_instances": 10, "seg_class": None, **s3})
         self.check(unet_prediction, "run_unet_segmentation_slurm",
                    ["-o", "out", "--min_size", "1000", "--center_distance_threshold", "0.5"],
                    {"output_folder": "out", "min_size": 1000, "center_distance_threshold": 0.5,
@@ -83,6 +92,29 @@ class TestSlurmCLI(unittest.TestCase):
                    {"output_folder": "out", "voxel_size": [0.38, 0.38, 0.38], "threshold": 0.5,
                     "mask_path": "ihc.ome.zarr", "mask_key": "s0", "max_distance": 3.0, "force_overwrite": True,
                     "s3_mask": True, **s3})
+
+
+class TestSegmentationArguments(unittest.TestCase):
+    """run_segmentation forwards the mask options and the default settings of the model."""
+
+    def check(self, argv, expected):
+        from flamingo_tools.model_utils import get_default_segmentation_settings
+        from flamingo_tools.segmentation import cli
+
+        argv = ["run_segmentation", "-i", "in.n5", "-k", "s0", "-o", "out", "-m", "SGN"] + argv
+        with mock.patch.object(sys, "argv", argv), mock.patch.object(cli, "_get_model_path", return_value="model"), \
+                mock.patch.object(cli, "run_unet_prediction") as function:
+            cli.run_segmentation()
+        function.assert_called_once_with(
+            input_path="in.n5", input_key="s0", output_folder="out", model_path="model", min_size=250,
+            **expected, **get_default_segmentation_settings("SGN"),
+        )
+
+    def test_mask_options(self):
+        self.check([], {"use_mask": True, "legacy_mask": False, "background_factor": None})
+        self.check(["--background_factor", "1.2"], {"use_mask": True, "legacy_mask": False, "background_factor": 1.2})
+        self.check(["--legacy_mask"], {"use_mask": True, "legacy_mask": True, "background_factor": None})
+        self.check(["--disable_masking"], {"use_mask": False, "legacy_mask": False, "background_factor": None})
 
 
 if __name__ == "__main__":

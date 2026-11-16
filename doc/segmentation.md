@@ -24,6 +24,17 @@ The command writes the segmentation to `segmentation.zarr` in the output folder.
 `--min_size` removes instances with fewer voxels.
 The pipelines of slurm-workflows use 1000. The default is 250.
 
+##### Input mask
+
+By default, the U-Net predicts only the blocks with signal above the background level.
+The command writes the decision to `mask_statistics.json` in the output folder.
+- `--disable_masking` predicts all blocks. Use it for a small crop that cells fill for the most part, because the mask rule needs mostly background to find the background level.
+- `--background_factor` sets the threshold as a multiple of the background level (default 1.08 for SGN and 1.75 for IHC). Use a lower value for a very dim stain.
+- `--legacy_mask` uses the mask rule of flamingo-tools before 2026-11.
+
+The low-resolution models always use the legacy rule.
+See the [input mask documentation](input_mask.md) for the rules and the analysis behind them.
+
 #### Synapses
 
 The standard case matches the detections of a CTBP2 stain to an IHC segmentation:

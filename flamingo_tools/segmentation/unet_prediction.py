@@ -7,17 +7,18 @@ import importlib
 import json
 import multiprocessing as mp
 import os
+import re
 import warnings
 from concurrent import futures
 from functools import partial
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple, Union
 
 import elf.parallel as parallel
-import imageio.v3 as imageio
 import numpy as np
 import torch
 import z5py
 
+from scipy import ndimage
 from bioimage_cpp.filters import gaussian_smoothing
 from bioimage_cpp.utils import Blocking
 
@@ -134,7 +135,9 @@ def _get_device_and_tiling(block_shape, halo, input_):
     if block_shape is None:
         block_shape = (128, 128, 128) if have_cuda else getattr(input_, "chunks", (64, 64, 64))
     if halo is None:
-        halo = (16, 32, 32)
+        # A z halo of 16 leaves a seam in the center distances at the z faces of the blocks, which
+        # splits cells there (doc/input_mask.md).
+        halo = (32, 32, 32)
     # Clip to the volume. A block larger than the input makes the halo dominate the forward
     # pass: a (64, 128, 128) volume with a (64, 256, 256) block is padded to 96 x 384 x 384.
     # The clip only depends on the input shape, so all slurm array tasks get the same grid.
@@ -298,152 +301,245 @@ def prediction_impl(
         return original_shape, None
 
 
-def sweep_mask_thresholds(
-    input_path: str,
-    output_path: str,
-    input_key: Optional[str] = None,
-    min_intensities: List[float] = [100, 150, 200, 300, 400, 600, 1000],
-    seg_class: Optional[str] = "sgn",
-    threshold_map_path: Optional[str] = None,
-    percentile_map_path: Optional[str] = None,
-) -> Dict[float, float]:
-    """Compute the fraction of blocks that would be included in the mask for each
-    candidate min_intensity value, using a single parallel read pass over the data.
+# The mask grid of the default rule is the GPU prediction block, so one mask block is one U-Net
+# block. The rule reads the pyramid level LOWRES_LEVELS steps of 2x below the input, where one mask
+# block is (128 / 8)^3 = 16^3 voxels.
+MASK_BLOCK = (128, 128, 128)
+LOWRES_LEVELS = 3
+LOWRES_FACTOR = 2 ** LOWRES_LEVELS
+# Per class: the block percentile at the low-res level, the factor on the background level b, and
+# whether a kept block adds its 26 neighbours. Fitted on 100 and validated on 89 other SGN and IHC
+# segmentations of whole cochleae from the S3 bucket, split by animal: every validation segmentation
+# keeps >= 99.5% of its relevant objects complete (doc/input_mask.md).
+MASK_RULES = {
+    "sgn": {"percentile": 95, "background_factor": 1.08, "dilation": False},
+    "ihc": {"percentile": 99, "background_factor": 1.75, "dilation": True},
+}
+# The pyramid level must be a mean (or other averaging) downsampling of the input. In a background
+# block, its mean must agree with 8^3 mean pooling of the input within this fraction of b, and its
+# standard deviation must stay below this multiple of the pooled one (+ 1). A subsampled pyramid
+# keeps the full noise of the input, about 4x the pooled standard deviation in the S3 data.
+_POOLING_MEAN_TOLERANCE = 0.05
+_POOLING_STD_FACTOR = 2.0
 
-    Args:
-        input_path: The file path to the image data.
-        input_key: The key / internal path of the image data.
-        min_intensities: Intensity thresholds to evaluate.
-        seg_class: Determines the upper percentile used per block (same as find_mask).
-        threshold_map_path: Optional output path for a downscaled TIF with one voxel
-            per masking block, where each voxel holds the largest value in
-            min_intensities that the block's percentile still exceeds (0 if none).
-        percentile_map_path: Optional output path for a downscaled TIF with one voxel
-            per masking block, where each voxel holds the block's raw percentile value.
 
-    Returns:
-        Dict mapping each min_intensity to the fraction of blocks that would be masked.
-    """
-    if seg_class == "ihc":
-        upper_percentile = 99
-    else:
-        upper_percentile = 95
+def _lowres_key(input_key: Optional[str]) -> Optional[str]:
+    """Return the key of the pyramid level LOWRES_LEVELS below `input_key`, e.g. 's0' -> 's3'."""
+    if input_key is None:
+        return None
+    head, _, last = input_key.rstrip("/").rpartition("/")
+    match = re.fullmatch(r"s(\d+)", last)
+    if match is None:
+        return None
+    level = f"s{int(match.group(1)) + LOWRES_LEVELS}"
+    return f"{head}/{level}" if head else level
 
-    raw = read_image_data(input_path, input_key)
-    chunks = getattr(raw, "chunks", (64, 64, 64))
-    block_shape = tuple(2 * ch for ch in chunks)
-    blocking = Blocking([0, 0, 0], raw.shape, block_shape)
-    n_blocks = blocking.number_of_blocks
 
-    def percentile_for_block(block_id):
-        block = blocking.get_block(block_id)
-        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        return float(np.percentile(raw[bb], upper_percentile))
+def _read_pyramid_level(input_path, input_key, shape):
+    """Return the low-res pyramid level of the input as an array, or None if it does not fit."""
+    key = _lowres_key(input_key)
+    if key is None:
+        return None, None
+    try:
+        level = read_image_data(input_path, key)
+    except Exception as e:  # A missing level is a normal case, e.g. for a dataset without pyramid.
+        print(f"No pyramid level {key}: {e}")
+        return None, None
+    fits = all(ls in (sh // LOWRES_FACTOR, -(-sh // LOWRES_FACTOR)) for ls, sh in zip(level.shape, shape))
+    if not fits:
+        print(f"The shape {level.shape} of {key} is not the input shape {shape} / {LOWRES_FACTOR}.")
+        return None, None
+    return level[:], key
 
-    n_threads = min(16, mp.cpu_count())
+
+def _mean_pool(raw, n_threads):
+    """Downsample the input by LOWRES_FACTOR with the mean, like the 2x mean pyramids."""
+    factor = LOWRES_FACTOR
+    shape = tuple(-(-sh // factor) for sh in raw.shape)
+    integer = np.issubdtype(raw.dtype, np.integer)
+    lowres = np.zeros(shape, dtype=raw.dtype if integer else "float32")
+    grid = tuple(-(-sh // bs) for sh, bs in zip(raw.shape, MASK_BLOCK))
+
+    def pool(block_index):
+        index = np.unravel_index(block_index, grid)
+        bb = tuple(slice(i * bs, min((i + 1) * bs, sh)) for i, bs, sh in zip(index, MASK_BLOCK, raw.shape))
+        data = np.asarray(raw[bb], dtype="float64")
+        padded = np.pad(data, [(0, -sh % factor) for sh in data.shape])
+        out_shape = tuple(sh // factor for sh in padded.shape)
+        sums = padded.reshape(out_shape[0], factor, out_shape[1], factor, out_shape[2], factor).sum(axis=(1, 3, 5))
+        # The number of voxels of each output voxel. It is below factor^3 only at the volume border.
+        counts = [np.minimum(factor, sh - factor * np.arange(n)) for sh, n in zip(data.shape, out_shape)]
+        means = sums / (counts[0][:, None, None] * counts[1][None, :, None] * counts[2][None, None, :])
+        out_bb = tuple(slice(b.start // factor, b.start // factor + n) for b, n in zip(bb, out_shape))
+        lowres[out_bb] = np.rint(means) if integer else means
+
     with futures.ThreadPoolExecutor(n_threads) as tp:
-        block_percentiles = list(tqdm(tp.map(percentile_for_block, range(n_blocks)), total=n_blocks,
-                                      desc="Computing block percentiles"))
-
-    block_percentiles = np.array(block_percentiles)
-
-    if threshold_map_path is not None or percentile_map_path is not None:
-        grid_shape = tuple(blocking.blocks_per_axis)
-
-        if percentile_map_path is not None:
-            out_dir = os.path.dirname(percentile_map_path)
-            os.makedirs(out_dir, exist_ok=True)
-            percentile_map = block_percentiles.reshape(grid_shape).astype("float32")
-            imageio.imwrite(percentile_map_path, percentile_map, compression="zlib")
-
-        if threshold_map_path is not None:
-            out_dir = os.path.dirname(threshold_map_path)
-            os.makedirs(out_dir, exist_ok=True)
-            sorted_thresholds = np.array(sorted(min_intensities), dtype=np.float32)
-            exceed_counts = (block_percentiles[:, None] > sorted_thresholds[None, :]).sum(axis=1)
-            threshold_values = np.concatenate([[0.0], sorted_thresholds])[exceed_counts]
-            threshold_map = threshold_values.reshape(grid_shape).astype("float32")
-            imageio.imwrite(threshold_map_path, threshold_map, compression="zlib")
-
-    print(f"\n{'min_intensity':>15}  {'masked blocks':>15}  {'fraction (%)':>12}")
-    print("-" * 46)
-    result = {}
-    for threshold in sorted(min_intensities):
-        n_masked = int(np.sum(block_percentiles > threshold))
-        fraction = n_masked / n_blocks
-        print(f"{threshold:>15.1f}  {n_masked:>9}/{n_blocks:<5}  {fraction * 100:>11.2f}")
-        result[threshold] = fraction
-
-    out_dir = os.path.dirname(output_path)
-    os.makedirs(out_dir, exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(result, f, indent='\t', separators=(',', ': '))
-
-    return result
+        list(tp.map(pool, range(int(np.prod(grid)))))
+    return lowres
 
 
-def find_mask(
+def _lowres_statistics(lowres, percentile):
+    """Return the background level b and the statistics of every mask block of the low-res volume.
+
+    b is the median of the non-zero voxels, interpolated inside the histogram bin for integer
+    data. Fusion padding is exactly 0, so it does not shift b. The block score is the percentile
+    of the block voxels. Blocks at the volume border are padded with zeros.
+    """
+    block = tuple(bs // LOWRES_FACTOR for bs in MASK_BLOCK)
+    grid = tuple(-(-sh // bs) for sh, bs in zip(lowres.shape, block))
+    blocks = {name: np.zeros(grid, dtype="float32") for name in ("score", "mean", "std", "nonzero")}
+    integer = np.issubdtype(lowres.dtype, np.integer)
+    hist, values = np.zeros(1, dtype="int64"), []
+    # Process one slab of blocks at a time to bound the memory of the percentile computation.
+    for gz in range(grid[0]):
+        slab = np.asarray(lowres[gz * block[0]:(gz + 1) * block[0]])
+        nonzero = slab[slab > 0]
+        if integer:
+            counts = np.bincount(nonzero.ravel())
+            if len(counts) > len(hist):
+                hist = np.pad(hist, (0, len(counts) - len(hist)))
+            hist[:len(counts)] += counts
+        else:
+            values.append(nonzero.ravel())
+        padded = np.zeros((block[0], grid[1] * block[1], grid[2] * block[2]), dtype=slab.dtype)
+        padded[:slab.shape[0], :slab.shape[1], :slab.shape[2]] = slab
+        view = padded.reshape(block[0], grid[1], block[1], grid[2], block[2]).transpose(1, 3, 0, 2, 4)
+        view = view.reshape(grid[1] * grid[2], -1)
+        blocks["score"][gz] = np.percentile(view, percentile, axis=1).reshape(grid[1:])
+        blocks["mean"][gz] = view.mean(axis=1).reshape(grid[1:])
+        blocks["std"][gz] = view.std(axis=1).reshape(grid[1:])
+        blocks["nonzero"][gz] = (view > 0).mean(axis=1).reshape(grid[1:])
+
+    if not integer:
+        values = np.concatenate(values)
+        background = float(np.median(values)) if values.size else 0.0
+    elif hist.sum() == 0:
+        background = 0.0
+    else:
+        cdf = np.cumsum(hist).astype("float64")
+        target = 0.5 * cdf[-1]
+        v = int(np.searchsorted(cdf, target, side="left"))
+        below = cdf[v - 1] if v > 0 else 0.0
+        background = v - 0.5 + (target - below) / max(hist[v], 1)
+    return float(background), blocks
+
+
+def _matches_mean_pooling(raw, lowres, background, blocks):
+    """Check the pyramid level against 8^3 mean pooling of the input, in one background block.
+
+    The block is the one with the smallest standard deviation without zero voxels: there, the
+    pooling of the noise shows most clearly.
+    """
+    candidates = blocks["nonzero"] == 1
+    if not candidates.any():
+        candidates = blocks["mean"] > 0
+    if not candidates.any():
+        return True
+    index = np.unravel_index(int(np.argmin(np.where(candidates, blocks["std"], np.inf))), candidates.shape)
+    block = tuple(bs // LOWRES_FACTOR for bs in MASK_BLOCK)
+    lo = [i * bs for i, bs in zip(index, block)]
+    hi = [min(a + bs, ls, sh // LOWRES_FACTOR) for a, bs, ls, sh in zip(lo, block, lowres.shape, raw.shape)]
+    if any(b <= a for a, b in zip(lo, hi)):
+        return False
+    level = np.asarray(lowres[tuple(slice(a, b) for a, b in zip(lo, hi))], dtype="float64")
+    data = np.asarray(raw[tuple(slice(a * LOWRES_FACTOR, b * LOWRES_FACTOR) for a, b in zip(lo, hi))], dtype="float64")
+    n, f = level.shape, LOWRES_FACTOR
+    pooled = data.reshape(n[0], f, n[1], f, n[2], f).mean(axis=(1, 3, 5))
+    mean_ok = abs(level.mean() - pooled.mean()) <= max(_POOLING_MEAN_TOLERANCE * background, 1.0)
+    std_ok = level.std() <= _POOLING_STD_FACTOR * pooled.std() + 1.0
+    return bool(mean_ok and std_ok)
+
+
+def _fit_grid(grid_values, grid_shape):
+    """Crop or pad (with the edge values) a block grid to `grid_shape`.
+
+    A pyramid level with floor(shape / 8) voxels misses a last slab of fewer than 8 planes. Its
+    blocks take the values of their neighbours.
+    """
+    grid_values = grid_values[tuple(slice(0, g) for g in grid_shape)]
+    pad = [(0, g - s) for g, s in zip(grid_shape, grid_values.shape)]
+    return np.pad(grid_values, pad, mode="edge") if any(p[1] for p in pad) else grid_values
+
+
+def compute_mask_blocks(
     input_path: str,
     input_key: Optional[str],
-    output_folder: Optional[str],
-    seg_class: Optional[str] = "sgn",
-    relative_threshold: float = 0.7,
-    absolute_threshold: Optional[float] = None,
-) -> None:
-    """Determine the mask for running prediction.
+    seg_class: str,
+    background_factor: Optional[float] = None,
+) -> Tuple[np.ndarray, Dict]:
+    """Decide which blocks of MASK_BLOCK the U-Net predicts, with the rule of `seg_class`.
 
-    The mask marks blocks that contain actual signal (not just noise/background).
-    A block is included when its upper-percentile intensity exceeds `min_intensity`.
-
-    `min_intensity` is computed adaptively: it equals `relative_threshold` times a
-    robust estimate of the global signal level (median of per-block p99.9 values drawn
-    from a random sample of blocks), then capped at the per-class absolute maximum so
-    that spike-inflated estimates (fluorescence residues) never push the threshold above
-    the proven fixed default and dim stainings get a proportionally lower threshold.
+    The rule reads the input at 8x lower resolution: the pyramid level 3 steps below `input_key`
+    ('s0' -> 's3'), if it exists and averages the input, else the 8^3 mean of the input. With b the
+    median of the non-zero voxels (the background level), a block is kept if the percentile of
+    MASK_RULES[seg_class] of its voxels is above `background_factor * b`. For 'ihc', the 26
+    neighbours of a kept block are also kept, so that cells that cross a block face stay complete.
 
     Args:
-        input_path: The file path to the image data.
+        input_path: The file path to the image data, or a zarr store.
         input_key: The key / internal path of the image data.
-        output_folder: The output folder for storing the mask data.
-        seg_class: Specifier for exclusion criterias for mask generation.
-        relative_threshold: Fraction of the global signal level used as the lower
-            inclusion threshold. Capped per class so the threshold never exceeds the
-            class default (200 for sgn, 150 for ihc).
+        seg_class: 'sgn' or 'ihc'.
+        background_factor: The threshold as a multiple of the background level b.
+            By default, the value of MASK_RULES[seg_class].
+
+    Returns:
+        The boolean grid of kept blocks, with ceil(shape / MASK_BLOCK) blocks per axis.
+        The statistics of the decision, as written to 'mask_statistics.json'.
     """
-    if seg_class == "sgn":
-        upper_percentile = 95
-        absolute_max = 200
-        absolute_min = 100
-        print(f"Calculating mask for segmentation class {seg_class}.")
-    elif seg_class == "ihc":
-        upper_percentile = 99
-        absolute_max = 400
-        absolute_min = 250
-        print(f"Calculating mask for segmentation class {seg_class}.")
-    else:
-        upper_percentile = 95
-        absolute_max = 200
-        absolute_min = 100
-        print("Calculating mask with default values.")
+    if seg_class not in MASK_RULES:
+        raise ValueError(f"The mask rule needs seg_class 'sgn' or 'ihc', got {seg_class}.")
+    rule = MASK_RULES[seg_class]
+    factor = rule["background_factor"] if background_factor is None else float(background_factor)
+    n_threads = min(16, mp.cpu_count())
 
     raw = read_image_data(input_path, input_key)
-    chunks = getattr(raw, "chunks", (64, 64, 64))
+    lowres, source = _read_pyramid_level(input_path, input_key, raw.shape)
+    if lowres is not None:
+        background, blocks = _lowres_statistics(lowres, rule["percentile"])
+        if not _matches_mean_pooling(raw, lowres, background, blocks):
+            print(f"The pyramid level {source} is not an averaging downsampling of the input.")
+            lowres = None
+    if lowres is None:
+        print(f"Downsample the input {LOWRES_FACTOR}x with the mean.")
+        lowres, source = _mean_pool(raw, n_threads), "mean pooling of the input"
+        background, blocks = _lowres_statistics(lowres, rule["percentile"])
 
+    grid_shape = tuple(-(-sh // bs) for sh, bs in zip(raw.shape, MASK_BLOCK))
+    scores = _fit_grid(blocks["score"], grid_shape)
+    threshold = factor * background
+    keep = scores > threshold
+    if rule["dilation"]:
+        keep = ndimage.binary_dilation(keep, structure=np.ones((3, 3, 3), dtype=bool))
+
+    stats = {
+        "rule": "background", "seg_class": seg_class, "percentile": rule["percentile"],
+        "background_factor": factor, "dilation": "26 neighbours" if rule["dilation"] else "none",
+        "background": background, "threshold": threshold, "lowres_source": source,
+        "block_shape": list(MASK_BLOCK), "n_blocks": int(keep.size), "kept_blocks": int(keep.sum()),
+        "kept_fraction": float(keep.mean()),
+    }
+    print(f"Mask rule for {seg_class}: block p{rule['percentile']} at {LOWRES_FACTOR}x lower resolution "
+          f"> {factor} x b = {threshold:.1f} (b = {background:.1f}, from {source}), dilation {stats['dilation']}.")
+    return keep, stats
+
+
+def _legacy_mask_blocks(raw, seg_class, relative_threshold, absolute_threshold):
+    """Decide the mask blocks with the percentile rule of flamingo-tools before 2026-11.
+
+    The blocks are 2 x the input chunks. A block is kept if its upper percentile at full
+    resolution exceeds `min_intensity`: `absolute_threshold` if given, else `relative_threshold`
+    times the median p99.9 of 16 random blocks, clipped to the class range.
+    """
+    if seg_class in ("ihc", "ihc_low"):
+        upper_percentile, absolute_min, absolute_max = 99, 250, 400
+    else:
+        upper_percentile, absolute_min, absolute_max = 95, 100, 200
+    print(f"Calculating the legacy mask for segmentation class {seg_class}.")
+
+    chunks = getattr(raw, "chunks", (64, 64, 64))
     block_shape = tuple(2 * ch for ch in chunks)
     blocking = Blocking([0, 0, 0], raw.shape, block_shape)
     n_blocks = blocking.number_of_blocks
-
-    if output_folder is None:
-        ds_mask = np.zeros(raw.shape, dtype=np.uint64)
-
-    else:
-        mask_path = os.path.join(output_folder, "mask.zarr")
-        f = z5py.File(mask_path, "a")
-        mask_key = "mask"
-        if mask_key in f:
-            return
-
-        ds_mask = f.create_dataset(mask_key, shape=raw.shape, compression="gzip", dtype="uint8", chunks=block_shape)
 
     if absolute_threshold is None:
         # Estimate the global signal level from a random sample of blocks using the
@@ -457,36 +553,115 @@ def find_mask(
             bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
             sample_highs.append(float(np.percentile(raw[bb], 99.9)))
         global_high = float(np.median(sample_highs))
-        # Cap at absolute_max: for spike-inflated or normally bright images the
-        # relative term exceeds the cap and we fall back to the fixed class default;
-        # for dim stainings the relative term is below the cap and adapts downward.
         min_intensity = max(absolute_min, min(relative_threshold * global_high, absolute_max))
         print(f"Adaptive min_intensity: {min_intensity:.1f} (global_high={global_high:.1f}, cap={absolute_max})")
     else:
         min_intensity = float(absolute_threshold)
         print(f"Using absolute min_intensity: {min_intensity:.1f}")
 
+    grid_shape = tuple(-(-sh // bs) for sh, bs in zip(raw.shape, block_shape))
+    keep = np.zeros(grid_shape, dtype=bool)
+
     def find_mask_block(block_id):
         block = blocking.get_block(block_id)
         bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        threshold = np.percentile(raw[bb], upper_percentile)
-        if threshold > min_intensity:
-            ds_mask[bb] = 1
-            return True
-        return False
+        if np.percentile(raw[bb], upper_percentile) > min_intensity:
+            keep[tuple(beg // bs for beg, bs in zip(block.begin, block_shape))] = True
 
     n_threads = min(16, mp.cpu_count())
     with futures.ThreadPoolExecutor(n_threads) as tp:
-        results = list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
+        list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
 
-    seg_mask_blocks = sum(results)
-    relative_blocks = round(seg_mask_blocks / n_blocks * 100, 2)
-    print(f"{seg_mask_blocks}/{n_blocks} ({relative_blocks} %) used for segmentation.")
+    stats = {
+        "rule": "legacy", "seg_class": seg_class, "percentile": upper_percentile,
+        "threshold": min_intensity, "threshold_mode": "adaptive" if absolute_threshold is None else "absolute",
+        "block_shape": list(block_shape), "n_blocks": int(keep.size), "kept_blocks": int(keep.sum()),
+        "kept_fraction": float(keep.mean()),
+    }
+    return keep, block_shape, stats
+
+
+def find_mask(
+    input_path: str,
+    input_key: Optional[str],
+    output_folder: Optional[str],
+    seg_class: Optional[str] = "sgn",
+    relative_threshold: float = 0.7,
+    absolute_threshold: Optional[float] = None,
+    legacy_mask: bool = False,
+    background_factor: Optional[float] = None,
+) -> Optional[np.ndarray]:
+    """Determine the mask of the blocks that the U-Net predicts.
+
+    For 'sgn' and 'ihc', `compute_mask_blocks` decides the blocks relative to the background
+    level of the volume. The legacy rule of flamingo-tools before 2026-11 applies if
+    `legacy_mask` is set, or for every other `seg_class` (None, 'sgn_low', 'ihc_low'): a block of
+    2 x the input chunks is kept if its p95 ('ihc', 'ihc_low': p99) at full resolution exceeds
+    `absolute_threshold`, or an adaptive threshold derived from `relative_threshold`.
+
+    The default rule assumes that most non-zero voxels are background, as in a whole cochlea. It
+    was validated on whole cochleae only. In a small crop that cells fill for the most part, the
+    background level is too high; use `use_mask=False` (`--disable_masking`) for such a crop.
+
+    The mask is stored in 'mask.zarr' (key 'mask', uint8, the shape of the input, one chunk per
+    mask block, only the kept blocks written) and the decision in 'mask_statistics.json'. An
+    existing mask is not recomputed.
+
+    Args:
+        input_path: The file path to the image data.
+        input_key: The key / internal path of the image data.
+        output_folder: The output folder for storing the mask data. If None, the mask is returned.
+        seg_class: The segmentation class: 'sgn', 'ihc', 'sgn_low' or 'ihc_low'.
+        relative_threshold: Legacy rule only. The fraction of the global signal level used as the
+            adaptive threshold.
+        absolute_threshold: Legacy rule only. The threshold of the block percentile.
+        legacy_mask: Use the legacy rule for 'sgn' and 'ihc'.
+        background_factor: Default rule only. The threshold as a multiple of the background level.
+
+    Returns:
+        The mask as a uint8 array if `output_folder` is None, else None.
+    """
+    legacy = legacy_mask or seg_class not in MASK_RULES
+    if absolute_threshold is not None and not legacy:
+        raise ValueError(
+            f"absolute_threshold={absolute_threshold} applies only to the legacy mask rule. "
+            "Use --legacy_mask (legacy_mask=True) to keep the absolute threshold."
+        )
+    if background_factor is not None and legacy:
+        raise ValueError("background_factor applies only to the default mask rule, not to the legacy rule.")
+
+    if output_folder is not None:
+        mask_path = os.path.join(output_folder, "mask.zarr")
+        if os.path.isdir(mask_path) and "mask" in z5py.File(mask_path, "r"):
+            return None
+
+    raw = read_image_data(input_path, input_key)
+    if legacy:
+        keep, block_shape, stats = _legacy_mask_blocks(raw, seg_class, relative_threshold, absolute_threshold)
+    else:
+        keep, stats = compute_mask_blocks(input_path, input_key, seg_class, background_factor)
+        block_shape = MASK_BLOCK
+    n_blocks, n_kept = keep.size, int(keep.sum())
+    print(f"{n_kept}/{n_blocks} ({round(n_kept / n_blocks * 100, 2)} %) used for segmentation.")
 
     if output_folder is None:
-        return ds_mask
+        mask = np.zeros(raw.shape, dtype="uint8")
     else:
-        return None
+        mask = z5py.File(mask_path, "a").create_dataset(
+            "mask", shape=raw.shape, compression="gzip", dtype="uint8", chunks=block_shape
+        )
+
+    def write_block(index):
+        mask[tuple(slice(i * bs, min((i + 1) * bs, sh)) for i, bs, sh in zip(index, block_shape, raw.shape))] = 1
+
+    with futures.ThreadPoolExecutor(min(16, mp.cpu_count())) as tp:
+        list(tp.map(write_block, map(tuple, np.argwhere(keep))))
+
+    if output_folder is None:
+        return mask
+    with open(os.path.join(output_folder, "mask_statistics.json"), "w") as f:
+        json.dump(stats, f, indent=2)
+    return None
 
 
 def distance_watershed_implementation(
@@ -497,7 +672,8 @@ def distance_watershed_implementation(
     boundary_distance_threshold: Optional[float] = None,
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
-    original_shape: Optional[Tuple[int, int, int]] = None
+    original_shape: Optional[Tuple[int, int, int]] = None,
+    halo: Tuple[int, int, int] = (16, 32, 32),
 ) -> None:
     """Parallel implementation of the distance-prediction based watershed.
 
@@ -525,6 +701,8 @@ def distance_watershed_implementation(
         distance_smoothing: The sigma value for smoothing the distance predictions with a gaussian kernel.
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
         original_shape: The original shape to resize the segmentation to.
+        halo: The halo of the block-wise seeded watershed. A block must see the seed of a cell that
+            crosses its face; the former (2, 8, 8) split large cells, such as IHCs, at block faces.
     """
     if isinstance(input_path, str):
         input_ = open_file(input_path, "r")["prediction"]
@@ -549,10 +727,13 @@ def distance_watershed_implementation(
     if distance_smoothing > 0:
         smooth = partial(gaussian, sigma=distance_smoothing)
         # We assume that the gaussian is truncated at 5.3 sigma (tolerance of 1e-6)
-        halo = int(np.ceil(5.3 * distance_smoothing))
-        halo = 3 * (halo,)
-        center_distances = SimpleTransformationWrapperWithHalo(center_distances, transformation=smooth, halo=halo)
-        boundary_distances = SimpleTransformationWrapperWithHalo(boundary_distances, transformation=smooth, halo=halo)
+        smoothing_halo = 3 * (int(np.ceil(5.3 * distance_smoothing)),)
+        center_distances = SimpleTransformationWrapperWithHalo(
+            center_distances, transformation=smooth, halo=smoothing_halo
+        )
+        boundary_distances = SimpleTransformationWrapperWithHalo(
+            boundary_distances, transformation=smooth, halo=smoothing_halo
+        )
 
     # Allocate the (zarr) array for the seeds.
     if output_folder is None:
@@ -596,7 +777,6 @@ def distance_watershed_implementation(
         )
 
     # Compute the segmentation with a seeded watershed
-    halo = (2, 8, 8)
     parallel.seeded_watershed(
         boundary_distances, seeds, out=seg, block_shape=block_shape, halo=halo, mask=mask, verbose=True,
         n_threads=n_threads,
@@ -704,6 +884,8 @@ def run_unet_prediction(
     relative_threshold: float = 0.6,
     batch_size: int = 1,
     num_prefetch_workers: Optional[int] = None,
+    legacy_mask: bool = False,
+    background_factor: Optional[float] = None,
 ) -> None:
     """Run prediction and segmentation with a distance U-Net.
 
@@ -724,12 +906,14 @@ def run_unet_prediction(
         fg_threshold: The threshold applied to the foreground prediction for deriving the watershed mask.
         distance_smoothing: The sigma value for smoothing the distance predictions with a gaussian kernel.
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
-        seg_class: Specifier for exclusion criterias for mask generation.
-        relative_threshold: Passed to find_mask. Fraction of the estimated global signal level
-            used as the block inclusion threshold (capped at the per-class absolute maximum).
+        seg_class: The segmentation class of the mask, see `find_mask`. None uses the legacy rule.
+        relative_threshold: Passed to find_mask. The adaptive threshold factor of the legacy rule.
         batch_size: The number of blocks stacked into a single forward pass.
         num_prefetch_workers: The number of threads that load blocks while the GPU predicts.
             By default it is derived from the number of cores available to the job.
+        legacy_mask: Passed to find_mask. Use the legacy mask rule for 'sgn' and 'ihc'.
+        background_factor: Passed to find_mask. The threshold of the default mask rule as a multiple
+            of the background level. By default, the value of MASK_RULES[seg_class].
     """
     if output_folder is not None:
         os.makedirs(output_folder, exist_ok=True)
@@ -737,7 +921,8 @@ def run_unet_prediction(
     if use_mask:
         mask = find_mask(
             input_path, input_key, output_folder=output_folder,
-            seg_class=seg_class, relative_threshold=relative_threshold,
+            seg_class=seg_class, relative_threshold=relative_threshold, legacy_mask=legacy_mask,
+            background_factor=background_factor,
         )
     else:
         mask = None
@@ -779,6 +964,8 @@ def run_unet_prediction_preprocess_slurm(
     s3_credentials: Optional[str] = None,
     seg_class: Optional[str] = None,
     absolute_threshold: Optional[float] = None,
+    legacy_mask: Union[bool, str] = False,
+    background_factor: Optional[Union[float, str]] = None,
 ) -> None:
     """Pre-processing for the parallel prediction with U-Net models.
     Masks are stored in mask.zarr in the output folder.
@@ -791,7 +978,12 @@ def run_unet_prediction_preprocess_slurm(
         s3_bucket_name: S3 bucket name.
         s3_service_endpoint: S3 service endpoint.
         s3_credentials: File path to credentials for S3 bucket.
-        seg_class: Specifier for exclusion criterias for mask generation.
+        seg_class: The segmentation class of the mask, see `find_mask`.
+        absolute_threshold: The threshold of the legacy mask rule. 'None' derives it from the data.
+        legacy_mask: Use the legacy mask rule. The slurm templates pass strings, so the strings
+            "", "0", "false" and "no" are off.
+        background_factor: The threshold of the default mask rule as a multiple of the background
+            level. 'None' uses the class default.
     """
     input_path = s3_utils.resolve_path(
         input_path, s3, bucket_name=s3_bucket_name,
@@ -804,9 +996,16 @@ def run_unet_prediction_preprocess_slurm(
         except ValueError:
             absolute_threshold = None
         print(f"Using absolute threshold {absolute_threshold}")
+    if isinstance(legacy_mask, str):
+        legacy_mask = legacy_mask.strip().lower() not in ("", "0", "false", "no")
+    if isinstance(background_factor, str):
+        background_factor = None if background_factor.strip() in ("", "None") else float(background_factor)
 
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
-        find_mask(input_path, input_key, output_folder, seg_class=seg_class, absolute_threshold=absolute_threshold)
+        find_mask(
+            input_path, input_key, output_folder, seg_class=seg_class, absolute_threshold=absolute_threshold,
+            legacy_mask=legacy_mask, background_factor=background_factor,
+        )
 
 
 def run_unet_prediction_slurm(
@@ -824,6 +1023,7 @@ def run_unet_prediction_slurm(
     s3_credentials: Optional[str] = None,
     batch_size: int = 1,
     num_prefetch_workers: Optional[int] = None,
+    seg_class: Optional[str] = None,
 ) -> None:
     """Run prediction of distance U-Net for data stored locally or on an S3 bucket.
 
@@ -844,6 +1044,8 @@ def run_unet_prediction_slurm(
         batch_size: The number of blocks stacked into a single forward pass.
         num_prefetch_workers: The number of threads that load blocks while the GPU predicts.
             By default it is derived from the number of cores available to the job.
+        seg_class: The segmentation class of the mask, if the output folder has no 'mask.zarr' yet.
+            See `find_mask`.
     """
     os.makedirs(output_folder, exist_ok=True)
     prediction_instances = int(prediction_instances)
@@ -862,7 +1064,7 @@ def run_unet_prediction_slurm(
         raise ValueError("The SLURM_ARRAY_TASK_ID is not set. Ensure that you are using the '-a' option with SBATCH.")
 
     if not os.path.isdir(os.path.join(output_folder, "mask.zarr")):
-        find_mask(input_path, input_key, output_folder)
+        find_mask(input_path, input_key, output_folder, seg_class=seg_class)
 
     mean, std = _load_mean_std(output_folder)
 
