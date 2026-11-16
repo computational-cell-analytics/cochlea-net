@@ -1,0 +1,73 @@
+name	variant	tp	fp	fn	fn_miss	fn_merge	n_objects	n_points	failed	keep	repartition	merge	split
+MLR226L_VGlut3_z1200_3turns_full	components	26	4	8	4	4	30	34					
+MLR226L_VGlut3_z1200_3turns_full	components+correct	27	3	7	4	3	30	34	0.0	22.0	6.0	1.0	1.0
+MLR226L_VGlut3_z1200_3turns_full	refined_1000	26	4	8	4	4	30	34					
+MLR226L_VGlut3_z1200_3turns_full	refined_5000	26	4	8	4	4	30	34					
+MLR226L_VGlut3_z1200_3turns_full	refined_5000+correct	27	3	7	4	3	30	34	0.0	22.0	6.0	1.0	1.0
+MLR226L_VGlut3_z1200_3turns_full	refined_10000	26	3	8	4	4	29	34					
+MLR226L_VGlut3_z2214_midmidiolarstyle_full	components	4	2	3	0	3	6	7					
+MLR226L_VGlut3_z2214_midmidiolarstyle_full	components+correct	4	1	3	0	3	5	7	0.0	2.0	2.0		2.0
+MLR226L_VGlut3_z2214_midmidiolarstyle_full	refined_1000	4	2	3	0	3	6	7					
+MLR226L_VGlut3_z2214_midmidiolarstyle_full	refined_5000	4	2	3	0	3	6	7					
+MLR226L_VGlut3_z2214_midmidiolarstyle_full	refined_5000+correct	4	1	3	0	3	5	7	0.0	2.0	2.0		2.0
+MLR226L_VGlut3_z2214_midmidiolarstyle_full	refined_10000	4	2	3	0	3	6	7					
+MLR226L_VGlut3_z485_1row_full	components	21	8	14	13	1	29	35					
+MLR226L_VGlut3_z485_1row_full	components+correct	21	6	14	13	1	27	35	0.0	23.0	1.0	4.0	1.0
+MLR226L_VGlut3_z485_1row_full	refined_1000	21	8	14	13	1	29	35					
+MLR226L_VGlut3_z485_1row_full	refined_5000	21	5	14	13	1	26	35					
+MLR226L_VGlut3_z485_1row_full	refined_5000+correct	21	5	14	13	1	26	35	0.0	23.0	1.0	1.0	1.0
+MLR226L_VGlut3_z485_1row_full	refined_10000	21	4	14	13	1	25	35					
+MLR226R_VGlut3_z2042_midmidiolarstyle_full	components	6	1	3	0	3	7	9					
+MLR226R_VGlut3_z2042_midmidiolarstyle_full	components+correct	6	1	3	0	3	7	9	0.0	4.0	3.0		
+MLR226R_VGlut3_z2042_midmidiolarstyle_full	refined_1000	6	1	3	0	3	7	9					
+MLR226R_VGlut3_z2042_midmidiolarstyle_full	refined_5000	6	1	3	0	3	7	9					
+MLR226R_VGlut3_z2042_midmidiolarstyle_full	refined_5000+correct	6	1	3	0	3	7	9	0.0	4.0	3.0		
+MLR226R_VGlut3_z2042_midmidiolarstyle_full	refined_10000	6	1	3	0	3	7	9					
+MLR226R_VGlut3_z2912_3turns_full	components	29	0	2	2	0	29	31					
+MLR226R_VGlut3_z2912_3turns_full	components+correct	29	0	2	2	0	29	31	0.0	23.0	6.0		
+MLR226R_VGlut3_z2912_3turns_full	refined_1000	29	0	2	2	0	29	31					
+MLR226R_VGlut3_z2912_3turns_full	refined_5000	29	0	2	2	0	29	31					
+MLR226R_VGlut3_z2912_3turns_full	refined_5000+correct	29	0	2	2	0	29	31	0.0	23.0	6.0		
+MLR226R_VGlut3_z2912_3turns_full	refined_10000	29	0	2	2	0	29	31					
+MLR226R_VGlut3_z859_1row_full	components	30	1	3	1	2	31	33					
+MLR226R_VGlut3_z859_1row_full	components+correct	32	1	1	1	0	33	33	0.0	27.0	2.0		2.0
+MLR226R_VGlut3_z859_1row_full	refined_1000	30	1	3	1	2	31	33					
+MLR226R_VGlut3_z859_1row_full	refined_5000	30	1	3	1	2	31	33					
+MLR226R_VGlut3_z859_1row_full	refined_5000+correct	32	1	1	1	0	33	33	0.0	27.0	2.0		2.0
+MLR226R_VGlut3_z859_1row_full	refined_10000	30	1	3	1	2	31	33					
+MLR227L_VGlut3_z1346_midmidiolarstyle_full	components	8	0	2	0	2	8	10					
+MLR227L_VGlut3_z1346_midmidiolarstyle_full	components+correct	9	0	1	0	1	9	10	0.0	6.0	1.0		1.0
+MLR227L_VGlut3_z1346_midmidiolarstyle_full	refined_1000	8	0	2	0	2	8	10					
+MLR227L_VGlut3_z1346_midmidiolarstyle_full	refined_5000	8	0	2	0	2	8	10					
+MLR227L_VGlut3_z1346_midmidiolarstyle_full	refined_5000+correct	9	0	1	0	1	9	10	0.0	6.0	1.0		1.0
+MLR227L_VGlut3_z1346_midmidiolarstyle_full	refined_10000	8	0	2	0	2	8	10					
+MLR227L_VGlut3_z2495_3turns_full	components	28	2	10	2	8	30	38					
+MLR227L_VGlut3_z2495_3turns_full	components+correct	28	2	10	2	8	30	38	0.0	22.0	6.0	1.0	1.0
+MLR227L_VGlut3_z2495_3turns_full	refined_1000	28	2	10	2	8	30	38					
+MLR227L_VGlut3_z2495_3turns_full	refined_5000	28	2	10	2	8	30	38					
+MLR227L_VGlut3_z2495_3turns_full	refined_5000+correct	28	2	10	2	8	30	38	0.0	22.0	6.0	1.0	1.0
+MLR227L_VGlut3_z2495_3turns_full	refined_10000	27	2	11	2	9	29	38					
+MLR227L_VGlut3_z772_2rows_full	components	42	0	5	4	1	42	47					
+MLR227L_VGlut3_z772_2rows_full	components+correct	43	0	4	4	0	43	47	0.0	39.0	2.0	1.0	
+MLR227L_VGlut3_z772_2rows_full	refined_1000	42	0	5	4	1	42	47					
+MLR227L_VGlut3_z772_2rows_full	refined_5000	42	0	5	4	1	42	47					
+MLR227L_VGlut3_z772_2rows_full	refined_5000+correct	43	0	4	4	0	43	47	0.0	39.0	2.0	1.0	
+MLR227L_VGlut3_z772_2rows_full	refined_10000	42	0	5	4	1	42	47					
+MLR227R_VGlut3_z1178_3turns_full	components	33	1	4	3	1	34	37					
+MLR227R_VGlut3_z1178_3turns_full	components+correct	33	2	4	3	1	35	37	0.0	31.0			3.0
+MLR227R_VGlut3_z1178_3turns_full	refined_1000	33	1	4	3	1	34	37					
+MLR227R_VGlut3_z1178_3turns_full	refined_5000	33	1	4	3	1	34	37					
+MLR227R_VGlut3_z1178_3turns_full	refined_5000+correct	33	2	4	3	1	35	37	0.0	31.0			3.0
+MLR227R_VGlut3_z1178_3turns_full	refined_10000	33	1	4	3	1	34	37					
+MLR227R_VGlut3_z2459_midmidiolarstyle_full	components	4	0	1	0	1	4	5					
+MLR227R_VGlut3_z2459_midmidiolarstyle_full	components+correct	4	1	1	0	1	5	5	0.0	3.0			1.0
+MLR227R_VGlut3_z2459_midmidiolarstyle_full	refined_1000	4	0	1	0	1	4	5					
+MLR227R_VGlut3_z2459_midmidiolarstyle_full	refined_5000	4	0	1	0	1	4	5					
+MLR227R_VGlut3_z2459_midmidiolarstyle_full	refined_5000+correct	4	1	1	0	1	5	5	0.0	3.0			1.0
+MLR227R_VGlut3_z2459_midmidiolarstyle_full	refined_10000	4	0	1	0	1	4	5					
+MLR227R_VGlut3_z770_1row_full	components	32	0	2	2	0	32	34					
+MLR227R_VGlut3_z770_1row_full	components+correct	32	0	2	2	0	32	34	0.0	32.0			
+MLR227R_VGlut3_z770_1row_full	refined_1000	32	0	2	2	0	32	34					
+MLR227R_VGlut3_z770_1row_full	refined_5000	32	0	2	2	0	32	34					
+MLR227R_VGlut3_z770_1row_full	refined_5000+correct	32	0	2	2	0	32	34	0.0	32.0			
+MLR227R_VGlut3_z770_1row_full	refined_10000	32	0	2	2	0	32	34					

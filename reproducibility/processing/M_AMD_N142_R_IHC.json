@@ -1,14 +1,38 @@
-{
-	"dataset_name": "M_AMD_N142_R",
-	"segmentation_channel": "IHC_v4b",
-	"cell_type": "ihc",
-	"component_list": [
-		2,
-		4,
-		3
-	],
-	"label_components": {
-		"max_edge_distance": 30
+[
+	{
+		"dataset_name": "M_AMD_N142_R",
+		"segmentation_channel": "IHC_v4b",
+		"cell_type": "ihc",
+		"component_list": [
+			2,
+			4,
+			3
+		],
+		"label_components": {
+			"max_edge_distance": 30
+		},
+		"tonotopic_mapping": {}
 	},
-	"tonotopic_mapping": {}
-}
+	{
+		"dataset_name": "M_AMD_N142_R",
+		"segmentation_channel": "IHC_v11",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"label_components": {
+			"min_size": 5000,
+			"min_component_length": 10,
+			"max_edge_distance": 30,
+			"component_list_path": [
+				9,
+				1,
+				4,
+				2
+			],
+			"max_path_deviation": 15.0,
+			"refine_row": true,
+			"merge_components": true
+		}
+	}
+]

@@ -68,6 +68,45 @@ Custom component(s) have 553 IHCs.
 The selected components can contain other structures than IHCs.
 Examine the components in MoBIE to make sure that they contain only IHCs.
 
+### IHC row correction
+
+`correct_ihc_row` in `flamingo_tools.postprocessing.ihc_morphology` corrects the instances of an IHC row in a
+segmentation volume. It uses the morphology of the row: each IHC has a tip at both ends of its long axis, and the
+IHCs sit side by side along the row. The function merges the parts of one cell, splits merged cells at the neck
+between them and removes protrusions.
+
+- The function works on a crop or a window of the segmentation, not on a whole cochlea.
+- There is no command line interface.
+- The function needs the central path of the row in pixels, in (z, y, x) order, in the frame of the window.
+- The label ids of the window must be consecutive.
+
+The example takes the path of a refined IHC row. `table` is a segmentation table with component labels, for
+example the output of `flamingo_tools.label_components`. `components` lists the row components in the order of
+the cochlea. `refine_ihc_row` links one path per component in this order and returns the path in micrometer, in
+(x, y, z) order, sampled at 1 micrometer. One path through the union of the components can miss a part of a row
+with gaps. `window` holds the segmentation in a box that starts at `start` (pixels, (z, y, x) order).
+```python
+import numpy as np
+from skimage.segmentation import relabel_sequential
+from flamingo_tools.postprocessing.ihc_morphology import correct_ihc_row, ihc_row_reference
+from flamingo_tools.postprocessing.label_components import refine_ihc_row
+
+voxel_size = 0.38
+table, path, _ = refine_ihc_row(table, components, min_size=5000, max_path_deviation=15.0, merge_components=True)
+row_ids = table.loc[table["component_labels"] == 1, "label_id"].values
+window = relabel_sequential(np.where(np.isin(window, row_ids), window, 0))[0]
+path = path[:, ::-1] / voxel_size - start
+reference = ihc_row_reference([window], path, voxel_size)
+labels, report, tips = correct_ihc_row(window, path, reference, voxel_size)
+```
+If another turn of the row passes near the window, use only the part of the path at the window. The evaluation
+scripts keep 60 micrometer of the path beyond the row cells of the window.
+
+`report` has one row per input instance with its class and its action (keep, merge, split, repartition or
+remove). The column `review` marks the instances to check. The
+[IHC post-processing documentation](ihc_postprocessing.md) shows the analysis behind the defaults, and how the
+evaluation scripts cut the windows.
+
 ## Tonotopic mapping
 
 `flamingo_tools.tonotopic_mapping` assigns a frequency to each instance of a segmentation table.
