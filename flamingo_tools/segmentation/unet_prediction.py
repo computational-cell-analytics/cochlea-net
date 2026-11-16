@@ -11,10 +11,9 @@ import re
 import warnings
 from concurrent import futures
 from functools import partial
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Dict, Optional, Tuple, Union
 
 import elf.parallel as parallel
-import imageio.v3 as imageio
 import numpy as np
 import torch
 import z5py
@@ -137,7 +136,7 @@ def _get_device_and_tiling(block_shape, halo, input_):
         block_shape = (128, 128, 128) if have_cuda else getattr(input_, "chunks", (64, 64, 64))
     if halo is None:
         # A z halo of 16 leaves a seam in the center distances at the z faces of the blocks, which
-        # splits cells there (scripts/mask_analysis/block_seam_test.py).
+        # splits cells there (doc/input_mask.md).
         halo = (32, 32, 32)
     # Clip to the volume. A block larger than the input makes the halo dominate the forward
     # pass: a (64, 128, 128) volume with a (64, 256, 256) block is padded to 96 x 384 x 384.
@@ -302,92 +301,6 @@ def prediction_impl(
         return original_shape, None
 
 
-def sweep_mask_thresholds(
-    input_path: str,
-    output_path: str,
-    input_key: Optional[str] = None,
-    min_intensities: List[float] = [100, 150, 200, 300, 400, 600, 1000],
-    seg_class: Optional[str] = "sgn",
-    threshold_map_path: Optional[str] = None,
-    percentile_map_path: Optional[str] = None,
-) -> Dict[float, float]:
-    """Compute the fraction of blocks that would be included in the mask for each
-    candidate min_intensity value, using a single parallel read pass over the data.
-
-    This evaluates the legacy mask rule of `find_mask` (legacy_mask=True, absolute_threshold).
-
-    Args:
-        input_path: The file path to the image data.
-        input_key: The key / internal path of the image data.
-        min_intensities: Intensity thresholds to evaluate.
-        seg_class: Determines the upper percentile used per block (same as the legacy rule).
-        threshold_map_path: Optional output path for a downscaled TIF with one voxel
-            per masking block, where each voxel holds the largest value in
-            min_intensities that the block's percentile still exceeds (0 if none).
-        percentile_map_path: Optional output path for a downscaled TIF with one voxel
-            per masking block, where each voxel holds the block's raw percentile value.
-
-    Returns:
-        Dict mapping each min_intensity to the fraction of blocks that would be masked.
-    """
-    if seg_class in ("ihc", "ihc_low"):
-        upper_percentile = 99
-    else:
-        upper_percentile = 95
-
-    raw = read_image_data(input_path, input_key)
-    chunks = getattr(raw, "chunks", (64, 64, 64))
-    block_shape = tuple(2 * ch for ch in chunks)
-    blocking = Blocking([0, 0, 0], raw.shape, block_shape)
-    n_blocks = blocking.number_of_blocks
-
-    def percentile_for_block(block_id):
-        block = blocking.get_block(block_id)
-        bb = tuple(slice(beg, end) for beg, end in zip(block.begin, block.end))
-        return float(np.percentile(raw[bb], upper_percentile))
-
-    n_threads = min(16, mp.cpu_count())
-    with futures.ThreadPoolExecutor(n_threads) as tp:
-        block_percentiles = list(tqdm(tp.map(percentile_for_block, range(n_blocks)), total=n_blocks,
-                                      desc="Computing block percentiles"))
-
-    block_percentiles = np.array(block_percentiles)
-
-    if threshold_map_path is not None or percentile_map_path is not None:
-        grid_shape = tuple(blocking.blocks_per_axis)
-
-        if percentile_map_path is not None:
-            out_dir = os.path.dirname(percentile_map_path)
-            os.makedirs(out_dir, exist_ok=True)
-            percentile_map = block_percentiles.reshape(grid_shape).astype("float32")
-            imageio.imwrite(percentile_map_path, percentile_map, compression="zlib")
-
-        if threshold_map_path is not None:
-            out_dir = os.path.dirname(threshold_map_path)
-            os.makedirs(out_dir, exist_ok=True)
-            sorted_thresholds = np.array(sorted(min_intensities), dtype=np.float32)
-            exceed_counts = (block_percentiles[:, None] > sorted_thresholds[None, :]).sum(axis=1)
-            threshold_values = np.concatenate([[0.0], sorted_thresholds])[exceed_counts]
-            threshold_map = threshold_values.reshape(grid_shape).astype("float32")
-            imageio.imwrite(threshold_map_path, threshold_map, compression="zlib")
-
-    print(f"\n{'min_intensity':>15}  {'masked blocks':>15}  {'fraction (%)':>12}")
-    print("-" * 46)
-    result = {}
-    for threshold in sorted(min_intensities):
-        n_masked = int(np.sum(block_percentiles > threshold))
-        fraction = n_masked / n_blocks
-        print(f"{threshold:>15.1f}  {n_masked:>9}/{n_blocks:<5}  {fraction * 100:>11.2f}")
-        result[threshold] = fraction
-
-    out_dir = os.path.dirname(output_path)
-    os.makedirs(out_dir, exist_ok=True)
-    with open(output_path, "w") as f:
-        json.dump(result, f, indent='\t', separators=(',', ': '))
-
-    return result
-
-
 # The mask grid of the default rule is the GPU prediction block, so one mask block is one U-Net
 # block. The rule reads the pyramid level LOWRES_LEVELS steps of 2x below the input, where one mask
 # block is (128 / 8)^3 = 16^3 voxels.
@@ -397,7 +310,7 @@ LOWRES_FACTOR = 2 ** LOWRES_LEVELS
 # Per class: the block percentile at the low-res level, the factor on the background level b, and
 # whether a kept block adds its 26 neighbours. Fitted on 100 and validated on 89 other SGN and IHC
 # segmentations of whole cochleae from the S3 bucket, split by animal: every validation segmentation
-# keeps >= 99.5% of its relevant objects complete (scripts/mask_analysis/).
+# keeps >= 99.5% of its relevant objects complete (doc/input_mask.md).
 MASK_RULES = {
     "sgn": {"percentile": 95, "background_factor": 1.08, "dilation": False},
     "ihc": {"percentile": 99, "background_factor": 1.75, "dilation": True},
