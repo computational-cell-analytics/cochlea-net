@@ -1,0 +1,62 @@
+193 datasets with features (193 with s0 counts)
+182 objects below the signal floor 1.2 * b are not targets
+References that their recorded rule did not make: ['M_AMD_000126_L_SGN', 'M_AMD_000126_R_SGN', 'M_AMD_000127_L_SGN', 'M_AMD_N159_L_SGN', 'M_AMD_N161_L_SGN', 'M_AMD_N75_L_SGN', 'M_AMD_Roe310_L_SGN']
+IHC train: proposed / production blocks 2.13 in total, median 4.44; proposed complete min 0.9982
+IHC val: proposed / production blocks 1.99 in total, median 4.23; proposed complete min 0.9986
+SGN failure: proposed / production blocks 0.36 in total, median 0.32; proposed complete min 0.9628
+SGN train: proposed / production blocks 0.47 in total, median 0.48; proposed complete min 0.9959
+SGN val: proposed / production blocks 0.45 in total, median 0.47; proposed complete min 0.9970
+Logged production masks vs estimates:
+               key                            job  percentile     T  logged_kept  s3_kept  s0_kept
+ G_LR_000234_R_IHC    2026-11-10_mask_IHC_GLR234R          99 150.0       0.2893   0.2737   0.2893
+M_AMD_000088_R_IHC    2026-11-06_mask_IHC_MAMD88R          99 150.0       0.0248   0.0183   0.0248
+M_AMD_000112_L_IHC   2026-11-06_mask_IHC_MAMD112L          99 150.0       0.0146   0.0124   0.0146
+M_AMD_000126_L_IHC   2026-10-26_mask_IHC_MAMD126L          99 150.0       0.1653   0.1460   0.1653
+M_AMD_000126_R_IHC   2026-10-26_mask_IHC_MAMD126R          99 150.0       0.2281   0.2065   0.2281
+M_AMD_000127_L_IHC   2026-10-26_mask_IHC_MAMD127L          99 150.0       0.1261   0.1034   0.1261
+M_AMD_000127_R_IHC   2026-10-26_mask_IHC_MAMD127R          99 150.0       0.2161   0.1907   0.2161
+  M_AMD_N142_R_IHC  2026-11-06_mask_IHC_MAMDN142R          99 150.0       0.0144   0.0143   0.0144
+  M_AMD_N153_L_IHC  2026-11-06_mask_IHC_MAMDN153L          99 150.0       0.0171   0.0158   0.0171
+   M_AMD_N75_L_IHC   2026-11-09_mask_IHC_MAMDN75L          99 150.0       0.0161   0.0149   0.0161
+   M_AMD_N89_L_IHC   2026-11-09_mask_IHC_MAMDN89L          99 150.0       0.0263   0.0230   0.0263
+   M_AMD_N97_L_IHC   2026-11-09_mask_IHC_MAMDN97L          99 150.0       0.0145   0.0135   0.0145
+ M_AMD_OTOF1_L_IHC 2026-11-10_mask_IHC_MAMDOTOF1L          99 150.0       0.3468   0.3355   0.3468
+ M_AMD_OTOF2_L_IHC 2026-11-10_mask_IHC_MAMDOTOF2L          99 150.0       0.3602   0.3378   0.3602
+ M_LR_000249_R_IHC    2026-11-10_mask_IHC_MLR249R          99 150.0       0.0333   0.0242   0.0333
+ scope      score        mapping    theta  train_kept_median  train_efficiency  val_n  val_complete_min  val_complete_median  val_below_target  val_lost_max  val_kept_median  val_kept_max
+   IHC  s0p99_D26            abs 191.9998             0.1098            0.4642   37.0            0.9986               1.0000               0.0        0.0000           0.1033        0.7473
+   IHC  s3p99_D26            abs 188.0498             0.1122            0.4589   37.0            0.9986               1.0000               0.0        0.0000           0.1040        0.7202
+   IHC  s0p99_D26            rel   1.8087             0.1193            0.4341   37.0            0.9986               1.0000               0.0        0.0000           0.1104        0.7386
+   IHC  s3p99_D26            rel   1.7715             0.1223            0.4340   37.0            0.9986               1.0000               0.0        0.0000           0.1129        0.7086
+   IHC   s3p99_D6            rel   1.3277             0.1392            0.2624   37.0            0.9957               1.0000               0.0        0.0000           0.1275        0.7434
+   IHC   s3p99_D6            abs 133.9999             0.1419            0.2500   37.0            0.9957               1.0000               0.0        0.0000           0.1275        0.7700
+   IHC   s0p99_D6            rel   1.3475             0.1482            0.2510   37.0            0.9957               1.0000               0.0        0.0000           0.1367        0.7590
+   IHC   s0p99_D6            abs 135.9999             0.1538            0.2399   37.0            0.9957               1.0000               0.0        0.0000           0.1430        0.7757
+   IHC  s3p95_D26            rel   1.2357             0.2129            0.2887   37.0            0.9986               1.0000               0.0        0.0000           0.1911        0.8402
+   IHC  s3max_r30  contrast99.99   0.1379             0.2314            0.3733   37.0            0.9752               1.0000               2.0        0.0058           0.1771        0.7174
+   IHC  s3p95_D26            abs 123.9999             0.2402            0.2531   37.0            0.9986               1.0000               0.0        0.0000           0.2214        0.8579
+   IHC s3p95_Dr18            rel   1.2088             0.2531            0.1652   37.0            0.9971               1.0000               0.0        0.0000           0.2257        0.7546
+   SGN      s3p95            rel   1.0857             0.4461            0.7454   52.0            0.9970               0.9998               0.0        0.0000           0.4459        0.6936
+   SGN      s0p95            rel   1.0956             0.4541            0.7418   52.0            0.9972               0.9998               0.0        0.0000           0.4578        0.6999
+   SGN  s0p95_Dr6          ratio   0.4546             0.4557            0.4325   52.0            0.4111               1.0000               5.0        0.4669           0.4559        0.4710
+   SGN      s0p99            rel   1.2033             0.4613            0.6947   52.0            0.9948               0.9999               1.0        0.0000           0.4591        0.7284
+   SGN      s3p99            rel   1.1642             0.4626            0.6804   52.0            0.9941               0.9999               1.0        0.0000           0.4614        0.7252
+   SGN   s3max_r0  contrast99.99   0.0303             0.4632            0.6321   52.0            0.9589               1.0000               2.0        0.0160           0.4844        0.6882
+   SGN  s3p95_Dr6          ratio   0.4677             0.4691            0.4171   52.0            0.4406               1.0000               5.0        0.4294           0.4696        0.4978
+   SGN   s3max_r0          noise   8.3925             0.4692            0.6423   52.0            0.0998               1.0000               3.0        0.7345           0.4602        0.6465
+   SGN   s3max_r0 contrast99.999   0.0055             0.4742            0.6376   52.0            0.3939               1.0000               3.0        0.4405           0.4574        0.6915
+   SGN  s3p99_Dr6          ratio   0.4813             0.4819            0.5432   52.0            0.4429               1.0000               5.0        0.4431           0.4821        0.5140
+   SGN      s3p99            abs 118.9999             0.4822            0.5904   52.0            0.9926               1.0000               1.0        0.0000           0.4877        0.8456
+   SGN   s3max_r0          ratio   0.4815             0.4825            0.6038   52.0            0.5620               1.0000               5.0        0.2844           0.4830        0.5686
+pooled  s3p95_Dr6          ratio   0.4738             0.4770            0.2374   89.0            0.4736               1.0000               5.0        0.4046           0.4760        0.5130
+pooled  s0p95_Dr6          ratio   0.4958             0.4985            0.2359   89.0            0.5834               1.0000               4.0        0.2883           0.5001        0.7170
+pooled s0p95_Dr12          ratio   0.4959             0.4993            0.2648   89.0            0.4278               1.0000               5.0        0.4461           0.4981        0.7177
+pooled   s3p95_D6          ratio   0.4996             0.5020            0.2808   89.0            0.6002               1.0000               7.0        0.2763           0.5022        0.9924
+pooled   s3max_r0          noise   3.6989             0.5042            0.6134   89.0            0.9131               1.0000               2.0        0.0417           0.4787        0.7007
+pooled   s0p95_D6          ratio   0.5005             0.5042            0.3098   89.0            0.6010               1.0000               4.0        0.2762           0.5044        0.8294
+pooled s3p95_Dr12          ratio   0.5065             0.5095            0.2309   89.0            0.4480               1.0000               5.0        0.4242           0.5089        0.5907
+pooled      s3p99            rel   1.0288             0.5101            0.6280   89.0            0.9859               1.0000               1.0        0.0000           0.4959        0.7583
+pooled  s3p99_Dr6          ratio   0.5085             0.5103            0.2494   89.0            0.5268               1.0000               4.0        0.3547           0.5120        0.6728
+pooled   s3max_r6          noise   8.1503             0.5140            0.3556   89.0            0.2317               1.0000               3.0        0.5752           0.4840        0.7134
+pooled   s3max_r0   contrast99.9   0.0256             0.5164            0.6043   89.0            0.9859               1.0000               1.0        0.0000           0.5004        0.7909
+pooled   s3max_r6   contrast99.9   0.0696             0.5190            0.3825   89.0            0.9971               1.0000               0.0        0.0000           0.5039        0.8094

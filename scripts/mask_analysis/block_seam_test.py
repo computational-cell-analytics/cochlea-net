@@ -101,15 +101,10 @@ def main():
         print(f"prediction in {time.time() - t:.0f}s", flush=True)
 
     settings = get_default_segmentation_settings(args.model)
-    original = up.parallel.seeded_watershed
     with open_file(raw_path, "r") as f:
         results = {"reference": face_statistics(f["reference"][:], core_lo, core_hi)}
     halos = [tuple(int(v) for v in h.split(",")) for h in args.ws_halos.split(";")]
     for halo in halos:
-        def patched(*a, halo_=halo, **kw):
-            kw["halo"] = halo_
-            return original(*a, **kw)
-        up.parallel.seeded_watershed = patched
         folder = os.path.join(pred_folder, "ws_" + "_".join(map(str, halo)))
         os.makedirs(folder, exist_ok=True)
         t = time.time()
@@ -117,13 +112,12 @@ def main():
             pred_path, output_folder=folder, min_size=args.min_size,
             center_distance_threshold=settings["center_distance_threshold"],
             boundary_distance_threshold=settings["boundary_distance_threshold"],
-            fg_threshold=settings["fg_threshold"], distance_smoothing=settings["distance_smoothing"],
+            fg_threshold=settings["fg_threshold"], distance_smoothing=settings["distance_smoothing"], halo=halo,
         )
         with open_file(os.path.join(folder, "segmentation.zarr"), "r") as f:
             seg = f["segmentation"]
             print(f"halo {halo}: watershed in {time.time() - t:.0f}s, chunks {seg.chunks}", flush=True)
             results[str(halo)] = face_statistics(seg[:], core_lo, core_hi)
-    up.parallel.seeded_watershed = original
 
     with open(os.path.join(pred_folder, "face_statistics.json"), "w") as f:
         json.dump({"args": vars(args), "results": results}, f, indent=1)

@@ -102,8 +102,7 @@ def fig_dilation(fixed, cls, base, threshold, path):
     ax.set_xlabel("predicted blocks (% of all 128^3 blocks, log scale)")
     ax.set_ylabel("complete relevant objects (%)")
     ax.legend(frameon=False, loc="lower right", fontsize=8)
-    ax.set_title(f"{cls}: {base} > {threshold} (s3 estimate of the production rule), one line per dataset",
-                 loc="left")
+    ax.set_title(f"{cls}: {base} > {threshold} (the production rule), one line per dataset", loc="left")
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -143,7 +142,7 @@ def main():
     audit = pd.read_csv(os.path.join(OUTPUT_ROOT, "audit", "summary.csv"))
     fig_audit(audit, output_path("figures", "audit_cutoffs.png"))
     fixed = pd.read_csv(os.path.join(evaluation, "fixed_rules.csv"))
-    fig_dilation(fixed, "IHC", "s3p99", 150, output_path("figures", "ihc_dilation.png"))
+    fig_dilation(fixed, "IHC", "s0p99", 150, output_path("figures", "ihc_dilation.png"))
     scores = {"SGN": args.sgn_score, "IHC": args.ihc_score}
     critical = pd.read_csv(os.path.join(evaluation, "critical_t0.995.csv"))
     fig_critical(critical, scores, args.mapping, output_path("figures", "critical_thresholds.png"))

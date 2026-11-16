@@ -32,6 +32,12 @@ from mask_common import BLOCK, MASK_JOBS_CSV, OUTPUT_ROOT, load_datasets, object
 
 TARGETS = (0.99, 0.995, 0.999)
 DEFAULT_TARGET = 0.995
+# The proposed rules (score, mapping, theta) and the production rules (exact s0 score, T) per class.
+PROPOSED_RULES = {"SGN": ("s3p95", "rel", 1.08), "IHC": ("s3p99_D26", "rel", 1.75)}
+PRODUCTION_RULES = {"SGN": ("s0p95", 100.0), "IHC": ("s0p99", 150.0)}
+# A reference that loses more than this fraction of its own objects under its recorded rule was
+# made with another rule.
+MAX_REFERENCE_LOST = 0.01
 CONTRAST_QUANTILES = (99.9, 99.99, 99.999)
 FOOTPRINTS = {
     "D6": ndimage.generate_binary_structure(3, 1),
@@ -197,6 +203,23 @@ def excluded_objects(ds, lowres, consts, target_objects):
             for i in np.where(~target_objects)[0]]
 
 
+def align_s0(s0, grid):
+    """Crop the s0 block arrays to the grid of the low-res level.
+
+    A last slab of fewer than 8 planes gives one more s0 block along that axis than the s3 level
+    covers (G_LR_000302_R, M_AMD_OTOF28_L).
+    """
+    grid = tuple(int(g) for g in grid)
+    grid0 = tuple(int(g) for g in s0["grid"])
+    if grid0 == grid:
+        return s0
+    aligned = dict(s0, grid=np.array(grid))
+    for key in ("percentiles", "counts", "n_voxels", "block_max", "block_mean"):
+        values = s0[key].reshape(grid0 + s0[key].shape[1:])[:grid[0], :grid[1], :grid[2]]
+        aligned[key] = values.reshape((-1,) + s0[key].shape[1:])
+    return aligned
+
+
 def load_all(level, use_s0, signal_floor):
     datasets = load_datasets()["datasets"]
     hits_path = os.path.join(OUTPUT_ROOT, "audit", "face_hits.csv")
@@ -208,13 +231,14 @@ def load_all(level, use_s0, signal_floor):
             continue
         lowres = dict(np.load(path))
         s0_path = os.path.join(OUTPUT_ROOT, "s0_counts", f"{ds['key']}.npz")
-        s0 = dict(np.load(s0_path)) if use_s0 and os.path.exists(s0_path) else None
+        s0 = align_s0(dict(np.load(s0_path)), lowres["grid"]) if use_s0 and os.path.exists(s0_path) else None
         ds_hits = hits[hits.key == ds["key"]] if hits is not None else None
         consts = normalization(lowres)
         target_objects = lowres["object_max"] > signal_floor * consts["b"]
         loaded.append({"ds": ds, "consts": consts, "has_s0": s0 is not None, "s0": s0,
                        "scores": dataset_scores(lowres, s0, ds_hits, target_objects),
-                       "object_max": lowres["object_max"][target_objects], "lowres": lowres,
+                       "object_max": lowres["object_max"][target_objects], "target_objects": target_objects,
+                       "lowres": lowres,
                        "excluded": excluded_objects(ds, lowres, consts, target_objects)})
     return loaded
 
@@ -291,23 +315,82 @@ def evaluate_fixed(loaded, rules):
     return pd.DataFrame(rows)
 
 
-def missed_signal_proxy(loaded):
+def reference_rule(ds):
+    """Return (percentile, T) of the recorded percentile rule of the reference run, or None."""
+    ref = ds["reference_mask"]
+    if ref.get("rule_kind") not in ("fixed", "absolute"):
+        return None
+    p, T = ref.get("rule_percentile"), ref.get("rule_threshold")
+    if p is None or T is None or not np.isfinite(T) or float(p) not in (95.0, 99.0):
+        return None
+    return int(p), float(T)
+
+
+def reference_consistency(loaded):
+    """Evaluate the recorded rule of each reference run on its own objects, at s0.
+
+    The reference objects exist, so the rule that made them cannot have lost them. A reference
+    that loses more than MAX_REFERENCE_LOST of its objects was made with another rule than the
+    one that the job archive attributes to it.
+    """
+    rows = []
+    for item in loaded:
+        rule = reference_rule(item["ds"])
+        if rule is None or f"s0p{rule[0]}" not in item["scores"]:
+            continue
+        entry = item["scores"][f"s0p{rule[0]}"]
+        result = evaluate(entry, "abs", rule[1], item["consts"])
+        rows.append({"key": item["ds"]["key"], "class": item["ds"]["class"], "split": item["ds"]["split"],
+                     "rule": f"p{rule[0]} > {rule[1]:g}", "date": item["ds"]["reference_mask"].get("date"),
+                     "n_objects": len(entry["obj_min"]), "complete": result["complete"], "lost": result["lost"],
+                     "kept": result["kept"], "consistent": bool(result["lost"] <= MAX_REFERENCE_LOST)})
+    return pd.DataFrame(rows)
+
+
+def neuron_like_excess(item, excluded, touched):
+    """Estimate the blocks with neuron-like signal that the reference rule skipped (s0 counts).
+
+    A block is neuron-like if it holds at least as many voxels above the object level as the
+    10th percentile of the object sizes. The object level is the threshold of the count grid just
+    below the 5th percentile of the object signal. Candidates are the skipped 26-neighbours of
+    the blocks that the objects touch. The expected count is the neuron-like rate of the skipped
+    blocks more than 4 blocks away from any object, times the number of candidates.
+    """
+    s0, lowres = item["s0"], item["lowres"]
+    grid = tuple(int(g) for g in lowres["grid"])
+    thresholds = s0["thresholds"].astype("float64")
+    level = np.percentile(item["object_max"], 5)
+    k = max(int(np.searchsorted(thresholds, level, side="right")) - 1, 0)
+    min_voxels = np.percentile(lowres["n_pixels"][item["target_objects"]], 10)
+    neuron_like = s0["counts"][:, k].reshape(grid) >= min_voxels
+    cube = np.ones((3, 3, 3), dtype=bool)
+    candidates = ndimage.binary_dilation(touched, structure=cube) & ~touched & excluded
+    far = ~ndimage.binary_dilation(touched, structure=cube, iterations=4) & excluded
+    rate = float(neuron_like[far].mean()) if far.any() else 0.0
+    observed = int((candidates & neuron_like).sum())
+    expected = rate * int(candidates.sum())
+    return {"s0_object_level": float(thresholds[k]), "s0_min_voxels": float(min_voxels),
+            "s0_candidates": int(candidates.sum()), "s0_neuron_like": observed,
+            "s0_expected": expected, "s0_excess": observed - expected}
+
+
+def missed_signal_proxy(loaded, inconsistent=()):
     """Count blocks that the reference run probably skipped although they hold object signal.
 
     A block counts if the reference rule excludes it, it is next to (26-neighbourhood) a block
     that relevant objects touch, and its s3 maximum reaches the 5th percentile of the object
     signal of the dataset. The reference rule is evaluated on the 128^3 grid; with the s3
     estimate of the percentile this is an upper bound (smoothing lowers the percentiles, and the
-    n5 reference runs used coarser mask blocks).
+    n5 reference runs used coarser mask blocks). With the s0 counts, SGN references also get the
+    neuron-like estimate of neuron_like_excess. References in `inconsistent` are skipped, because
+    their recorded rule did not make them.
     """
     rows = []
     for item in loaded:
-        ref = item["ds"]["reference_mask"]
-        if ref.get("rule_kind") not in ("fixed", "absolute") or ref.get("rule_percentile") is None:
+        rule = reference_rule(item["ds"])
+        if rule is None or item["ds"]["key"] in inconsistent:
             continue
-        p, T = float(ref["rule_percentile"]), float(ref["rule_threshold"])
-        if p not in (95.0, 99.0):
-            continue
+        p, T = rule
         lowres = item["lowres"]
         grid = tuple(lowres["grid"])
         first, last = object_block_ranges(lowres["bb_min"], lowres["bb_max"], BLOCK, grid)
@@ -325,8 +408,36 @@ def missed_signal_proxy(loaded):
                 excluded = score <= T
                 row[f"{level}_missed_blocks"] = int((excluded & near & signal).sum())
                 row[f"{level}_touched_excluded"] = int((excluded & touched).sum())
+                if level == "s0" and item["ds"]["class"] == "SGN":
+                    row.update(neuron_like_excess(item, excluded, touched))
         rows.append(row)
     return pd.DataFrame(rows)
+
+
+def proposed_vs_production(loaded):
+    """Compare the proposed rules with the exact s0 production rule of the same class."""
+    rows = []
+    for item in loaded:
+        cls = item["ds"]["class"]
+        production_score, production_T = PRODUCTION_RULES[cls]
+        if production_score not in item["scores"]:
+            continue
+        score, mapping, theta = PROPOSED_RULES[cls]
+        production = evaluate(item["scores"][production_score], "abs", production_T, item["consts"])
+        proposed = evaluate(item["scores"][score], mapping, theta, item["consts"])
+        n_blocks = item["scores"][score]["sorted"].size
+        rows.append({"key": item["ds"]["key"], "class": cls, "split": item["ds"]["split"],
+                     "stratum": item["ds"]["stratum"], "n_blocks": n_blocks, "background": item["consts"]["b"],
+                     "production_rule": f"{production_score} > {production_T:g}",
+                     "production_blocks": round(production["kept"] * n_blocks),
+                     "production_complete": production["complete"],
+                     "proposed_rule": f"{score} > {theta:g} b", "proposed_T": proposed["T"],
+                     "proposed_blocks": round(proposed["kept"] * n_blocks),
+                     "proposed_complete": proposed["complete"], "proposed_lost": proposed["lost"]})
+    table = pd.DataFrame(rows)
+    if len(table):
+        table["block_ratio"] = table.proposed_blocks / table.production_blocks.clip(lower=1)
+    return table
 
 
 def score_maps_base(lowres, level, p, item):
@@ -388,7 +499,18 @@ def main():
     fixed_rules = [(f"{base}{suffix}", T) for base in ("s3p95", "s3p99", "s0p95", "s0p99")
                    for suffix in ("", "_D6", "_D26", "_Dr12") for T in (100, 150, 200, 300, 400)]
     evaluate_fixed(loaded, fixed_rules).to_csv(output_path(args.output_dir, "fixed_rules.csv"), index=False)
-    missed_signal_proxy(loaded).to_csv(output_path(args.output_dir, "missed_signal_proxy.csv"), index=False)
+    consistency = reference_consistency(loaded)
+    consistency.to_csv(output_path(args.output_dir, "reference_consistency.csv"), index=False)
+    inconsistent = set(consistency.key[~consistency.consistent]) if len(consistency) else set()
+    if inconsistent:
+        print(f"References that their recorded rule did not make: {sorted(inconsistent)}")
+    missed_signal_proxy(loaded, inconsistent).to_csv(output_path(args.output_dir, "missed_signal_proxy.csv"),
+                                                     index=False)
+    comparison = proposed_vs_production(loaded)
+    comparison.to_csv(output_path(args.output_dir, "proposed_vs_production.csv"), index=False)
+    for (cls, split), g in comparison.groupby(["class", "split"]):
+        print(f"{cls} {split}: proposed / production blocks {g.proposed_blocks.sum() / g.production_blocks.sum():.2f} "
+              f"in total, median {g.block_ratio.median():.2f}; proposed complete min {g.proposed_complete.min():.4f}")
     calibration = calibrate_against_logs(loaded)
     calibration.to_csv(output_path(args.output_dir, "calibration_logged_runs.csv"), index=False)
     if len(calibration):
