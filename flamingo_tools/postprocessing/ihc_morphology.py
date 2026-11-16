@@ -22,7 +22,7 @@ from flamingo_tools.postprocessing.cochlea_mapping import moving_average_3d, pat
 # The columns of the IHC tip tables of find_ihc_tips_height and find_ihc_tips_path.
 TIP_COLUMNS = ["side", "z", "y", "x", "label_id", "cell"]
 # Range of the distance between an IHC tip and the central line, relative to the reference IHC length.
-# The annotated IHCs of the IHC_v11 training crops have 0.26-0.82 (1st-99th percentile). The upper limit has a
+# The annotated IHCs of the IHC_v11 training crops have 0.28-0.81 (1st-99th percentile). The upper limit has a
 # margin, because the row path of a cochlea is not always at the cell centers: an upper limit of 0.85 misses
 # tips in the MWfLS test crops.
 TIP_DISTANCE = (0.25, 1.0)
@@ -719,7 +719,7 @@ def correct_ihc_row(
     reference: Dict[str, Any],
     voxel_size: float = 0.38,
     max_row_distance: float = 15.0,
-    max_radius_factor: float = 1.01,
+    max_radius_factor: float = 1.0,
     tip_method: str = "path",
     path_smoothing: float = PATH_SMOOTHING,
     axis_window: float = AXIS_WINDOW,
@@ -727,7 +727,7 @@ def correct_ihc_row(
     min_cell_size: float = 0.4,
     min_neck_depth: float = 1.0,
     max_part_distance: float = 0.4,
-    max_cell_size: float = 1.38,
+    max_cell_size: float = 1.37,
     max_cell_width: float = 1.39,
     min_cell_width: float = 0.7,
     max_length_axis: float = MAX_LENGTH_AXIS,
@@ -787,19 +787,19 @@ def correct_ihc_row(
             instance centers zigzags at the scale of the IHC spacing.
         axis_window: Half width in micrometer of the path window for the local axis.
         max_axis_angle: Maximal angle in degree between the long axis of a normal instance and the local axis.
-            97% of the annotated IHCs have less than 19 degree, and the next 1% have more than 42 degree.
+            97.8% of the annotated IHCs have 20 degree or less, and 1.6% have more than 30 degree.
         min_cell_size: Minimal size of an output cell of an uncertain component, relative to the reference size.
         min_neck_depth: Minimal depth in micrometer of the neck between two output cells of an uncertain
             component. The default 1.0 is about the 5th percentile of the annotated neighbours.
         max_part_distance: Maximal distance along the path between two parts of one cell, relative to the
             reference path length. Neighbouring cells in the MWfLS crops are 0.6 or more apart, and parts of one
             cell 0.35 or less.
-        max_cell_size: Maximal size of one cell, relative to the reference size. 99% of the annotated IHCs
-            have 1.38 or less.
-        max_cell_width: Maximal extent of one cell along the path, relative to the reference. 98.5% of the
-            annotated IHCs have 1.39 or less.
+        max_cell_size: Maximal size of one cell, relative to the reference size. The default is the 99th
+            percentile of the annotated IHCs.
+        max_cell_width: Maximal extent of one cell along the path, relative to the reference. The default is the
+            98.5th percentile of the annotated IHCs.
         min_cell_width: Minimal extent of a normal instance along the path, relative to the reference. 99% of
-            the annotated IHCs have 0.79 (mouse) or 0.87 (gerbil) or more. A half cell that is cut along the
+            the annotated IHCs have 0.78 (mouse) or 0.85 (gerbil) or more. A half cell that is cut along the
             path has the full length, but half of the width.
         max_length_axis: Maximal length of a normal instance along the long axis, relative to the reference.
         elongation: Range of the elongation (main semi-axis / second semi-axis) of a normal instance.
