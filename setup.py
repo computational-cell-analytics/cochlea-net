@@ -34,6 +34,7 @@ setup(
             "flamingo_tools.sgn_density = flamingo_tools.postprocessing.cli:sgn_density",
             "flamingo_tools.central_path_tifs = flamingo_tools.postprocessing.cli:central_path_tifs",
             "flamingo_tools.table_info = flamingo_tools.analysis.cli:table_info",
+            "flamingo_tools.correct_annotation = flamingo_tools.annotation.cli:correct_annotation",
             # TODO: MoBIE conversion
         ],
         "napari.manifest": [
