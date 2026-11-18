@@ -31,19 +31,19 @@ from functools import lru_cache
 
 import numpy as np
 import pandas as pd
-from scipy.ndimage import center_of_mass
 from scipy.ndimage import label as label_structures
 from scipy.spatial import cKDTree
 from scipy.stats import spearmanr
 from elf.evaluation import matching
 
+from flamingo_tools.annotation.issues import annotation_row_path, cell_voxels
 from flamingo_tools.measurements import compute_object_measures_impl
 from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping
 from flamingo_tools.postprocessing.ihc_morphology import (
     TIP_DISTANCE, correct_ihc_row, find_ihc_tips_height, find_ihc_tips_path, foot_points, ihc_row_reference,
     row_frame, row_voxels,
 )
-from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly, ihc_row_path
+from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly
 from flamingo_tools.s3_utils import default_table_path, read_table
 
 from common import (
@@ -191,13 +191,9 @@ def gt_row(crop):
     path end.
     """
     gt = annotation_cells(crop)
-    if gt.max() < 3:
+    path = annotation_row_path(gt, cell_voxels(gt), VOXEL_SIZE)
+    if path is None:
         return None
-    centers = np.array(center_of_mass(gt > 0, gt, np.arange(1, gt.max() + 1)))
-    path = ihc_row_path(centers[:, ::-1] * VOXEL_SIZE)
-    # ihc_row_path samples at 1 um, so 20 steps are 20 um.
-    path = np.concatenate([path[:1] - 20 * (path[1] - path[0]), path, path[-1:] + 20 * (path[-1] - path[-2])])
-    path = path[:, ::-1] / VOXEL_SIZE
     return gt, path, ihc_row_reference([gt], path, VOXEL_SIZE)
 
 
