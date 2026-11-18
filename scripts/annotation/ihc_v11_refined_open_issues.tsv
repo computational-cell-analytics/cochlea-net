@@ -1,0 +1,36 @@
+crop	label_id	z	y	x	reason	comment
+M-AMD-N97-L_crop_0632-0340-0948_Vglut3		89	162	149	missing	faint cells between 140 [152, 184, 142] and 160 [26, 140, 156], 51 um apart
+M-AMD-N97-L_crop_0216-0315-0680_Vglut3		310	251	125	missing	2 cells between 71 [279, 250, 131] and 399 [341, 253, 119], 24 um apart
+M-AMD-N142-R_crop_0875-1118-0956_Vglut3		230	161	72	missing	twisted row: cells may be missing between 22 [192, 203, 53] and 1240 [269, 119, 90], or opposite 30, 35, 40, 45
+MOTOF1L_0580-1175-1000		20	294	249	missing	a cell next to 42825 [20, 294, 249]
+M-AMD-000088-R_crop_0797-1042-0322_Vglut3	145	302	343	43	cut_tip	lower tip of 145
+M-AMD-000088-R_crop_0797-1042-0322_Vglut3	155	263	180	191	cut_tip	tip of 155
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	11				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	12				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	13				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	15				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	16				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	19				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+G_EK_000233_L_crop_1157-1758-0994_Vglut3	20				cut_tip	cut tips of 11, 12, 13, 15, 16, 19, 20
+M-AMD-N142-R_crop_0868-0463-1046_Vglut3	1287	191	178	129	cut_tip	tip of 1287: flat face at the low-z end (z 191)
+M-AMD-N153-L_crop_0478-1191-0754_Vglut3	50	207	269	150	cut_tip	tip of 50
+G-LR-000234-L_crop_0758-1065-0321_Vglut3	1063	85	89	239	cut_tip	tip of 1063
+G_EK_000233_L_crop_1257-1712-0943_Vglut3	all				cut_tip	several cells, in both directions
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	161				cut_tip	cut tip
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	286				cut_tip	cut tip (was 158)
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	157				cut_tip	cut tip
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	238				cut_tip	cut tip
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	172				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	170				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	289				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	164				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	287				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	278				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	279				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-AMD-000112-L_crop_0572-0367-0357_Vglut3	280				cut_tip	row section 172-280 about 0.85x the length of the cells further along the row
+M-LR-000249-R_crop_0800-0680-0277_Vglut3	21	263	212	203	hole	tip of 21 (low signal at the nucleus)
+M-LR-000249-R_crop_0800-0680-0277_Vglut3	37	256	272	110	hole	tip of 37 (low signal at the nucleus)
+M226L_Vglut3_2021-3268-1902	1	22	259	289	hole	misses a large part of its volume
+M226L_Vglut3_2021-3268-1902	967	111	269	290	hole	misses a large part of its volume; the nucleus protrusion is too large
+G_EK_000233_L_crop_1257-1712-0943_Vglut3	4	70	116	157	boundary	4 holds the lower half of 3 below a flat cut at z = 67-68
+G_EK_000233_L_crop_1257-1712-0943_Vglut3	3	70	116	157	boundary	4 holds the lower half of 3 below a flat cut at z = 67-68
