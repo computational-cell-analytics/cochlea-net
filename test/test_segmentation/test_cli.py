@@ -1,5 +1,5 @@
 import os
-import platform
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -11,9 +11,14 @@ import z5py
 from torch_em.model import UNet3d
 
 
-@unittest.skipIf(platform.system() == "Windows", "CLI tests fail on windows.")
 class TestSegmentationCLI(unittest.TestCase):
     shape = (64, 128, 128)
+
+    def _executable(self, name):
+        # Windows does not add ".exe" to a command name with a dot, but shutil.which does.
+        executable = shutil.which(name)
+        self.assertIsNotNone(executable, f"The console script {name} is not installed.")
+        return executable
 
     def _create_data(self, tmp_dir):
         data = np.random.randint(0, 255, size=self.shape)
@@ -39,7 +44,7 @@ class TestSegmentationCLI(unittest.TestCase):
             output_folder = os.path.join(tmp_dir, "output")
 
             result = subprocess.run([
-                "flamingo_tools.run_segmentation",
+                self._executable("flamingo_tools.run_segmentation"),
                 "-i", data_path, "-o", output_folder, "-m", "SGN", "--min_size", "0",
                 "-c", model_path,
             ], capture_output=True, text=True)
@@ -63,7 +68,7 @@ class TestSegmentationCLI(unittest.TestCase):
             output_folder = os.path.join(tmp_dir, "output")
 
             result = subprocess.run([
-                "flamingo_tools.run_detection", "-i", data_path, "-o", output_folder,
+                self._executable("flamingo_tools.run_detection"), "-i", data_path, "-o", output_folder,
                 "-c", model_path, "--threshold", "0.4", "--dilation_iterations", "4",
             ], capture_output=True, text=True)
             self.assertEqual(

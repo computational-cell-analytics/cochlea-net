@@ -104,7 +104,6 @@ class TestDataConversion(unittest.TestCase):
         tmp_dir = TemporaryDirectory()
         self.addCleanup(tmp_dir.cleanup)
         self.folder = tmp_dir.name
-        # TODO Create flamingo metadata.
         create_test_data(self.folder)
 
     def test_convert_lightsheet_to_bdv(self):
