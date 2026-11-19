@@ -10,11 +10,7 @@ import sys
 
 import torch
 
-import flamingo_tools.synapse_detection.detection_dataset as detection_dataset
 from flamingo_tools.segmentation.unet_prediction import _load_model
-
-# Old synapse checkpoints reference the bare module name.
-sys.modules.setdefault("detection_dataset", detection_dataset)
 
 # Relative output difference above which the normalization matters.
 TOLERANCE = 1e-3
