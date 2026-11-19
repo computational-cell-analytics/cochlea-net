@@ -17,7 +17,6 @@ import argparse
 import json
 import os
 import time
-import warnings
 
 import bioimage_cpp as bic
 import numpy as np
@@ -31,7 +30,7 @@ from scipy.ndimage import binary_dilation, distance_transform_edt
 from torch_em.util.prediction import _load_block
 
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.segmentation.unet_prediction import _model_from_checkpoint
+from flamingo_tools.model_utils import load_model_from_path
 
 
 DATA_ROOT = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet"
@@ -158,11 +157,7 @@ def _load_model(device="cuda"):
         sys.modules.setdefault("detection_dataset", detection_dataset)
     except ImportError:
         pass
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        obj = torch.load(MODEL, map_location="cpu", weights_only=False)
-    model = _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
-    return model.to(device).eval()
+    return load_model_from_path(MODEL, device=device).eval()
 
 
 def _create_prediction(path, shape, chunks):

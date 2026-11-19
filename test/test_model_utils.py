@@ -9,10 +9,11 @@ from unittest import mock
 import torch
 import yaml
 
-from flamingo_tools.model_utils import MODELS, _create_model, get_model, get_model_path, get_model_url
+from flamingo_tools.model_utils import (
+    MODELS, _create_model, get_model, get_model_path, get_model_url, load_model_from_path
+)
 from flamingo_tools.segmentation.cli import _parse_segmentation_kwargs
 from flamingo_tools.segmentation.synapse_detection import _get_model_out_channels
-from flamingo_tools.segmentation.unet_prediction import _load_model
 
 
 class TestSegmentationDefaults(unittest.TestCase):
@@ -110,7 +111,7 @@ class TestGetModelPath(unittest.TestCase):
         self.assertEqual(os.listdir(os.path.dirname(model_path)), [os.path.basename(model_path)])
 
         # The checkpoint works with the model loading of the segmentation and detection functions.
-        model = _load_model(model_path)
+        model = load_model_from_path(model_path)
         self.assertEqual(type(model).__name__, "AnisotropicUNet")
         self._check_state(model)
         self.assertEqual(_get_model_out_channels(model_path), 1)

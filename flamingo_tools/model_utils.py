@@ -5,10 +5,12 @@ import argparse
 import importlib
 import os
 import tempfile
+import warnings
 from typing import Dict, Optional, Union
 
 import pooch
 import torch
+from torch_em.util import load_model
 from .file_utils import get_cache_dir
 
 _UNET3D_KWARGS = {
@@ -95,11 +97,51 @@ def _get_model_spec(model_type):
     return MODELS[model_type]
 
 
+def _build_model(model_class_path, model_kwargs):
+    module_path, class_name = model_class_path.rsplit(".", 1)
+    model_class = getattr(importlib.import_module(module_path), class_name)
+    return model_class(**model_kwargs)
+
+
 def _create_model(model_type):
     model = _get_model_spec(model_type)
-    module_path, class_name = model["model_class"].rsplit(".", 1)
-    model_class = getattr(importlib.import_module(module_path), class_name)
-    return model_class(**model["model_kwargs"])
+    return _build_model(model["model_class"], model["model_kwargs"])
+
+
+def _make_checkpoint(model_class_path, model_kwargs, model_state):
+    return {"init": {"model_class": model_class_path, "model_kwargs": model_kwargs}, "model_state": model_state}
+
+
+def _model_from_checkpoint(checkpoint):
+    model = _build_model(checkpoint["init"]["model_class"], checkpoint["init"]["model_kwargs"])
+    model.load_state_dict(checkpoint["model_state"])
+    return model
+
+
+def load_model_from_path(
+    model_path: str, device: Optional[Union[str, torch.device]] = None
+) -> torch.nn.Module:
+    """Load a model from a torch_em checkpoint folder or from a model file.
+
+    The model file can be a torch_em trainer checkpoint or a pickled model.
+
+    Args:
+        model_path: The path of the checkpoint folder or of the model file.
+        device: The device of the model. If None, a model that is created from a checkpoint stays on the CPU,
+            and a pickled model keeps the device it was saved on.
+
+    Returns:
+        The model.
+    """
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore")
+        if os.path.isdir(model_path):
+            return load_model(model_path, device=device)
+        obj = torch.load(model_path, weights_only=False, map_location=device)
+    if isinstance(obj, dict) and "model_state" in obj:
+        model = _model_from_checkpoint(obj)
+        return model if device is None else model.to(device)
+    return obj
 
 
 def _get_default_device():
@@ -174,10 +216,10 @@ def get_model_path(model_type: str) -> str:
             get_model_url(model_type), known_hash=f"sha256:{model['sha256']}",
             fname="weights.pt", path=download_dir,
         )
-        checkpoint = {
-            "init": {"model_class": model["model_class"], "model_kwargs": model["model_kwargs"]},
-            "model_state": torch.load(weights_path, map_location="cpu", weights_only=True),
-        }
+        checkpoint = _make_checkpoint(
+            model["model_class"], model["model_kwargs"],
+            torch.load(weights_path, map_location="cpu", weights_only=True),
+        )
         tmp_checkpoint_path = os.path.join(download_dir, "checkpoint.pt")
         torch.save(checkpoint, tmp_checkpoint_path)
         os.replace(tmp_checkpoint_path, checkpoint_path)

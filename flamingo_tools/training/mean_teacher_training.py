@@ -1,4 +1,3 @@
-import os
 from typing import Optional, Tuple
 
 import torch
@@ -6,6 +5,7 @@ import torch_em
 import torch_em.self_training as self_training
 from torchvision import transforms
 
+from ..model_utils import load_model_from_path
 from .util import get_supervised_loader, get_3d_model
 
 
@@ -156,10 +156,7 @@ def mean_teacher_training(
         reinit_teacher = True
     else:
         print("Mean teacehr training initialized from source model:", source_checkpoint)
-        if os.path.isdir(source_checkpoint):
-            model = torch_em.util.load_model(source_checkpoint)
-        else:
-            model = torch.load(source_checkpoint, weights_only=False)
+        model = load_model_from_path(source_checkpoint)
         reinit_teacher = False
 
     optimizer = torch.optim.Adam(model.parameters(), lr=1e-4)

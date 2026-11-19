@@ -3,12 +3,10 @@ Parallelization using multiple GPUs is currently only possible by calling functi
 Functions for the parallelization end with '_slurm'
 and divide the process into preprocessing, prediction, and segmentation.
 """
-import importlib
 import json
 import multiprocessing as mp
 import os
 import re
-import warnings
 from concurrent import futures
 from functools import partial
 from typing import Dict, Optional, Tuple, Union
@@ -28,33 +26,12 @@ from elf.wrapper.resized_volume import ResizedVolume
 from elf.io import open_file
 from elf.util import normalize_index, squeeze_singletons
 from skimage.filters import gaussian
-from torch_em.util import load_model
 from torch_em.util.prediction import predict_with_halo_pipelined
 from tqdm import tqdm
 
 import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.file_utils import read_image_data
-
-
-def _model_from_checkpoint(ckpt):
-    """Reconstruct a model from a torch_em-style trainer checkpoint dict."""
-    model_class_path = ckpt["init"]["model_class"]
-    model_kwargs = ckpt["init"]["model_kwargs"]
-    module_path, class_name = model_class_path.rsplit(".", 1)
-    model_class = getattr(importlib.import_module(module_path), class_name)
-    model = model_class(**model_kwargs)
-    model.load_state_dict(ckpt["model_state"])
-    return model
-
-
-def _load_model(model_path, device=None):
-    """Load a torch_em checkpoint folder, a model file, or a trainer checkpoint file."""
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        if os.path.isdir(model_path):
-            return load_model(model_path, device=device)
-        obj = torch.load(model_path, weights_only=False, map_location=device)
-    return _model_from_checkpoint(obj) if isinstance(obj, dict) and "model_state" in obj else obj
+from flamingo_tools.model_utils import load_model_from_path
 
 
 class SelectChannel(SimpleTransformationWrapper):
@@ -178,7 +155,7 @@ def prediction_impl(
     else:
         num_prefetch_workers = int(num_prefetch_workers)
     batch_size = int(batch_size)
-    model = _load_model(model_path)
+    model = load_model_from_path(model_path)
 
     input_ = read_image_data(input_path, input_key)
 

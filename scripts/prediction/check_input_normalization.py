@@ -11,7 +11,7 @@ import sys
 import torch
 
 import flamingo_tools.synapse_detection.detection_dataset as detection_dataset
-from flamingo_tools.segmentation.unet_prediction import _load_model
+from flamingo_tools.model_utils import load_model_from_path
 
 # Old synapse checkpoints reference the bare module name.
 sys.modules.setdefault("detection_dataset", detection_dataset)
@@ -39,7 +39,7 @@ def main():
 
     failed = False
     for path in args.checkpoints:
-        model = _load_model(path, device="cpu").eval()
+        model = load_model_from_path(path, device="cpu").eval()
         in_channels = next(m for m in model.modules() if isinstance(m, torch.nn.Conv3d)).in_channels
         # Raw-like intensities, in a shape that a depth-4 U-Net can downsample.
         x = torch.rand(1, in_channels, 32, 64, 64, generator=torch.Generator().manual_seed(0)) * 1000 + 200

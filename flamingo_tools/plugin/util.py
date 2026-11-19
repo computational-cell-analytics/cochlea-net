@@ -3,7 +3,7 @@ from typing import Optional, Union
 
 import torch
 from napari.utils.notifications import show_info
-from ..model_utils import get_device
+from ..model_utils import get_device, load_model_from_path
 
 
 def _load_custom_model(model_path: str, device: Optional[Union[str, torch.device]] = None) -> torch.nn.Module:
@@ -11,7 +11,7 @@ def _load_custom_model(model_path: str, device: Optional[Union[str, torch.device
     if device is None:
         device = get_device(device)
     try:
-        model = torch.load(model_path, map_location=torch.device(device), weights_only=False)
+        model = load_model_from_path(model_path, device=torch.device(device))
     except Exception as e:
         print(e)
         print("model path", model_path)
