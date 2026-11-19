@@ -127,7 +127,7 @@ def load_model_from_path(
 ) -> torch.nn.Module:
     """Load a model from a torch_em checkpoint folder or from a model file.
 
-    The model file can be a torch_em trainer checkpoint or a pickled model.
+    The model file can be a file of 'export_model', a torch_em trainer checkpoint, or a pickled model.
     Unpickling skips the constructor, so a pickled model misses the attributes that a newer torch_em version
     sets in the constructor. Thus a pickled model with 'init_kwargs', such as a torch_em U-Net, is created
     again with its constructor and gets the pickled weights.
@@ -153,6 +153,28 @@ def load_model_from_path(
     else:
         return obj
     return model if device is None else model.to(device)
+
+
+def export_model(model_path: str, output_path: str) -> None:
+    """Export a model to a file with only its architecture and its weights.
+
+    The file holds the import path of the model class, the arguments of its constructor, and the weights on the
+    CPU. It holds no optimizer state and no training data. Each loader must create the model with its constructor,
+    so the file stays valid when a new torch_em version sets a new attribute in the constructor. A pickled model
+    (torch.save(model)) gets this repair only in 'load_model_from_path', and it needs each class of its module
+    tree at the same import path.
+
+    Args:
+        model_path: The path of a torch_em checkpoint folder, a trainer checkpoint file, or a model file.
+        output_path: The path of the exported file.
+    """
+    model = load_model_from_path(model_path, device="cpu")
+    model_kwargs = getattr(model, "init_kwargs", None)
+    if model_kwargs is None:
+        raise ValueError(
+            f"The model {type(model).__name__} has no 'init_kwargs', so its constructor cannot be called again."
+        )
+    torch.save(_make_checkpoint(_class_path(model), model_kwargs, model.state_dict()), output_path)
 
 
 def _get_default_device():

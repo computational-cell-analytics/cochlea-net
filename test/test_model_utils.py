@@ -12,7 +12,7 @@ import yaml
 from torch_em.model.unet import AnisotropicUNet
 
 from flamingo_tools.model_utils import (
-    MODELS, _create_model, get_model, get_model_path, get_model_url, load_model_from_path
+    MODELS, _create_model, export_model, get_model, get_model_path, get_model_url, load_model_from_path
 )
 from flamingo_tools.segmentation.cli import _parse_segmentation_kwargs
 from flamingo_tools.segmentation.synapse_detection import _get_model_out_channels
@@ -162,6 +162,57 @@ class TestLoadModelFromPath(unittest.TestCase):
     def test_pickled_model_without_init_kwargs(self):
         torch.save(torch.nn.Conv3d(1, 1, 3), self.model_path)
         self.assertIsInstance(load_model_from_path(self.model_path), torch.nn.Conv3d)
+
+
+class TestExportModel(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        self.model = _create_small_unet()
+        self.output_path = os.path.join(self.tmp_dir.name, "exported.pt")
+
+    def _check_export(self, model_path):
+        export_model(model_path, self.output_path)
+
+        checkpoint = torch.load(self.output_path, map_location="cpu", weights_only=False)
+        self.assertEqual(set(checkpoint), {"init", "model_state"})
+        self.assertEqual(checkpoint["init"]["model_class"], "torch_em.model.unet.AnisotropicUNet")
+        for name, value in checkpoint["model_state"].items():
+            self.assertEqual(value.device.type, "cpu", name)
+
+        model = load_model_from_path(self.output_path)
+        self.assertIsInstance(model, AnisotropicUNet)
+        expected_state = self.model.state_dict()
+        for name, value in model.state_dict().items():
+            self.assertTrue(torch.equal(value, expected_state[name]), name)
+        # The constructor sets the attributes again, also those that the input file does not have.
+        self.assertFalse(model.decoder.return_outputs)
+        with torch.no_grad():
+            self.assertEqual(model(torch.zeros(1, 1, 8, 32, 32)).shape, (1, 2, 8, 32, 32))
+        self.assertEqual(_get_model_out_channels(self.output_path), 2)
+
+    def test_trainer_checkpoint(self):
+        model_path = os.path.join(self.tmp_dir.name, "latest.pt")
+        torch.save({
+            "iteration": 10,
+            "model_state": self.model.state_dict(),
+            "optimizer_state": torch.optim.Adam(self.model.parameters()).state_dict(),
+            "init": {"model_class": "torch_em.model.unet.AnisotropicUNet", "model_kwargs": self.model.init_kwargs},
+        }, model_path)
+        self._check_export(model_path)
+
+    def test_pickled_model(self):
+        """A pickled model of an older torch_em version can miss an attribute that the constructor sets."""
+        model_path = os.path.join(self.tmp_dir.name, "model.pt")
+        del self.model.decoder.return_outputs
+        torch.save(self.model, model_path)
+        self._check_export(model_path)
+
+    def test_model_without_init_kwargs(self):
+        model_path = os.path.join(self.tmp_dir.name, "model.pt")
+        torch.save(torch.nn.Conv3d(1, 1, 3), model_path)
+        with self.assertRaises(ValueError):
+            export_model(model_path, self.output_path)
 
 
 if __name__ == "__main__":
