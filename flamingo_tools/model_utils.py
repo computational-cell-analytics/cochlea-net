@@ -118,17 +118,24 @@ def _model_from_checkpoint(checkpoint):
     return model
 
 
+def _class_path(model):
+    return f"{type(model).__module__}.{type(model).__qualname__}"
+
+
 def load_model_from_path(
     model_path: str, device: Optional[Union[str, torch.device]] = None
 ) -> torch.nn.Module:
     """Load a model from a torch_em checkpoint folder or from a model file.
 
     The model file can be a torch_em trainer checkpoint or a pickled model.
+    Unpickling skips the constructor, so a pickled model misses the attributes that a newer torch_em version
+    sets in the constructor. Thus a pickled model with 'init_kwargs', such as a torch_em U-Net, is created
+    again with its constructor and gets the pickled weights.
 
     Args:
         model_path: The path of the checkpoint folder or of the model file.
-        device: The device of the model. If None, a model that is created from a checkpoint stays on the CPU,
-            and a pickled model keeps the device it was saved on.
+        device: The device of the model. If None, a model that is created with its constructor stays on the CPU,
+            and any other pickled model keeps the device it was saved on.
 
     Returns:
         The model.
@@ -140,8 +147,12 @@ def load_model_from_path(
         obj = torch.load(model_path, weights_only=False, map_location=device)
     if isinstance(obj, dict) and "model_state" in obj:
         model = _model_from_checkpoint(obj)
-        return model if device is None else model.to(device)
-    return obj
+    elif isinstance(obj, torch.nn.Module) and hasattr(obj, "init_kwargs"):
+        model = _model_from_checkpoint(_make_checkpoint(_class_path(obj), obj.init_kwargs, obj.state_dict()))
+        model.train(obj.training)
+    else:
+        return obj
+    return model if device is None else model.to(device)
 
 
 def _get_default_device():

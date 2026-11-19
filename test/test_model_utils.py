@@ -9,6 +9,8 @@ from unittest import mock
 import torch
 import yaml
 
+from torch_em.model.unet import AnisotropicUNet
+
 from flamingo_tools.model_utils import (
     MODELS, _create_model, get_model, get_model_path, get_model_url, load_model_from_path
 )
@@ -129,6 +131,37 @@ class TestGetModelPath(unittest.TestCase):
     def test_invalid_model_type(self):
         with self.assertRaises(ValueError):
             get_model_path("SGN-highres")
+
+
+def _create_small_unet():
+    return AnisotropicUNet(in_channels=1, out_channels=2, scale_factors=[[1, 2, 2], [2, 2, 2]], initial_features=4)
+
+
+class TestLoadModelFromPath(unittest.TestCase):
+    def setUp(self):
+        self.tmp_dir = TemporaryDirectory()
+        self.addCleanup(self.tmp_dir.cleanup)
+        self.model_path = os.path.join(self.tmp_dir.name, "model.pt")
+
+    def test_pickled_model(self):
+        """A pickled model of an older torch_em version can miss an attribute that the constructor sets."""
+        model = _create_small_unet().eval()
+        del model.decoder.return_outputs
+        torch.save(model, self.model_path)
+
+        loaded = load_model_from_path(self.model_path)
+        self.assertIsInstance(loaded, AnisotropicUNet)
+        self.assertFalse(loaded.decoder.return_outputs)
+        self.assertFalse(loaded.training)
+        expected_state = model.state_dict()
+        for name, value in loaded.state_dict().items():
+            self.assertTrue(torch.equal(value, expected_state[name]), name)
+        with torch.no_grad():
+            self.assertEqual(loaded(torch.zeros(1, 1, 8, 32, 32)).shape, (1, 2, 8, 32, 32))
+
+    def test_pickled_model_without_init_kwargs(self):
+        torch.save(torch.nn.Conv3d(1, 1, 3), self.model_path)
+        self.assertIsInstance(load_model_from_path(self.model_path), torch.nn.Conv3d)
 
 
 if __name__ == "__main__":
