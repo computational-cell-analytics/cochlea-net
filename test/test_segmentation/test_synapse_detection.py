@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 import unittest
@@ -217,15 +218,15 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
 
             single_folder = os.path.join(tmp_dir, "single")
             os.makedirs(single_folder)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with self.assertWarnsRegex(UserWarning, "No IHC segmentation was given"):
                 marker_detection(
                     data_path, data_key, None, single_folder, model_path,
                     block_shape=block_shape, halo=halo,
                 )
 
             array_folder = os.path.join(tmp_dir, "array")
-            run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
+            with self.assertWarnsRegex(UserWarning, "No IHC segmentation was given"):
+                run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
             self.assertFalse(os.path.exists(os.path.join(array_folder, "mean_std.json")))
 
             for task_id in range(self.prediction_instances):
@@ -344,7 +345,7 @@ class TestMaskKeys(unittest.TestCase):
             marker_detection(
                 input_path=data_path, input_key=data_key, mask_path=mask_path,
                 output_folder=output_folder, model_path=model_path,
-                mask_input_key="s4", mask_key="s0", max_distance=8.0,
+                mask_input_key="s4", mask_key="s0",
             )
 
             # The mask is built from the downscaled level.
@@ -405,12 +406,15 @@ class TestPredictionMask(unittest.TestCase):
 
         data_path, data_key, model_path = input_
         output_folder = os.path.join(tmp_dir, name)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        if mask_path is None:
+            expected_warning = self.assertWarnsRegex(UserWarning, "No IHC segmentation was given")
+        else:
+            expected_warning = contextlib.nullcontext()
+        with expected_warning:
             marker_detection(
                 data_path, data_key, mask_path, output_folder, model_path,
                 block_shape=(16, 16, 16), halo=(4, 4, 4),
-                mask_input_key="s4", mask_key="s0", max_distance=8.0,
+                mask_input_key="s4", mask_key="s0",
             )
         with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
             return output_folder, f["prediction"][:]
@@ -598,8 +602,7 @@ class TestS3Resolution(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             data_path, data_key = self._create_input(tmp_dir)
             calls, patch = self._patch_get_s3_path(None)
-            with patch, warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with patch, self.assertWarnsRegex(UserWarning, "No IHC segmentation was given"):
                 run_synapse_prediction_preprocess_slurm(
                     data_path, os.path.join(tmp_dir, "out"), input_key=data_key,
                 )

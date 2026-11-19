@@ -180,9 +180,9 @@ class TestSgnDensityProfile(unittest.TestCase):
         self.assertIn("0.5", results)
 
     def test_float_position_key_format(self):
-        results = self.fn(self.table, positions=[0.3])
-        self.assertIn("0.3", results)
-        self.assertEqual(results["0.3"]["reference_fraction"], 0.3)
+        results = self.fn(self.table, positions=[0.45])
+        self.assertIn("0.45", results)
+        self.assertEqual(results["0.45"]["reference_fraction"], 0.45)
 
     def test_mode_forwarded(self):
         results = self.fn(self.table, positions=["mid"], mode="3d")
@@ -317,11 +317,9 @@ class TestBuildBlockExtractionDict(unittest.TestCase):
         no_sgn_result["bb_center"] = [float("nan")] * 3
         density_results[first_key] = no_sgn_result
 
-        import warnings
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with self.assertWarnsRegex(UserWarning, "Skipping block-extraction entry") as caught:
             out = self.build(density_results)
-            self.assertTrue(any(first_key in str(w.message) for w in caught))
+        self.assertIn(first_key, str(caught.warning))
 
         labels = [entry["position_label"] for entry in out]
         self.assertNotIn(first_key, labels)
@@ -379,9 +377,7 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
 
     def test_all_excluded_when_outside_slice(self):
         seg = self._seg_out_of_slice()
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with self.assertWarnsRegex(UserWarning, "All SGN instances were removed"):
             result = self.fn(
                 self.table, reference_position="mid", slice_thickness=40.0,
                 segmentation=seg, voxel_size=self.voxel_size, min_overlap_fraction=1 / 500,
@@ -429,9 +425,7 @@ class TestFilterBySegmentationOverlap(unittest.TestCase):
         )
         self.assertEqual(result["n_sgns"], 20)
         # Threshold above 1 µm³ (each label has exactly 1 voxel = 1 µm³) → all excluded.
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with self.assertWarnsRegex(UserWarning, "All SGN instances were removed"):
             result_excl = self.fn(
                 self.table, reference_position="mid", slice_thickness=40.0,
                 segmentation=seg, voxel_size=self.voxel_size, min_overlap_volume=2.0,
@@ -529,8 +523,7 @@ class TestClusterFilter(unittest.TestCase):
 
     def test_single_instance_keeps_bbox_fallback(self):
         table = _make_table(n=20, z_center=50.0, frac_center=0.5, frac_spread=0.005).iloc[[0]]
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with self.assertWarnsRegex(UserWarning, "Only 1 SGN instance"):
             result = self.fn(table, reference_position=0.5, slice_thickness=1.0)
         self.assertEqual(result["n_sgns"], 1)
         self.assertIsNone(result["hull_vertices"])
@@ -632,9 +625,7 @@ class TestHullToMask(unittest.TestCase):
     def test_hull_vertices_none_when_too_few_points(self):
         # A table with only 1 SGN cannot form a convex hull → hull_vertices must be None.
         single = self.table.iloc[:1].copy()
-        import warnings
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        with self.assertWarnsRegex(UserWarning, "Only 1 SGN instance"):
             result = self.density_fn(single, reference_position="mid", slice_thickness=40.0)
         self.assertIsNone(result["hull_vertices"])
 
@@ -690,12 +681,14 @@ class TestComponentListAutoDefault(unittest.TestCase):
 
     def test_no_json_input_falls_back_to_component_1(self):
         # Without json_input, component_list falls back to [1], which has no apex SGNs.
-        result = self._run("no_json", json_input=None, component_list=None)
+        with self.assertWarnsRegex(UserWarning, "No SGN instances in slice"):
+            result = self._run("no_json", json_input=None, component_list=None)
         self.assertEqual(result["apex"]["n_sgns"], 0)
 
     def test_explicit_component_list_overrides_json(self):
         # An explicit component_list argument takes precedence over json_input's value.
-        result = self._run("explicit_override", json_input=self.json_path, component_list=[1])
+        with self.assertWarnsRegex(UserWarning, "No SGN instances in slice"):
+            result = self._run("explicit_override", json_input=self.json_path, component_list=[1])
         self.assertEqual(result["apex"]["n_sgns"], 0)
 
 
@@ -715,9 +708,7 @@ class TestImgPathsWithoutCropOutput(unittest.TestCase):
         self.output_path = os.path.join(self.tmpdir.name, "out.json")
 
     def test_warns_and_ignores_img_paths(self):
-        import warnings
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with self.assertWarnsRegex(UserWarning, "'img_paths' was given without 'crop_output'"):
             self.calc(
                 output=self.output_path,
                 seg_table_path=self.table_path,
@@ -726,7 +717,6 @@ class TestImgPathsWithoutCropOutput(unittest.TestCase):
                 crop_output=None,
                 force_overwrite=True,
             )
-            self.assertTrue(any("img_paths" in str(w.message) for w in caught))
 
 
 def _overlap_entry(fraction, label_ids=None, hull_vertices=None, slice_min=0.0, slice_max=10.0, mode="2d"):
@@ -863,22 +853,18 @@ class TestDensityPositionOverlap(unittest.TestCase):
 
 class TestReportDensityOverlap(unittest.TestCase):
     def test_warns_above_threshold(self):
-        import warnings
         from flamingo_tools.analysis.density_utils import report_density_overlap
 
         results = {
             "0.1": _overlap_entry(0.1, [1, 2, 3, 4], UNIT_SQUARE),
             "0.15": _overlap_entry(0.15, [3, 4, 5, 6], OFFSET_SQUARE),
         }
-        with warnings.catch_warnings(record=True) as caught:
-            warnings.simplefilter("always")
+        with self.assertWarnsRegex(UserWarning, "not independent measurements"):
             records = report_density_overlap(results, name="test", warn_threshold=0.1)
 
         self.assertEqual(len(records), 1)
-        self.assertTrue(any("not independent measurements" in str(w.message) for w in caught))
 
     def test_no_warning_without_shared_ids(self):
-        import warnings
         from flamingo_tools.analysis.density_utils import report_density_overlap
 
         results = {
