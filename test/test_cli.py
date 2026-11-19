@@ -1,32 +1,35 @@
 import os
-import platform
+import shutil
+import subprocess
 import sys
 import unittest
-from shutil import rmtree
+from tempfile import TemporaryDirectory
 from unittest import mock
 
 import z5py
 
-from subprocess import run
 
-
-@unittest.skipIf(platform.system() == "Windows", "CLI tests fail on windows.")
 class TestCLI(unittest.TestCase):
-    folder = "./tmp"
-
     def setUp(self):
         from flamingo_tools import create_test_data
 
-        # TODO Create flamingo metadata.
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
         create_test_data(self.folder)
 
-    def tearDown(self):
-        rmtree(self.folder)
-
     def test_convert_data(self):
+        # Windows does not add ".exe" to a command name with a dot, but shutil.which does.
+        executable = shutil.which("flamingo_tools.convert_data")
+        self.assertIsNotNone(executable, "The console script flamingo_tools.convert_data is not installed.")
+
         out_path = os.path.join(self.folder, "converted_data.n5")
-        cmd = ["flamingo_tools.convert_data", "-i", self.folder, "-o", out_path, "--metadata_pattern", ""]
-        run(cmd)
+        cmd = [executable, "-i", self.folder, "-o", out_path, "--metadata_pattern", ""]
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        self.assertEqual(
+            result.returncode, 0,
+            msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
 
         self.assertTrue(os.path.exists(out_path))
         xml_path = out_path.replace(".n5", ".xml")

@@ -11,7 +11,7 @@ from skimage.measure import label, regionprops_table
 
 
 class TestPostprocessing(unittest.TestCase):
-    def _create_example_seg(self, tmp_dir):
+    def _create_example_seg(self):
         seg = binary_blobs(256, n_dim=3, volume_fraction=0.2)
         seg = label(seg)
         return seg
@@ -20,7 +20,7 @@ class TestPostprocessing(unittest.TestCase):
         from flamingo_tools.postprocessing.label_components import filter_segmentation
 
         with tempfile.TemporaryDirectory() as tmp_dir:
-            example_seg = self._create_example_seg(tmp_dir)
+            example_seg = self._create_example_seg()
             output_path = os.path.join(tmp_dir, "test-output.zarr")
             output_key = "seg-filtered"
             filter_segmentation(
@@ -214,7 +214,7 @@ class TestDilateAndTrim(unittest.TestCase):
 
 
 class TestVoxelSizeOrdering(unittest.TestCase):
-    """voxel_size is (x, y, z) per .claude/conventions.md, while the arrays are ZYX."""
+    """voxel_size is in (x, y, z) order, while the arrays are in (z, y, x) order."""
 
     VOXEL_SIZE = (1.0, 2.0, 4.0)
 

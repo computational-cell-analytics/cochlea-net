@@ -5,21 +5,35 @@ from typing import Tuple
 
 import imageio.v3 as imageio
 import pooch
-import requests
 from skimage.data import binary_blobs, cells3d
 from skimage.measure import label
 
 from .file_utils import get_cache_dir
 from .postprocessing.label_components import compute_table_on_the_fly
 
+SEGMENTATION_NAME = "sample-segmentation-nuclei-3d.tif"
 SEGMENTATION_URL = "https://owncloud.gwdg.de/index.php/s/kwoGRYiJRRrswgw/download"
+SEGMENTATION_HASH = "sha256:fcc470a0937312b209293ba115dc7811e1073b69bf037246f700e44ab6c7c8c9"
+
+
+def _fetch_test_segmentation() -> str:
+    registry = pooch.create(
+        path=os.path.join(get_cache_dir(), "test_data"),
+        base_url="",
+        registry={SEGMENTATION_NAME: SEGMENTATION_HASH},
+        urls={SEGMENTATION_NAME: SEGMENTATION_URL},
+        retry_if_failed=3,
+    )
+    return registry.fetch(SEGMENTATION_NAME, downloader=pooch.HTTPDownloader(timeout=60))
 
 
 def get_test_volume_and_segmentation(folder: str) -> Tuple[str, str, str]:
-    """Download a small volume with nuclei and corresponding segmentation.
+    """Get a small volume with nuclei and the corresponding segmentation.
+
+    The segmentation is downloaded once and then read from the cache directory.
 
     Args:
-        folder: The test data folder. The data will be downloaded to this folder.
+        folder: The test data folder. The data is written to this folder.
 
     Returns:
         The path to the image, stored as tif.
@@ -28,16 +42,13 @@ def get_test_volume_and_segmentation(folder: str) -> Tuple[str, str, str]:
     """
     os.makedirs(folder, exist_ok=True)
 
-    segmentation_path = os.path.join(folder, "segmentation.tif")
-    resp = requests.get(SEGMENTATION_URL)
-    resp.raise_for_status()
-
-    with open(segmentation_path, "wb") as f:
-        f.write(resp.content)
-
     nuclei = cells3d()[20:40, 1]
-    segmentation = imageio.imread(segmentation_path)
+    segmentation = imageio.imread(_fetch_test_segmentation())
     assert nuclei.shape == segmentation.shape
+
+    # The downloaded file is compressed and cannot be memory-mapped, so write an uncompressed copy.
+    segmentation_path = os.path.join(folder, "segmentation.tif")
+    imageio.imwrite(segmentation_path, segmentation)
 
     image_path = os.path.join(folder, "image.tif")
     imageio.imwrite(image_path, nuclei)
