@@ -2,7 +2,7 @@ import errno
 import os
 import unittest
 import xml.etree.ElementTree as ET
-from shutil import rmtree
+from tempfile import TemporaryDirectory
 from unittest import mock
 
 import numpy as np
@@ -98,16 +98,14 @@ def read_setup(out_path, setup_id, scale=0):
 
 
 class TestDataConversion(unittest.TestCase):
-    folder = "./tmp"
-
     def setUp(self):
         from flamingo_tools import create_test_data
 
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
         # TODO Create flamingo metadata.
         create_test_data(self.folder)
-
-    def tearDown(self):
-        rmtree(self.folder)
 
     def test_convert_lightsheet_to_bdv(self):
         from flamingo_tools import convert_lightsheet_to_bdv
@@ -123,16 +121,14 @@ class TestDataConversion(unittest.TestCase):
 class TestRawConversion(unittest.TestCase):
     """Streaming conversion of raw tiles, including resume and the guard rails."""
 
-    folder = "./tmp_raw"
-
     def setUp(self):
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
         self.root = os.path.join(self.folder, "input")
         os.makedirs(self.root, exist_ok=True)
         self.volumes = make_raw_input(self.root)
         self.out_path = os.path.join(self.folder, "out.n5")
-
-    def tearDown(self):
-        rmtree(self.folder)
 
     def _convert(self, out_path=None, **kwargs):
         from flamingo_tools import convert_lightsheet_to_bdv

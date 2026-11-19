@@ -1,6 +1,5 @@
 import os
 import unittest
-from shutil import rmtree
 from tempfile import TemporaryDirectory
 
 import imageio.v3 as imageio
@@ -13,18 +12,13 @@ COORDS = ["axis-0", "axis-1", "axis-2"]
 
 
 class TestValidation(unittest.TestCase):
-    folder = "./tmp"
-
     def setUp(self):
         from flamingo_tools.test_data import get_test_volume_and_segmentation
 
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
         _, self.seg_path, _ = get_test_volume_and_segmentation(self.folder)
-
-    def tearDown(self):
-        try:
-            rmtree(self.folder)
-        except Exception:
-            pass
 
     def test_compute_scores_for_annotated_slice_2d(self):
         from flamingo_tools.validation import compute_scores_for_annotated_slice

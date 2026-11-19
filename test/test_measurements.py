@@ -1,6 +1,6 @@
 import os
 import unittest
-from shutil import rmtree
+from tempfile import TemporaryDirectory
 
 import imageio.v3 as imageio
 import pandas as pd
@@ -9,18 +9,13 @@ from skimage.measure import regionprops_table
 
 
 class TestMeasurements(unittest.TestCase):
-    folder = "./tmp"
-
     def setUp(self):
         from flamingo_tools.test_data import get_test_volume_and_segmentation
 
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
         self.image_path, self.seg_path, self.table_path = get_test_volume_and_segmentation(self.folder)
-
-    def tearDown(self):
-        try:
-            rmtree(self.folder)
-        except Exception:
-            pass
 
     def test_compute_object_measures(self):
         from flamingo_tools.measurements import compute_object_measures

@@ -2,26 +2,24 @@ import os
 import platform
 import sys
 import unittest
-from shutil import rmtree
 from unittest import mock
 
 import z5py
 
 from subprocess import run
+from tempfile import TemporaryDirectory
 
 
 @unittest.skipIf(platform.system() == "Windows", "CLI tests fail on windows.")
 class TestCLI(unittest.TestCase):
-    folder = "./tmp"
-
     def setUp(self):
         from flamingo_tools import create_test_data
 
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
         # TODO Create flamingo metadata.
         create_test_data(self.folder)
-
-    def tearDown(self):
-        rmtree(self.folder)
 
     def test_convert_data(self):
         out_path = os.path.join(self.folder, "converted_data.n5")
