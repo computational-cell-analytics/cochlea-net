@@ -15,6 +15,8 @@ jobs:
   test:
     name: ${{ matrix.os }} ${{ matrix.python-version }}
     runs-on: ${{ matrix.os }}
+    # A job takes less than 10 minutes. Without a limit, a hanging download blocks the runner for 6 hours.
+    timeout-minutes: 45
 
     strategy:
       fail-fast: false
@@ -22,11 +24,12 @@ jobs:
         os: [ubuntu-latest, macos-latest, windows-latest]
         python-version: ["3.14"]
 
-    # The tests load skimage.data.cells3d, which scikit-image downloads from gitlab.com.
-    # A fixed data folder lets actions/cache keep the file, so a gitlab.com outage
+    # The tests download skimage.data.cells3d from gitlab.com and a test segmentation from owncloud.
+    # Fixed data folders let actions/cache keep the files, so an outage of these servers
     # does not fail the run.
     env:
       SKIMAGE_DATADIR: ${{ github.workspace }}/.skimage-data
+      COCHLEA_NET_CACHE_DIR: ${{ github.workspace }}/.cochlea-net-cache
 
     steps:
       - name: Checkout
@@ -44,18 +47,20 @@ jobs:
         shell: bash -l {0}
         run: pip install -e .
 
-      # scikit-image stores its data in a subfolder per version. The cache key follows
-      # the version, so an upgrade does not restore a stale folder.
+      # scikit-image stores its data in a subfolder per version, and test_data.py pins the
+      # test segmentation. The cache key follows both, so a change does not restore stale files.
       - name: Get scikit-image version
         id: skimage
         shell: bash -l {0}
         run: echo "version=$(python -c 'import skimage; print(skimage.__version__, end="")')" >> "$GITHUB_OUTPUT"
 
-      - name: Cache scikit-image data
+      - name: Cache test data
         uses: actions/cache@v6
         with:
-          path: ${{ env.SKIMAGE_DATADIR }}
-          key: skimage-data-${{ runner.os }}-${{ steps.skimage.outputs.version }}
+          path: |
+            ${{ env.SKIMAGE_DATADIR }}
+            ${{ env.COCHLEA_NET_CACHE_DIR }}/test_data
+          key: test-data-${{ runner.os }}-skimage-${{ steps.skimage.outputs.version }}-${{ hashFiles('flamingo_tools/test_data.py') }}
 
       - name: Run tests
         shell: bash -l {0}

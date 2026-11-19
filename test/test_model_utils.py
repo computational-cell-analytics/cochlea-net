@@ -1,5 +1,6 @@
 import os
 import unittest
+import urllib.error
 import urllib.request
 from shutil import copyfile
 from tempfile import TemporaryDirectory
@@ -26,8 +27,26 @@ class TestSegmentationDefaults(unittest.TestCase):
 class TestModelSource(unittest.TestCase):
     """Check that the model specifications match the models on BioImage.IO."""
 
+    # After the first failed request, the other requests skip at once instead of waiting for the timeout.
+    unavailable = None
+
+    def _urlopen(self, request):
+        """Skip the test when the server is not available. A missing file (404) still fails."""
+        if type(self).unavailable:
+            self.skipTest(type(self).unavailable)
+        try:
+            return urllib.request.urlopen(request, timeout=60)
+        except urllib.error.HTTPError as error:
+            if error.code != 429 and error.code < 500:
+                raise
+            reason = str(error)
+        except (urllib.error.URLError, TimeoutError) as error:
+            reason = str(error)
+        type(self).unavailable = f"BioImage.IO is not available: {reason}"
+        self.skipTest(type(self).unavailable)
+
     def _read_rdf(self, model_type):
-        with urllib.request.urlopen(get_model_url(model_type, "rdf.yaml"), timeout=60) as response:
+        with self._urlopen(get_model_url(model_type, "rdf.yaml")) as response:
             return yaml.safe_load(response.read())
 
     def test_rdf_matches_model_spec(self):
@@ -50,7 +69,7 @@ class TestModelSource(unittest.TestCase):
             with self.subTest(model_type=model_type):
                 # Request only the first byte to check the URL without the download of the full weights.
                 request = urllib.request.Request(get_model_url(model_type), headers={"Range": "bytes=0-0"})
-                with urllib.request.urlopen(request, timeout=60) as response:
+                with self._urlopen(request) as response:
                     self.assertIn(response.status, (200, 206))
 
 

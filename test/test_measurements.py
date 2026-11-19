@@ -97,6 +97,10 @@ class TestMeasurements(unittest.TestCase):
                 seg_path=self.seg_path, use_bg_mask=True, bg_cache_paths=cache_paths,
             )
 
+
+class TestObjectFeatures(unittest.TestCase):
+    """Feature functions on synthetic objects. These tests do not need the downloaded test data."""
+
     def test_normalize_background(self):
         """Every intensity measure drops by the background level, and the spread stays unchanged."""
         from flamingo_tools.measurements import _default_object_features, BACKGROUND_NORMALIZED_MEASURES

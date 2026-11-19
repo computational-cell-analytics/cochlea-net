@@ -23,13 +23,15 @@ except ImportError:
 def get_cache_dir() -> str:
     """Get the cache directory of CochleaNet.
 
-    The default cache directory is "$HOME/cochlea-net"
+    The environment variable COCHLEA_NET_CACHE_DIR sets the cache directory.
+    Without it, the cache directory is the "cochlea-net" folder in the cache location of the OS,
+    for example "~/.cache/cochlea-net" on Linux.
 
     Returns:
         The cache directory.
     """
-    cache_dir = os.path.expanduser(pooch.os_cache("cochlea-net"))
-    return cache_dir
+    cache_dir = os.environ.get("COCHLEA_NET_CACHE_DIR") or pooch.os_cache("cochlea-net")
+    return os.path.expanduser(cache_dir)
 
 
 def _parse_shape(metadata_file):
