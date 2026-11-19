@@ -24,7 +24,7 @@ import torch
 import torch_em.model.unet
 from bioimageio.spec import save_bioimageio_package_as_folder
 
-from flamingo_tools.segmentation.unet_prediction import _load_model
+from flamingo_tools.model_utils import load_model_from_path
 from flamingo_tools.test_data import _sample_registry
 
 ROOT = os.path.join(os.path.dirname(__file__), "..", "..")
@@ -249,7 +249,7 @@ def _write_cover(raw, prediction, path, max_projection):
 
 
 def export_model(key, cfg, tmp):
-    model = _load_model(os.path.join(ROOT, "models", cfg["checkpoint"]), device="cpu").eval()
+    model = load_model_from_path(os.path.join(ROOT, "models", cfg["checkpoint"]), device="cpu").eval()
     # Class-valued kwargs (conv_block_impl) are the defaults and cannot go into YAML.
     kwargs = {k: v for k, v in model.init_kwargs.items() if not isinstance(v, type)}
 
