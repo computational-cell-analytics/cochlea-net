@@ -26,6 +26,11 @@ def _volume(spots_um, shape=SHAPE, amplitude=AMPLITUDE, background=BACKGROUND, n
     return volume
 
 
+def _cube_mean(volume, position_um, halo):
+    center = np.round(np.asarray(position_um)[::-1] / np.asarray(VOXEL_SIZE)[::-1]).astype(int)
+    return volume[tuple(slice(max(c - halo, 0), c + halo + 1) for c in center)].mean()
+
+
 def _spots(positions_um):
     positions_um = np.asarray(positions_um, dtype="float64")
     return pd.DataFrame({
@@ -45,9 +50,12 @@ class TestMeasureSpotIntensities(unittest.TestCase):
     def test_isolated_spots(self):
         volume = _volume(self.positions)
         result = self.measure({"stain": volume}, _spots(self.positions), voxel_size=VOXEL_SIZE, n_threads=1)
-        np.testing.assert_allclose(result.stain_peak, AMPLITUDE + BACKGROUND, rtol=1e-6)
+        # The default signal is the mean of the 3 x 3 x 3 voxels around the spot.
+        expected = [_cube_mean(volume, position, 1) for position in self.positions]
+        np.testing.assert_allclose(result.stain_signal, expected, rtol=1e-6)
+        self.assertTrue(np.all(result.stain_signal < AMPLITUDE + BACKGROUND))
         np.testing.assert_allclose(result.stain_background, BACKGROUND, atol=1.0)
-        np.testing.assert_allclose(result.stain_ratio, (AMPLITUDE + BACKGROUND) / result.stain_background)
+        np.testing.assert_allclose(result.stain_ratio, result.stain_signal / result.stain_background)
 
         # The integrated intensity is the sum of the Gaussian over the core voxels.
         core = (0.8, 0.8, 1.0)
@@ -64,15 +72,16 @@ class TestMeasureSpotIntensities(unittest.TestCase):
         """A spot shows up at its own position, not at the position with x and z swapped."""
         volume = _volume([(5.0, 20.0, 25.0)])
         spots = _spots([(5.0, 20.0, 25.0), (25.0, 20.0, 5.0), (30.0, 20.0, 5.0)])
-        result = self.measure({"stain": volume}, spots, voxel_size=VOXEL_SIZE, n_threads=1)
-        self.assertAlmostEqual(result.stain_peak[0], AMPLITUDE + BACKGROUND, places=3)
-        self.assertAlmostEqual(result.stain_peak[1], BACKGROUND, places=3)
+        result = self.measure({"stain": volume}, spots, voxel_size=VOXEL_SIZE, signal_halo=0, n_threads=1)
+        self.assertAlmostEqual(result.stain_signal[0], AMPLITUDE + BACKGROUND, places=3)
+        self.assertAlmostEqual(result.stain_signal[1], BACKGROUND, places=3)
         # x = 30 um is voxel 60, outside of the volume.
-        self.assertTrue(np.isnan(result.stain_peak[2]))
+        self.assertTrue(np.isnan(result.stain_signal[2]))
 
     def test_snr_with_noise(self):
         volume = _volume(self.positions, noise=10.0)
-        result = self.measure({"stain": volume}, _spots(self.positions), voxel_size=VOXEL_SIZE, n_threads=1)
+        result = self.measure({"stain": volume}, _spots(self.positions), voxel_size=VOXEL_SIZE, signal_halo=0,
+                              n_threads=1)
         np.testing.assert_allclose(result.stain_noise, 10.0, rtol=0.2)
         np.testing.assert_allclose(result.stain_snr, AMPLITUDE / 10.0, rtol=0.25)
 
@@ -89,8 +98,29 @@ class TestMeasureSpotIntensities(unittest.TestCase):
         positions = [(0.0, 0.0, 0.0), (29.5, 29.5, 39.0)]
         volume = _volume(positions)
         result = self.measure({"stain": volume}, _spots(positions), voxel_size=VOXEL_SIZE, n_threads=1)
-        np.testing.assert_allclose(result.stain_peak, AMPLITUDE + BACKGROUND, rtol=1e-6)
+        # The 3 x 3 x 3 cube is clipped to the 2 x 2 x 2 voxels inside the volume.
+        np.testing.assert_allclose(result.stain_signal, [_cube_mean(volume, p, 1) for p in positions], rtol=1e-6)
+        self.assertEqual(volume[:2, :2, :2].mean(), _cube_mean(volume, positions[0], 1))
         self.assertTrue(np.all(result.n_background_voxels > 0))
+        single = self.measure({"stain": volume}, _spots(positions), voxel_size=VOXEL_SIZE, signal_halo=0, n_threads=1)
+        np.testing.assert_allclose(single.stain_signal, AMPLITUDE + BACKGROUND, rtol=1e-6)
+
+    def test_signal_halo(self):
+        volume = _volume(self.positions, noise=5.0)
+        spots = _spots(self.positions)
+        for halo in (0, 1, 2):
+            result = self.measure({"stain": volume}, spots, voxel_size=VOXEL_SIZE, signal_halo=halo, n_threads=1)
+            expected = [_cube_mean(volume, position, halo) for position in self.positions]
+            np.testing.assert_allclose(result.stain_signal, expected, rtol=1e-6)
+            np.testing.assert_allclose(result.stain_ratio, result.stain_signal / result.stain_background)
+            np.testing.assert_allclose(
+                result.stain_snr, (result.stain_signal - result.stain_background) / result.stain_noise
+            )
+        # The halo reaches beyond the outer shell radius of 1 voxel in x and y.
+        result = self.measure({"stain": volume}, spots, voxel_size=VOXEL_SIZE, signal_halo=3, n_threads=1,
+                              core_radius=0.4, background_radii=(0.45, 0.5))
+        expected = [_cube_mean(volume, position, 3) for position in self.positions]
+        np.testing.assert_allclose(result.stain_signal, expected, rtol=1e-6)
 
     def test_neighbor_exclusion(self):
         """A neighbor in the shell raises the background without the exclusion only."""
@@ -109,17 +139,19 @@ class TestMeasureSpotIntensities(unittest.TestCase):
         volume = np.clip(_volume(self.positions, amplitude=70000.0), 0, 65535).astype("uint16")
         dim = _volume(self.positions, amplitude=500.0).astype("float32")
         result = self.measure({"bright": volume, "dim": dim}, _spots(self.positions), voxel_size=VOXEL_SIZE,
-                              n_threads=1)
+                              signal_halo=0, n_threads=1)
         self.assertTrue(np.all(result.bright_n_saturated >= 1))
-        self.assertTrue(np.all(result.bright_peak == 65535))
+        self.assertTrue(np.all(result.bright_signal == 65535))
         self.assertTrue(result.dim_n_saturated.isna().all())
-        np.testing.assert_allclose(result.dim_peak, 600.0, rtol=1e-5)
+        np.testing.assert_allclose(result.dim_signal, 600.0, rtol=1e-5)
 
     def test_invalid_input(self):
         with self.assertRaises(ValueError):
             self.measure({"a": np.zeros((4, 4, 4)), "b": np.zeros((4, 4, 5))}, _spots([(1.0, 1.0, 1.0)]))
         with self.assertRaises(ValueError):
             self.measure({"a": np.zeros(SHAPE)}, _spots([(1.0, 1.0, 1.0)]), background_radii=(3.0, 2.0))
+        with self.assertRaises(ValueError):
+            self.measure({"a": np.zeros(SHAPE)}, _spots([(1.0, 1.0, 1.0)]), signal_halo=-1)
 
 
 class TestSpotIntensityTable(unittest.TestCase):
@@ -138,10 +170,11 @@ class TestSpotIntensityTable(unittest.TestCase):
             table_path = os.path.join(tmp, "spots.tsv")
             _spots(positions).to_csv(table_path, sep="\t", index=False)
             output_path = os.path.join(tmp, "out.tsv")
-            spot_intensity_table(table_path, [image_path], output_path, input_key=None, voxel_size=VOXEL_SIZE)
+            spot_intensity_table(table_path, [image_path], output_path, input_key=None, voxel_size=VOXEL_SIZE,
+                                 signal_halo=0)
             result = pd.read_csv(output_path, sep="\t")
         self.assertIn("CTBP2_snr", result.columns)
-        self.assertAlmostEqual(result.CTBP2_peak[0], AMPLITUDE + BACKGROUND, places=2)
+        self.assertAlmostEqual(result.CTBP2_signal[0], AMPLITUDE + BACKGROUND, places=2)
 
 
 if __name__ == "__main__":

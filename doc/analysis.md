@@ -537,7 +537,12 @@ The docstring of `fig_06d` in `scripts/figures/plot_fig6.py` has the same number
 The table needs the positions `x`, `y`, `z` in micrometer.
 Give one or more image channels. Each channel adds the columns `<channel>_<measure>`.
 
-Each spot has a core and a background shell.
+The signal of a spot is the mean of the 3 x 3 x 3 voxels around the spot voxel.
+`--signal_halo` sets the halo of this cube in voxels: 0 uses the spot voxel only, and 2 uses the 5 x 5 x 5 voxels.
+The spot voxel is the detection position, a maximum of the detection heatmap.
+It is not always the brightest voxel of the stain.
+
+Each spot also has a core and a background shell.
 Both are ellipsoids with (x, y, z) semi-axes in micrometer, because the spots are longer along z.
 - The core has the semi-axes 0.8, 0.8, 1.0 µm (`--core_radius`).
 - The shell lies between 2.5, 2.5, 3.0 µm and 4.5, 4.5, 5.0 µm (`--background_radii`).
@@ -550,17 +555,18 @@ A change of the shell by 0.5 µm changes the median background by less than 4 %.
 
 | Measure | Type | Definition |
 |---|---|---|
-| `peak` | absolute | Maximum of the 3 x 3 x 3 voxels around the spot |
+| `signal` | absolute | Mean of the 3 x 3 x 3 voxels around the spot voxel (`--signal_halo`) |
 | `mean` | absolute | Mean in the core |
 | `integrated` | absolute | Sum of (intensity - background) in the core |
 | `background` | absolute | Median in the shell |
 | `noise` | absolute | 1.4826 x the median absolute deviation in the shell |
-| `ratio` | relative | `peak` / `background` |
-| `snr` | relative | (`peak` - `background`) / `noise` |
+| `ratio` | relative | `signal` / `background` |
+| `snr` | relative | (`signal` - `background`) / `noise` |
 | `n_saturated` | quality | Core voxels at the maximum of the data type, for example 65535 |
 
 The columns `nn_distance` (distance to the nearest other spot in µm), `n_core_voxels` and `n_background_voxels` do not depend on the channel.
-A spot with `n_saturated` > 0 has a clipped `peak`, `mean` and `integrated`.
+`noise` is the noise of one voxel, also when `signal` is the mean of several voxels.
+A spot with `n_saturated` > 0 has a clipped `signal`, `mean` and `integrated`.
 
 The integrated intensity is the input for a later estimate of merged synapses.
 Two synapses closer than the resolution give one spot with about twice the integrated intensity.
@@ -588,36 +594,16 @@ python -m flamingo_tools.synapse_detection.stain_comparison \
     -r CTBP2_spots.tsv -t Homer1_spots.tsv --reference_channel CTBP2 --test_channel Homer1 \
     --ihc_table M_AMD_000117_L/tables/IHC_v11/default.tsv -c 1 --s3 -o <out-dir>
 ```
+Compare each cochlea with its own valid IHCs.
+For example, `M_AMD_N179_L` uses `IHC_v11b` with the components 1 to 5, and `M_AMD_N179_R` uses the components 1 to 4 (see `reproducibility/processing`).
+
 The output folder holds:
 - `<name>_matched.tsv` for each stain, with the columns `matched` and `partner_id`.
 - `intensity_summary.tsv`, with the quantiles of each measure for all, matched and unmatched spots.
 - `sweep.tsv`, with the counts and scores after a threshold on the test stain (`--sweep_measure`, default `snr`).
   Each threshold matches the remaining spots again.
 - `summary.json`, with the matching scores, the medians and the fraction of saturated spots.
-  It also records the names and the channels of the comparison, for the summary over cochleae.
-- `overview.png`, with the histograms by match status, the scatter of both stains, the sweep and the integrated intensity.
-
-### Summary over cochleae
-
-`flamingo_tools.synapse_detection.stain_summary` compares several cochleae.
-Its inputs are the output folders of `stain_comparison`, and all of them must have the same reference and test channels.
-`--names` gives the cochlea names. Without it, a folder called `comparison` takes the name of its parent folder.
-```bash
-python -m flamingo_tools.synapse_detection.stain_summary \
-    -i <out-dir>/M_AMD_000117_L/comparison <out-dir>/M_AMD_N179_L/comparison <out-dir>/M_AMD_N179_R/comparison \
-    -o <out-dir>/summary
-```
-Compare each cochlea with its own valid IHCs.
-For example, `M_AMD_N179_L` uses `IHC_v11b` with the components 1 to 5, and `M_AMD_N179_R` uses the components 1 to 4 (see `reproducibility/processing`).
-
-The output folder holds:
-- `summary.tsv`, with the spots per valid IHC, the matched pairs, the precision and the recall of each cochlea.
-- `intensity_summary.tsv`, with the quantiles of each measure for each cochlea and stain.
-- `summary_snr.png` and `summary_ratio.png`, one figure for each measure of `--measures`.
-  - The first row shows the spots per IHC, the colocalization and the median `peak` and `background`.
-  - The second row shows the test spots, and the third row the reference spots.
-    Each row shows both stains and the integrated intensity divided by the median of the cochlea.
-  - The color marks the cochlea. Use at most three cochleae, so that the lines stay separable.
+  It also records the names and the channels of the comparison.
 
 ## Synapse crops
 

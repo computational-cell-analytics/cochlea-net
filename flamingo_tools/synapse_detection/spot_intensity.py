@@ -1,9 +1,10 @@
 """Stain intensity at synapse detections, absolute and relative to the local background.
 
-Each spot gets a core ellipsoid for its own signal and an ellipsoidal shell for its local background.
-Both are given as (x, y, z) semi-axes in micrometer, because the spots of the light-sheet data are
-longer along z than along x and y. The shell leaves out the cores of the other spots of the same
-table, so that dense synapses do not raise the background.
+Each spot gets a cube of voxels for its signal, a core ellipsoid for its mean and integrated intensity,
+and an ellipsoidal shell for its local background. The core and the shell are given as (x, y, z)
+semi-axes in micrometer, because the spots of the light-sheet data are longer along z than along x
+and y. The shell leaves out the cores of the other spots of the same table, so that dense synapses do
+not raise the background.
 
 Run `python -m flamingo_tools.synapse_detection.spot_intensity -h` for the command line.
 """
@@ -29,15 +30,17 @@ Radius = Union[float, Sequence[float]]
 # and a change of the shell by +/- 0.5 um changes the median background by less than 4 %.
 DEFAULT_CORE_RADIUS = (0.8, 0.8, 1.0)
 DEFAULT_BACKGROUND_RADII = ((2.5, 2.5, 3.0), (4.5, 4.5, 5.0))
+DEFAULT_SIGNAL_HALO = 1
 
-INTENSITY_MEASURES = ("peak", "mean", "background", "noise", "ratio", "snr", "integrated", "n_saturated")
+INTENSITY_MEASURES = ("signal", "mean", "background", "noise", "ratio", "snr", "integrated", "n_saturated")
 """The per-channel columns `<channel>_<measure>` of `measure_spot_intensities`:
-- 'peak': maximum in the 3x3x3 voxels around the spot.
+- 'signal': mean in the (2 x signal_halo + 1)^3 voxels around the spot voxel.
 - 'mean': mean in the core ellipsoid.
 - 'background': median in the background shell.
-- 'noise': 1.4826 x the median absolute deviation in the shell, which estimates the standard deviation.
-- 'ratio': peak / background.
-- 'snr': (peak - background) / noise.
+- 'noise': 1.4826 x the median absolute deviation in the shell, which estimates the standard deviation
+  of one voxel.
+- 'ratio': signal / background.
+- 'snr': (signal - background) / noise.
 - 'integrated': sum of (intensity - background) over the core, in intensity x voxels.
 - 'n_saturated': core voxels at the maximum of an integer dtype. NaN for float data.
 """
@@ -70,6 +73,7 @@ def measure_spot_intensities(
     images: Dict[str, np.typing.ArrayLike],
     spots: pd.DataFrame,
     voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
+    signal_halo: int = DEFAULT_SIGNAL_HALO,
     core_radius: Radius = DEFAULT_CORE_RADIUS,
     background_radii: Tuple[Radius, Radius] = DEFAULT_BACKGROUND_RADII,
     exclusion_radius: Optional[Radius] = None,
@@ -82,6 +86,8 @@ def measure_spot_intensities(
         images: The image volumes in ZYX order, keyed by the channel name. All have the same shape.
         spots: The spot table, with the positions in micrometer in the columns 'x', 'y', 'z'.
         voxel_size: The voxel size in micrometer, in (x, y, z) order.
+        signal_halo: The halo in voxels around the spot voxel for the 'signal' measure. 0 uses the spot
+            voxel only, 1 the 3 x 3 x 3 voxels. The cube is clipped at the border of the volume.
         core_radius: The semi-axes of the core ellipsoid in micrometer, scalar or (x, y, z).
         background_radii: The inner and the outer semi-axes of the background shell in micrometer.
         exclusion_radius: The semi-axes of the region around every other spot that the shell leaves out.
@@ -102,6 +108,8 @@ def measure_spot_intensities(
     if any(sh != shape for sh in shapes.values()):
         raise ValueError(f"The images must have the same shape, got {shapes}.")
     shape = np.asarray(shape)
+    if signal_halo < 0:
+        raise ValueError(f"The signal halo must not be negative, got {signal_halo}.")
 
     if exclusion_radius is None:
         exclusion_radius = core_radius
@@ -110,7 +118,7 @@ def measure_spot_intensities(
     exclusion_axes = _semi_axes(exclusion_radius, voxel_size)
     if np.any(inner_axes > outer_axes):
         raise ValueError("The inner background radius must not exceed the outer one.")
-    window = np.ceil(np.maximum(outer_axes, 1)).astype(int)
+    window = np.maximum(np.ceil(outer_axes).astype(int), signal_halo)
 
     if block_shape is None:
         chunks = getattr(next(iter(images.values())), "chunks", None)
@@ -166,14 +174,15 @@ def measure_spot_intensities(
             geometry["n_core_voxels"][index] = core.sum()
             geometry["n_background_voxels"][index] = shell.sum()
             local = tuple(slice(lb - b, hb - b) for lb, hb, b in zip(lo, hi, begin))
-            peak_bb = tuple(
-                slice(max(c - 1, b) - b, min(c + 2, e) - b) for c, b, e in zip(center, begin, end)
+            signal_bb = tuple(
+                slice(max(c - signal_halo, b) - b, min(c + signal_halo + 1, e) - b)
+                for c, b, e in zip(center, begin, end)
             )
             for channel, block in blocks.items():
                 values = block[local]
                 core_values = values[core].astype("float64")
-                peak = float(block[peak_bb].max())
-                result = {"peak": peak, "mean": core_values.mean()}
+                signal = float(block[signal_bb].mean(dtype="float64"))
+                result = {"signal": signal, "mean": core_values.mean()}
                 if shell.any():
                     shell_values = values[shell].astype("float64")
                     background = np.median(shell_values)
@@ -181,8 +190,8 @@ def measure_spot_intensities(
                     result.update({
                         "background": background,
                         "noise": noise,
-                        "ratio": peak / background if background > 0 else np.nan,
-                        "snr": (peak - background) / noise if noise > 0 else np.nan,
+                        "ratio": signal / background if background > 0 else np.nan,
+                        "snr": (signal - background) / noise if noise > 0 else np.nan,
                         "integrated": float(np.sum(core_values - background)),
                     })
                 if saturation[channel] is not None:
@@ -262,7 +271,7 @@ def spot_intensity_table(
 
 def main():
     parser = argparse.ArgumentParser(
-        description="Measure the stain intensity at synapse detections: the peak, the core mean and the "
+        description="Measure the stain intensity at synapse detections: the signal, the core mean and the "
         "integrated intensity, and the local background with the ratio and the signal-to-noise ratio."
     )
     parser.add_argument("-t", "--table", required=True, help="Spot table with 'x', 'y', 'z' in micrometer.")
@@ -274,6 +283,9 @@ def main():
     parser.add_argument("-k", "--input_key", default="s0", help="Key of the image data. Default: s0")
     parser.add_argument("--voxel_size", type=float, nargs=3, default=[0.38, 0.38, 0.38],
                         help="Voxel size in micrometer (x, y, z).")
+    parser.add_argument("--signal_halo", type=int, default=DEFAULT_SIGNAL_HALO,
+                        help="Halo in voxels around the spot voxel for the signal: 0 = spot voxel only, "
+                        f"1 = 3 x 3 x 3 voxels. Default: {DEFAULT_SIGNAL_HALO}")
     parser.add_argument("--core_radius", type=float, nargs=3, default=list(DEFAULT_CORE_RADIUS),
                         help="Semi-axes of the core ellipsoid in micrometer (x, y, z).")
     parser.add_argument("--background_radii", type=float, nargs=6,
@@ -296,7 +308,7 @@ def main():
         channel_names=args.channel_names, input_key=args.input_key, voxel_size=args.voxel_size,
         s3_images=args.s3_images, s3_table=args.s3_table, s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name, s3_service_endpoint=args.s3_service_endpoint,
-        core_radius=args.core_radius,
+        signal_halo=args.signal_halo, core_radius=args.core_radius,
         background_radii=(args.background_radii[:3], args.background_radii[3:]),
         n_threads=args.n_threads,
     )

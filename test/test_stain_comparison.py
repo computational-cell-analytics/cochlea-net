@@ -24,7 +24,7 @@ def _tables():
     })
     for table in (reference, test):
         for channel in ("CTBP2", "Homer1"):
-            for measure in ("peak", "background", "ratio", "snr", "integrated", "n_saturated"):
+            for measure in ("signal", "background", "ratio", "snr", "integrated", "n_saturated"):
                 table[f"{channel}_{measure}"] = np.arange(len(table), dtype="float64") + 1
     test["Homer1_snr"] = [10.0, 8.0, 1.0, 2.0, 9.0]
     return reference, test
@@ -107,7 +107,7 @@ class TestCompareStains(unittest.TestCase):
                 valid_ihcs=[1, 2], thresholds=[-np.inf, 5.0],
             )
             for name in ("ctbp2_matched.tsv", "homer1_matched.tsv", "intensity_summary.tsv", "sweep.tsv",
-                         "summary.json", "overview.png"):
+                         "summary.json"):
                 self.assertTrue(os.path.isfile(os.path.join(tmp, name)), name)
             with open(os.path.join(tmp, "summary.json")) as f:
                 summary = json.load(f)

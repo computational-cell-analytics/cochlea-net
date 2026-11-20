@@ -20,13 +20,8 @@ from flamingo_tools.s3_utils import read_table
 from flamingo_tools.validation import compute_scores_from_counts, match_detections
 
 COORDINATES = ["x", "y", "z"]
-SUMMARY_MEASURES = ("peak", "background", "ratio", "snr", "integrated")
+SUMMARY_MEASURES = ("signal", "background", "ratio", "snr", "integrated")
 SUMMARY_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
-
-# Blue and orange, the first two colors of `stain_summary.COCHLEA_COLORS`.
-_MATCHED_COLOR = "#2a78d6"
-_UNMATCHED_COLOR = "#eb6834"
-_TEXT_COLOR = "#52514e"
 
 
 def _spot_ids(table: pd.DataFrame) -> np.ndarray:
@@ -197,107 +192,6 @@ def select_excess_ihcs(
     return candidates.iloc[selected].reset_index(drop=True)
 
 
-def plot_stain_comparison(
-    reference: pd.DataFrame,
-    test: pd.DataFrame,
-    reference_channel: str,
-    test_channel: str,
-    sweep: pd.DataFrame,
-    output_path: str,
-    measure: str = "snr",
-) -> None:
-    """Plot the intensity measure of both stains by match status and the threshold sweep in one figure.
-
-    Args:
-        reference: The reference spots from `match_stains`.
-        test: The test spots from `match_stains`.
-        reference_channel: The channel of the reference stain.
-        test_channel: The channel of the test stain.
-        sweep: The output of `threshold_sweep`.
-        output_path: The output image file.
-        measure: The intensity measure for the histograms and the scatter plot.
-    """
-    import matplotlib
-    matplotlib.use("Agg")
-    import matplotlib.pyplot as plt
-
-    def by_match(ax, table, column, title):
-        values = table[column].dropna()
-        lo, hi = np.nanquantile(values, [0.005, 0.995]) if len(values) else (0, 1)
-        bins = np.linspace(lo, hi, 60)
-        for matched, color, label in ((True, _MATCHED_COLOR, "matched"), (False, _UNMATCHED_COLOR, "unmatched")):
-            subset = table.loc[table.matched == matched, column].dropna()
-            ax.hist(subset, bins=bins, histtype="step", linewidth=2, color=color, label=f"{label} (n={len(subset)})")
-        ax.set_xlabel(f"{column} (0.5 - 99.5 % range)")
-        ax.set_ylabel("spots")
-        ax.set_title(title, loc="left")
-        ax.legend(frameon=False)
-
-    fig, axes = plt.subplots(2, 3, figsize=(16, 9.5))
-    by_match(axes[0, 0], test, f"{test_channel}_{measure}", f"{test_channel} spots, {test_channel} stain")
-    by_match(axes[0, 1], reference, f"{reference_channel}_{measure}",
-             f"{reference_channel} spots, {reference_channel} stain")
-
-    ax = axes[0, 2]
-    x_column, y_column = f"{test_channel}_{measure}", f"{reference_channel}_{measure}"
-    if y_column in test:
-        for matched, color, label in ((False, _UNMATCHED_COLOR, "unmatched"), (True, _MATCHED_COLOR, "matched")):
-            subset = test[test.matched == matched]
-            ax.scatter(subset[x_column], subset[y_column], s=8, alpha=0.4, color=color, linewidths=0, label=label)
-        ax.set_xlim(*np.nanquantile(test[x_column], [0.005, 0.995]))
-        ax.set_ylim(*np.nanquantile(test[y_column], [0.005, 0.995]))
-        ax.set_xlabel(f"{x_column} (0.5 - 99.5 % range)")
-        ax.set_ylabel(f"{y_column} (0.5 - 99.5 % range)")
-        ax.legend(frameon=False, markerscale=2)
-    else:
-        ax.text(0.5, 0.5, f"{y_column} not measured", ha="center", va="center", color=_TEXT_COLOR)
-    ax.set_title(f"{test_channel} spots, both stains", loc="left")
-
-    sweep_column = sweep.attrs.get("column", f"{test_channel}_{measure}")
-    ax = axes[1, 0]
-    ax.plot(sweep.threshold, sweep.n_test, color=_UNMATCHED_COLOR, linewidth=2, marker="o", markersize=4,
-            label=f"{test_channel} spots kept")
-    ax.axhline(sweep.n_reference.iloc[0], color=_MATCHED_COLOR, linewidth=2,
-               label=f"{reference_channel} spots ({sweep.n_reference.iloc[0]})")
-    ax.set_xlabel(f"threshold on {sweep_column}")
-    ax.set_ylabel("spots")
-    ax.set_ylim(bottom=0)
-    ax.set_title("Spot count after the threshold", loc="left")
-    ax.legend(frameon=False)
-
-    ax = axes[1, 1]
-    ax.plot(sweep.threshold, sweep.precision, color=_UNMATCHED_COLOR, linewidth=2, marker="o", markersize=4,
-            label=f"precision ({test_channel} with partner)")
-    ax.plot(sweep.threshold, sweep.recall, color=_MATCHED_COLOR, linewidth=2, marker="o", markersize=4,
-            label=f"recall ({reference_channel} with partner)")
-    ax.set_xlabel(f"threshold on {sweep_column}")
-    ax.set_ylabel("fraction")
-    ax.set_ylim(0, 1)
-    ax.set_title("Colocalization after the threshold", loc="left")
-    ax.legend(frameon=False)
-
-    ax = axes[1, 2]
-    for table, channel, color in ((reference, reference_channel, _MATCHED_COLOR),
-                                  (test, test_channel, _UNMATCHED_COLOR)):
-        values = table[f"{channel}_integrated"].dropna()
-        values = values / values.median()
-        ax.hist(values, bins=np.linspace(-1, 6, 71), histtype="step", linewidth=2, color=color,
-                label=f"{channel} spots (n={len(values)})")
-    ax.set_xlabel("integrated intensity / median of the stain (-1 to 6 shown)")
-    ax.set_ylabel("spots")
-    ax.set_title("Integrated intensity, own stain", loc="left")
-    ax.legend(frameon=False)
-
-    for ax in axes.ravel():
-        ax.grid(True, color="#e4e3df", linewidth=0.8)
-        ax.set_axisbelow(True)
-        for side in ("top", "right"):
-            ax.spines[side].set_visible(False)
-    fig.tight_layout()
-    fig.savefig(output_path, dpi=150)
-    plt.close(fig)
-
-
 def write_crop_json(
     output_path: str,
     crop_centers: Sequence[Sequence[float]],
@@ -346,8 +240,7 @@ def compare_stains(
     """Match two stains, summarize the intensities, sweep a threshold on the test stain, and save the results.
 
     The output folder receives `<name>_matched.tsv` for both stains, 'intensity_summary.tsv',
-    'sweep.tsv', 'summary.json' and 'overview.png'. 'summary.json' records the names and the channels,
-    so that `flamingo_tools.synapse_detection.stain_summary` can read the folder.
+    'sweep.tsv' and 'summary.json'. 'summary.json' also records the names and the channels of the comparison.
 
     Args:
         reference: The spot table of the reference stain from `spot_intensity`.
@@ -363,12 +256,12 @@ def compare_stains(
         thresholds: The thresholds of the sweep. Default: see `threshold_sweep`.
 
     Returns:
-        The summary and the matched tables under the keys 'summary', 'reference' and 'test'.
+        The summary, the matched tables and the sweep under the keys 'summary', 'reference', 'test' and 'sweep'.
     """
     os.makedirs(output_folder, exist_ok=True)
     reference, test = match_stains(reference, test, max_dist=max_dist, valid_ihcs=valid_ihcs)
     channels = [channel for channel in (reference_channel, test_channel)
-                if f"{channel}_peak" in reference and f"{channel}_peak" in test]
+                if f"{channel}_signal" in reference and f"{channel}_signal" in test]
     n_ihcs = len(valid_ihcs) if valid_ihcs is not None else None
 
     summaries = []
@@ -378,9 +271,9 @@ def compare_stains(
     intensity = pd.concat(summaries, ignore_index=True)
     intensity.to_csv(os.path.join(output_folder, "intensity_summary.tsv"), sep="\t", index=False)
 
-    sweep_column = f"{test_channel}_{sweep_measure}"
-    sweep = threshold_sweep(reference, test, sweep_column, thresholds=thresholds, max_dist=max_dist, n_ihcs=n_ihcs)
-    sweep.attrs["column"] = sweep_column
+    sweep = threshold_sweep(
+        reference, test, f"{test_channel}_{sweep_measure}", thresholds=thresholds, max_dist=max_dist, n_ihcs=n_ihcs
+    )
     sweep.to_csv(os.path.join(output_folder, "sweep.tsv"), sep="\t", index=False)
 
     tp = int(test.matched.sum())
@@ -413,11 +306,6 @@ def compare_stains(
     }
     with open(os.path.join(output_folder, "summary.json"), "w") as f:
         json.dump(summary, f, indent=2)
-
-    plot_stain_comparison(
-        reference, test, reference_channel, test_channel, sweep,
-        os.path.join(output_folder, "overview.png"), measure=sweep_measure,
-    )
     return {"summary": summary, "reference": reference, "test": test, "sweep": sweep}
 
 
@@ -428,8 +316,8 @@ def _file_prefix(path: str) -> str:
 def main():
     parser = argparse.ArgumentParser(
         description="Compare the spots of a test stain (e.g. Homer1) with a reference stain (e.g. CtBP2): match "
-        "status, intensity summary, a threshold sweep on the test stain, and an overview figure. The input tables "
-        "come from flamingo_tools.synapse_detection.spot_intensity."
+        "status, intensity summary and a threshold sweep on the test stain. The input tables come from "
+        "flamingo_tools.synapse_detection.spot_intensity."
     )
     parser.add_argument("-r", "--reference", required=True, help="Spot intensity table of the reference stain.")
     parser.add_argument("-t", "--test", required=True, help="Spot intensity table of the test stain.")
