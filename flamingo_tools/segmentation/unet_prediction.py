@@ -727,7 +727,7 @@ def distance_watershed_implementation(
 
     # Compute the seed inputs:
     if boundary_distance_threshold is None and center_distance_threshold is None:
-        raise ValueError("Either boundary_distance_threshold, center_distance_threshold, or both have to be specifie.")
+        raise ValueError("Either boundary_distance_threshold, center_distance_threshold, or both have to be specified.")
     elif boundary_distance_threshold is None:
         seed_inputs = ThresholdWrapper(center_distances, threshold=center_distance_threshold, operator=np.less)
     elif center_distance_threshold is None:
@@ -853,7 +853,7 @@ def run_unet_prediction(
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
     use_mask: bool = True,
-    center_distance_threshold: float = 0.4,
+    center_distance_threshold: Optional[float] = 0.4,
     boundary_distance_threshold: Optional[float] = None,
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
@@ -1074,7 +1074,7 @@ def run_unet_segmentation_slurm(
         min_size: The minimal size of segmented objects in the output.
         center_distance_threshold: The threshold applied to the distance center predictions to derive seeds.
         boundary_distance_threshold: The threshold applied to the boundary predictions to derive seeds.
-            By default this is set to 'None', in which case the boundary distances are not used for the seeds.
+            'None' does not use the boundary distances for the seeds.
         fg_threshold: The threshold applied to the foreground prediction for deriving the watershed mask.
         distance_smoothing: The sigma value for smoothing the distance predictions with a gaussian kernel.
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
