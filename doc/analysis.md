@@ -482,41 +482,31 @@ Without `--ihc_table`, the script uses all synapses, also the synapses of instan
 ### Example
 
 The cochlea `M_AMD_000117_L` has the stains CtBP2 and Homer1.
-The IHC_v11 table on the bucket has no component labels yet.
-Thus, first label the components with the parameters of the processing file:
-```bash
-flamingo_tools.label_components --json_info reproducibility/processing/M_AMD_000117_L_IHC.json -o M_AMD_000117_L_IHC_v11.tsv --s3
-```
-The command reads the table from the bucket and writes the output locally.
-`--s3` applies to all tables of the colocalization script, so copy the synapse tables to the same location:
-```bash
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv M_AMD_000117_L_synapse_v3_ihc_v11.tsv
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv M_AMD_000117_L_Homer1_synapse_v3_ihc_v11.tsv
-```
-Then compare Homer1 with CtBP2 on the IHCs of the components 1, 3, and 2:
+The IHC_v11 table on the bucket has the component labels of `reproducibility/processing/M_AMD_000117_L_IHC.json`, and the valid IHCs are component 1.
+All three tables are on the bucket, so give the bucket paths and `--s3`:
 ```bash
 python scripts/measurements/synapse_colocalization.py \
-    -r M_AMD_000117_L_synapse_v3_ihc_v11.tsv \
-    -t M_AMD_000117_L_Homer1_synapse_v3_ihc_v11.tsv \
-    --ihc_table M_AMD_000117_L_IHC_v11.tsv -c 1 3 2 \
+    -r M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv \
+    -t M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv \
+    --ihc_table M_AMD_000117_L/tables/IHC_v11/default.tsv -c 1 \
     -o M_AMD_000117_L_Homer1_colocalization.json \
-    --ihc_counts M_AMD_000117_L_Homer1_ihc_counts.tsv
+    --ihc_counts M_AMD_000117_L_Homer1_ihc_counts.tsv --s3
 ```
 The script writes the result to the JSON file and to the terminal:
 ```
-"n_synapses_reference": 7755,
-"n_synapses_test": 14857,
-"n_ihcs": 651,
-"n_ihcs_reference": 523,
-"n_ihcs_test": 589,
-"n_ihcs_shared": 522,
-"tp": 7208,
-"fp": 7649,
-"fn": 547,
-"precision": 0.485,
-"recall": 0.929,
-"f1-score": 0.638,
-"accuracy": 0.468
+"n_synapses_reference": 7675,
+"n_synapses_test": 14695,
+"n_ihcs": 583,
+"n_ihcs_reference": 510,
+"n_ihcs_test": 551,
+"n_ihcs_shared": 510,
+"tp": 7150,
+"fp": 7545,
+"fn": 525,
+"precision": 0.487,
+"recall": 0.932,
+"f1-score": 0.639,
+"accuracy": 0.47
 ```
 93 % of the CtBP2 synapses have a Homer1 partner, but only 49 % of the Homer1 synapses have a CtBP2 partner.
 - `n_ihcs` is the number of valid IHCs.
@@ -526,8 +516,6 @@ The script writes the result to the JSON file and to the terminal:
 The table of `--ihc_counts` has one row for each valid IHC, also for an IHC without synapses.
 Its columns are `label_id`, `n_reference`, `n_test`, and `n_matched`.
 A matched pair counts for the IHC of its reference synapse.
-
-After the upload of the labeled IHC table, all three tables are on the bucket. Then give the bucket paths and `--s3`.
 
 ### RibA and CTBP2 of M_LR_000215_R
 
@@ -542,6 +530,116 @@ python scripts/measurements/synapse_colocalization.py \
 The result has 486 valid IHCs, 6701 CTBP2 synapses, 3371 RibA synapses, and 3119 matched pairs.
 Thus, 92.5 % of the RibA synapses and 46.5 % of the CTBP2 synapses colocalize.
 The docstring of `fig_06d` in `scripts/figures/plot_fig6.py` has the same numbers, but with the two stains swapped.
+
+## Synapse intensity
+
+`flamingo_tools.synapse_detection.spot_intensity` measures the stain intensity at each spot of a synapse table.
+The table needs the positions `x`, `y`, `z` in micrometer.
+Give one or more image channels. Each channel adds the columns `<channel>_<measure>`.
+
+The signal of a spot is the mean of the 3 x 3 x 3 voxels around the spot voxel.
+`--signal_halo` sets the halo of this cube in voxels: 0 uses the spot voxel only, and 2 uses the 5 x 5 x 5 voxels.
+The spot voxel is the detection position, a maximum of the detection heatmap.
+It is not always the brightest voxel of the stain.
+
+Each spot also has a core and a background shell.
+Both are ellipsoids with (x, y, z) semi-axes in micrometer, because the spots are longer along z.
+- The core has the semi-axes 0.8, 0.8, 1.0 µm (`--core_radius`).
+- The shell lies between 2.5, 2.5, 3.0 µm and 4.5, 4.5, 5.0 µm (`--background_radii`).
+- The shell leaves out the cores of the other spots of the same table, because synapses are dense.
+
+These defaults come from `M_AMD_000117_L`, with 1550 CtBP2 and 2808 Homer1 spots in 30 blocks along the IHC row.
+The core is the half width at half maximum of the median spot profile.
+At the inner shell radius, the profile is within about 10 % of its plateau.
+A change of the shell by 0.5 µm changes the median background by less than 4 %.
+
+| Measure | Type | Definition |
+|---|---|---|
+| `signal` | absolute | Mean of the 3 x 3 x 3 voxels around the spot voxel (`--signal_halo`) |
+| `mean` | absolute | Mean in the core |
+| `integrated` | absolute | Sum of (intensity - background) in the core |
+| `background` | absolute | Median in the shell |
+| `noise` | absolute | 1.4826 x the median absolute deviation in the shell |
+| `ratio` | relative | `signal` / `background` |
+| `snr` | relative | (`signal` - `background`) / `noise` |
+| `n_saturated` | quality | Voxels of the core or the signal cube at the maximum of the data type, for example 65535 |
+
+The columns `nn_distance` (distance to the nearest other spot in µm), `n_core_voxels` and `n_background_voxels` do not depend on the channel.
+`noise` is the noise of one voxel, also when `signal` is the mean of several voxels.
+A spot with `n_saturated` > 0 has a clipped `signal`, `mean` and `integrated`.
+
+The integrated intensity is the input for a later estimate of merged synapses.
+Two synapses closer than the resolution give one spot with about twice the integrated intensity.
+
+### Example
+
+Measure the CtBP2 and the Homer1 spots of `M_AMD_000117_L` in both stains.
+`--s3_table` and `--s3_images` read the spot table and the images from the bucket:
+```bash
+python -m flamingo_tools.synapse_detection.spot_intensity \
+    -t M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv --s3_table \
+    -i M_AMD_000117_L/images/ome-zarr/CTBP2.ome.zarr M_AMD_000117_L/images/ome-zarr/Homer1.ome.zarr --s3_images \
+    -o CTBP2_spots.tsv
+python -m flamingo_tools.synapse_detection.spot_intensity \
+    -t M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv --s3_table \
+    -i M_AMD_000117_L/images/ome-zarr/CTBP2.ome.zarr M_AMD_000117_L/images/ome-zarr/Homer1.ome.zarr --s3_images \
+    -o Homer1_spots.tsv
+```
+Each block of the image is read once, so a whole cochlea takes a few minutes.
+
+Then compare the stains with `flamingo_tools.synapse_detection.stain_comparison`.
+The reference and the test stain have the same roles as in the synapse colocalization:
+```bash
+python -m flamingo_tools.synapse_detection.stain_comparison \
+    -r CTBP2_spots.tsv -t Homer1_spots.tsv --reference_channel CTBP2 --test_channel Homer1 \
+    --ihc_table M_AMD_000117_L/tables/IHC_v11/default.tsv -c 1 --s3 -o <out-dir>
+```
+Compare each cochlea with its own valid IHCs.
+For example, `M_AMD_N179_L` uses `IHC_v11b` with the components 1 to 5, and `M_AMD_N179_R` uses the components 1 to 4 (see `reproducibility/processing`).
+
+The output folder holds:
+- `<name>_matched.tsv` for each stain, with the columns `matched` and `partner_id`.
+- `intensity_summary.tsv`, with the quantiles of each measure for all, matched and unmatched spots.
+- `sweep.tsv`, with the counts and scores after a threshold on the test stain (`--sweep_measure`, default `snr`).
+  Each threshold matches the remaining spots again.
+  Spots without a value, for example at the end of the stack, are kept at every threshold. `n_missing` counts them.
+- `summary.json`, with the matching scores, the medians and the fraction of saturated spots.
+  It also records the names and the channels of the comparison.
+
+## Synapse crops
+
+`reproducibility/block_extraction` has crops for the stains CTBP2, Homer1 and Vglut3 and the IHC segmentation.
+The crops are 256 voxels (97 µm) on each side.
+- `M_AMD_N179_L_IHC_synapses.json` and `M_AMD_N179_R_IHC_synapses.json` have six crops each at equidistant positions along the IHC row, with `IHC_v11b` and the valid components of the cochlea.
+- `M_AMD_000117_L_IHC_synapses.json` has six crops at equidistant positions along the IHC row:
+  ```bash
+  flamingo_tools.json_block_extraction -o M_AMD_000117_L_IHC_synapses.json -d M_AMD_000117_L \
+      -i CTBP2 Homer1 Vglut3 IHC_v11 -s IHC_v11 --cell_type ihc -c 1 -n 6 --roi_halo 128 128 128
+  flamingo_tools.equidistant_centers --json_info M_AMD_000117_L_IHC_synapses.json --s3
+  ```
+- `M_AMD_000117_L_IHC_synapses_homer1-excess.json` has three crops at the IHCs with the most Homer1 spots without a CtBP2 partner.
+  The crops do not overlap.
+  Add these options to the `stain_comparison` command above:
+  ```bash
+  --crop_json M_AMD_000117_L_IHC_synapses_homer1-excess.json --n_crops 3 --dataset_name M_AMD_000117_L \
+  --image_channel CTBP2 Homer1 Vglut3 IHC_v11 --segmentation_channel IHC_v11 --roi_halo 128 128 128
+  ```
+  Keep the two files apart. `flamingo_tools.equidistant_centers` replaces the crop centers of every entry in a file.
+- `M_AMD_000126_L_IHC_synapses.json` to `M_AMD_000137_R_IHC_synapses.json` (126, 127 and 137, left and right) have three crops each along the IHC row of `IHC_v11b`.
+  The crops are at the length fractions 0.85 (base), 0.5 (mid) and 0.15 (apex), in this order, and hold CTBP2, Vglut3 and `IHC_v11b`, but not Homer1.
+  The key `length_fraction` records the positions. No tool reads it.
+  Do not run `flamingo_tools.equidistant_centers` on these files, because it replaces the crop centers.
+
+Extract the crops with `flamingo_tools.extract_block`.
+`--point_tables` also writes the spots of each crop as a napari points file (CSV), named after the table:
+```bash
+flamingo_tools.extract_block --json_info reproducibility/block_extraction/M_AMD_000117_L_IHC_synapses.json \
+    -o <out-dir> --s3 --point_tables <out-dir>/CTBP2_spots_matched.tsv <out-dir>/Homer1_spots_matched.tsv
+```
+The columns `axis-0`, `axis-1`, `axis-2` are the ZYX position in voxels of the crop.
+The other columns of the table, for example `matched` and `Homer1_snr`, become point properties in napari.
+An existing crop is kept unless you give `-f`.
+A crop at the border of the volume is clipped to the volume.
 
 ## Upload the tables to the S3 bucket
 

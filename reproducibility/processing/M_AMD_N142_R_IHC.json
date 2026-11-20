@@ -34,5 +34,29 @@
 			"refine_row": true,
 			"merge_components": true
 		}
+	},
+	{
+		"dataset_name": "M_AMD_N142_R",
+		"segmentation_channel": "IHC_v11b",
+		"cell_type": "ihc",
+		"component_list": [
+			1,
+			2,
+			3,
+			4
+		],
+		"label_components": {
+			"min_size": 5000,
+			"min_component_length": 5,
+			"max_edge_distance": 50.0,
+			"component_list_path": [
+				3,
+				5,
+				1,
+				7
+			],
+			"max_path_deviation": 15.0,
+			"refine_row": true
+		}
 	}
 ]

@@ -13,7 +13,7 @@ from skimage.measure import regionprops
 
 from flamingo_tools.analysis.seg_table_utils import filter_table
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER, read_table
+from flamingo_tools.s3_utils import default_table_path, read_table
 from flamingo_tools.json_util import export_dictionary_as_json
 
 REFERENCE_PRESETS = {
@@ -908,6 +908,9 @@ def hull_to_mask(
     verts = np.asarray(hull_vertices, dtype=float)
     phys_idx = {"x": 0, "y": 1, "z": 2}
     mask_shape_zyx = (2 * roi_halo[2], 2 * roi_halo[1], 2 * roi_halo[0])
+    # extract_block centers the crop on the voxel of bb_center, so the mask uses the same center.
+    voxel_size = np.broadcast_to(np.asarray(voxel_size, dtype=float), (3,))
+    bb_center = np.round(np.asarray(bb_center, dtype=float) / voxel_size) * voxel_size
 
     if mode == "2d":
         proj_ax0, proj_ax1 = _AXIS_PROJECTION[axis]
