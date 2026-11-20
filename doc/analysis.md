@@ -597,6 +597,28 @@ The output folder holds:
   It also records the names and the channels of the comparison, for the summary over cochleae.
 - `overview.png`, with the histograms by match status, the scatter of both stains, the sweep and the integrated intensity.
 
+### Summary over cochleae
+
+`flamingo_tools.synapse_detection.stain_summary` compares several cochleae.
+Its inputs are the output folders of `stain_comparison`, and all of them must have the same reference and test channels.
+`--names` gives the cochlea names. Without it, a folder called `comparison` takes the name of its parent folder.
+```bash
+python -m flamingo_tools.synapse_detection.stain_summary \
+    -i <out-dir>/M_AMD_000117_L/comparison <out-dir>/M_AMD_N179_L/comparison <out-dir>/M_AMD_N179_R/comparison \
+    -o <out-dir>/summary
+```
+Compare each cochlea with its own valid IHCs.
+For example, `M_AMD_N179_L` uses `IHC_v11b` with the components 1 to 5, and `M_AMD_N179_R` uses the components 1 to 4 (see `reproducibility/processing`).
+
+The output folder holds:
+- `summary.tsv`, with the spots per valid IHC, the matched pairs, the precision and the recall of each cochlea.
+- `intensity_summary.tsv`, with the quantiles of each measure for each cochlea and stain.
+- `summary_snr.png` and `summary_ratio.png`, one figure for each measure of `--measures`.
+  - The first row shows the spots per IHC, the colocalization and the median `peak` and `background`.
+  - The second row shows the test spots, and the third row the reference spots.
+    Each row shows both stains and the integrated intensity divided by the median of the cochlea.
+  - The color marks the cochlea. Use at most three cochleae, so that the lines stay separable.
+
 ## Upload the tables to the S3 bucket
 
 Copy the tables of the analysis to the S3 bucket with `rclone`.
