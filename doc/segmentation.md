@@ -8,6 +8,14 @@ The Slurm templates and pipelines for the GWDG cluster are in the repository [sl
 Its pipelines run the segmentation of SGNs and IHCs and the detection of ribbon synapses as chains of Slurm jobs.
 See its [documentation of the processing pipelines](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_03_processing_pipelines.md) for the usage.
 
+Each job runs one stage of `flamingo_tools.run_segmentation` or `flamingo_tools.run_detection` with the option `--stage`.
+The stages share the output folder and run in this order:
+1. `--stage mask` writes `mask.zarr`, the blocks that the network predicts.
+2. `--stage predict` runs one task of a Slurm array and writes its part of `predictions.zarr`. `--prediction_instances` must match the size of the array.
+3. `--stage segment` writes `segmentation.zarr`. For the detection, `--stage detect` writes `synapse_detection.tsv`.
+
+Without `--stage`, the command runs all stages in one process.
+
 ### Locally
 
 Use the command line interface to process data on a local machine.

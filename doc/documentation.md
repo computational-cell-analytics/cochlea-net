@@ -158,6 +158,7 @@ flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -
 Use `--checkpoint_path` (`-c`) for a custom trained model.
 
 `flamingo_tools.run_detection` detects synapses in volumetric light microscopy data. Its usage is similar to `flamingo_tools.run_segmentation`.
+Both commands take `--stage` to run one stage of the processing as a separate job, as the [HPC pipelines](#hpc-pipelines) do.
 See the [segmentation documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/segmentation.md) for examples of both commands.
 
 The command line interface also provides commands for the analysis of segmentation tables:
