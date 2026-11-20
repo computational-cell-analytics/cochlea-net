@@ -7,6 +7,7 @@ from .. import s3_utils
 from ..model_utils import get_model_path, get_default_segmentation_settings
 
 WATERSHED_OPTIONS = ("center_distance_threshold", "boundary_distance_threshold", "fg_threshold", "distance_smoothing")
+S3_OPTIONS = ("s3_credentials", "s3_bucket_name", "s3_service_endpoint")
 
 
 def _get_model_path(model_type, checkpoint_path=None):
@@ -39,10 +40,7 @@ def _add_s3_arguments(parser, flags):
 
 
 def _s3_kwargs(args):
-    return {
-        "s3_bucket_name": args.s3_bucket_name, "s3_service_endpoint": args.s3_service_endpoint,
-        "s3_credentials": args.s3_credentials,
-    }
+    return {name: getattr(args, name) for name in S3_OPTIONS}
 
 
 def _check_stage_options(parser, args, last_stage, applies_to):
@@ -160,6 +158,7 @@ def run_segmentation():
     reading = (None, "mask", "predict")
     _check_stage_options(parser, args, "segment", {
         "input_path": reading, "input_key": reading, "s3_input": reading,
+        **{name: reading for name in S3_OPTIONS},
         "checkpoint_path": (None, "predict"),
         "disable_masking": (None,),
         "legacy_mask": (None, "mask"), "absolute_threshold": (None, "mask"), "background_factor": (None, "mask"),
@@ -170,6 +169,10 @@ def run_segmentation():
 
     settings = get_default_segmentation_settings(args.model_type)
     watershed_kwargs = {name: getattr(args, name, settings[name]) for name in WATERSHED_OPTIONS}
+    # The watershed raises this error only after the prediction, which can take hours.
+    seed_thresholds = (watershed_kwargs["center_distance_threshold"], watershed_kwargs["boundary_distance_threshold"])
+    if seed_thresholds == (None, None):
+        parser.error("--center_distance_threshold and --boundary_distance_threshold cannot both be None.")
     mask_kwargs = {
         "seg_class": settings["seg_class"], "legacy_mask": args.legacy_mask,
         "absolute_threshold": args.absolute_threshold, "background_factor": args.background_factor,
@@ -220,7 +223,7 @@ def run_detection():
     )
     parser.add_argument(
         "-i", "--input_path",
-        help="The path to the input data. Supports .tif, .zarr, .h5 or .n5 files."
+        help="The path to the input data. Supports .tif, .zarr, .h5 or .n5 files. "
         "Zarr, HDF5 or N5 files also require the 'input_key' argument. Required except for '--stage detect'."
     )
     parser.add_argument(

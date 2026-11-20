@@ -89,6 +89,10 @@ class TestStageArguments(unittest.TestCase):
                    ["--stage", "segment", "-m", "IHC", "-o", "out", "--min_size", "1000"],
                    {"output_folder": "out", "min_size": 1000, "center_distance_threshold": 0.7,
                     "boundary_distance_threshold": 0.6, "fg_threshold": 0.5, "distance_smoothing": 1.0})
+        self.check(unet_prediction, "run_unet_segmentation_slurm", "run_segmentation",
+                   ["--stage", "segment", "-m", "SGN", "-o", "out", "--boundary_distance_threshold", "None"],
+                   {"output_folder": "out", "min_size": 250, "center_distance_threshold": 0.4,
+                    "boundary_distance_threshold": None, "fg_threshold": 0.5, "distance_smoothing": 0.0})
 
     def test_detection_stages(self):
         from flamingo_tools.segmentation import synapse_detection
@@ -118,9 +122,19 @@ class TestStageArguments(unittest.TestCase):
         self.check_rejected("run_segmentation", ["--stage", "mask", "-m", "SGN", "--min_size", "1000"] + io)
         self.check_rejected("run_segmentation", ["--stage", "segment", "-m", "SGN", "--legacy_mask", "-o", "out"])
         self.check_rejected("run_segmentation", ["--stage", "segment", "-m", "SGN"] + io)
+        self.check_rejected("run_segmentation",
+                            ["--stage", "segment", "-m", "SGN", "-o", "out", "--s3_bucket_name", "b"])
         self.check_rejected("run_detection", ["--force_overwrite"] + io)
         self.check_rejected("run_detection", ["--stage", "predict", "--mask_path", "ihc.ome.zarr"] + io)
         self.check_rejected("run_detection", ["--stage", "detect", "--dilation_iterations", "8", "-o", "out"])
+
+    def test_seed_thresholds_not_both_none(self):
+        # The center distance threshold of SGN-lowres is None.
+        self.check_rejected("run_segmentation",
+                            ["-m", "SGN-lowres", "--boundary_distance_threshold", "None", "-i", "in.n5", "-o", "out"])
+        self.check_rejected("run_segmentation", ["--stage", "segment", "-m", "SGN", "-o", "out",
+                                                 "--center_distance_threshold", "None",
+                                                 "--boundary_distance_threshold", "None"])
 
     def test_input_path_required(self):
         self.check_rejected("run_segmentation", ["--stage", "predict", "-m", "SGN", "-o", "out"])
