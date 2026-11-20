@@ -1,6 +1,9 @@
 """private
 """
 import argparse
+import os
+
+import pandas as pd
 
 from .label_components import label_components_json_wrapper, label_components_single
 from .cochlea_mapping import (CENTRAL_PATH_METHODS, equidistant_centers_json_wrapper,
@@ -115,6 +118,9 @@ def extract_block():
                         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
     parser.add_argument("--roi_halo", type=int, nargs="+", default=[128, 128, 64],
                         help="ROI halo around center coordinate [pixel]. Default: 128 128 64")
+    parser.add_argument("--point_tables", type=str, nargs="+", default=None,
+                        help="Local point tables with 'x', 'y', 'z' in micrometer, e.g. synapse detections. "
+                        "The points of each crop are saved as a napari points file (CSV), named after the table.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -128,7 +134,13 @@ def extract_block():
 
     args = parser.parse_args()
     args_dict = vars(args)
+    point_tables = args_dict.pop("point_tables")
+    if point_tables is not None:
+        point_tables = {
+            os.path.splitext(os.path.basename(path))[0]: pd.read_csv(path, sep="\t") for path in point_tables
+        }
     extract_block_json_wrapper(
+        point_tables=point_tables,
         input_path=args_dict.pop("input"),
         output_path=args_dict.pop("output"),
         json_file=args_dict.pop("json_info"),
