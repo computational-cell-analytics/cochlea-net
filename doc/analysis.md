@@ -531,6 +531,72 @@ The result has 486 valid IHCs, 6701 CTBP2 synapses, 3371 RibA synapses, and 3119
 Thus, 92.5 % of the RibA synapses and 46.5 % of the CTBP2 synapses colocalize.
 The docstring of `fig_06d` in `scripts/figures/plot_fig6.py` has the same numbers, but with the two stains swapped.
 
+## Synapse intensity
+
+`flamingo_tools.synapse_detection.spot_intensity` measures the stain intensity at each spot of a synapse table.
+The table needs the positions `x`, `y`, `z` in micrometer.
+Give one or more image channels. Each channel adds the columns `<channel>_<measure>`.
+
+Each spot has a core and a background shell.
+Both are ellipsoids with (x, y, z) semi-axes in micrometer, because the spots are longer along z.
+- The core has the semi-axes 0.8, 0.8, 1.0 µm (`--core_radius`).
+- The shell lies between 2.5, 2.5, 3.0 µm and 4.5, 4.5, 5.0 µm (`--background_radii`).
+- The shell leaves out the cores of the other spots of the same table, because synapses are dense.
+
+These defaults come from `M_AMD_000117_L`, with 1550 CtBP2 and 2808 Homer1 spots in 30 blocks along the IHC row.
+The core is the half width at half maximum of the median spot profile.
+At the inner shell radius, the profile is within about 10 % of its plateau.
+A change of the shell by 0.5 µm changes the median background by less than 4 %.
+
+| Measure | Type | Definition |
+|---|---|---|
+| `peak` | absolute | Maximum of the 3 x 3 x 3 voxels around the spot |
+| `mean` | absolute | Mean in the core |
+| `integrated` | absolute | Sum of (intensity - background) in the core |
+| `background` | absolute | Median in the shell |
+| `noise` | absolute | 1.4826 x the median absolute deviation in the shell |
+| `ratio` | relative | `peak` / `background` |
+| `snr` | relative | (`peak` - `background`) / `noise` |
+| `n_saturated` | quality | Core voxels at the maximum of the data type, for example 65535 |
+
+The columns `nn_distance` (distance to the nearest other spot in µm), `n_core_voxels` and `n_background_voxels` do not depend on the channel.
+A spot with `n_saturated` > 0 has a clipped `peak`, `mean` and `integrated`.
+
+The integrated intensity is the input for a later estimate of merged synapses.
+Two synapses closer than the resolution give one spot with about twice the integrated intensity.
+
+### Example
+
+Measure the CtBP2 and the Homer1 spots of `M_AMD_000117_L` in both stains.
+`--s3_table` and `--s3_images` read the spot table and the images from the bucket:
+```bash
+python -m flamingo_tools.synapse_detection.spot_intensity \
+    -t M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv --s3_table \
+    -i M_AMD_000117_L/images/ome-zarr/CTBP2.ome.zarr M_AMD_000117_L/images/ome-zarr/Homer1.ome.zarr --s3_images \
+    -o CTBP2_spots.tsv
+python -m flamingo_tools.synapse_detection.spot_intensity \
+    -t M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv --s3_table \
+    -i M_AMD_000117_L/images/ome-zarr/CTBP2.ome.zarr M_AMD_000117_L/images/ome-zarr/Homer1.ome.zarr --s3_images \
+    -o Homer1_spots.tsv
+```
+Each block of the image is read once, so a whole cochlea takes a few minutes.
+
+Then compare the stains with `flamingo_tools.synapse_detection.stain_comparison`.
+The reference and the test stain have the same roles as in the synapse colocalization:
+```bash
+python -m flamingo_tools.synapse_detection.stain_comparison \
+    -r CTBP2_spots.tsv -t Homer1_spots.tsv --reference_channel CTBP2 --test_channel Homer1 \
+    --ihc_table M_AMD_000117_L/tables/IHC_v11/default.tsv -c 1 --s3 -o <out-dir>
+```
+The output folder holds:
+- `<name>_matched.tsv` for each stain, with the columns `matched` and `partner_id`.
+- `intensity_summary.tsv`, with the quantiles of each measure for all, matched and unmatched spots.
+- `sweep.tsv`, with the counts and scores after a threshold on the test stain (`--sweep_measure`, default `snr`).
+  Each threshold matches the remaining spots again.
+- `summary.json`, with the matching scores, the medians and the fraction of saturated spots.
+  It also records the names and the channels of the comparison, for the summary over cochleae.
+- `overview.png`, with the histograms by match status, the scatter of both stains, the sweep and the integrated intensity.
+
 ## Upload the tables to the S3 bucket
 
 Copy the tables of the analysis to the S3 bucket with `rclone`.
