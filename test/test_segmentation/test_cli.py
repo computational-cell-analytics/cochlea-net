@@ -20,6 +20,13 @@ class TestSegmentationCLI(unittest.TestCase):
         self.assertIsNotNone(executable, f"The console script {name} is not installed.")
         return executable
 
+    def _run(self, name, argv, env=None):
+        result = subprocess.run([self._executable(name)] + argv, capture_output=True, text=True, env=env)
+        self.assertEqual(
+            result.returncode, 0,
+            msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+        )
+
     def _create_data(self, tmp_dir):
         data = np.random.randint(0, 255, size=self.shape)
         path = os.path.join(tmp_dir, "data.tif")
@@ -43,23 +50,34 @@ class TestSegmentationCLI(unittest.TestCase):
             model_path = self._create_model(tmp_dir, out_channels=3)
             output_folder = os.path.join(tmp_dir, "output")
 
-            result = subprocess.run([
-                self._executable("flamingo_tools.run_segmentation"),
-                "-i", data_path, "-o", output_folder, "-m", "SGN", "--min_size", "0",
-                "-c", model_path,
-            ], capture_output=True, text=True)
-            self.assertEqual(
-                result.returncode, 0,
-                msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
-            )
+            self._run("flamingo_tools.run_segmentation", [
+                "-i", data_path, "-o", output_folder, "-m", "SGN", "--min_size", "0", "-c", model_path,
+            ])
+            self._check_segmentation(output_folder)
 
-            expected_path = os.path.join(output_folder, "segmentation.zarr")
-            expected_key = "segmentation"
+    def test_run_segmentation_stages(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path = self._create_data(tmp_dir)
+            model_path = self._create_model(tmp_dir, out_channels=3)
+            output_folder = os.path.join(tmp_dir, "output")
 
-            self.assertTrue(os.path.exists(expected_path))
-            with z5py.File(expected_path, "r") as f:
-                self.assertTrue(expected_key in f)
-                self.assertEqual(f[expected_key].shape, self.shape)
+            env = {**os.environ, "SLURM_ARRAY_TASK_ID": "0"}
+            for stage in (
+                ["--stage", "mask", "-i", data_path],
+                ["--stage", "predict", "-i", data_path, "-c", model_path],
+                ["--stage", "segment", "--min_size", "0"],
+            ):
+                self._run("flamingo_tools.run_segmentation", ["-o", output_folder, "-m", "SGN"] + stage, env=env)
+            self._check_segmentation(output_folder)
+
+    def _check_segmentation(self, output_folder):
+        expected_path = os.path.join(output_folder, "segmentation.zarr")
+        expected_key = "segmentation"
+
+        self.assertTrue(os.path.exists(expected_path))
+        with z5py.File(expected_path, "r") as f:
+            self.assertTrue(expected_key in f)
+            self.assertEqual(f[expected_key].shape, self.shape)
 
     def test_run_detection(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -67,17 +85,26 @@ class TestSegmentationCLI(unittest.TestCase):
             model_path = self._create_model(tmp_dir, out_channels=1)
             output_folder = os.path.join(tmp_dir, "output")
 
-            result = subprocess.run([
-                self._executable("flamingo_tools.run_detection"), "-i", data_path, "-o", output_folder,
-                "-c", model_path, "--threshold", "0.4", "--dilation_iterations", "4",
-            ], capture_output=True, text=True)
-            self.assertEqual(
-                result.returncode, 0,
-                msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
-            )
+            self._run("flamingo_tools.run_detection", [
+                "-i", data_path, "-o", output_folder, "-c", model_path, "--threshold", "0.4",
+                "--dilation_iterations", "4",
+            ])
+            self.assertTrue(os.path.exists(os.path.join(output_folder, "synapse_detection.tsv")))
 
-            expected_path = os.path.join(output_folder, "synapse_detection.tsv")
-            self.assertTrue(os.path.exists(expected_path))
+    def test_run_detection_stages(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            data_path = self._create_data(tmp_dir)
+            model_path = self._create_model(tmp_dir, out_channels=1)
+            output_folder = os.path.join(tmp_dir, "output")
+
+            env = {**os.environ, "SLURM_ARRAY_TASK_ID": "0"}
+            for stage in (
+                ["--stage", "mask", "-i", data_path],
+                ["--stage", "predict", "-i", data_path, "-c", model_path],
+                ["--stage", "detect", "--threshold", "0.4"],
+            ):
+                self._run("flamingo_tools.run_detection", ["-o", output_folder] + stage, env=env)
+            self.assertTrue(os.path.exists(os.path.join(output_folder, "synapse_detection.tsv")))
 
 
 if __name__ == "__main__":

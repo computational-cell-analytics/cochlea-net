@@ -8,6 +8,14 @@ The Slurm templates and pipelines for the GWDG cluster are in the repository [sl
 Its pipelines run the segmentation of SGNs and IHCs and the detection of ribbon synapses as chains of Slurm jobs.
 See its [documentation of the processing pipelines](https://github.com/computational-cell-analytics/slurm-workflows/blob/main/doc/hpc_03_processing_pipelines.md) for the usage.
 
+Each job runs one stage of `flamingo_tools.run_segmentation` or `flamingo_tools.run_detection` with the option `--stage`.
+The stages share the output folder and run in this order:
+1. `--stage mask` writes `mask.zarr`, the blocks that the network predicts.
+2. `--stage predict` runs one task of a Slurm array and writes its part of `predictions.zarr`. `--prediction_instances` must match the size of the array.
+3. `--stage segment` writes `segmentation.zarr`. For the detection, `--stage detect` writes `synapse_detection.tsv`.
+
+Without `--stage`, the command runs all stages in one process.
+
 ### Locally
 
 Use the command line interface to process data on a local machine.
@@ -23,6 +31,7 @@ flamingo_tools.run_segmentation -i M_AMD_N162_L.n5 -k setup1/timepoint0/s0 -o IH
 The command writes the segmentation to `segmentation.zarr` in the output folder.
 `--min_size` removes instances with fewer voxels.
 The pipelines of slurm-workflows use 1000. The default is 250.
+`--s3_input` reads the image data from the S3 bucket.
 
 ##### Input mask
 
@@ -31,9 +40,20 @@ The command writes the decision to `mask_statistics.json` in the output folder.
 - `--disable_masking` predicts all blocks. Use it for a small crop that cells fill for the most part, because the mask rule needs mostly background to find the background level.
 - `--background_factor` sets the threshold as a multiple of the background level (default 1.08 for SGN and 1.75 for IHC). Use a lower value for a very dim stain.
 - `--legacy_mask` uses the mask rule of flamingo-tools before 2026-11.
+- `--absolute_threshold` sets the threshold of the legacy rule. By default, the command derives it from the data.
 
 The low-resolution models always use the legacy rule.
 See the [input mask documentation](input_mask.md) for the rules and the analysis behind them.
+
+##### Watershed
+
+The watershed segments the prediction into cells.
+`-m` selects the default values of the watershed options:
+- `--center_distance_threshold` and `--boundary_distance_threshold` select the seeds. The value `None` does not use these distances for the seeds. At least one of the two thresholds must have a value.
+- `--fg_threshold` selects the foreground.
+- `--distance_smoothing` smooths the distance predictions before the watershed. 0 applies no smoothing.
+
+Give an option to change its value.
 
 #### Synapses
 

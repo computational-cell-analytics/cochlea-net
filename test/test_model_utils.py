@@ -12,16 +12,16 @@ import yaml
 from torch_em.model.unet import AnisotropicUNet
 
 from flamingo_tools.model_utils import (
-    MODELS, _create_model, export_model, get_model, get_model_path, get_model_url, load_model_from_path
+    MODELS, _create_model, export_model, get_default_segmentation_settings, get_model, get_model_path, get_model_url,
+    load_model_from_path
 )
-from flamingo_tools.segmentation.cli import _parse_segmentation_kwargs
 from flamingo_tools.segmentation.synapse_detection import _get_model_out_channels
 
 
 class TestSegmentationDefaults(unittest.TestCase):
     def test_ihc_defaults(self):
         """run_segmentation must use the grid search result of IHC_v11, the model that get_model('IHC') loads."""
-        kwargs = _parse_segmentation_kwargs([], "IHC")
+        kwargs = get_default_segmentation_settings("IHC")
         self.assertEqual(kwargs["center_distance_threshold"], 0.7)
         self.assertEqual(kwargs["boundary_distance_threshold"], 0.6)
         self.assertEqual(kwargs["distance_smoothing"], 1.0)

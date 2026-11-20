@@ -727,7 +727,7 @@ def distance_watershed_implementation(
 
     # Compute the seed inputs:
     if boundary_distance_threshold is None and center_distance_threshold is None:
-        raise ValueError("Either boundary_distance_threshold, center_distance_threshold, or both have to be specifie.")
+        raise ValueError("Either boundary_distance_threshold, center_distance_threshold, or both have to be specified.")
     elif boundary_distance_threshold is None:
         seed_inputs = ThresholdWrapper(center_distances, threshold=center_distance_threshold, operator=np.less)
     elif center_distance_threshold is None:
@@ -853,7 +853,7 @@ def run_unet_prediction(
     block_shape: Optional[Tuple[int, int, int]] = None,
     halo: Optional[Tuple[int, int, int]] = None,
     use_mask: bool = True,
-    center_distance_threshold: float = 0.4,
+    center_distance_threshold: Optional[float] = 0.4,
     boundary_distance_threshold: Optional[float] = None,
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
@@ -862,6 +862,7 @@ def run_unet_prediction(
     batch_size: int = 1,
     num_prefetch_workers: Optional[int] = None,
     legacy_mask: bool = False,
+    absolute_threshold: Optional[float] = None,
     background_factor: Optional[float] = None,
 ) -> None:
     """Run prediction and segmentation with a distance U-Net.
@@ -889,6 +890,8 @@ def run_unet_prediction(
         num_prefetch_workers: The number of threads that load blocks while the GPU predicts.
             By default it is derived from the number of cores available to the job.
         legacy_mask: Passed to find_mask. Use the legacy mask rule for 'sgn' and 'ihc'.
+        absolute_threshold: Passed to find_mask. The threshold of the legacy mask rule.
+            By default, it is derived from the data.
         background_factor: Passed to find_mask. The threshold of the default mask rule as a multiple
             of the background level. By default, the value of MASK_RULES[seg_class].
     """
@@ -898,8 +901,8 @@ def run_unet_prediction(
     if use_mask:
         mask = find_mask(
             input_path, input_key, output_folder=output_folder,
-            seg_class=seg_class, relative_threshold=relative_threshold, legacy_mask=legacy_mask,
-            background_factor=background_factor,
+            seg_class=seg_class, relative_threshold=relative_threshold, absolute_threshold=absolute_threshold,
+            legacy_mask=legacy_mask, background_factor=background_factor,
         )
     else:
         mask = None
@@ -1057,8 +1060,8 @@ def run_unet_prediction_slurm(
 def run_unet_segmentation_slurm(
     output_folder: str,
     min_size: int,
-    center_distance_threshold: float = 0.4,
-    boundary_distance_threshold: float = 0.5,
+    center_distance_threshold: Optional[float] = 0.4,
+    boundary_distance_threshold: Optional[float] = 0.5,
     fg_threshold: float = 0.5,
     distance_smoothing: float = 0.0,
     original_shape: Optional[Tuple[int, int, int]] = None,
@@ -1071,7 +1074,7 @@ def run_unet_segmentation_slurm(
         min_size: The minimal size of segmented objects in the output.
         center_distance_threshold: The threshold applied to the distance center predictions to derive seeds.
         boundary_distance_threshold: The threshold applied to the boundary predictions to derive seeds.
-            By default this is set to 'None', in which case the boundary distances are not used for the seeds.
+            'None' does not use the boundary distances for the seeds.
         fg_threshold: The threshold applied to the foreground prediction for deriving the watershed mask.
         distance_smoothing: The sigma value for smoothing the distance predictions with a gaussian kernel.
             This may help to reduce border artifacts. If set to 0 (the default) smoothing is not applied.
@@ -1087,7 +1090,7 @@ def run_unet_segmentation_slurm(
 
     min_size = int(min_size)
     center_distance_threshold = None if center_distance_threshold is None else float(center_distance_threshold)
-    boundary_distance_threshold = float(boundary_distance_threshold)
+    boundary_distance_threshold = None if boundary_distance_threshold is None else float(boundary_distance_threshold)
     distance_smoothing = float(distance_smoothing)
     pmap_out = os.path.join(output_folder, "predictions.zarr")
     distance_watershed_implementation(pmap_out, output_folder, center_distance_threshold=center_distance_threshold,
