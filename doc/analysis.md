@@ -619,6 +619,37 @@ The output folder holds:
     Each row shows both stains and the integrated intensity divided by the median of the cochlea.
   - The color marks the cochlea. Use at most three cochleae, so that the lines stay separable.
 
+## Synapse crops
+
+`reproducibility/block_extraction` has crops for the stains CTBP2, Homer1 and Vglut3 and the IHC segmentation.
+The crops are 256 voxels (97 µm) on each side.
+- `M_AMD_N179_L_IHC_synapses.json` and `M_AMD_N179_R_IHC_synapses.json` have six crops each at equidistant positions along the IHC row, with `IHC_v11b` and the valid components of the cochlea.
+- `M_AMD_000117_L_IHC_synapses.json` has six crops at equidistant positions along the IHC row:
+  ```bash
+  flamingo_tools.json_block_extraction -o M_AMD_000117_L_IHC_synapses.json -d M_AMD_000117_L \
+      -i CTBP2 Homer1 Vglut3 IHC_v11 -s IHC_v11 --cell_type ihc -c 1 -n 6 --roi_halo 128 128 128
+  flamingo_tools.equidistant_centers --json_info M_AMD_000117_L_IHC_synapses.json --s3
+  ```
+- `M_AMD_000117_L_IHC_synapses_homer1-excess.json` has three crops at the IHCs with the most Homer1 spots without a CtBP2 partner.
+  The crops do not overlap.
+  Add these options to the `stain_comparison` command above:
+  ```bash
+  --crop_json M_AMD_000117_L_IHC_synapses_homer1-excess.json --n_crops 3 --dataset_name M_AMD_000117_L \
+  --image_channel CTBP2 Homer1 Vglut3 IHC_v11 --segmentation_channel IHC_v11 --roi_halo 128 128 128
+  ```
+  Keep the two files apart. `flamingo_tools.equidistant_centers` replaces the crop centers of every entry in a file.
+
+Extract the crops with `flamingo_tools.extract_block`.
+`--point_tables` also writes the spots of each crop as a napari points file (CSV), named after the table:
+```bash
+flamingo_tools.extract_block --json_info reproducibility/block_extraction/M_AMD_000117_L_IHC_synapses.json \
+    -o <out-dir> --s3 --point_tables <out-dir>/CTBP2_spots_matched.tsv <out-dir>/Homer1_spots_matched.tsv
+```
+The columns `axis-0`, `axis-1`, `axis-2` are the ZYX position in voxels of the crop.
+The other columns of the table, for example `matched` and `Homer1_snr`, become point properties in napari.
+An existing crop is kept unless you give `-f`.
+A crop at the border of the volume is clipped to the volume.
+
 ## Upload the tables to the S3 bucket
 
 Copy the tables of the analysis to the S3 bucket with `rclone`.

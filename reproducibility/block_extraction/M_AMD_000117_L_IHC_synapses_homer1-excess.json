@@ -1,0 +1,32 @@
+{
+	"dataset_name": "M_AMD_000117_L",
+	"image_channel": [
+		"CTBP2",
+		"Homer1",
+		"Vglut3",
+		"IHC_v11"
+	],
+	"segmentation_channel": "IHC_v11",
+	"roi_halo": [
+		128,
+		128,
+		128
+	],
+	"crop_centers": [
+		[
+			942,
+			1055,
+			369
+		],
+		[
+			1023,
+			544,
+			1070
+		],
+		[
+			590,
+			726,
+			313
+		]
+	]
+}
