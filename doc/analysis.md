@@ -482,41 +482,31 @@ Without `--ihc_table`, the script uses all synapses, also the synapses of instan
 ### Example
 
 The cochlea `M_AMD_000117_L` has the stains CtBP2 and Homer1.
-The IHC_v11 table on the bucket has no component labels yet.
-Thus, first label the components with the parameters of the processing file:
-```bash
-flamingo_tools.label_components --json_info reproducibility/processing/M_AMD_000117_L_IHC.json -o M_AMD_000117_L_IHC_v11.tsv --s3
-```
-The command reads the table from the bucket and writes the output locally.
-`--s3` applies to all tables of the colocalization script, so copy the synapse tables to the same location:
-```bash
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv M_AMD_000117_L_synapse_v3_ihc_v11.tsv
-rclone copyto cochlea-lightsheet:cochlea-lightsheet/M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv M_AMD_000117_L_Homer1_synapse_v3_ihc_v11.tsv
-```
-Then compare Homer1 with CtBP2 on the IHCs of the components 1, 3, and 2:
+The IHC_v11 table on the bucket has the component labels of `reproducibility/processing/M_AMD_000117_L_IHC.json`, and the valid IHCs are component 1.
+All three tables are on the bucket, so give the bucket paths and `--s3`:
 ```bash
 python scripts/measurements/synapse_colocalization.py \
-    -r M_AMD_000117_L_synapse_v3_ihc_v11.tsv \
-    -t M_AMD_000117_L_Homer1_synapse_v3_ihc_v11.tsv \
-    --ihc_table M_AMD_000117_L_IHC_v11.tsv -c 1 3 2 \
+    -r M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv \
+    -t M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv \
+    --ihc_table M_AMD_000117_L/tables/IHC_v11/default.tsv -c 1 \
     -o M_AMD_000117_L_Homer1_colocalization.json \
-    --ihc_counts M_AMD_000117_L_Homer1_ihc_counts.tsv
+    --ihc_counts M_AMD_000117_L_Homer1_ihc_counts.tsv --s3
 ```
 The script writes the result to the JSON file and to the terminal:
 ```
-"n_synapses_reference": 7755,
-"n_synapses_test": 14857,
-"n_ihcs": 651,
-"n_ihcs_reference": 523,
-"n_ihcs_test": 589,
-"n_ihcs_shared": 522,
-"tp": 7208,
-"fp": 7649,
-"fn": 547,
-"precision": 0.485,
-"recall": 0.929,
-"f1-score": 0.638,
-"accuracy": 0.468
+"n_synapses_reference": 7675,
+"n_synapses_test": 14695,
+"n_ihcs": 583,
+"n_ihcs_reference": 510,
+"n_ihcs_test": 551,
+"n_ihcs_shared": 510,
+"tp": 7150,
+"fp": 7545,
+"fn": 525,
+"precision": 0.487,
+"recall": 0.932,
+"f1-score": 0.639,
+"accuracy": 0.47
 ```
 93 % of the CtBP2 synapses have a Homer1 partner, but only 49 % of the Homer1 synapses have a CtBP2 partner.
 - `n_ihcs` is the number of valid IHCs.
@@ -526,8 +516,6 @@ The script writes the result to the JSON file and to the terminal:
 The table of `--ihc_counts` has one row for each valid IHC, also for an IHC without synapses.
 Its columns are `label_id`, `n_reference`, `n_test`, and `n_matched`.
 A matched pair counts for the IHC of its reference synapse.
-
-After the upload of the labeled IHC table, all three tables are on the bucket. Then give the bucket paths and `--s3`.
 
 ### RibA and CTBP2 of M_LR_000215_R
 
