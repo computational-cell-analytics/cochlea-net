@@ -145,6 +145,28 @@ class TestMeasureSpotIntensities(unittest.TestCase):
         self.assertTrue(result.dim_n_saturated.isna().all())
         np.testing.assert_allclose(result.dim_signal, 600.0, rtol=1e-5)
 
+    def test_core_larger_than_shell(self):
+        """A core beyond the outer shell radius is not cut off by the shell window."""
+        volume = _volume(self.positions)
+        core = (3.0, 3.0, 3.0)
+        result = self.measure({"stain": volume}, _spots(self.positions[:1]), voxel_size=VOXEL_SIZE, n_threads=1,
+                              core_radius=core, background_radii=(1.0, 2.0))
+        center = np.asarray(self.positions[0])[::-1] / np.asarray(VOXEL_SIZE)[::-1]
+        grid = np.meshgrid(*(np.arange(s) for s in SHAPE), indexing="ij")
+        in_core = sum(((g - c) * v / r) ** 2 for g, c, v, r in zip(
+            grid, center, np.asarray(VOXEL_SIZE)[::-1], core[::-1])) <= 1
+        self.assertEqual(result.n_core_voxels[0], in_core.sum())
+
+    def test_saturation_in_signal_cube(self):
+        """A saturated voxel in a corner of the signal cube counts, also outside of the core."""
+        volume = np.full(SHAPE, 100, dtype="uint16")
+        center = np.round(np.asarray(self.positions[0])[::-1] / np.asarray(VOXEL_SIZE)[::-1]).astype(int)
+        volume[tuple(center + 2)] = 65535
+        spots = _spots(self.positions[:1])
+        for halo, expected in ((1, 0), (2, 1)):
+            result = self.measure({"stain": volume}, spots, voxel_size=VOXEL_SIZE, signal_halo=halo, n_threads=1)
+            self.assertEqual(result.stain_n_saturated[0], expected)
+
     def test_invalid_input(self):
         with self.assertRaises(ValueError):
             self.measure({"a": np.zeros((4, 4, 4)), "b": np.zeros((4, 4, 5))}, _spots([(1.0, 1.0, 1.0)]))

@@ -146,6 +146,42 @@ class TestExtractBlockSingle(unittest.TestCase):
         np.testing.assert_array_equal(mask, full_mask[1:, 2:, 3:])
         self.assertTrue(mask.any())
 
+    def test_hull_mask_uses_crop_voxel_grid(self):
+        """A crop center between voxels gives a mask on the voxel grid of the crop."""
+        from flamingo_tools.analysis.density_utils import hull_to_mask
+
+        # The center (10.2, 5.1, 8.3) um lies in the voxel (z, y, x) = (8, 10, 20). The crop starts at x = 8 um,
+        # so its voxel centers in x are 8.0, 8.5, ... um, and 9.5, 10.0 and 10.5 um lie inside the hull.
+        hull = [[9.15, 3.0], [10.65, 3.0], [10.65, 8.0], [9.15, 8.0]]
+        mask = hull_to_mask(hull, bb_center=[10.2, 5.1, 8.3], roi_halo=[4, 3, 2], voxel_size=self.voxel_size)
+        self.assertEqual(mask.shape, (4, 6, 8))
+        expected = np.zeros(8, dtype=bool)
+        expected[3:6] = True
+        np.testing.assert_array_equal(mask, np.broadcast_to(expected, mask.shape))
+
+    def test_json_entries_do_not_share_keys(self):
+        import json
+        import zarr
+        from flamingo_tools.extract_block_util import extract_block_json_wrapper
+
+        mobie_dir = os.path.join(self.tmpdir.name, "mobie")
+        for cochlea in ("M_A_L", "M_B_R"):
+            path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", "PV.ome.zarr")
+            zarr.open_group(path, mode="w").create_array("s0", data=self.data)
+        json_file = os.path.join(self.tmpdir.name, "crops.json")
+        with open(json_file, "w") as f:
+            json.dump([
+                {"dataset_name": "M_A_L", "image_channel": "PV", "crop_centers": [[10, 5, 8]], "roi_halo": [4, 3, 2]},
+                {"dataset_name": "M_B_R", "image_channel": "PV", "crop_centers": [[10, 5, 8]]},
+            ], f)
+        extract_block_json_wrapper(self.output_dir, json_file=json_file, mobie_dir=mobie_dir, input_key="s0",
+                                   voxel_size=self.voxel_size, roi_halo=[2, 2, 2])
+        first = imageio.imread(os.path.join(self.output_dir, "M-A-L_crop_0010-0005-0008_PV.tif"))
+        second = imageio.imread(os.path.join(self.output_dir, "M-B-R_crop_0010-0005-0008_PV.tif"))
+        self.assertEqual(first.shape, (4, 6, 8))
+        # The second entry has no 'roi_halo', so it uses the halo of the call, not the halo of the first entry.
+        self.assertEqual(second.shape, (4, 4, 4))
+
     def test_image_channel_suffix_without_json(self):
         from flamingo_tools.extract_block_util import extract_block_json_wrapper
 

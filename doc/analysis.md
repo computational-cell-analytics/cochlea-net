@@ -562,7 +562,7 @@ A change of the shell by 0.5 µm changes the median background by less than 4 %.
 | `noise` | absolute | 1.4826 x the median absolute deviation in the shell |
 | `ratio` | relative | `signal` / `background` |
 | `snr` | relative | (`signal` - `background`) / `noise` |
-| `n_saturated` | quality | Core voxels at the maximum of the data type, for example 65535 |
+| `n_saturated` | quality | Voxels of the core or the signal cube at the maximum of the data type, for example 65535 |
 
 The columns `nn_distance` (distance to the nearest other spot in µm), `n_core_voxels` and `n_background_voxels` do not depend on the channel.
 `noise` is the noise of one voxel, also when `signal` is the mean of several voxels.
@@ -602,6 +602,7 @@ The output folder holds:
 - `intensity_summary.tsv`, with the quantiles of each measure for all, matched and unmatched spots.
 - `sweep.tsv`, with the counts and scores after a threshold on the test stain (`--sweep_measure`, default `snr`).
   Each threshold matches the remaining spots again.
+  Spots without a value, for example at the end of the stack, are kept at every threshold. `n_missing` counts them.
 - `summary.json`, with the matching scores, the medians and the fraction of saturated spots.
   It also records the names and the channels of the comparison.
 

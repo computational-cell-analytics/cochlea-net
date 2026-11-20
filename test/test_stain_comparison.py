@@ -52,6 +52,20 @@ class TestMatchStains(unittest.TestCase):
         # The input tables stay unchanged.
         self.assertNotIn("matched", reference)
 
+    def test_partner_id_without_spot_id(self):
+        """Without 'spot_id', the partner id is the row label in the input table, also after the IHC filter."""
+        from flamingo_tools.synapse_detection.stain_comparison import match_stains
+
+        reference, test = (table.drop(columns="spot_id") for table in _tables())
+        # The spots of the invalid IHC 9 come first, so the filter shifts the positions of all other rows.
+        reference, test = (table.iloc[::-1] for table in (reference, test))
+        matched_reference, matched_test = match_stains(reference, test, max_dist=2.0, valid_ihcs=[1, 2])
+        partners = dict(zip(matched_test.x, matched_test.partner_id))
+        # The test spots at x = 0.5 and x = 11 match the reference rows 0 and 1 of the input table.
+        self.assertEqual((partners[0.5], partners[11.0]), (0, 1))
+        partners = dict(zip(matched_reference.x, matched_reference.partner_id))
+        self.assertEqual((partners[0.0], partners[10.0]), (0, 1))
+
 
 class TestThresholdSweep(unittest.TestCase):
 
@@ -71,8 +85,9 @@ class TestThresholdSweep(unittest.TestCase):
 
         reference, test = match_stains(*_tables(), max_dist=2.0)
         test.loc[0, "Homer1_snr"] = np.nan
-        sweep = threshold_sweep(reference, test, "Homer1_snr", thresholds=[100.0])
-        self.assertEqual(sweep.n_test.tolist(), [1])
+        sweep = threshold_sweep(reference, test, "Homer1_snr", thresholds=[-np.inf, 100.0])
+        self.assertEqual(sweep.n_test.tolist(), [5, 1])
+        self.assertEqual(sweep.n_missing.tolist(), [1, 1])
 
 
 class TestSelectExcessIhcs(unittest.TestCase):
@@ -126,6 +141,41 @@ class TestCompareStains(unittest.TestCase):
                 params = json.load(f)
         self.assertEqual(params["crop_centers"], [[25, 0, 1]])
         self.assertEqual(params["image_channel"], ["CTBP2", "IHC_v11"])
+
+    def test_invalid_input(self):
+        from flamingo_tools.synapse_detection.stain_comparison import compare_stains
+
+        reference, test = _tables()
+        with tempfile.TemporaryDirectory() as tmp:
+            # Equal names would write both matched tables to the same file.
+            with self.assertRaises(ValueError):
+                compare_stains(reference, test, "CTBP2", "Homer1", tmp, reference_name="spots", test_name="spots")
+            with self.assertRaises(ValueError):
+                compare_stains(reference, test.drop(columns="Homer1_snr"), "CTBP2", "Homer1", tmp)
+            old_columns = {column: column.replace("_signal", "_peak") for column in reference.columns}
+            with self.assertRaises(ValueError):
+                compare_stains(reference.rename(columns=old_columns), test, "CTBP2", "Homer1", tmp)
+            self.assertEqual(os.listdir(tmp), [])
+
+    def test_empty_group_is_null_in_json(self):
+        from flamingo_tools.synapse_detection.stain_comparison import compare_stains
+
+        reference, test = _tables()
+        # Only the IHC 9 has one reference and one test spot, and both match, so the 'unmatched' groups are empty.
+        with tempfile.TemporaryDirectory() as tmp:
+            compare_stains(reference, test, "CTBP2", "Homer1", tmp, valid_ihcs=[9], thresholds=[-np.inf])
+            with open(os.path.join(tmp, "summary.json")) as f:
+                text = f.read()
+
+        def reject(constant):
+            raise ValueError(f"Invalid JSON constant {constant}")
+
+        summary = json.loads(text, parse_constant=reject)
+        self.assertEqual((summary["tp"], summary["fp"], summary["fn"]), (1, 0, 0))
+        unmatched = summary["median"]["reference"]["unmatched"]
+        self.assertTrue(unmatched)
+        self.assertTrue(all(value is None for value in unmatched.values()))
+        self.assertIsNotNone(summary["median"]["reference"]["matched"]["CTBP2_signal"])
 
 
 if __name__ == "__main__":

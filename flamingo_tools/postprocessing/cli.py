@@ -136,9 +136,10 @@ def extract_block():
     args_dict = vars(args)
     point_tables = args_dict.pop("point_tables")
     if point_tables is not None:
-        point_tables = {
-            os.path.splitext(os.path.basename(path))[0]: pd.read_csv(path, sep="\t") for path in point_tables
-        }
+        names = [os.path.splitext(os.path.basename(path))[0] for path in point_tables]
+        if len(set(names)) != len(names):
+            parser.error(f"The point tables name the CSV files, so their file names must differ, got {names}.")
+        point_tables = {name: pd.read_csv(path, sep="\t") for name, path in zip(names, point_tables)}
     extract_block_json_wrapper(
         point_tables=point_tables,
         input_path=args_dict.pop("input"),

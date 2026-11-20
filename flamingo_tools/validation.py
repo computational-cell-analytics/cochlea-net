@@ -14,6 +14,8 @@ import zarr
 
 from scipy.ndimage import distance_transform_edt
 from scipy.optimize import linear_sum_assignment
+from scipy.sparse import coo_matrix
+from scipy.sparse.csgraph import connected_components
 from scipy.spatial import cKDTree
 from skimage.measure import regionprops_table
 from skimage.segmentation import relabel_sequential
@@ -722,18 +724,32 @@ def match_detections(
     if coo.nnz == 0:                       # nothing is close enough
         return np.empty(0, int), np.empty(0, int), np.arange(N), np.arange(M)
 
-    cost = np.full((N, M), 5 * max_dist, dtype=float)
-    cost[coo.row, coo.col] = coo.data      # fill only existing edges
+    # 2. optimal one-to-one assignment (Hungarian) per connected component ---------
+    # Points in different components of the radius graph never compete for a partner. The missing edges
+    # cost the same constant in every component, so the total cost is a sum over the components and the
+    # optimum equals the one of the full N x M problem. Only the cost matrices get small.
+    rows, cols, dists = coo.row, coo.col, coo.data
+    graph = coo_matrix((np.ones(len(rows)), (rows, N + cols)), shape=(N + M, N + M))
+    _, labels = connected_components(graph, directed=False)
+    edge_labels = labels[rows]
+    edge_order = np.argsort(edge_labels, kind="stable")
+    component_starts = np.flatnonzero(np.diff(edge_labels[edge_order])) + 1
 
-    # 2. optimal one-to-one assignment (Hungarian) --------------------------------
-    row_ind, col_ind = linear_sum_assignment(cost)
-
-    # Filter assignments that were padded with +∞ cost for non-existent edges
-    # (linear_sum_assignment automatically does that padding internally).
-    valid_mask = cost[row_ind, col_ind] <= max_dist
-    tp_det_ids = row_ind[valid_mask]
-    tp_ann_ids = col_ind[valid_mask]
-    assert len(tp_det_ids) == len(tp_ann_ids)
+    tp_det_ids, tp_ann_ids = [], []
+    for edges in np.split(edge_order, component_starts):
+        det_ids, det_local = np.unique(rows[edges], return_inverse=True)
+        ann_ids, ann_local = np.unique(cols[edges], return_inverse=True)
+        cost = np.full((len(det_ids), len(ann_ids)), 5 * max_dist, dtype=float)
+        cost[det_local, ann_local] = dists[edges]
+        row_ind, col_ind = linear_sum_assignment(cost)
+        # Drop the assignments to a missing edge.
+        valid_mask = cost[row_ind, col_ind] <= max_dist
+        tp_det_ids.append(det_ids[row_ind[valid_mask]])
+        tp_ann_ids.append(ann_ids[col_ind[valid_mask]])
+    tp_det_ids = np.concatenate(tp_det_ids)
+    tp_ann_ids = np.concatenate(tp_ann_ids)
+    det_order = np.argsort(tp_det_ids)
+    tp_det_ids, tp_ann_ids = tp_det_ids[det_order], tp_ann_ids[det_order]
 
     # 3. derive FP / FN -----------------------------------------------------------
     fp_det_ids = np.setdiff1d(np.arange(N), tp_det_ids, assume_unique=True)

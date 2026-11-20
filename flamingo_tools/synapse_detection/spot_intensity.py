@@ -42,7 +42,7 @@ INTENSITY_MEASURES = ("signal", "mean", "background", "noise", "ratio", "snr", "
 - 'ratio': signal / background.
 - 'snr': (signal - background) / noise.
 - 'integrated': sum of (intensity - background) over the core, in intensity x voxels.
-- 'n_saturated': core voxels at the maximum of an integer dtype. NaN for float data.
+- 'n_saturated': voxels of the core or the signal cube at the maximum of an integer dtype. NaN for float data.
 """
 
 # The scale factor from the median absolute deviation to the standard deviation of a normal distribution.
@@ -118,7 +118,7 @@ def measure_spot_intensities(
     exclusion_axes = _semi_axes(exclusion_radius, voxel_size)
     if np.any(inner_axes > outer_axes):
         raise ValueError("The inner background radius must not exceed the outer one.")
-    window = np.maximum(np.ceil(outer_axes).astype(int), signal_halo)
+    window = np.maximum(np.ceil(np.maximum(outer_axes, core_axes)).astype(int), signal_halo)
 
     if block_shape is None:
         chunks = getattr(next(iter(images.values())), "chunks", None)
@@ -164,6 +164,11 @@ def measure_spot_intensities(
             core = _ellipsoid_distance(grid, positions[index], core_axes) <= 1
             # A core smaller than one voxel still holds the voxel of the spot.
             core[tuple(center - lo)] = True
+            # The grid is clipped to the volume, so the cube is clipped at the border, too.
+            cube = np.ones(core.shape, dtype=bool)
+            for g, c in zip(grid, center):
+                cube &= np.abs(g - c) <= signal_halo
+            saturation_region = core | cube
             shell = (_ellipsoid_distance(grid, positions[index], inner_axes) > 1) & (
                 _ellipsoid_distance(grid, positions[index], outer_axes) <= 1
             )
@@ -174,14 +179,10 @@ def measure_spot_intensities(
             geometry["n_core_voxels"][index] = core.sum()
             geometry["n_background_voxels"][index] = shell.sum()
             local = tuple(slice(lb - b, hb - b) for lb, hb, b in zip(lo, hi, begin))
-            signal_bb = tuple(
-                slice(max(c - signal_halo, b) - b, min(c + signal_halo + 1, e) - b)
-                for c, b, e in zip(center, begin, end)
-            )
             for channel, block in blocks.items():
                 values = block[local]
                 core_values = values[core].astype("float64")
-                signal = float(block[signal_bb].mean(dtype="float64"))
+                signal = float(values[cube].mean(dtype="float64"))
                 result = {"signal": signal, "mean": core_values.mean()}
                 if shell.any():
                     shell_values = values[shell].astype("float64")
@@ -195,7 +196,7 @@ def measure_spot_intensities(
                         "integrated": float(np.sum(core_values - background)),
                     })
                 if saturation[channel] is not None:
-                    result["n_saturated"] = np.count_nonzero(values[core] == saturation[channel])
+                    result["n_saturated"] = np.count_nonzero(values[saturation_region] == saturation[channel])
                 for measure, value in result.items():
                     measures[f"{channel}_{measure}"][index] = value
 

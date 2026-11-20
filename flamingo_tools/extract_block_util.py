@@ -63,7 +63,7 @@ def _crop_file_name(coords: List[float], dataset_name: Optional[str], suffix: Op
 def extract_block_single(
     input_path: str,
     coords: List[int],
-    output_path: Optional[str] = None,
+    output_path: str,
     dataset_name: Optional[str] = None,
     channel_name: Optional[str] = None,
     input_key: Optional[str] = None,
@@ -87,7 +87,8 @@ def extract_block_single(
     Args:
         input_path: Input folder in n5 / ome-zarr format.
         coords: Center coordinates of extracted 3D volume.
-        output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
+        output_path: Output directory or file. In a directory, the crop is named after the dataset, the center and
+            the channel.
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
         voxel_size: The voxel size of the data in micrometer.
@@ -348,6 +349,8 @@ def extract_block_json_wrapper(
                 image_channels = params["image_channel"]
             else:
                 image_channels = [params["image_channel"]]
+            # The keys of one entry, e.g. 'roi_halo', must not carry over to the next entry.
+            entry_kwargs = {**kwargs, **params}
 
             for image_channel in image_channels:
                 if s3:
@@ -356,7 +359,6 @@ def extract_block_json_wrapper(
                     input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
 
                 for coords in params["crop_centers"]:
-                    kwargs.update(params)
                     extract_block_single(
                         input_path=input_path,
                         coords=coords,
@@ -364,22 +366,22 @@ def extract_block_json_wrapper(
                         channel_name=image_channel,
                         force_overwrite=force,
                         s3=s3,
-                        **kwargs,
+                        **entry_kwargs,
                     )
 
             if "hull_vertices" in params or point_tables:
-                shape = _volume_shape(input_path, s3, **kwargs)
+                shape = _volume_shape(input_path, s3, **entry_kwargs)
 
             # crop out mask from hull vertices
             if "hull_vertices" in params:
                 for coords in params["crop_centers"]:
-                    save_mask_from_hull_vertices(coords=coords, output_path=output_path, shape=shape, **kwargs)
+                    save_mask_from_hull_vertices(coords=coords, output_path=output_path, shape=shape, **entry_kwargs)
 
             if point_tables:
                 for coords in params["crop_centers"]:
                     for name, points in point_tables.items():
                         extract_points_single(points, coords, output_path, shape, name=name,
-                                              force_overwrite=force, **kwargs)
+                                              force_overwrite=force, **entry_kwargs)
 
     else:
         if input_path is None:

@@ -24,6 +24,12 @@ SUMMARY_MEASURES = ("signal", "background", "ratio", "snr", "integrated")
 SUMMARY_QUANTILES = (0.05, 0.25, 0.5, 0.75, 0.95)
 
 
+def _json_number(value: float, digits: int) -> Optional[float]:
+    """Round a value for JSON. NaN becomes None, because strict JSON parsers reject NaN."""
+    value = float(value)
+    return round(value, digits) if np.isfinite(value) else None
+
+
 def _spot_ids(table: pd.DataFrame) -> np.ndarray:
     return table["spot_id"].to_numpy() if "spot_id" in table else table.index.to_numpy()
 
@@ -44,24 +50,27 @@ def match_stains(
 
     Returns:
         Copies of both tables, filtered by the valid IHCs, with the columns 'matched' (bool) and
-        'partner_id' (the 'spot_id' of the partner in the other table, NaN without a partner).
+        'partner_id' (the 'spot_id' of the partner in the other table, NaN without a partner). Without a
+        'spot_id' column, 'partner_id' is the row label of the partner in the input table.
     """
     if valid_ihcs is not None:
         reference = reference[reference.matched_ihc.isin(valid_ihcs)]
         test = test[test.matched_ihc.isin(valid_ihcs)]
+    # Without a 'spot_id' column, the ids are the row labels of the input tables, so take them before the reset.
+    reference_ids, test_ids = _spot_ids(reference), _spot_ids(test)
     reference = reference.reset_index(drop=True)
     test = test.reset_index(drop=True)
 
     tp_test, tp_reference, _, _ = match_detections(
         test[COORDINATES].to_numpy(), reference[COORDINATES].to_numpy(), max_dist=max_dist
     )
-    for table, own, other, other_table in (
-        (reference, tp_reference, tp_test, test), (test, tp_test, tp_reference, reference)
+    for table, own, other, other_ids in (
+        (reference, tp_reference, tp_test, test_ids), (test, tp_test, tp_reference, reference_ids)
     ):
         matched = np.zeros(len(table), dtype=bool)
         matched[own] = True
         partner = np.full(len(table), np.nan)
-        partner[own] = _spot_ids(other_table)[other]
+        partner[own] = other_ids[other]
         table["matched"] = matched
         table["partner_id"] = partner
     return reference, test
@@ -111,7 +120,9 @@ def threshold_sweep(
 ) -> pd.DataFrame:
     """Remove the test spots below a threshold of one column and match the rest against the reference again.
 
-    Spots without a value in the column are kept.
+    Spots without a value in the column are kept at every threshold. The column 'n_missing' counts them.
+    For example, `spot_intensity` gives no 'snr' when the background shell lies in the zero padding at the
+    end of the stack.
 
     Args:
         reference: The spots of the reference stain.
@@ -126,6 +137,7 @@ def threshold_sweep(
         removed test spots.
     """
     values = test[column].to_numpy(dtype="float64")
+    n_missing = int(np.isnan(values).sum())
     if thresholds is None:
         thresholds = np.unique(np.nanquantile(values, np.linspace(0, 0.95, 20)))
     reference_coords = reference[COORDINATES].to_numpy()
@@ -134,7 +146,7 @@ def threshold_sweep(
         keep = ~(values < threshold)
         tp, _, fp, fn = match_detections(test.loc[keep, COORDINATES].to_numpy(), reference_coords, max_dist)
         row = {
-            "threshold": threshold, "n_test": int(keep.sum()), "n_reference": len(reference),
+            "threshold": threshold, "n_test": int(keep.sum()), "n_missing": n_missing, "n_reference": len(reference),
             "removed_fraction": 1 - keep.mean() if len(keep) else np.nan,
             "tp": len(tp), "fp": len(fp), "fn": len(fn),
             **compute_scores_from_counts(len(tp), len(fp), len(fn)),
@@ -258,6 +270,17 @@ def compare_stains(
     Returns:
         The summary, the matched tables and the sweep under the keys 'summary', 'reference', 'test' and 'sweep'.
     """
+    if reference_name == test_name:
+        raise ValueError(f"The reference and the test name must differ, both are '{reference_name}'.")
+    required = {
+        "reference": (reference, [f"{reference_channel}_signal"]),
+        "test": (test, [f"{test_channel}_signal", f"{test_channel}_{sweep_measure}"]),
+    }
+    for role, (table, columns) in required.items():
+        missing = [column for column in columns if column not in table]
+        if missing:
+            raise ValueError(f"The {role} table has no columns {missing}. Measure it with spot_intensity.")
+
     os.makedirs(output_folder, exist_ok=True)
     reference, test = match_stains(reference, test, max_dist=max_dist, valid_ihcs=valid_ihcs)
     channels = [channel for channel in (reference_channel, test_channel)
@@ -289,14 +312,14 @@ def compare_stains(
         "tp": tp, "fp": len(test) - tp, "fn": len(reference) - tp,
         **compute_scores_from_counts(tp, len(test) - tp, len(reference) - tp),
         "saturated_fraction": {
-            name: {channel: round(float(np.mean(table[f"{channel}_n_saturated"] > 0)), 4)
+            name: {channel: _json_number(np.mean(table[f"{channel}_n_saturated"] > 0), 4)
                    for channel in channels if table[f"{channel}_n_saturated"].notna().any()}
             for name, table in ((reference_name, reference), (test_name, test))
         },
         "median": {
             name: {
                 group: {
-                    f"{row.channel}_{row.measure}": round(float(row.q50), 3)
+                    f"{row.channel}_{row.measure}": _json_number(row.q50, 3)
                     for row in intensity[(intensity.stain == name) & (intensity.group == group)].itertuples()
                 }
                 for group in ("matched", "unmatched")
@@ -305,7 +328,7 @@ def compare_stains(
         },
     }
     with open(os.path.join(output_folder, "summary.json"), "w") as f:
-        json.dump(summary, f, indent=2)
+        json.dump(summary, f, indent=2, allow_nan=False)
     return {"summary": summary, "reference": reference, "test": test, "sweep": sweep}
 
 
