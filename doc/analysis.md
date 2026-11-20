@@ -638,6 +638,10 @@ The crops are 256 voxels (97 µm) on each side.
   --image_channel CTBP2 Homer1 Vglut3 IHC_v11 --segmentation_channel IHC_v11 --roi_halo 128 128 128
   ```
   Keep the two files apart. `flamingo_tools.equidistant_centers` replaces the crop centers of every entry in a file.
+- `M_AMD_000126_L_IHC_synapses.json` to `M_AMD_000137_R_IHC_synapses.json` (126, 127 and 137, left and right) have three crops each along the IHC row of `IHC_v11b`.
+  The crops are at the length fractions 0.85 (base), 0.5 (mid) and 0.15 (apex), in this order, and hold CTBP2, Vglut3 and `IHC_v11b`, but not Homer1.
+  The key `length_fraction` records the positions. No tool reads it.
+  Do not run `flamingo_tools.equidistant_centers` on these files, because it replaces the crop centers.
 
 Extract the crops with `flamingo_tools.extract_block`.
 `--point_tables` also writes the spots of each crop as a napari points file (CSV), named after the table:

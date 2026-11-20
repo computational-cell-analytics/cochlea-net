@@ -1,0 +1,46 @@
+{
+	"dataset_name": "M_AMD_000127_R",
+	"image_channel": [
+		"CTBP2",
+		"Vglut3",
+		"IHC_v11b"
+	],
+	"segmentation_channel": "IHC_v11b",
+	"cell_type": "ihc",
+	"component_list": [
+		1,
+		2,
+		3,
+		4,
+		5
+	],
+	"roi_halo": [
+		128,
+		128,
+		128
+	],
+	"path_method": "graph",
+	"include_gap": false,
+	"length_fraction": [
+		0.85,
+		0.5,
+		0.15
+	],
+	"crop_centers": [
+		[
+			341,
+			1061,
+			634
+		],
+		[
+			934,
+			432,
+			478
+		],
+		[
+			694,
+			1269,
+			386
+		]
+	]
+}
