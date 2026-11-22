@@ -151,6 +151,19 @@ class TestRawConversion(unittest.TestCase):
             for level in range(6):
                 self.assertIn(f"setup0/timepoint0/s{level}", f)
 
+    def test_pyramid_matches_pybdv_downsample(self):
+        from elf.io import open_file
+        from pybdv.downsample import downsample
+
+        self._convert()
+        in_key = "setup0/timepoint0/s0"
+        for level in range(1, 6):
+            downsample(self.out_path, in_key, f"reference/s{level}", [2, 2, 2], "mean")
+            in_key = f"reference/s{level}"
+        with open_file(self.out_path, "r") as f:
+            for level in range(1, 6):
+                self.assertTrue(np.array_equal(read_setup(self.out_path, 0, level), f[f"reference/s{level}"][:]))
+
     def test_n_threads_defaults_to_the_slurm_allocation(self):
         import flamingo_tools.data_conversion as dc
 
@@ -316,6 +329,23 @@ class TestRawConversion(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         self._convert(dry_run=True)
         self.assertFalse(os.path.exists(self.out_path))
+
+
+class TestIntegerBlockMean(unittest.TestCase):
+    def test_matches_the_truncated_float_mean(self):
+        from pybdv.downsample import get_downsampler
+        from flamingo_tools.data_conversion import _integer_block_mean
+
+        float_mean = get_downsampler("mean")
+        rng = np.random.default_rng(0)
+        for dtype, high in (("uint8", 255), ("uint16", 65535), ("uint32", 2 ** 32 - 1)):
+            data = rng.integers(0, high, size=(8, 12, 16), dtype=dtype, endpoint=True)
+            for factor in ([2, 2, 2], [1, 2, 2], [2, 3, 4]):
+                out_shape = tuple(sh // sf for sh, sf in zip(data.shape, factor))
+                expected = float_mean(data, factor, out_shape).astype(dtype)
+                result = _integer_block_mean(data, factor, out_shape)
+                self.assertEqual(result.dtype, np.dtype(dtype))
+                self.assertTrue(np.array_equal(result, expected), (dtype, factor))
 
 
 if __name__ == "__main__":
