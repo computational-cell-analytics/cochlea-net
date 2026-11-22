@@ -6,6 +6,7 @@ import json
 import os
 import posixpath
 import re
+import time
 import warnings
 import xml.etree.ElementTree as ET
 
@@ -516,6 +517,8 @@ def _convert_tile(out_path, tile, state, scale_factors, n_threads, config):
     # A resumed run keeps the slab depth of the first run, so that z_done stays on a slab border.
     slab_depth = entry.get("slab_depth", tile["slab_depth"])
     z_done = entry.get("z_done", 0)
+    t_start = time.perf_counter()
+    t_wait = t_write = t_pyramid = 0.0
 
     if z_done < shape[0]:
         base_key = get_key(False, timepoint=timepoint, setup_id=setup_id, scale=0)
@@ -525,19 +528,34 @@ def _convert_tile(out_path, tile, state, scale_factors, n_threads, config):
         with open_file(out_path, "a") as f:
             ds = f[base_key]
             ds.n_threads = n_threads
+            t0 = time.perf_counter()
             for z0, z1, slab in slabs:
+                t1 = time.perf_counter()
+                t_wait += t1 - t0
                 ds[z0:z1] = slab
                 state.update(attribute_id, z_done=z1)
                 print(f"  setup {setup_id}: {z1} / {shape[0]} planes written")
+                t0 = time.perf_counter()
+                t_write += t0 - t1
 
     if not entry.get("pyramid_done"):
+        t0 = time.perf_counter()
         for scale, factor in enumerate(scale_factors):
             in_key = get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale)
             out_key = get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale + 1)
             downsample(out_path, in_key, out_key, factor, "mean", n_threads=n_threads, overwrite=True)
+        t_pyramid = time.perf_counter() - t0
         state.update(attribute_id, pyramid_done=True)
 
     state.update(attribute_id, done=True)
+
+    t_total = time.perf_counter() - t_start
+    n_bytes = (shape[0] - z_done) * int(np.prod(shape[1:])) * np.dtype(tile["dtype"]).itemsize
+    print(
+        f"  setup {setup_id} done in {t_total:.0f} s: waited {t_wait:.0f} s for input, "
+        f"wrote s0 in {t_write:.0f} s, pyramid in {t_pyramid:.0f} s, "
+        f"{n_bytes / 1e6 / max(t_total, 1e-9):.0f} MB/s"
+    )
 
 
 class SmbSource:
@@ -886,6 +904,7 @@ def convert_lightsheet_to_bdv(
 
     for tile in tiles:
         print(
+            f"[{time.strftime('%Y-%m-%d %H:%M:%S')}] "
             f"Converting tp={tile['timepoint']}, setup={tile['setup_id']}, tile={tile['attribute_id']}"
         )
         if state is not None and state.setup(tile["attribute_id"]).get("done"):
