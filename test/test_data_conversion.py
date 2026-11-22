@@ -360,5 +360,46 @@ class TestIntegerBlockMean(unittest.TestCase):
                 self.assertTrue(np.array_equal(result, expected), (dtype, factor))
 
 
+class TestPrefetch(unittest.TestCase):
+    def test_yields_every_item_in_order(self):
+        from flamingo_tools.data_conversion import _prefetch
+
+        self.assertEqual(list(_prefetch(iter(range(10)))), list(range(10)))
+
+    def test_reader_error_reaches_the_caller(self):
+        from flamingo_tools.data_conversion import _prefetch
+
+        def failing_reader():
+            yield 0
+            yield 1
+            raise OSError(errno.EIO, "simulated read error")
+
+        received = []
+        with self.assertRaises(OSError):
+            for item in _prefetch(failing_reader()):
+                received.append(item)
+        self.assertEqual(received, [0, 1])
+
+    def test_reader_stops_when_the_caller_stops(self):
+        import itertools
+        import threading
+        from flamingo_tools.data_conversion import _prefetch
+
+        produced = []
+
+        def endless_reader():
+            for i in itertools.count():
+                produced.append(i)
+                yield i
+
+        n_threads = threading.active_count()
+        items = _prefetch(endless_reader())
+        self.assertEqual(next(items), 0)
+        items.close()
+        self.assertEqual(threading.active_count(), n_threads)
+        # One item was taken, one waits in the queue, one waits to be put.
+        self.assertLessEqual(len(produced), 3)
+
+
 if __name__ == "__main__":
     unittest.main()

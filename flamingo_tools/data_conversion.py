@@ -5,7 +5,9 @@ import getpass
 import json
 import os
 import posixpath
+import queue
 import re
+import threading
 import time
 import warnings
 import xml.etree.ElementTree as ET
@@ -413,13 +415,16 @@ def _slab_bounds(n_planes, slab_depth, start_z=0):
 
 
 def _iter_raw_slabs(file_path, shape, slab_depth, config, start_z=0):
-    """Yield (z_start, z_stop, slab) for a flamingo raw file, retrying every read."""
+    """Yield (z_start, z_stop, slab) for a flamingo raw file, retrying every read.
+
+    Every slab gets a new buffer, so a slab that is read ahead does not overwrite the slab that
+    is being written.
+    """
     plane_bytes = int(np.prod(shape[1:])) * np.dtype(RAW_DTYPE).itemsize
-    buf = np.empty((slab_depth,) + tuple(shape[1:]), dtype=RAW_DTYPE)
     for z0, z1 in _slab_bounds(shape[0], slab_depth, start_z):
-        view = buf[: z1 - z0]
-        read_into(file_path, z0 * plane_bytes, view, config)
-        yield z0, z1, view
+        slab = np.empty((z1 - z0,) + tuple(shape[1:]), dtype=RAW_DTYPE)
+        read_into(file_path, z0 * plane_bytes, slab, config)
+        yield z0, z1, slab
 
 
 def _tif_series_shape(file_path, config):
@@ -479,6 +484,49 @@ def _iter_slabs(file_path, shape, n_pages, slab_depth, config, start_z=0):
     if Path(file_path).suffix == ".raw":
         return _iter_raw_slabs(file_path, shape, slab_depth, config, start_z=start_z)
     return _iter_tif_slabs(file_path, shape, n_pages, slab_depth, config, start_z=start_z)
+
+
+def _prefetch(iterable, depth=1):
+    """Yield the items of an iterable that a background thread produces ahead of time.
+
+    The thread holds at most `depth` finished items, so the reads overlap with the writes of
+    the current item. An exception in the thread is raised again in the caller.
+    """
+    items = queue.Queue(maxsize=depth)
+    stop = threading.Event()
+    end = object()
+
+    def _put(item):
+        while not stop.is_set():
+            try:
+                items.put(item, timeout=0.1)
+                return True
+            except queue.Full:
+                pass
+        return False
+
+    def _produce():
+        try:
+            for item in iterable:
+                if not _put((item, None)):
+                    return
+            _put((end, None))
+        except BaseException as error:
+            _put((None, error))
+
+    thread = threading.Thread(target=_produce, daemon=True)
+    thread.start()
+    try:
+        while True:
+            item, error = items.get()
+            if error is not None:
+                raise error
+            if item is end:
+                return
+            yield item
+    finally:
+        stop.set()
+        thread.join()
 
 
 def _set_gzip_level(out_path, tile, scale_factors):
@@ -589,7 +637,7 @@ def _convert_tile(out_path, tile, state, scale_factors, n_threads, config):
             ds = f[base_key]
             ds.n_threads = n_threads
             t0 = time.perf_counter()
-            for z0, z1, slab in slabs:
+            for z0, z1, slab in _prefetch(slabs):
                 t1 = time.perf_counter()
                 t_wait += t1 - t0
                 ds[z0:z1] = slab
@@ -810,7 +858,8 @@ def convert_lightsheet_to_bdv(
     microscopes in mind, but could potentially be adapted to other data formats.
 
     The image data is read one z-slab at a time and every read is retried, so a conversion
-    survives a connection that drops. Progress is recorded per slab in a file next to the output,
+    survives a connection that drops. A background thread reads the next slab while the current
+    slab is compressed and written. Progress is recorded per slab in a file next to the output,
     so an interrupted run continues where it stopped. Never point this function at a
     memory-mapped copy of remote data: a failed page fault on a mapped network file kills the
     process without a Python traceback.
