@@ -23,6 +23,7 @@ import tifffile
 
 from elf.io import open_file
 from pybdv.downsample import get_downsampler
+from pybdv.metadata import write_n5_metadata
 from pybdv.util import blocking, get_key
 from skimage.transform import rescale
 
@@ -45,6 +46,9 @@ from .file_utils import _parse_shape, read_tif, read_raw
 # The n5 chunk shape of the output. A slab write is aligned to the chunk depth.
 CHUNKS = (128, 128, 128)
 CHUNK_DEPTH = CHUNKS[0]
+# Level 1 compresses 2.4-3x faster than the z5py default level 5, for a 1-8% larger output.
+# Every gzip reader, BigStitcher included, decodes any level.
+GZIP_LEVEL = 1
 STATE_SUFFIX = ".convert_state.json"
 DEFAULT_SLAB_MEMORY = 1.0  # GB
 # The flamingo raw format has no header; see file_utils.read_raw.
@@ -477,6 +481,28 @@ def _iter_slabs(file_path, shape, n_pages, slab_depth, config, start_z=0):
     return _iter_tif_slabs(file_path, shape, n_pages, slab_depth, config, start_z=start_z)
 
 
+def _set_gzip_level(out_path, tile, scale_factors):
+    """Create the empty datasets of one setup again, with GZIP_LEVEL.
+
+    pybdv.initialize_bdv has no option for the compression level. The chunks are clipped to the
+    shape of each level, as pybdv.downsample did when it created the pyramid.
+    """
+    setup_id, timepoint = tile["setup_id"], tile["timepoint"]
+    with open_file(out_path, "a") as f:
+        for scale in range(len(scale_factors) + 1):
+            key = get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale)
+            shape, dtype = f[key].shape, f[key].dtype
+            del f[key]
+            f.create_dataset(
+                key, shape=shape, dtype=dtype, chunks=tuple(min(ch, sh) for ch, sh in zip(CHUNKS, shape)),
+                compression="gzip", level=GZIP_LEVEL,
+            )
+    # Deleting a dataset also deletes its attributes, e.g. downsamplingFactors.
+    write_n5_metadata(
+        out_path, [[1, 1, 1]] + scale_factors, tile["voxel_size"], setup_id, timepoint, overwrite=True
+    )
+
+
 def _integer_block_mean(data, factor, out_shape):
     """Return the block-wise mean of unsigned integer data, truncated to the input dtype.
 
@@ -540,6 +566,7 @@ def _convert_tile(out_path, tile, state, scale_factors, n_threads, config):
             affine=tile["transformation"], attributes=tile["attributes"],
             chunks=CHUNKS,
         )
+        _set_gzip_level(out_path, tile, scale_factors)
         entry = state.update(
             attribute_id,
             setup_id=setup_id, timepoint=timepoint, file=tile["file_name"],

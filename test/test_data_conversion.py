@@ -151,6 +151,18 @@ class TestRawConversion(unittest.TestCase):
             for level in range(6):
                 self.assertIn(f"setup0/timepoint0/s{level}", f)
 
+    def test_every_level_has_the_gzip_level_and_its_factors(self):
+        import json
+        from flamingo_tools.data_conversion import GZIP_LEVEL
+
+        self._convert()
+        for level in range(6):
+            path = os.path.join(self.out_path, "setup0", "timepoint0", f"s{level}", "attributes.json")
+            with open(path) as f:
+                attributes = json.load(f)
+            self.assertEqual(attributes["compression"], {"type": "gzip", "level": GZIP_LEVEL})
+            self.assertEqual(attributes["downsamplingFactors"], [2 ** level] * 3)
+
     def test_pyramid_matches_pybdv_downsample(self):
         from elf.io import open_file
         from pybdv.downsample import downsample
