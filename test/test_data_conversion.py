@@ -151,6 +151,14 @@ class TestRawConversion(unittest.TestCase):
             for level in range(6):
                 self.assertIn(f"setup0/timepoint0/s{level}", f)
 
+    def test_n_threads_defaults_to_the_slurm_allocation(self):
+        import flamingo_tools.data_conversion as dc
+
+        with mock.patch.dict(os.environ, {"SLURM_CPUS_PER_TASK": "3"}), \
+             mock.patch.object(dc, "_convert_tile", wraps=dc._convert_tile) as convert_tile:
+            self._convert()
+        self.assertEqual({call.args[4] for call in convert_tile.call_args_list}, {3})
+
     def test_rerun_is_a_no_op(self):
         self._convert()
         self._convert()

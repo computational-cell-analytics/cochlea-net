@@ -3,7 +3,6 @@
 
 import getpass
 import json
-import multiprocessing as mp
 import os
 import posixpath
 import re
@@ -25,6 +24,7 @@ from pybdv.downsample import downsample
 from pybdv.util import get_key
 from skimage.transform import rescale
 
+from .cpu_utils import available_cpus
 from .data_transfer_utils import (
     MAX_RETRIES,
     RETRY_DELAY,
@@ -171,7 +171,7 @@ def _to_ome_zarr(data, out_path, scale_factors, timepoint, setup_id, attributes,
     # Imported here so that the bdv/n5 conversion path does not require mobie.
     from mobie.import_data._format_metadata import write_format_metadata
 
-    n_threads = mp.cpu_count()
+    n_threads = available_cpus()
     chunks = (128, 128, 128)
 
     # Write the base dataset.
@@ -770,8 +770,8 @@ def convert_lightsheet_to_bdv(
             - [[2, 2, 2], [2, 2, 2]] to downsample isotropically by a factor of 2 for two times.
             - [[1, 2, 2], [1, 2, 2]] to downsample anisotropically for two times.
             - [[1, 2, 2], [2, 2, 2]] to downsample anisotroically once and then isotropically.
-        n_threads: The number of threads to use for parallelizing the data conversion.
-            By default all available CPU cores will be used.
+        n_threads: The number of threads for compressing, writing and downscaling.
+            By default, the cores of the slurm allocation or of the CPU affinity mask.
         username: GWDG username. Reads the input from the SMB share instead of from a path.
         password: GWDG password. Asked for interactively if it is not given.
         smb_server: The SMB server that holds the input data.
@@ -787,7 +787,7 @@ def convert_lightsheet_to_bdv(
     if metadata_type != "flamingo":
         raise ValueError(f"Invalid metadata type: {metadata_type}.")
     if n_threads is None:
-        n_threads = mp.cpu_count()
+        n_threads = available_cpus()
 
     # Make sure we convert to n5, in case no extension is passed.
     ext = os.path.splitext(out_path)[1]
@@ -1027,7 +1027,8 @@ def convert_lightsheet_to_bdv_cli():
     )
     parser.add_argument(
         "--n_threads", type=int, default=None,
-        help="Number of threads for writing and downscaling. All cores are used by default."
+        help="Number of threads for writing and downscaling. "
+             "By default, the cores of the slurm allocation or of the CPU affinity mask."
     )
     parser.add_argument(
         "--restart", action="store_true",
