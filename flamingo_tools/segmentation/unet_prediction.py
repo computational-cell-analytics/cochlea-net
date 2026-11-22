@@ -30,6 +30,7 @@ from torch_em.util.prediction import predict_with_halo_pipelined
 from tqdm import tqdm
 
 import flamingo_tools.s3_utils as s3_utils
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.model_utils import load_model_from_path
 
@@ -63,20 +64,6 @@ class SelectChannel(SimpleTransformationWrapper):
     @property
     def ndim(self):
         return self._volume.ndim - 1
-
-
-def _available_cpus():
-    """Return the number of cores this process may use.
-
-    `multiprocessing.cpu_count` reports the cores of the whole node, which oversubscribes
-    a job on a shared slurm partition. Prefer the slurm allocation and the CPU affinity mask.
-    """
-    n_slurm = os.environ.get("SLURM_CPUS_PER_TASK")
-    if n_slurm is not None:
-        return int(n_slurm)
-    if hasattr(os, "sched_getaffinity"):
-        return len(os.sched_getaffinity(0))
-    return mp.cpu_count()
 
 
 # Slurm sets these when the job holds a GPU allocation.
@@ -151,7 +138,7 @@ def prediction_impl(
     # The prefetch workers hide the block loading behind the GPU forward pass, so they only
     # help up to the number of cores the job actually has.
     if num_prefetch_workers is None:
-        num_prefetch_workers = max(1, min(8, _available_cpus() - 1))
+        num_prefetch_workers = max(1, min(8, available_cpus() - 1))
     else:
         num_prefetch_workers = int(num_prefetch_workers)
     batch_size = int(batch_size)

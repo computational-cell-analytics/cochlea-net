@@ -21,10 +21,9 @@ from scipy.ndimage import binary_dilation
 
 from elf.parallel.local_maxima import find_local_maxima
 from elf.parallel.distance_transform import map_points_to_objects
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.segmentation.unet_prediction import (
-    _available_cpus, _load_mean_std, prediction_impl, SelectChannel,
-)
+from flamingo_tools.segmentation.unet_prediction import _load_mean_std, prediction_impl, SelectChannel
 import flamingo_tools.s3_utils as s3_utils
 
 # Must match the sigma used in CsvHeatmapFlowTransform during training.
@@ -259,7 +258,7 @@ def synapse_detection_from_prediction(
         The detections in MoBIE compatible format, with coordinates in micrometer.
     """
     print(f"Using detection threshold: {threshold:.3f}")
-    n_threads = min(16, _available_cpus()) if n_threads is None else n_threads
+    n_threads = min(16, available_cpus()) if n_threads is None else n_threads
 
     if not os.path.exists(detection_path) or force_overwrite:
         pred = zarr.open(prediction_path, mode="r")[prediction_key]
