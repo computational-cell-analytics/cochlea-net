@@ -405,5 +405,29 @@ class TestEquidistantCentersCellTypes(unittest.TestCase):
             self.fn(self.table, component_label=[1], cell_type="ohc", n_blocks=4)
 
 
+class TestEquidistantCentersJsonWrapper(unittest.TestCase):
+
+    def test_entry_without_segmentation_channel_raises(self):
+        import json
+        import os
+        from tempfile import TemporaryDirectory
+        from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_json_wrapper
+
+        valid = {"dataset_name": "M_A_L", "image_channel": "PV", "segmentation_channel": "SGN_v2"}
+        hand_set = {"dataset_name": "M_B_R", "image_channel": "PV", "crop_centers": [[1, 2, 3]]}
+        with TemporaryDirectory() as tmp:
+            json_file = os.path.join(tmp, "crops.json")
+            for entry in (hand_set, {**hand_set, "segmentation_channel": ""}):
+                with self.subTest(entry=entry):
+                    content = json.dumps([valid, entry])
+                    with open(json_file, "w") as f:
+                        f.write(content)
+                    with self.assertRaisesRegex(ValueError, "Entry 1 \\(M_B_R\\)"):
+                        equidistant_centers_json_wrapper(json_file, mobie_dir=tmp)
+                    # The check runs before the first entry is rewritten.
+                    with open(json_file) as f:
+                        self.assertEqual(f.read(), content)
+
+
 if __name__ == "__main__":
     unittest.main()

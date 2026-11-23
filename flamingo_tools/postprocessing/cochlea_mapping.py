@@ -1557,10 +1557,11 @@ def equidistant_centers_json_wrapper(
     is_list = isinstance(data, list)
     param_dicts = data if is_list else [data]
 
-    # equidistant_centers_single writes n_blocks, include_gap and crop_centers back into the
-    # entry, none of which a processing file may hold at the top level, so it would make that
-    # file unreadable for the three processing steps.
-    for entry in param_dicts:
+    # Check every entry before the first one is rewritten, so a rejected file stays unchanged.
+    for index, entry in enumerate(param_dicts):
+        # equidistant_centers_single writes n_blocks, include_gap and crop_centers back into the
+        # entry, none of which a processing file may hold at the top level, so it would make that
+        # file unreadable for the three processing steps.
         sections = sorted(set(entry) & set(STEP_KEYS))
         if sections:
             raise ValueError(
@@ -1569,13 +1570,16 @@ def equidistant_centers_json_wrapper(
                 "add keys that a processing file must not have. Point --json_info at a file in "
                 "reproducibility/block_extraction instead."
             )
+        if not entry.get("segmentation_channel"):
+            raise ValueError(
+                f"Entry {index} ({entry.get('dataset_name')}) of {json_file} has no 'segmentation_channel', "
+                "so its crop centers were set by hand and cannot be recomputed."
+            )
 
     for index, entry in enumerate(param_dicts):
         cochlea = entry["dataset_name"]
         print(f"\n{cochlea}")
-        seg_channel = entry["segmentation_channel"]
-
-        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
+        table_path = default_table_path(cochlea, entry["segmentation_channel"], s3=s3, mobie_dir=mobie_dir)
 
         equidistant_centers_single(
             table_path=table_path,
