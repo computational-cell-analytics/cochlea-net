@@ -4,7 +4,7 @@ import argparse
 
 from . import synapse_detection, unet_prediction
 from .. import s3_utils
-from ..model_utils import get_model_path, get_default_segmentation_settings
+from ..model_utils import get_model_path, get_default_detection_settings, get_default_segmentation_settings
 
 WATERSHED_OPTIONS = ("center_distance_threshold", "boundary_distance_threshold", "fg_threshold", "distance_smoothing")
 S3_OPTIONS = ("s3_credentials", "s3_bucket_name", "s3_service_endpoint")
@@ -276,8 +276,15 @@ def run_detection():
         "-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
         help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38"
     )
+    default_settings = get_default_detection_settings("Synapses")
     parser.add_argument(
-        "--threshold", type=float, default=0.5, help="Threshold for peak detection."
+        "--threshold", type=float, default=default_settings["threshold"],
+        help=f"Threshold for peak detection. Default: {default_settings['threshold']}."
+    )
+    parser.add_argument(
+        "--min_distance", type=int, default=default_settings["min_distance"],
+        help="Minimum distance in voxels between two detected peaks. "
+        f"Default: {default_settings['min_distance']}."
     )
     _add_s3_arguments(parser, {
         "s3_input": "Read the image data from the S3 bucket.",
@@ -309,7 +316,7 @@ def run_detection():
         "checkpoint_path": (None, "predict"),
         "mask_path": matching, "s3_mask": matching, "max_distance": matching, "voxel_size": matching,
         "mask_input_key": (None, "mask"), "dilation_iterations": (None, "mask"),
-        "mask_key": (None, "detect"), "threshold": (None, "detect"),
+        "mask_key": (None, "detect"), "threshold": (None, "detect"), "min_distance": (None, "detect"),
         "prediction_instances": ("predict",), "force_overwrite": ("detect",),
     })
 
@@ -328,7 +335,8 @@ def run_detection():
         )
     elif args.stage == "detect":
         synapse_detection.run_synapse_detection_slurm(
-            output_folder=args.output_folder, voxel_size=args.voxel_size, threshold=args.threshold,
+            output_folder=args.output_folder, voxel_size=args.voxel_size,
+            threshold=args.threshold, min_distance=args.min_distance,
             mask_path=args.mask_path, mask_key=args.mask_key, max_distance=args.max_distance,
             force_overwrite=args.force_overwrite, s3_mask=args.s3_mask, **_s3_kwargs(args),
         )
@@ -340,7 +348,7 @@ def run_detection():
             mask_input_key=args.mask_input_key, mask_key=args.mask_key,
             dilation_iterations=args.dilation_iterations,
             max_distance=args.max_distance, voxel_size=args.voxel_size,
-            threshold=args.threshold,
+            threshold=args.threshold, min_distance=args.min_distance,
             # The image and the segmentation are resolved independently, so the image can be read
             # from a local file while the segmentation is read from the bucket.
             s3_input=args.s3_input, s3_mask=args.s3_mask, **_s3_kwargs(args),

@@ -112,7 +112,7 @@ class TestStageArguments(unittest.TestCase):
         self.check(synapse_detection, "run_synapse_detection_slurm", "run_detection",
                    ["--stage", "detect", "-o", "out", "-v", "0.38", "0.38", "0.38", "--mask_path", "ihc.ome.zarr",
                     "--s3_mask", "--force_overwrite"],
-                   {"output_folder": "out", "voxel_size": [0.38, 0.38, 0.38], "threshold": 0.5,
+                   {"output_folder": "out", "voxel_size": [0.38, 0.38, 0.38], "threshold": 0.5, "min_distance": 1,
                     "mask_path": "ihc.ome.zarr", "mask_key": "s0", "max_distance": 3.0, "force_overwrite": True,
                     "s3_mask": True, **s3})
 
@@ -127,6 +127,7 @@ class TestStageArguments(unittest.TestCase):
         self.check_rejected("run_detection", ["--force_overwrite"] + io)
         self.check_rejected("run_detection", ["--stage", "predict", "--mask_path", "ihc.ome.zarr"] + io)
         self.check_rejected("run_detection", ["--stage", "detect", "--dilation_iterations", "8", "-o", "out"])
+        self.check_rejected("run_detection", ["--stage", "predict", "--min_distance", "2"] + io)
 
     def test_seed_thresholds_not_both_none(self):
         # The center distance threshold of SGN-lowres is None.

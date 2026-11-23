@@ -29,4 +29,4 @@ echo "Current node: ${SLURM_NODELIST}"
 export SCRIPT_DIR=/user/pape41/u12086/Work/my_projects/flamingo-tools/scripts/synapse_marker_detection
 
 python $SCRIPT_DIR/train_synapse_detection.py \
-    -v v3 -m v3-7 --random_state 42 --n_iterations 10000
+    -v v3 -m v3-7 --random_state 42 --n_iterations 10000 --legacy_recipe
