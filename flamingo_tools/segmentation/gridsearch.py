@@ -11,7 +11,6 @@ import os
 from glob import glob
 
 import imageio.v3 as imageio
-import numpy as np
 from elf.evaluation.dice import symmetric_best_dice_score
 from tqdm import tqdm
 
