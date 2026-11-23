@@ -271,6 +271,41 @@ class TestExtractBlocksArguments(unittest.TestCase):
                 self.check_rejected(argv)
 
 
+class TestJsonExtractBlocksArguments(unittest.TestCase):
+    """'flamingo_tools.json_extract_blocks' writes the input of 'extract_blocks --find_centers'."""
+
+    def call(self, argv):
+        from flamingo_tools.postprocessing import cli
+
+        with mock.patch.object(sys, "argv", ["json_extract_blocks"] + argv):
+            cli.json_extract_blocks()
+
+    def test_parameter_file(self):
+        import json
+
+        with TemporaryDirectory() as tmp:
+            json_file = os.path.join(tmp, "M_A_L.json")
+            self.call(["-o", json_file, "-d", "M_A_L", "-i", "PV", "SGN_v2", "-s", "SGN_v2", "--cell_type", "ihc",
+                       "-c", "1", "2", "--roi_halo", "64", "64", "32"])
+            with open(json_file) as f:
+                params = json.load(f)
+        self.assertEqual(params, {
+            "dataset_name": "M_A_L", "image_channel": ["PV", "SGN_v2"], "segmentation_channel": "SGN_v2",
+            "cell_type": "ihc", "component_list": [1, 2], "n_blocks": 6, "include_gap": False,
+            "roi_halo": [64, 64, 32],
+        })
+
+    def test_rejected_options(self):
+        required = ["-o", "out.json", "-d", "M_A_L", "-i", "PV"]
+        for argv in (
+            required,
+            required + ["-s", "SGN_v2", "--cell_type", "ohc"],
+            required + ["-s", "SGN_v2", "--roi_halo", "64", "64"],
+        ):
+            with self.subTest(argv=argv), mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+                self.call(argv)
+
+
 class TestExtractBlocksEndToEnd(unittest.TestCase):
     """'--find_centers -o' finds the crop centers of a block parameter file and extracts a crop at each."""
 

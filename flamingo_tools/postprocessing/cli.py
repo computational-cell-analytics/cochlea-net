@@ -77,8 +77,8 @@ def extract_blocks():
                         "changes.")
     parser.add_argument("-n", "--n_blocks", type=int, default=6,
                         help="Number of blocks, for '--find_centers'. Default: 6")
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation, for '--find_centers'. Either 'sgn' or 'ihc'. Default: sgn")
+    parser.add_argument("--cell_type", type=str, default="sgn", choices=["sgn", "ihc"],
+                        help="Cell type of segmentation, for '--find_centers'. Default: sgn")
     parser.add_argument("--component_list", type=int, nargs="+", default=[1],
                         help="List of connected components, for '--find_centers'. Default: 1")
     parser.add_argument("--include_gap", action="store_true",
@@ -186,10 +186,11 @@ def json_extract_blocks():
     parser.add_argument("-d", "--dataset_name", type=str, required=True, help="Dataset name.")
     parser.add_argument("-i", "--image_channel", type=str, required=True, nargs="+",
                         help="Input image channel(s), e.g. PV, SGN_v2.")
-    parser.add_argument("-s", "--segmentation_channel", type=str, default="",
-                        help="Segmentation channel as reference for finding equidistant centers.")
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
+    parser.add_argument("-s", "--segmentation_channel", type=str, required=True,
+                        help="Segmentation channel for finding the crop centers with "
+                        "flamingo_tools.extract_blocks --find_centers.")
+    parser.add_argument("--cell_type", type=str, default="sgn", choices=["sgn", "ihc"],
+                        help="Cell type of segmentation. Default: sgn")
     parser.add_argument("-c", "--component_list", type=int, nargs="+", default=[1],
                         help="List of connected components.")
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
@@ -197,8 +198,8 @@ def json_extract_blocks():
     parser.add_argument("--include_gap", action="store_true",
                         help="Include the distance between different components for calculating the run length. "
                         "Use the same setting as for the tonotopic mapping of the cochlea.")
-    parser.add_argument("--roi_halo", type=int, nargs="+", default=[256, 256, 64],
-                        help="ROI halo around center coordinate [pixel]. "
+    parser.add_argument("--roi_halo", type=int, nargs=3, default=[256, 256, 64], metavar=("X", "Y", "Z"),
+                        help="ROI halo around each crop center in voxels. "
                         "Cropped mask has twice the size. Default: 256 256 64")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
