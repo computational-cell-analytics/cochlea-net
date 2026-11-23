@@ -134,8 +134,8 @@ def load_model_from_path(
 
     Args:
         model_path: The path of the checkpoint folder or of the model file.
-        device: The device of the model. If None, a model that is created with its constructor stays on the CPU,
-            and any other pickled model keeps the device it was saved on.
+        device: The device of the model. If None, a model file loads on the CPU, so that a file saved on a GPU
+            also loads on a node without CUDA.
 
     Returns:
         The model.
@@ -144,7 +144,7 @@ def load_model_from_path(
         warnings.simplefilter("ignore")
         if os.path.isdir(model_path):
             return load_model(model_path, device=device)
-        obj = torch.load(model_path, weights_only=False, map_location=device)
+        obj = torch.load(model_path, weights_only=False, map_location="cpu" if device is None else device)
     if isinstance(obj, dict) and "model_state" in obj:
         model = _model_from_checkpoint(obj)
     elif isinstance(obj, torch.nn.Module) and hasattr(obj, "init_kwargs"):
