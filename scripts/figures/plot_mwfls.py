@@ -11,7 +11,7 @@ from matplotlib.ticker import MaxNLocator
 
 from flamingo_tools.analysis.central_path_utils import mean_by_offset
 from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.postprocessing.label_components import label_components_ihc
+from flamingo_tools.postprocessing.label_components import label_components_ihc, refine_ihc_row
 from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
 from flamingo_tools.s3_utils import create_s3_target
 
@@ -121,12 +121,38 @@ def print_cohort_averages(tables: dict):
         print(f"  Synapses per IHC, pooled over {len(pooled)} IHCs: {pooled.mean():.2f}")
 
 
+def row_ihcs(table: pd.DataFrame, params: dict) -> np.ndarray:
+    """Return the label ids of the IHC row that the label_components parameters of a processing file select.
+
+    The components are labeled in memory as flamingo_tools.label_components does it, with the refined row
+    if the parameters have 'refine_row'.
+
+    Args:
+        table: IHC segmentation table.
+        params: One entry of load_processing_params(<cochlea>_IHC.json, "label_components").
+
+    Returns:
+        The label ids of the instances in the components of 'component_list'.
+    """
+    # The defaults of label_components_single. refine_ihc_row has other defaults.
+    label_params = {"min_size": 1000, "min_component_length": 50, "max_edge_distance": 30}
+    label_params.update({key: params[key] for key in label_params if key in params})
+    labeled = label_components_ihc(table, **label_params)
+    if params.get("refine_row"):
+        path_components = params.get("component_list_path") or params["component_list"]
+        max_path_deviation = params.get("max_path_deviation")
+        labeled, _, _ = refine_ihc_row(
+            labeled, path_components, max_path_deviation=15.0 if max_path_deviation is None else max_path_deviation,
+            merge_components=params.get("merge_components", False), **label_params,
+        )
+    return labeled["label_id"][labeled["component_labels"].isin(params["component_list"])].values
+
+
 def load_colocalization(max_dist: float = 2.0, read_table=None) -> dict:
     """Match the co-stain synapses of each COLOCALIZATION cochlea against its CtBP2 synapses.
 
-    The IHC_v11 tables of these cochleae have no component labels. This function labels the
-    components in memory with the parameters of the processing file. Only the synapses of the IHCs in
-    its 'component_list' count.
+    The IHC components are labeled in memory with the parameters of the processing file, see row_ihcs.
+    Only the synapses of the IHCs in its 'component_list' count.
 
     Args:
         max_dist: Maximum distance of a match in micrometers.
@@ -144,10 +170,7 @@ def load_colocalization(max_dist: float = 2.0, read_table=None) -> dict:
     colocalization = {}
     for cochlea, stain in COLOCALIZATION.items():
         params, = load_processing_params(os.path.join(PROCESSING_DIR, f"{cochlea}_IHC.json"), "label_components")
-        label_params = {key: params[key] for key in ("min_size", "min_component_length", "max_edge_distance")
-                        if key in params}
-        ihc = label_components_ihc(read_table(cochlea, "IHC_v11"), **label_params)
-        valid_ihcs = ihc["label_id"][ihc["component_labels"].isin(params["component_list"])].values
+        valid_ihcs = row_ihcs(read_table(cochlea, "IHC_v11"), params)
         reference = read_table(cochlea, "synapse_v3_ihc_v11")
         test = read_table(cochlea, f"{stain}_synapse_v3_ihc_v11")
         scores, ihc_counts = evaluate_colocalization(reference, test, max_dist, valid_ihcs=valid_ihcs)

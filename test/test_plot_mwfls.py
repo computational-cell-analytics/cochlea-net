@@ -43,6 +43,23 @@ class TestColocalizationTable(unittest.TestCase):
         np.testing.assert_allclose(table["colocalized_share"].iloc[:2], [0.5, 3 / 7])
         self.assertTrue(np.isnan(table.loc["Co-localized pairs", "colocalized_share"]))
 
+    def test_row_ihcs(self):
+        # 100 IHC positions, 9 um apart on an arc with a radius of 300 um. Cells 41-47 are missing, so the
+        # labeling gives component 1 = labels 48-100 and component 2 = labels 1-40. Label 21 has 2000 pixels:
+        # the label_components default min_size of 1000 keeps it, the refine_ihc_row default of 10000 would not.
+        present = np.array([i for i in range(100) if not 40 <= i <= 46])
+        angles = present * 9.0 / 300.0
+        table = pd.DataFrame({
+            "label_id": present + 1,
+            "anchor_x": 500 + 300 * np.cos(angles), "anchor_y": 500 + 300 * np.sin(angles), "anchor_z": 100.0,
+            "n_pixels": np.where(present == 20, 2000, 20000),
+        })
+        plain = {"component_list": [1], "min_component_length": 5, "max_edge_distance": 30}
+        np.testing.assert_array_equal(np.sort(self.plot_mwfls.row_ihcs(table, plain)), np.arange(48, 101))
+
+        refined = {**plain, "component_list_path": [2, 1], "refine_row": True, "merge_components": True}
+        np.testing.assert_array_equal(np.sort(self.plot_mwfls.row_ihcs(table, refined)), present + 1)
+
 
 if __name__ == "__main__":
     unittest.main()
