@@ -9,7 +9,7 @@ through the console scripts of the package; see Usage below.
 | `processing` | Parameters for component labeling, tonotopic mapping and object measures |
 | `block_extraction` | Parameters for the extraction of blocks from a 3D volume |
 | `training_crops` | Crop centers for the creation of training data, written by `scripts/training/` |
-| `export_lower_resolution` | Positions and channels for the export of overview images |
+| `export_lower_resolution` | Positions and channels for the export of overview images, read by `scripts/export_data/export_by_position.py` |
 | `model_accuracy` | Segmentation and detection accuracy per model, read by the figure scripts |
 
 The Slurm jobs for segmentation, detection, and the transfer of data into MoBIE and to S3 come

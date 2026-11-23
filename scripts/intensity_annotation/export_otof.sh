@@ -1,5 +1,6 @@
-python /home/pape/Work/my_projects/flamingo-tools/scripts/export_data/export_lower_resolution.py \
+flamingo_tools.export_data lower_resolution \
     --cochlea M_AMD_OTOF27_L \
+    --s3 \
     --scale 3 \
     --output_folder otof27l-editing \
     --channels Otof IHC_v11 \

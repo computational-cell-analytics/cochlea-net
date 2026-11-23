@@ -63,19 +63,19 @@ class TestRunExports(unittest.TestCase):
             calls["synapse"] = kwargs
 
         def fake_frequency(**kwargs):
-            calls.setdefault("frequency", []).append(kwargs)
+            calls["frequency"] = kwargs
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, fake_grid),
-            "synapse": (self.mod._run_synapse_export, fake_synapse),
-            "frequency": (self.mod._run_frequency_export, fake_frequency),
+            "lower_resolution": fake_grid,
+            "synapse": fake_synapse,
+            "frequency": fake_frequency,
         }):
             resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
                         "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
             self.mod.run_exports(
                 "cochlea_x", resolved, ["lower_resolution", "synapse", "frequency"],
                 scale=[0, 1], output_folder="/tmp/out", roi_halo=None, axis=2,
-                json_info={"synapse": {"synapse_name": "syn_v1"}, "frequency": {"source_name": "SGN_v2"}},
+                json_info={"synapse": {"synapse_name": "syn_v1"}, "frequency": {"segmentation": "SGN_v2"}},
                 voxel_size=[1.887779, 1.887779, 3.0],
             )
 
@@ -86,20 +86,18 @@ class TestRunExports(unittest.TestCase):
         self.assertEqual(calls["lower_resolution"]["axis"], 2)
         self.assertIsNone(calls["lower_resolution"]["roi_halo"])
 
-        self.assertEqual(calls["synapse"]["scales"], [0, 1])
+        self.assertEqual(calls["synapse"]["scale"], [0, 1])
         self.assertEqual(calls["synapse"]["synapse_name"], "syn_v1")
         self.assertEqual(calls["synapse"]["suffix"], "apex")
 
-        # export_frequency_mapping only accepts a single scale, so it is invoked once per value.
-        self.assertEqual(len(calls["frequency"]), 2)
-        self.assertEqual([c["scale"] for c in calls["frequency"]], [0, 1])
-        self.assertTrue(all(c["source_name"] == "SGN_v2" for c in calls["frequency"]))
+        self.assertEqual(calls["frequency"]["scale"], [0, 1])
+        self.assertEqual(calls["frequency"]["segmentation"], "SGN_v2")
 
-        # voxel_size reaches every adapter shape.
+        # The crop centers come from the tables on S3, so every export reads its data from S3.
         voxel_size = [1.887779, 1.887779, 3.0]
-        self.assertEqual(calls["lower_resolution"]["voxel_size"], voxel_size)
-        self.assertEqual(calls["synapse"]["voxel_size"], voxel_size)
-        self.assertTrue(all(c["voxel_size"] == voxel_size for c in calls["frequency"]))
+        for key in ("lower_resolution", "synapse", "frequency"):
+            self.assertEqual(calls[key]["voxel_size"], voxel_size)
+            self.assertTrue(calls[key]["s3"])
 
     def test_json_info_voxel_size_overrides_shared_value(self):
         calls = []
@@ -108,8 +106,8 @@ class TestRunExports(unittest.TestCase):
             calls.append(kwargs)
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, fake_grid),
-            "marker": (self.mod._run_grid_export, fake_grid),
+            "lower_resolution": fake_grid,
+            "marker": fake_grid,
         }):
             resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
                         "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
@@ -130,7 +128,7 @@ class TestRunExports(unittest.TestCase):
             calls.append(kwargs)
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, fake_grid),
+            "lower_resolution": fake_grid,
         }):
             resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
                         "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
@@ -148,7 +146,7 @@ class TestRunExports(unittest.TestCase):
             recorded.append(kwargs)
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "marker": (self.mod._run_grid_export, fake_grid),
+            "marker": fake_grid,
         }):
             resolved = [{"column": "length_fraction", "label": "mid", "value": 0.5,
                         "label_id": 2, "crop_center": [4.0, 5.0, 6.0]}]
@@ -168,7 +166,7 @@ class TestRunExports(unittest.TestCase):
             calls.append(kwargs)
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, fake_grid),
+            "lower_resolution": fake_grid,
         }):
             resolved = [{"column": "length_fraction", "label": "apex", "value": 0.15,
                         "label_id": 1, "crop_center": [1.0, 2.0, 3.0]}]
@@ -346,8 +344,8 @@ class TestRunGroups(unittest.TestCase):
             calls.append(call_kwargs)
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, fake_export),
-            "synapse": (self.mod._run_synapse_export, fake_export),
+            "lower_resolution": fake_export,
+            "synapse": fake_export,
         }), \
                 mock.patch.object(self.mod, "source_types", return_value=SOURCES), \
                 mock.patch.object(self.mod, "resolve_reference_positions", self._fake_positions):
@@ -373,8 +371,7 @@ class TestRunGroups(unittest.TestCase):
 
         self.assertEqual([call.get("channels") for call in sgn_calls], [["PV"], ["SGN_v2"]])
         self.assertEqual(ihc_calls[-1]["synapse_name"], "synapse_v3_ihc_v4c")
-        # the synapse export takes `scales` instead of `scale`.
-        self.assertEqual(ihc_calls[-1]["scales"], [2])
+        self.assertEqual(ihc_calls[-1]["scale"], [2])
 
     def test_components_argument_overrides_the_group(self):
         groups = {"sgn": {**self.mod.EXPORT_GROUPS["sgn"], "components": [3]}}
@@ -422,8 +419,8 @@ class TestRunGroups(unittest.TestCase):
             view_calls.append((folder, resolved, kwargs))
 
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, fake_export),
-            "synapse": (self.mod._run_synapse_export, fake_export),
+            "lower_resolution": fake_export,
+            "synapse": fake_export,
         }), \
                 mock.patch.object(self.mod, "source_types", return_value=SOURCES), \
                 mock.patch.object(self.mod, "resolve_reference_positions", self._fake_positions), \
@@ -458,7 +455,7 @@ class TestRunGroups(unittest.TestCase):
                 raise AssertionError("view_only must not read anything from S3.")
 
             with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-                "lower_resolution": (self.mod._run_grid_export, lambda **kwargs: calls.append(kwargs)),
+                "lower_resolution": lambda **kwargs: calls.append(kwargs),
             }), \
                     mock.patch.object(self.mod, "source_types", no_s3), \
                     mock.patch.object(self.mod, "resolve_reference_positions", no_s3), \
@@ -496,7 +493,7 @@ class TestRunGroups(unittest.TestCase):
 
         groups = {"sgn": {**self.mod.EXPORT_GROUPS["sgn"], "axis": 2, "voxel_size": [0.76, 0.76, 3.0]}}
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, lambda **kwargs: None),
+            "lower_resolution": lambda **kwargs: None,
         }), \
                 mock.patch.object(self.mod, "source_types", return_value=SOURCES), \
                 mock.patch.object(self.mod, "resolve_reference_positions", self._fake_positions), \
@@ -667,8 +664,8 @@ class TestExportPrinting(unittest.TestCase):
     def test_run_exports_names_every_source(self):
         stdout = io.StringIO()
         with mock.patch.dict(self.mod.EXPORT_DISPATCH, {
-            "lower_resolution": (self.mod._run_grid_export, lambda **kwargs: None),
-            "synapse": (self.mod._run_synapse_export, lambda **kwargs: None),
+            "lower_resolution": lambda **kwargs: None,
+            "synapse": lambda **kwargs: None,
         }), redirect_stdout(stdout):
             self.mod.run_exports(
                 "cochlea_x", self.resolved, [], scale=[4], output_folder="/tmp/out", axis=0,

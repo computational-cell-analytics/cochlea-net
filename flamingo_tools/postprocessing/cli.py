@@ -7,6 +7,7 @@ import pandas as pd
 
 from .label_components import label_components_json_wrapper, label_components_single
 from .cochlea_mapping import CENTRAL_PATH_METHODS, equidistant_centers_json_wrapper, tonotopic_mapping_json_wrapper
+from flamingo_tools.cli_utils import check_mode_options
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
 from flamingo_tools.extract_block_util import extract_block_json_wrapper
@@ -26,16 +27,6 @@ _EXTRACT = "--json_info without --find_centers"
 _CENTERS = "--json_info --find_centers"
 _CENTERS_ONLY = "--json_info --find_centers without --output"
 _CENTER_OPTIONS = ("n_blocks", "cell_type", "component_list", "include_gap", "path_method")
-
-
-def _check_mode_options(parser, args, mode, applies_to):
-    """Reject an option that the selected mode does not use.
-
-    `applies_to` maps the destination of an option to the modes that use it.
-    """
-    for dest, modes in applies_to.items():
-        if mode not in modes and getattr(args, dest) != parser.get_default(dest):
-            parser.error(f"--{dest} does not apply to {mode}.")
 
 
 def extract_blocks():
@@ -121,7 +112,7 @@ def extract_blocks():
     else:
         mode = _CENTERS
     extraction_modes = {_INPUT, _EXTRACT, _CENTERS}
-    _check_mode_options(parser, args, mode, {
+    check_mode_options(parser, args, mode, {
         **dict.fromkeys(["coords", "roi_halo", "dataset_name", "image_channel"], {_INPUT}),
         "mobie_dir": {_EXTRACT, _CENTERS, _CENTERS_ONLY},
         **dict.fromkeys(["find_centers", *_CENTER_OPTIONS], {_CENTERS, _CENTERS_ONLY}),

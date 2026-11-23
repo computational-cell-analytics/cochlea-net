@@ -368,5 +368,206 @@ class TestExtractBlocksEndToEnd(unittest.TestCase):
         self.assertEqual(crop.shape, (4, 8, 8))
 
 
+class TestExportDataArguments(unittest.TestCase):
+    """'flamingo_tools.export_data' forwards the options of a command and an input mode to its export function."""
+
+    common = dict(
+        output_folder="out", scale=[2, 3], crop_center=None, roi_halo=None, axis=None, suffix=None,
+        voxel_size=[0.38, 0.38, 0.38], force=False,
+        s3=False, s3_credentials=None, s3_bucket_name=None, s3_service_endpoint=None,
+    )
+    path = dict(input_path="in.zarr", input_key="s0", name=None)
+    path_argv = ["-i", "in.zarr", "-o", "out", "-s", "2", "3"]
+    functions = [
+        f"export_{name}{mode}" for name in ("lower_resolution", "marker", "subtypes", "synapses", "frequency")
+        for mode in ("", "_cochlea")
+    ]
+
+    def setUp(self):
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
+
+        # Without '--s3', the command requires the cochlea folder in the MoBIE project.
+        self.mobie_dir = os.path.join(self.folder, "mobie")
+        os.makedirs(os.path.join(self.mobie_dir, "M_X"))
+        self.cochlea = dict(cochlea="M_X", mobie_dir=self.mobie_dir)
+        self.cochlea_argv = ["-c", "M_X", "--mobie_dir", self.mobie_dir, "-o", "out", "-s", "2", "3"]
+
+    def call(self, argv):
+        """Run the command with all export functions mocked, and return the mocks that were called."""
+        from flamingo_tools.export_data import cli
+
+        mocks = {function: mock.Mock() for function in self.functions}
+        with mock.patch.object(sys, "argv", ["flamingo_tools.export_data"] + argv), \
+                mock.patch.multiple(cli, **mocks):
+            cli.export_data()
+        return {function: mocked for function, mocked in mocks.items() if mocked.called}
+
+    def check(self, argv, function, expected):
+        called = self.call(argv)
+        self.assertEqual(list(called), [function])
+        called[function].assert_called_once_with(**expected)
+
+    def check_rejected(self, argv):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            self.call(argv)
+
+    def table(self, name, **columns):
+        import pandas as pd
+
+        path = os.path.join(self.folder, name)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        pd.DataFrame(columns).to_csv(path, sep="\t", index=False)
+        return path
+
+    def test_lower_resolution(self):
+        options = dict(
+            filter_by_components=None, filter_sgn_components=[1], filter_ihc_components=[1],
+            filter_dilation_iterations=8, max_intensity=None, labels=None, binarize=False, ome_zarr=False,
+        )
+        self.check(["lower_resolution"] + self.path_argv, "export_lower_resolution", dict(
+            table=None, sgn_table=None, ihc_table=None, **self.path, **options, **self.common,
+        ))
+
+        argv = ["lower_resolution"] + self.cochlea_argv + [
+            "--s3", "--channels", "Otof", "IHC_v11", "--filter_cochlea_channels", "IHC_v11",
+            "--filter_dilation_iterations", "3", "--crop_center", "1", "2", "3", "--axis", "2", "--suffix", "apex",
+        ]
+        self.check(argv, "export_lower_resolution_cochlea", dict(
+            channels=["Otof", "IHC_v11"], filter_cochlea_channels=["IHC_v11"], **self.cochlea,
+            **{**options, "filter_dilation_iterations": 3},
+            **{**self.common, "s3": True, "crop_center": [1.0, 2.0, 3.0], "axis": 2, "suffix": "apex"},
+        ))
+
+    def test_lower_resolution_reads_the_tables(self):
+        table = self.table("seg.tsv", label_id=[1, 2], component_labels=[1, 2])
+        sgn_table = self.table("sgn.tsv", label_id=[3])
+        called = self.call(["lower_resolution"] + self.path_argv + [
+            "--table", table, "--filter_by_components", "1", "--sgn_table", sgn_table, "--max_intensity", "1400",
+            "--labels",
+        ])
+        kwargs = called["export_lower_resolution"].call_args.kwargs
+        self.assertEqual(kwargs["table"].label_id.tolist(), [1, 2])
+        self.assertEqual(kwargs["sgn_table"].label_id.tolist(), [3])
+        self.assertIsNone(kwargs["ihc_table"])
+        self.assertEqual(kwargs["filter_by_components"], [1])
+        self.assertEqual(kwargs["max_intensity"], 1400.0)
+        self.assertTrue(kwargs["labels"])
+
+    def test_marker(self):
+        table = self.table("edited.tsv", label_id=[1], marker_labels=[1])
+        called = self.call(["marker"] + self.path_argv + ["--table", table])
+        self.assertEqual(called["export_marker"].call_args.kwargs["table"].marker_labels.tolist(), [1])
+
+        self.check(["marker"] + self.cochlea_argv + ["--channels", "IHC_v11", "--table", table],
+                   "export_marker_cochlea", dict(channels=["IHC_v11"], table_path=table, **self.cochlea, **self.common))
+
+    def test_subtypes(self):
+        table = self.table("subtypes.tsv", label_id=[1], marker_CR=[1])
+        called = self.call(["subtypes"] + self.path_argv + ["--table", table, "--stains", "CR", "--merge_masks"])
+        kwargs = called["export_subtypes"].call_args.kwargs
+        self.assertEqual((kwargs["stains"], kwargs["merge_masks"]), (["CR"], True))
+
+        self.check(["subtypes"] + self.cochlea_argv, "export_subtypes_cochlea", dict(
+            segmentation=None, stains=None, merge_masks=False, **self.cochlea, **self.common,
+        ))
+
+    def test_synapses(self):
+        options = dict(max_dist=3.0, radius=3, id_offset=0, filter_ihc_components=[1], use_syn_ids=False,
+                       points=False)
+        # A MoBIE default table names the export after its source.
+        synapse_table = self.table(os.path.join("M_X", "tables", "synapse_v3_ihc_v11", "default.tsv"), spot_id=[1])
+        called = self.call(["synapses"] + self.path_argv + ["--synapse_table", synapse_table, "--points"])
+        kwargs = called["export_synapses"].call_args.kwargs
+        self.assertEqual(kwargs["name"], "synapse_v3_ihc_v11")
+        self.assertIsNone(kwargs["ihc_table"])
+        self.assertTrue(kwargs["points"])
+
+        other_table = self.table("spots.tsv", spot_id=[1])
+        called = self.call(["synapses"] + self.path_argv + ["--synapse_table", other_table])
+        self.assertEqual(called["export_synapses"].call_args.kwargs["name"], "spots")
+
+        self.check(["synapses"] + self.cochlea_argv + ["--id_offset", "1"], "export_synapses_cochlea", dict(
+            synapse_name="synapse_v3_ihc_v11", reference_ihcs="IHC_v11", **self.cochlea,
+            **{**options, "id_offset": 1}, **self.common,
+        ))
+
+    def test_frequency(self):
+        table = self.table("sgn.tsv", label_id=[1])
+        called = self.call(["frequency"] + self.path_argv + ["--table", table, "--colormap", "viridis"])
+        self.assertEqual(called["export_frequency"].call_args.kwargs["colormap"], "viridis")
+
+        self.check(["frequency"] + self.cochlea_argv + ["--segmentation", "SGN_v2"], "export_frequency_cochlea", dict(
+            segmentation="SGN_v2", components=[1], colormap=None, **self.cochlea, **self.common,
+        ))
+
+    def test_rejected_options(self):
+        table = self.table("t.tsv", label_id=[1])
+        for argv in (
+            [],
+            ["lower_resolution", "-o", "out", "-s", "2"],
+            ["lower_resolution"] + self.path_argv + ["-c", "M_X"],
+            # options of the other input mode
+            ["lower_resolution"] + self.path_argv + ["--channels", "PV"],
+            ["lower_resolution"] + self.path_argv + ["--mobie_dir", "mobie"],
+            ["lower_resolution"] + self.cochlea_argv + ["-k", "s1"],
+            ["lower_resolution"] + self.cochlea_argv + ["--sgn_table", table],
+            ["synapses"] + self.cochlea_argv + ["--synapse_table", table],
+            ["frequency"] + self.path_argv + ["--table", table, "--segmentation", "SGN_v2"],
+            # options that the mode requires
+            ["marker"] + self.path_argv,
+            ["marker"] + self.cochlea_argv,
+            ["subtypes"] + self.path_argv + ["--table", table],
+            ["synapses"] + self.path_argv,
+            ["frequency"] + self.cochlea_argv,
+            # options that require each other
+            ["lower_resolution"] + self.path_argv + ["--filter_by_components", "1"],
+            ["lower_resolution"] + self.path_argv + ["--table", table],
+            ["lower_resolution"] + self.path_argv + ["--filter_dilation_iterations", "3"],
+            ["synapses"] + self.path_argv + ["--synapse_table", table, "--filter_ihc_components", "2"],
+            ["lower_resolution"] + self.path_argv + ["--crop_center", "1", "2", "3"],
+            ["lower_resolution"] + self.path_argv + ["--axis", "2"],
+            ["lower_resolution"] + self.path_argv + ["--roi_halo", "4", "4", "4"],
+            ["lower_resolution"] + self.path_argv + ["--suffix", "apex"],
+            # invalid values
+            ["lower_resolution", "-i", "in.zarr", "-o", "out", "-s", "2", "-1"],
+            ["lower_resolution"] + self.path_argv + ["-v", "0.38", "3.0"],
+            ["subtypes"] + self.path_argv + ["--table", table, "--stains", "CR", "Ntng1", "Calb1"],
+            # a cochlea that is not in the MoBIE project, without '--s3'
+            ["lower_resolution", "-c", "M_Y", "--mobie_dir", self.mobie_dir, "-o", "out", "-s", "2"],
+        ):
+            with self.subTest(argv=argv):
+                self.check_rejected(argv)
+
+
+class TestExportDataEndToEnd(unittest.TestCase):
+
+    def test_lower_resolution(self):
+        import numpy as np
+        import tifffile
+        import zarr
+
+        executable = shutil.which("flamingo_tools.export_data")
+        self.assertIsNotNone(executable, "The console script flamingo_tools.export_data is not installed.")
+
+        with TemporaryDirectory() as folder:
+            input_path = os.path.join(folder, "PV.zarr")
+            data = np.arange(8 * 8 * 8, dtype="uint16").reshape(8, 8, 8)
+            zarr.open(input_path, mode="w").create_array("s0", data=data)
+
+            output_folder = os.path.join(folder, "out")
+            cmd = [executable, "lower_resolution", "-i", input_path, "-o", output_folder, "-s", "1",
+                   "--max_intensity", "300"]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            self.assertEqual(
+                result.returncode, 0, msg=f"CLI failed.\nstdout:\n{result.stdout}\nstderr:\n{result.stderr}",
+            )
+            exported = tifffile.imread(os.path.join(output_folder, "scale1", "PV.tif"))
+
+        self.assertEqual(exported.shape, (4, 4, 4))
+        self.assertEqual(exported.max(), 300)
+
+
 if __name__ == "__main__":
     unittest.main()

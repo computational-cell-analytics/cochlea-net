@@ -12,7 +12,7 @@ import zarr
 from skimage.transform import rescale
 
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.s3_utils import MOBIE_FOLDER, default_image_path
 from flamingo_tools.analysis.density_utils import hull_to_mask
 
 
@@ -361,10 +361,7 @@ def extract_block_json_wrapper(
             entry_kwargs = {**kwargs, **params}
 
             for image_channel in image_channels:
-                if s3:
-                    input_path = f"{cochlea}/images/ome-zarr/{image_channel}.ome.zarr"
-                else:
-                    input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+                input_path = default_image_path(cochlea, image_channel, s3=s3, mobie_dir=mobie_dir)
 
                 for coords in params["crop_centers"]:
                     extract_block_single(

@@ -644,6 +644,16 @@ The other columns of the table, for example `matched` and `Homer1_snr`, become p
 An existing crop is kept unless you give `-f`.
 A crop at the border of the volume is clipped to the volume.
 
+## Export of overview images
+
+`flamingo_tools.export_data` exports the data and the results of the analysis at a lower resolution, for example as overview images.
+For example, export the SGN segmentation with the marker labels of the intensity annotation, and the frequency of each SGN:
+```bash
+flamingo_tools.export_data marker -c G_EK_000049_R --channels SGN_v2 -o <output_folder> -s 3 --s3
+flamingo_tools.export_data frequency -c G_EK_000049_R --segmentation SGN_v2 -o <output_folder> -s 3 --s3
+```
+See the [export documentation](export_data.md) for all exports and more examples.
+
 ## Upload the tables to the S3 bucket
 
 Copy the tables of the analysis to the S3 bucket with `rclone`.
