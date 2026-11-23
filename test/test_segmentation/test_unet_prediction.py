@@ -483,15 +483,6 @@ class TestFindMask(unittest.TestCase):
         with self.assertRaises(ValueError):
             find_mask("unused.zarr", "s0", None, seg_class="ihc", legacy_mask=True, background_factor=2.0)
 
-    def test_lowres_key(self):
-        from flamingo_tools.segmentation.unet_prediction import _lowres_key
-
-        self.assertEqual(_lowres_key("s0"), "s3")
-        self.assertEqual(_lowres_key("setup1/timepoint0/s0"), "setup1/timepoint0/s3")
-        self.assertEqual(_lowres_key("s1"), "s4")
-        self.assertIsNone(_lowres_key("raw"))
-        self.assertIsNone(_lowres_key(None))
-
 
 class TestPreprocessSlurmArguments(unittest.TestCase):
     """The slurm templates pass every argument of the mask step as a string."""

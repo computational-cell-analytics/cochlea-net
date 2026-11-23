@@ -88,6 +88,28 @@ def default_table_path(
     return os.path.join(mobie_dir, cochlea, "tables", seg_channel, "default.tsv")
 
 
+def default_image_path(
+    cochlea: str,
+    channel: str,
+    s3: bool = False,
+    mobie_dir: str = MOBIE_FOLDER,
+) -> str:
+    """Build the path of the OME-Zarr image data of one channel of a cochlea.
+
+    Args:
+        cochlea: Name of the cochlea, the "dataset_name" of a parameter file.
+        channel: Name of the image or segmentation channel.
+        s3: Build a path relative to the S3 bucket instead of a local one.
+        mobie_dir: Local MoBIE directory. Ignored when s3 is set.
+
+    Returns:
+        Path of the OME-Zarr container.
+    """
+    if s3:
+        return f"{cochlea}/images/ome-zarr/{channel}.ome.zarr"
+    return os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{channel}.ome.zarr")
+
+
 def split_table_path(table_path: str) -> Optional[Tuple[str, str]]:
     """Get the cochlea and the segmentation channel from a default table path.
 
