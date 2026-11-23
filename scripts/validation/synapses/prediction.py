@@ -5,8 +5,8 @@ parameter that the production entry point (`flamingo_tools.segmentation.synapse_
 marker_detection`, driven by the `flamingo_tools.run_detection` CLI) fixes is
 mirrored here:
 
-  * peak detection at threshold 0.5 and `min_distance` 2, the values of every whole-cochlea
-    caller,
+  * peak detection at the threshold and `min_distance` of every whole-cochlea caller, from
+    `flamingo_tools.model_utils.get_default_detection_settings`,
   * the production prediction block shape / halo,
   * `output_channels` taken from the model rather than assumed to be 1,
   * IHC matching at the production `max_distance`.
@@ -27,6 +27,7 @@ import numpy as np
 import pandas as pd
 
 from elf.io import open_file
+from flamingo_tools.model_utils import get_default_detection_settings
 from flamingo_tools.segmentation.unet_prediction import prediction_impl, run_unet_prediction
 from flamingo_tools.segmentation.synapse_detection import (
     synapse_detection_from_prediction,
@@ -48,12 +49,12 @@ _TEST_IMAGE_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v
 _TEST_REF_ROOT = os.path.join(COCHLEA_DIR, "training_data/synapses/test_data/v5/labels")
 VOXEL_SIZE = (0.38, 0.38, 0.38)  # µm per voxel in x, y, z order.
 
-# Production values, kept in one place so a pipeline change is easy to mirror.
-PRODUCTION_THRESHOLD = 0.5  # detect_synapses template of slurm-workflows and the marker_detection default.
-# synapse_detection_from_prediction default. Two synapses closer than this merge into one peak,
-# which is most of the missed annotations; select another value with
-# flamingo_tools/synapse_detection/gridsearch.py on the validation crops, not on these.
-PRODUCTION_MIN_DISTANCE = 2
+# Production values, kept in one place so a pipeline change is easy to mirror. The detect_synapses
+# template of slurm-workflows passes the same threshold. Every synapses.json entry written before
+# 2026-10-28 used min_distance 2. Select new values with flamingo_tools/synapse_detection/gridsearch.py
+# on the validation crops, not on these.
+PRODUCTION_THRESHOLD = get_default_detection_settings("Synapses")["threshold"]
+PRODUCTION_MIN_DISTANCE = get_default_detection_settings("Synapses")["min_distance"]
 PRODUCTION_MAX_DISTANCE = 3.0  # marker_detection() default; callers have also used 5, 8 and 20.
 
 # Predictions produced with the production settings live under their own root. The predictions
