@@ -175,5 +175,162 @@ class TestSegmentationArguments(unittest.TestCase):
                    model_type="IHC")
 
 
+class TestExtractBlocksArguments(unittest.TestCase):
+    """'flamingo_tools.extract_blocks' forwards the options of its mode to the block and center functions."""
+
+    s3 = {"s3": False, "s3_credentials": None, "s3_bucket_name": None, "s3_service_endpoint": None}
+    block = {"input_key": "s0", "output_key": None, "voxel_size": [0.38, 0.38, 0.38], "point_tables": None,
+             "force": False}
+    centers = {"n_blocks": 6, "cell_type": "sgn", "component_list": [1], "include_gap": False, "path_method": None}
+
+    def call(self, argv):
+        """Run the command with mocked functions and return the parent mock, which records the call order."""
+        from flamingo_tools.postprocessing import cli
+
+        parent = mock.Mock()
+        with mock.patch.object(sys, "argv", ["extract_blocks"] + argv), \
+                mock.patch.object(cli, "extract_block_json_wrapper", parent.extract), \
+                mock.patch.object(cli, "equidistant_centers_json_wrapper", parent.find_centers):
+            cli.extract_blocks()
+        return parent
+
+    def check_rejected(self, argv):
+        with mock.patch("sys.stderr"), self.assertRaises(SystemExit):
+            self.call(argv)
+
+    def test_one_block(self):
+        parent = self.call(["-i", "in.zarr", "-c", "1", "2", "3.5", "-o", "out", "--image_channel", "PV"])
+        self.assertEqual(parent.mock_calls, [mock.call.extract(
+            output_path="out", input_path="in.zarr", coords=[1.0, 2.0, 3.5], roi_halo=[128, 128, 64],
+            dataset_name=None, image_channel="PV", **self.block, **self.s3,
+        )])
+
+    def test_json_modes(self):
+        from flamingo_tools.s3_utils import MOBIE_FOLDER
+
+        extract = mock.call.extract(output_path="out", json_file="f.json", mobie_dir=MOBIE_FOLDER,
+                                    **self.block, **self.s3)
+        find_centers = mock.call.find_centers(json_file="f.json", mobie_dir=MOBIE_FOLDER, overrides={},
+                                              **self.centers, **self.s3)
+        self.assertEqual(self.call(["--json_info", "f.json", "-o", "out"]).mock_calls, [extract])
+        self.assertEqual(self.call(["--json_info", "f.json", "--find_centers"]).mock_calls, [find_centers])
+        self.assertEqual(self.call(["--json_info", "f.json", "--find_centers", "-o", "out"]).mock_calls,
+                         [find_centers, extract])
+
+    def test_only_typed_center_options_override_the_file(self):
+        parent = self.call(["--json_info", "f.json", "--find_centers", "-n", "4", "--include_gap",
+                            "--cell_type", "sgn"])
+        # '--cell_type sgn' equals the default, so the file keeps its own cell type.
+        self.assertEqual(parent.find_centers.call_args.kwargs["overrides"], {"n_blocks": 4, "include_gap": True})
+        self.assertEqual(parent.find_centers.call_args.kwargs["n_blocks"], 4)
+
+    def test_point_tables(self):
+        import pandas as pd
+
+        with TemporaryDirectory() as tmp:
+            paths = [os.path.join(tmp, "CTBP2_spots.tsv"), os.path.join(tmp, "sub", "CTBP2_spots.tsv")]
+            os.makedirs(os.path.join(tmp, "sub"))
+            for path in paths:
+                pd.DataFrame({"x": [1.0], "y": [2.0], "z": [3.0]}).to_csv(path, sep="\t", index=False)
+
+            parent = self.call(["--json_info", "f.json", "-o", "out", "--point_tables", paths[0]])
+            point_tables = parent.extract.call_args.kwargs["point_tables"]
+            self.assertEqual(list(point_tables), ["CTBP2_spots"])
+            self.assertEqual(point_tables["CTBP2_spots"]["z"].tolist(), [3.0])
+
+            # The table name is the CSV file name, so two tables with one file name are rejected.
+            self.check_rejected(["--json_info", "f.json", "-o", "out", "--point_tables", *paths])
+
+    def test_options_outside_their_mode(self):
+        one_block = ["-i", "in.zarr", "-c", "1", "2", "3", "-o", "out"]
+        for argv in (
+            ["--json_info", "f.json", "-o", "out", "--roi_halo", "4", "4", "2"],
+            ["--json_info", "f.json", "-o", "out", "-c", "1", "2", "3"],
+            ["--json_info", "f.json", "-o", "out", "--image_channel", "PV"],
+            ["--json_info", "f.json", "-o", "out", "-n", "4"],
+            ["--json_info", "f.json", "-o", "out", "--include_gap"],
+            ["--json_info", "f.json", "--find_centers", "-f"],
+            ["--json_info", "f.json", "--find_centers", "--point_tables", "spots.tsv"],
+            one_block + ["--find_centers"],
+            one_block + ["--mobie_dir", "mobie"],
+            one_block + ["--path_method", "graph"],
+        ):
+            with self.subTest(argv=argv):
+                self.check_rejected(argv)
+
+    def test_required_options(self):
+        for argv in (
+            [],
+            ["-i", "in.zarr", "-o", "out"],
+            ["-i", "in.zarr", "-c", "1", "2", "3"],
+            ["-i", "in.zarr", "-c", "1", "2", "-o", "out"],
+            ["--json_info", "f.json"],
+            ["-i", "in.zarr", "--json_info", "f.json", "-c", "1", "2", "3", "-o", "out"],
+        ):
+            with self.subTest(argv=argv):
+                self.check_rejected(argv)
+
+
+class TestExtractBlocksEndToEnd(unittest.TestCase):
+    """'--find_centers -o' finds the crop centers of a block parameter file and extracts a crop at each."""
+
+    def setUp(self):
+        import json
+        import zarr
+
+        sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+        from test_cochlea_mapping import _make_arc_table
+
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
+        self.mobie_dir = os.path.join(self.folder, "mobie")
+
+        # The arc lies around the origin. Shift it, so that the crops lie inside the volume.
+        table, _, _ = _make_arc_table(comp_sizes=(120,))
+        for axis, shift in (("x", 700.0), ("y", 700.0), ("z", 50.0)):
+            for column in (f"anchor_{axis}", f"bb_min_{axis}", f"bb_max_{axis}"):
+                table[column] += shift
+        table_dir = os.path.join(self.mobie_dir, "M_T_L", "tables", "IHC")
+        os.makedirs(table_dir)
+        table.to_csv(os.path.join(table_dir, "default.tsv"), sep="\t", index=False)
+
+        # At 10 micrometer per voxel, the shifted arc lies inside 140 voxels in x and y.
+        image_path = os.path.join(self.mobie_dir, "M_T_L", "images", "ome-zarr", "PV.ome.zarr")
+        zarr.open_group(image_path, mode="w").create_array("s0", shape=(10, 140, 140), dtype="uint16")
+
+        self.json_file = os.path.join(self.folder, "M_T_L.json")
+        with open(self.json_file, "w") as f:
+            json.dump({
+                "dataset_name": "M_T_L", "image_channel": ["PV"], "segmentation_channel": "IHC", "cell_type": "ihc",
+                "component_list": [1], "n_blocks": 4, "roi_halo": [4, 4, 2], "voxel_size": [10, 10, 10],
+            }, f)
+
+    def test_find_centers_and_extract(self):
+        import json
+        from contextlib import redirect_stdout
+        from io import StringIO
+
+        import imageio.v3 as imageio
+        from flamingo_tools.extract_block_util import _crop_file_name
+        from flamingo_tools.postprocessing import cli
+
+        output_dir = os.path.join(self.folder, "crops")
+        argv = ["extract_blocks", "--json_info", self.json_file, "--find_centers", "-o", output_dir,
+                "--mobie_dir", self.mobie_dir]
+        with mock.patch.object(sys, "argv", argv), redirect_stdout(StringIO()):
+            cli.extract_blocks()
+
+        with open(self.json_file) as f:
+            params = json.load(f)
+        self.assertEqual(len(params["crop_centers"]), 4)
+        self.assertEqual(params["path_method"], "graph")
+
+        expected = sorted(_crop_file_name(center, "M_T_L", "PV", ".tif") for center in params["crop_centers"])
+        self.assertEqual(sorted(os.listdir(output_dir)), expected)
+        crop = imageio.imread(os.path.join(output_dir, expected[0]))
+        self.assertEqual(crop.shape, (4, 8, 8))
+
+
 if __name__ == "__main__":
     unittest.main()
