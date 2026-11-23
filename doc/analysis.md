@@ -164,6 +164,8 @@ flamingo_tools.extract_blocks --json_info M_AMD_N162_L.json --find_centers -o <o
 ```
 `--find_centers` finds coordinates at equal distances along the center of Rosenthal's canal (SGN) or along the IHC segmentation.
 It writes the coordinates as `crop_centers` into the JSON file and replaces the crop centers that the file has.
+An entry with crop centers must have an `n_blocks` equal to their number, because other crop centers were set by hand.
+Otherwise the command stops before it changes the file.
 Then the command extracts one block for each crop center and image channel of the JSON file.
 
 #### Step-by-Step

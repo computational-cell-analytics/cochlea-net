@@ -72,7 +72,9 @@ def extract_blocks():
     parser.add_argument("--find_centers", action="store_true",
                         help="Find equidistant crop centers along the central path of the 'segmentation_channel' of "
                         "each entry and write them into the JSON file before the extraction. This replaces the crop "
-                        "centers of every entry, so do not use it for a file with crop centers set by hand.")
+                        "centers of every entry. If the number of crop centers of an entry differs from its "
+                        "'n_blocks', the crop centers were set by hand, and the command stops before the file "
+                        "changes.")
     parser.add_argument("-n", "--n_blocks", type=int, default=6,
                         help="Number of blocks, for '--find_centers'. Default: 6")
     parser.add_argument("--cell_type", type=str, default="sgn",

@@ -196,4 +196,6 @@ flamingo_tools.extract_blocks --json_info <JSON-file> -o <out-dir> --s3
 
 `--find_centers` first recomputes evenly spaced crop centers along the cochlea and writes them
 back into the file. Without `-o`, the command only writes the crop centers. Do not use
-`--find_centers` for a file with crop centers set by hand, because it replaces them.
+`--find_centers` for a file with crop centers set by hand, because it replaces them. An entry with
+crop centers must have an `n_blocks` equal to their number. Otherwise the command stops before it
+changes the file.

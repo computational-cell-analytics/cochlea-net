@@ -407,26 +407,54 @@ class TestEquidistantCentersCellTypes(unittest.TestCase):
 
 class TestEquidistantCentersJsonWrapper(unittest.TestCase):
 
-    def test_entry_without_segmentation_channel_raises(self):
-        import json
+    generated = {"dataset_name": "M_A_L", "image_channel": "PV", "segmentation_channel": "SGN_v2",
+                 "n_blocks": 2, "crop_centers": [[1, 2, 3], [4, 5, 6]]}
+
+    def setUp(self):
         import os
         from tempfile import TemporaryDirectory
-        from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_json_wrapper
 
-        valid = {"dataset_name": "M_A_L", "image_channel": "PV", "segmentation_channel": "SGN_v2"}
-        hand_set = {"dataset_name": "M_B_R", "image_channel": "PV", "crop_centers": [[1, 2, 3]]}
-        with TemporaryDirectory() as tmp:
-            json_file = os.path.join(tmp, "crops.json")
-            for entry in (hand_set, {**hand_set, "segmentation_channel": ""}):
-                with self.subTest(entry=entry):
-                    content = json.dumps([valid, entry])
-                    with open(json_file, "w") as f:
-                        f.write(content)
-                    with self.assertRaisesRegex(ValueError, "Entry 1 \\(M_B_R\\)"):
-                        equidistant_centers_json_wrapper(json_file, mobie_dir=tmp)
-                    # The check runs before the first entry is rewritten.
-                    with open(json_file) as f:
-                        self.assertEqual(f.read(), content)
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.tmp = tmp_dir.name
+        self.json_file = os.path.join(self.tmp, "crops.json")
+
+    def run_wrapper(self, entries, **kwargs):
+        import json
+        from unittest import mock
+        from flamingo_tools.postprocessing import cochlea_mapping
+
+        with open(self.json_file, "w") as f:
+            json.dump(entries, f)
+        with mock.patch.object(cochlea_mapping, "equidistant_centers_single") as single:
+            cochlea_mapping.equidistant_centers_json_wrapper(self.json_file, mobie_dir=self.tmp, **kwargs)
+        return single
+
+    def test_rejected_entries(self):
+        import json
+
+        new = {"dataset_name": "M_B_R", "image_channel": "PV", "n_blocks": 6}
+        hand_set = {"dataset_name": "M_B_R", "image_channel": "PV", "segmentation_channel": "SGN_v2",
+                    "crop_centers": [[1, 2, 3]]}
+        for entry, message in (
+            (new, "no 'segmentation_channel'"),
+            ({**new, "segmentation_channel": ""}, "no 'segmentation_channel'"),
+            (hand_set, "1 crop centers and n_blocks None"),
+            ({**hand_set, "n_blocks": 2}, "1 crop centers and n_blocks 2"),
+        ):
+            with self.subTest(entry=entry):
+                with self.assertRaisesRegex(ValueError, f"Entry 1 \\(M_B_R\\).* {message}"):
+                    self.run_wrapper([self.generated, entry])
+                # The check runs before the first entry is rewritten.
+                with open(self.json_file) as f:
+                    self.assertEqual(json.load(f), [self.generated, entry])
+
+    def test_accepted_entries(self):
+        new = {"dataset_name": "M_B_R", "image_channel": "PV", "segmentation_channel": "SGN_v2", "n_blocks": 6}
+        # The check reads the stored n_blocks, so an override with another number passes.
+        single = self.run_wrapper([self.generated, new], overrides={"n_blocks": 4})
+        self.assertEqual(single.call_count, 2)
+        self.assertEqual([call.kwargs["n_blocks"] for call in single.call_args_list], [4, 4])
 
 
 if __name__ == "__main__":
