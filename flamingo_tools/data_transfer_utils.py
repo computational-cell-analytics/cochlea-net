@@ -21,7 +21,6 @@ import warnings
 from dataclasses import dataclass
 from typing import Any, Callable, Optional
 
-UKON_OLD = "//wfs-medizin.top.gwdg.de/ukon-all$/ukon100"
 SMB_SERVER = "//wfs-medizin-spezial.top.gwdg.de/ukon-all$"
 MAX_RETRIES = 10
 RETRY_DELAY = 5  # seconds
@@ -54,6 +53,24 @@ TRANSPORT_ERROR_TOKENS = (
     "NT_STATUS_USER_SESSION_DELETED",
     "NT_STATUS_UNEXPECTED_NETWORK_ERROR",
 )
+
+# A rejected login. A retry repeats the failed login, and repeated failed logins can possibly lock
+# the GWDG account, so these tokens stop the program at once. A connection timeout reports
+# NT_STATUS_IO_TIMEOUT instead, which TRANSPORT_ERROR_TOKENS retries. NT_STATUS_ACCESS_DENIED is
+# not in this tuple: it is also the error for a file without permission.
+LOGIN_ERROR_TOKENS = (
+    "NT_STATUS_LOGON_FAILURE",
+    "NT_STATUS_WRONG_PASSWORD",
+    "NT_STATUS_ACCOUNT_LOCKED_OUT",
+    "NT_STATUS_ACCOUNT_DISABLED",
+    "NT_STATUS_ACCOUNT_EXPIRED",
+    "NT_STATUS_PASSWORD_EXPIRED",
+    "NT_STATUS_PASSWORD_MUST_CHANGE",
+)
+
+# One entry line of `smbclient ls`: name, attribute letters, size. A plain file may list no
+# attribute letters.
+LS_ENTRY_RE = re.compile(r"^\s+(.+?)\s+(?:([DARHSN]+)\s+)?(\d+)\s+\w")
 
 
 def append_log(log_file: Optional[str], message: str) -> None:
@@ -278,6 +295,9 @@ def run_smbclient(
     -D ends the session with exit code 1 before any command runs. A session that reaches its
     final `exit` command always exits 0.
 
+    The password goes to smbclient in its environment variable PASSWD, not on the command line.
+    Every user of the machine can read the command line of a process, e.g. with `ps`.
+
     Args:
         username: GWDG username.
         password: GWDG password.
@@ -290,8 +310,10 @@ def run_smbclient(
       lines, had_disconnect, returncode. `had_disconnect` is True for any token in
       TRANSPORT_ERROR_TOKENS, not only for a dropped connection.
 
+    Raises:
+      SystemExit: The output has a token in LOGIN_ERROR_TOKENS. No caller can retry the login.
     """
-    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}%{password}", "-t", str(timeout)]
+    cmd = ["smbclient", smb_server, "-U", f"GWDG/{username}", "-t", str(timeout)]
     if commands and commands[0].startswith("cd "):
         cmd += ["-D", commands[0][3:].strip().strip('"')]
         commands = commands[1:]
@@ -303,6 +325,7 @@ def run_smbclient(
         stdout=subprocess.PIPE,
         stderr=subprocess.STDOUT,
         cwd=cwd,
+        env={**os.environ, "PASSWD": password},
         text=True,
     )
     proc.stdin.write(cmd_input)
@@ -315,6 +338,14 @@ def run_smbclient(
         line = line.rstrip()
         print(line)
         lines.append(line)
+        if any(token in line for token in LOGIN_ERROR_TOKENS):
+            proc.terminate()
+            proc.wait()
+            raise SystemExit(
+                f"smbclient login failed for GWDG/{username}: {line.strip()}\n"
+                "Check the user name and the password. A failed login is not retried, because "
+                "repeated failed logins can possibly lock the GWDG account."
+            )
         if any(token in line for token in TRANSPORT_ERROR_TOKENS) and not had_disconnect:
             had_disconnect = True
             proc.terminate()
@@ -578,8 +609,8 @@ def remote_dir_exists(
 
     Returns:
         True if the directory exists, None if the connection dropped before the answer could be
-        determined, and False otherwise: the path is missing or not a directory, or the login
-        failed.
+        determined, and False otherwise: the path is missing or not a directory. A rejected login
+        stops the program in run_smbclient.
     """
     remote_path = remote_path.replace("\\", "/")
     _, had_disconnect, rc = run_smbclient(
@@ -781,14 +812,12 @@ def build_remote_size_map(
 
     size_map: dict = {}
     cur_dir = ""
-    # Attribute letters are optional (a plain file may list only "name size date").
-    entry_re = re.compile(r"^\s+(.+?)\s+(?:([DARHSN]+)\s+)?(\d+)\s+\w")
     for line in lines:
         # smbclient closes each listing with a "N blocks of size M. K blocks available"
         # summary line that would otherwise match the entry pattern.
         if "blocks of size" in line:
             continue
-        m = entry_re.match(line)
+        m = LS_ENTRY_RE.match(line)
         if m:
             name, attrs, size = m.group(1).strip(), m.group(2) or "", m.group(3)
             if name in (".", ".."):
@@ -847,4 +876,42 @@ def remote_size_map_with_retry(
         )
         if size_map is not None:
             return size_map
+    return None
+
+
+def remote_entry(
+    username: str,
+    password: str,
+    remote_dir: str,
+    name: str,
+    cwd: str,
+    retries: int = MAX_RETRIES,
+    smb_server: str = SMB_SERVER,
+) -> Optional[tuple[bool, int]]:
+    """Look up name in remote_dir with one `ls`, with retries on disconnect.
+
+    The name match ignores case, as SMB does.
+
+    Returns:
+        (is_dir, size in bytes) of the entry, or None if name is missing, remote_dir failed, or
+        the listing still drops after the retries. A rejected login stops the program in
+        run_smbclient.
+    """
+    remote_dir = remote_dir.replace("\\", "/")
+    for attempt in range(1, retries + 1):
+        if attempt > 1:
+            print(f"  [retry {attempt}/{retries}] listing {remote_dir}/{name}")
+            time.sleep(RETRY_DELAY)
+        lines, had_disconnect, _ = run_smbclient(
+            username, password, [f'cd "{remote_dir}"', f'ls "{name}"'], cwd, smb_server=smb_server,
+        )
+        if not had_disconnect:
+            break
+    else:
+        return None
+
+    for line in lines:
+        m = LS_ENTRY_RE.match(line)
+        if m and m.group(1).strip().casefold() == name.casefold():
+            return "D" in (m.group(2) or ""), int(m.group(3))
     return None

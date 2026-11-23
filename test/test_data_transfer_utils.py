@@ -177,6 +177,10 @@ class TestCopyFileResilient(unittest.TestCase):
 class TestTransportFailureDetection(unittest.TestCase):
     """smbclient can abort mid-file and still exit 0, so the output has to be scanned."""
 
+    PASSWORD = "s3cret-Pw"
+    TIMEOUT_LINE = "do_connect: Connection to wfs-medizin-spezial.top.gwdg.de failed (Error NT_STATUS_IO_TIMEOUT)"
+    LOGON_LINE = "do_connect: Connection to wfs-medizin-spezial.top.gwdg.de failed (Error NT_STATUS_LOGON_FAILURE)"
+
     def _run(self, output_lines, rc=0, commands=("ls",)):
         import flamingo_tools.data_transfer_utils as dtu
 
@@ -195,7 +199,8 @@ class TestTransportFailureDetection(unittest.TestCase):
 
         proc = FakeProc()
         with mock.patch.object(dtu.subprocess, "Popen", return_value=proc) as popen:
-            lines, had_disconnect, code = dtu.run_smbclient("u", "p", list(commands), cwd=".")
+            lines, had_disconnect, code = dtu.run_smbclient("u", self.PASSWORD, list(commands), cwd=".")
+        self.popen_kwargs = popen.call_args.kwargs
         return lines, had_disconnect, code, popen.call_args[0][0], proc
 
     def test_io_timeout_with_exit_zero_is_a_failure(self):
@@ -228,6 +233,36 @@ class TestTransportFailureDetection(unittest.TestCase):
         self.assertIn("-t", argv)
         self.assertEqual(argv[argv.index("-t") + 1], str(SMB_TIMEOUT))
         self.assertEqual(SMB_TIMEOUT, 60)
+
+    def test_password_is_in_the_environment_not_on_the_command_line(self):
+        _, _, _, argv, _ = self._run(["ok\n"])
+        self.assertFalse(any(self.PASSWORD in arg for arg in argv))
+        self.assertEqual(self.popen_kwargs["env"]["PASSWD"], self.PASSWORD)
+
+    def test_connection_timeout_is_retried(self):
+        _, had_disconnect, _, _, _ = self._run([self.TIMEOUT_LINE + "\n"], rc=1)
+        self.assertTrue(had_disconnect)
+
+    def test_rejected_login_stops_the_program(self):
+        with self.assertRaises(SystemExit) as raised:
+            self._run([self.LOGON_LINE + "\n"], rc=1)
+        self.assertIn("NT_STATUS_LOGON_FAILURE", str(raised.exception))
+        self.assertNotIn(self.PASSWORD, str(raised.exception))
+
+    def test_rejected_login_is_not_retried_by_a_retry_loop(self):
+        import flamingo_tools.data_transfer_utils as dtu
+
+        def new_proc(*args, **kwargs):
+            proc = mock.MagicMock()
+            proc.stdout = iter([self.LOGON_LINE + "\n"])
+            proc.returncode = 1
+            return proc
+
+        with mock.patch.object(dtu.subprocess, "Popen", side_effect=new_proc) as popen, \
+             mock.patch("time.sleep"):
+            with self.assertRaises(SystemExit):
+                dtu.remote_size_map_with_retry("u", self.PASSWORD, "P/raw", ".")
+        self.assertEqual(popen.call_count, 1)
 
     def test_leading_cd_becomes_directory_option(self):
         # A failed cd command leaves smbclient in the share root; a failed -D stops it.
@@ -359,6 +394,50 @@ class TestResumableDownload(unittest.TestCase):
             )
         self.assertTrue(ok)
         self.assertEqual(len(fake.calls), 1)
+
+
+class TestRemoteEntry(unittest.TestCase):
+    def _entry(self, *responses, name="big file.tif"):
+        import flamingo_tools.data_transfer_utils as dtu
+
+        responses = list(responses)
+        calls = []
+
+        def fake(username, password, commands, cwd, smb_server=None, timeout=None):
+            calls.append(list(commands))
+            return responses.pop(0) if len(responses) > 1 else responses[0]
+
+        with mock.patch.object(dtu, "run_smbclient", fake), mock.patch("time.sleep"):
+            entry = dtu.remote_entry("u", "p", "P\\dir", name, ".", retries=3)
+        return entry, calls
+
+    def test_file_returns_its_size(self):
+        line = "  big file.tif                        A 17800000000  Mon Jul 21 10:00:00 2025"
+        entry, calls = self._entry(([line], False, 0))
+        self.assertEqual(entry, (False, 17800000000))
+        self.assertEqual(calls, [['cd "P/dir"', 'ls "big file.tif"']])
+
+    def test_directory(self):
+        line = "  data                                D        0  Mon Jul 21 10:00:00 2025"
+        self.assertEqual(self._entry(([line], False, 0), name="data")[0], (True, 0))
+
+    def test_name_match_ignores_case(self):
+        line = "  data.n5                             D        0  Mon Jul 21 10:00:00 2025"
+        self.assertEqual(self._entry(([line], False, 0), name="DATA.N5")[0], (True, 0))
+
+    def test_missing_returns_none(self):
+        self.assertIsNone(self._entry((["NT_STATUS_NO_SUCH_FILE listing \\P\\dir\\x"], False, 1))[0])
+
+    def test_retries_a_dropped_listing(self):
+        line = "  big file.tif                        A       10  Mon Jul 21 10:00:00 2025"
+        entry, calls = self._entry(([], True, 0), ([line], False, 0))
+        self.assertEqual(entry, (False, 10))
+        self.assertEqual(len(calls), 2)
+
+    def test_dropped_listing_returns_none_after_the_retries(self):
+        entry, calls = self._entry(([], True, 0))
+        self.assertIsNone(entry)
+        self.assertEqual(len(calls), 3)
 
 
 class TestWaitForPath(unittest.TestCase):

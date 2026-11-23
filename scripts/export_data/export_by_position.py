@@ -1,5 +1,5 @@
 """Export 2D crops at standard tonotopic positions (default: apex/mid/base) for a single
-cochlea, dispatching to one or more of the export_data scripts in this folder.
+cochlea, dispatching to one or more of the cochlea export functions of flamingo_tools.export_data.
 
 The script has two modes:
 - `--groups` expands named export groups into the export passes they need, e.g. "sgn" for
@@ -26,13 +26,11 @@ import numpy as np
 import pandas as pd
 import tifffile
 
-import export_frequency_mapping
-import export_lower_resolution
-import export_lower_resolution_marker
-import export_lower_resolution_subtypes
-import export_synapse_detections
-
 from flamingo_tools.analysis.seg_table_utils import closest_row_to_value, filter_table
+from flamingo_tools.export_data import (
+    export_frequency_cochlea, export_lower_resolution_cochlea, export_marker_cochlea, export_subtypes_cochlea,
+    export_synapses_cochlea,
+)
 from flamingo_tools.export_data_utils import (
     crop_suffix, discover_crops, discover_source_types, find_crop_files, layer_kind, normalize_voxel_size,
     resolve_source_name, source_types, synapse_source_for_ihc,
@@ -124,46 +122,23 @@ def resolve_reference_positions(
     return resolve_positions(ref_table, positions)
 
 
-def _run_grid_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, voxel_size, extra):
-    """Adapter for export_lower_resolution/_marker/_subtypes: identical (scale: List[int], ...) signature."""
-    kwargs = dict(cochlea=cochlea, scale=scale, output_folder=output_folder, crop_center=crop_center,
-                  roi_halo=roi_halo, axis=axis, suffix=suffix, voxel_size=voxel_size)
-    kwargs.update(extra)
-    fn(**kwargs)
-
-
-def _run_synapse_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, voxel_size, extra):
-    """Adapter for export_synapse_detections: takes `scales` instead of `scale`."""
-    kwargs = dict(cochlea=cochlea, scales=scale, output_folder=output_folder, crop_center=crop_center,
-                  roi_halo=roi_halo, axis=axis, suffix=suffix, voxel_size=voxel_size)
-    kwargs.update(extra)
-    fn(**kwargs)
-
-
-def _run_frequency_export(fn, cochlea, scale, output_folder, crop_center, roi_halo, axis, suffix, voxel_size, extra):
-    """Adapter for export_frequency_mapping: only accepts a single scale value, so loop over the list."""
-    for s in scale:
-        kwargs = dict(cochlea=cochlea, scale=s, output_folder=output_folder, crop_center=crop_center,
-                      roi_halo=roi_halo, axis=axis, suffix=suffix, voxel_size=voxel_size)
-        kwargs.update(extra)
-        fn(**kwargs)
-
-
+# The cochlea export functions. All of them read the data from S3 here, since the crop centers
+# are resolved from the tables on S3.
 EXPORT_DISPATCH = {
-    "lower_resolution": (_run_grid_export, export_lower_resolution.export_lower_resolution),
-    "marker": (_run_grid_export, export_lower_resolution_marker.export_lower_resolution),
-    "subtypes": (_run_grid_export, export_lower_resolution_subtypes.export_lower_resolution),
-    "synapse": (_run_synapse_export, export_synapse_detections.export_synapse_detections),
-    "frequency": (_run_frequency_export, export_frequency_mapping.export_frequency_mapping),
+    "lower_resolution": export_lower_resolution_cochlea,
+    "marker": export_marker_cochlea,
+    "subtypes": export_subtypes_cochlea,
+    "synapse": export_synapses_cochlea,
+    "frequency": export_frequency_cochlea,
 }
 
 # The keyword argument that names the exported sources, per export function.
 SOURCE_KWARGS = {
     "lower_resolution": "channels",
     "marker": "channels",
-    "subtypes": "stains",
+    "subtypes": "segmentation",
     "synapse": "synapse_name",
-    "frequency": "source_name",
+    "frequency": "segmentation",
 }
 
 
@@ -451,12 +426,12 @@ def run_exports(
     for pass_functions, pass_json_info in passes:
         for entry in resolved_positions:
             for key in pass_functions:
-                adapter, fn = EXPORT_DISPATCH[key]
-                extra = pass_json_info.get(key, {})
-                adapter(
-                    fn, cochlea, scale, output_folder, entry["crop_center"], roi_halo, axis, entry["label"],
-                    voxel_size, extra,
+                kwargs = dict(
+                    cochlea=cochlea, scale=scale, output_folder=output_folder, crop_center=entry["crop_center"],
+                    roi_halo=roi_halo, axis=axis, suffix=entry["label"], voxel_size=voxel_size, s3=True,
                 )
+                kwargs.update(pass_json_info.get(key, {}))
+                EXPORT_DISPATCH[key](**kwargs)
 
 
 def run_groups(

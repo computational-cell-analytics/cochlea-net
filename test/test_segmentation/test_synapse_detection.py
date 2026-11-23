@@ -1,3 +1,4 @@
+import contextlib
 import os
 import tempfile
 import unittest
@@ -138,6 +139,33 @@ class TestFlowCorrection(unittest.TestCase):
             self.assertFalse(os.path.exists(no_flow_path))
 
 
+class TestMinDistance(unittest.TestCase):
+    def test_min_distance_separates_adjacent_peaks(self):
+        from flamingo_tools.segmentation.synapse_detection import synapse_detection_from_prediction
+
+        heatmap = np.zeros((16, 32, 32), dtype="float32")
+        # Two adjacent synapses two voxels apart, the case behind most of the missed annotations.
+        heatmap[8, 16, 14] = 2.0
+        heatmap[8, 16, 16] = 1.5
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            prediction_path = os.path.join(tmp_dir, "predictions.zarr")
+            zarr.open(store=prediction_path, mode="w").create_array(
+                "prediction", data=heatmap, chunks=(16, 32, 32)
+            )
+
+            counts = {}
+            for min_distance in (1, 2):
+                detection_path = os.path.join(tmp_dir, f"detections_{min_distance}.tsv")
+                with warnings.catch_warnings():
+                    warnings.simplefilter("ignore")
+                    detections = synapse_detection_from_prediction(
+                        prediction_path, detection_path, threshold=0.5, min_distance=min_distance,
+                    )
+                counts[min_distance] = len(detections)
+
+        self.assertEqual(counts, {1: 2, 2: 1})
+
+
 class TestDetectionBlockShape(unittest.TestCase):
     def test_block_shape(self):
         from flamingo_tools.segmentation.synapse_detection import (
@@ -217,15 +245,15 @@ class TestSynapseSlurmWorkflow(unittest.TestCase):
 
             single_folder = os.path.join(tmp_dir, "single")
             os.makedirs(single_folder)
-            with warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with self.assertWarnsRegex(UserWarning, "No IHC segmentation was given"):
                 marker_detection(
                     data_path, data_key, None, single_folder, model_path,
                     block_shape=block_shape, halo=halo,
                 )
 
             array_folder = os.path.join(tmp_dir, "array")
-            run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
+            with self.assertWarnsRegex(UserWarning, "No IHC segmentation was given"):
+                run_synapse_prediction_preprocess_slurm(data_path, array_folder, input_key=data_key)
             self.assertFalse(os.path.exists(os.path.join(array_folder, "mean_std.json")))
 
             for task_id in range(self.prediction_instances):
@@ -344,7 +372,7 @@ class TestMaskKeys(unittest.TestCase):
             marker_detection(
                 input_path=data_path, input_key=data_key, mask_path=mask_path,
                 output_folder=output_folder, model_path=model_path,
-                mask_input_key="s4", mask_key="s0", max_distance=8.0,
+                mask_input_key="s4", mask_key="s0",
             )
 
             # The mask is built from the downscaled level.
@@ -405,12 +433,15 @@ class TestPredictionMask(unittest.TestCase):
 
         data_path, data_key, model_path = input_
         output_folder = os.path.join(tmp_dir, name)
-        with warnings.catch_warnings():
-            warnings.simplefilter("ignore")
+        if mask_path is None:
+            expected_warning = self.assertWarnsRegex(UserWarning, "No IHC segmentation was given")
+        else:
+            expected_warning = contextlib.nullcontext()
+        with expected_warning:
             marker_detection(
                 data_path, data_key, mask_path, output_folder, model_path,
                 block_shape=(16, 16, 16), halo=(4, 4, 4),
-                mask_input_key="s4", mask_key="s0", max_distance=8.0,
+                mask_input_key="s4", mask_key="s0",
             )
         with open_file(os.path.join(output_folder, "predictions.zarr"), "r") as f:
             return output_folder, f["prediction"][:]
@@ -598,8 +629,7 @@ class TestS3Resolution(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp_dir:
             data_path, data_key = self._create_input(tmp_dir)
             calls, patch = self._patch_get_s3_path(None)
-            with patch, warnings.catch_warnings():
-                warnings.simplefilter("ignore")
+            with patch, self.assertWarnsRegex(UserWarning, "No IHC segmentation was given"):
                 run_synapse_prediction_preprocess_slurm(
                     data_path, os.path.join(tmp_dir, "out"), input_key=data_key,
                 )
@@ -648,6 +678,21 @@ class TestS3Resolution(unittest.TestCase):
             "cochlea/images/ome-zarr/CTBP2.ome.zarr",
             "cochlea/images/ome-zarr/IHC.ome.zarr",
         ])
+
+
+class TestDetectionSettings(unittest.TestCase):
+    def test_detection_stage_passes_min_distance(self):
+        from unittest import mock
+        from flamingo_tools.segmentation.synapse_detection import run_synapse_detection_slurm
+
+        with tempfile.TemporaryDirectory() as tmp_dir, mock.patch(
+            "flamingo_tools.segmentation.synapse_detection.synapse_detection_from_prediction",
+            return_value=pd.DataFrame(),
+        ) as detect:
+            run_synapse_detection_slurm(tmp_dir)
+            # slurm-workflows passes the settings as strings.
+            run_synapse_detection_slurm(tmp_dir, min_distance="2")
+        self.assertEqual([call.kwargs["min_distance"] for call in detect.call_args_list], [1, 2])
 
 
 if __name__ == "__main__":

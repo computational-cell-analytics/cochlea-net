@@ -1551,16 +1551,22 @@ def equidistant_centers_json_wrapper(
         overrides: Parameters that win over the entry, for the flags the caller set explicitly.
         kwargs: Further arguments for equidistant_centers_single. An entry of the JSON file
             overrides them, and overrides wins over both.
+
+    Raises:
+        ValueError: If the file is a processing parameter file, if the number of crop centers of
+            an entry differs from its "n_blocks", or if an entry has no "segmentation_channel".
+            The file stays unchanged.
     """
     with open(json_file, "r") as f:
         data = json.load(f)
     is_list = isinstance(data, list)
     param_dicts = data if is_list else [data]
 
-    # equidistant_centers_single writes n_blocks, include_gap and crop_centers back into the
-    # entry, none of which a processing file may hold at the top level, so it would make that
-    # file unreadable for the three processing steps.
-    for entry in param_dicts:
+    # Check every entry before the first one is rewritten, so a rejected file stays unchanged.
+    for index, entry in enumerate(param_dicts):
+        # equidistant_centers_single writes n_blocks, include_gap and crop_centers back into the
+        # entry, none of which a processing file may hold at the top level, so it would make that
+        # file unreadable for the three processing steps.
         sections = sorted(set(entry) & set(STEP_KEYS))
         if sections:
             raise ValueError(
@@ -1569,13 +1575,22 @@ def equidistant_centers_json_wrapper(
                 "add keys that a processing file must not have. Point --json_info at a file in "
                 "reproducibility/block_extraction instead."
             )
+        name = f"Entry {index} ({entry.get('dataset_name')}) of {json_file}"
+        # equidistant_centers_single writes exactly n_blocks crop centers, so other crop centers
+        # were set or edited by hand.
+        centers = entry.get("crop_centers")
+        if centers is not None and len(centers) != entry.get("n_blocks"):
+            raise ValueError(
+                f"{name} has {len(centers)} crop centers and n_blocks {entry.get('n_blocks')}, so its crop "
+                "centers were set or edited by hand. Remove 'crop_centers' from the entry to find new ones."
+            )
+        if not entry.get("segmentation_channel"):
+            raise ValueError(f"{name} has no 'segmentation_channel', so its crop centers cannot be found.")
 
     for index, entry in enumerate(param_dicts):
         cochlea = entry["dataset_name"]
         print(f"\n{cochlea}")
-        seg_channel = entry["segmentation_channel"]
-
-        table_path = default_table_path(cochlea, seg_channel, s3=s3, mobie_dir=mobie_dir)
+        table_path = default_table_path(cochlea, entry["segmentation_channel"], s3=s3, mobie_dir=mobie_dir)
 
         equidistant_centers_single(
             table_path=table_path,

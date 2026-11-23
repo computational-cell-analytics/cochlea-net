@@ -298,7 +298,9 @@
 				"description": "Cochleae of the cosynapse imaging cohort.",
 				"cochleae": [
 					"M_AMD_000117_L",
-					"M_AMD_000118_L"
+					"M_AMD_000118_L",
+					"M_AMD_N179_L",
+					"M_AMD_N179_R"
 				]
 			},
 			"undefined": {

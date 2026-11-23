@@ -3,22 +3,67 @@
 
 import json
 import os
-from typing import Optional, List, Union, Tuple
+from typing import Dict, Optional, List, Union, Tuple
 
 import imageio.v3 as imageio
 import numpy as np
+import pandas as pd
 import zarr
 from skimage.transform import rescale
 
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import get_s3_path, MOBIE_FOLDER
+from flamingo_tools.s3_utils import MOBIE_FOLDER, default_image_path
 from flamingo_tools.analysis.density_utils import hull_to_mask
+
+
+def _crop_bounds(
+    coords: List[float],
+    roi_halo: List[int],
+    voxel_size: Union[float, Tuple[float, float, float]],
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Get the unclipped ZYX begin and end voxels of the crop around a center in micrometer, (x, y, z)."""
+    voxel_size = np.broadcast_to(np.asarray(voxel_size, dtype="float64"), (3,))
+    center = np.round(np.asarray(coords, dtype="float64")[::-1] / voxel_size[::-1]).astype(int)
+    halo = np.asarray(roi_halo, dtype=int)[::-1]
+    return center - halo, center + halo
+
+
+def _crop_roi(
+    coords: List[float],
+    roi_halo: List[int],
+    voxel_size: Union[float, Tuple[float, float, float]],
+    shape: Tuple[int, int, int],
+) -> Tuple[slice, slice, slice]:
+    """Get the ZYX crop slices around a center, clipped to the volume.
+
+    Args:
+        coords: The crop center in micrometer, (x, y, z).
+        roi_halo: The halo around the center in voxels, (x, y, z).
+        voxel_size: The voxel size in micrometer, scalar or (x, y, z).
+        shape: The shape of the volume, ZYX.
+    """
+    full_begin, full_end = _crop_bounds(coords, roi_halo, voxel_size)
+    begin = np.maximum(full_begin, 0)
+    end = np.minimum(full_end, np.asarray(shape))
+    if np.any(begin >= end):
+        raise ValueError(f"The crop around {coords} lies outside of the volume of shape {tuple(shape)}.")
+    if np.any(begin != full_begin) or np.any(end != full_end):
+        clipped_shape = tuple(int(e - b) for b, e in zip(begin, end))
+        print(f"Clipped the crop around {coords} to the volume of shape {tuple(shape)}: {clipped_shape}.")
+    return tuple(slice(int(b), int(e)) for b, e in zip(begin, end))
+
+
+def _crop_file_name(coords: List[float], dataset_name: Optional[str], suffix: Optional[str], extension: str) -> str:
+    coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
+    prefix = "" if dataset_name is None else f"{dataset_name.replace('_', '-')}_"
+    suffix = "" if suffix is None else f"_{suffix.replace('_', '-')}"
+    return f"{prefix}crop_{coord_string}{suffix}{extension}"
 
 
 def extract_block_single(
     input_path: str,
-    coords: List[int],
-    output_path: Optional[str] = None,
+    coords: List[float],
+    output_path: str,
     dataset_name: Optional[str] = None,
     channel_name: Optional[str] = None,
     input_key: Optional[str] = None,
@@ -36,16 +81,18 @@ def extract_block_single(
 ) -> None:
     """Extract block around coordinate from input data according to a given halo.
     Either from a local file or from an S3 bucket.
+    A block at the border of the volume is clipped to the volume. An existing output is kept
+    unless `force_overwrite` is set.
 
     Args:
         input_path: Input folder in n5 / ome-zarr format.
-        coords: Center coordinates of extracted 3D volume.
-        output_dir: Output directory for saving output as <basename>_crop.n5. Default: input directory.
-        output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
+        coords: The block center in micrometer, (x, y, z).
+        output_path: Output directory or file. In a directory, the crop is named after the dataset, the center and
+            the channel.
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
         voxel_size: The voxel size of the data in micrometer.
-        roi_halo: ROI halo of extracted 3D volume.
+        roi_halo: The halo around the block center in voxels, (x, y, z).
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -53,53 +100,19 @@ def extract_block_single(
         scale_factor: Optional factor for rescaling the extracted data.
         force_overwrite: Flag for forcefully overwriting output files.
     """
-    coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
-
-    # Dimensions are inversed to view in MoBIE (x y z) -> (z y x)
-    # Make sure the coords / roi_halo are not modified in-place.
-    coords = coords.copy()
-    roi_halo = roi_halo.copy()
-    coords.reverse()
-    roi_halo.reverse()
-
-    # get components of output file
-    prefix = ""
-    suffix = ""
-    if dataset_name is not None:
-        dataset_str = dataset_name.replace('_', '-')
-        prefix = f"{dataset_str}_"
-    if channel_name is not None:
-        channel_str = channel_name.replace('_', '-')
-        suffix = f"_{channel_str}"
-
     if os.path.isdir(output_path):
-        if output_key is None:
-            output_name = f"{prefix}crop_{coord_string}{suffix}.tif"
-        else:
-            output_name = f"{prefix}crop_{coord_string}{suffix}.n5"
+        extension = ".tif" if output_key is None else ".n5"
+        output_path = os.path.join(output_path, _crop_file_name(coords, dataset_name, channel_name, extension))
 
-        output_path = os.path.join(output_path, output_name)
-
-    if os.path.isfile(output_path) and not force_overwrite:
-        print(f"Skipping block extration because {output_path} already exists.")
-
-    coords = np.array(coords).astype("float")
-    if not isinstance(voxel_size, float):
-        assert len(voxel_size) == 3
-        voxel_size = np.array(voxel_size)[::-1]
-    coords = coords / voxel_size
-    coords = np.round(coords).astype(np.int32)
-
-    roi = tuple(slice(co - rh, co + rh) for co, rh in zip(coords, roi_halo))
+    if os.path.exists(output_path) and not force_overwrite:
+        print(f"Skipping block extraction because {output_path} already exists.")
+        return
 
     data_ = read_image_data(input_path, input_key, from_s3=s3,
                             bucket_name=s3_bucket_name,
                             service_endpoint=s3_service_endpoint,
                             credential_file=s3_credentials)
-
-    for (dim, co, rh) in zip(data_.shape, coords, roi_halo):
-        if co - rh < 0 or co + rh > dim:
-            print(f"Skipping block extraction for {coords} because ROI is {dim} for shape {data_.shape}.")
+    roi = _crop_roi(coords, roi_halo, voxel_size, data_.shape)
 
     data_roi = data_[roi]
     if scale_factor is not None:
@@ -208,87 +221,149 @@ def save_mask_from_hull_vertices(
     dataset_name: Optional[str] = None,
     voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
     roi_halo: List[int] = [128, 128, 64],
+    shape: Optional[Tuple[int, int, int]] = None,
     **_,
 ) -> None:
-    """Extract block around coordinate from input data according to a given halo.
-    Either from a local file or from an S3 bucket.
+    """Save the density hull as a mask TIF that is aligned with the crops of `extract_block_single`.
 
     Args:
-        input_path: Input folder in n5 / ome-zarr format.
-        coords: Center coordinates of extracted 3D volume.
-        output_dir: Output directory for saving output as <basename>_crop.n5. Default: input directory.
-        output_path: Output directory or file for saving output as <basename>_crop.n5. Default: input directory.
-        input_key: Input key for data in input file.
-        output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
-        voxel_size: The voxel size of the data in micrometer.
-        roi_halo: ROI halo of extracted 3D volume.
-        s3: Flag for accessing data stored on S3 bucket.
-        s3_credentials: File path to credentials for S3 bucket.
-        s3_bucket_name: S3 bucket name.
-        s3_service_endpoint: S3 service endpoint.
-        scale_factor: Optional factor for rescaling the extracted data.
-        force_overwrite: Flag for forcefully overwriting output files.
+        coords: The crop center in micrometer, (x, y, z).
+        hull_vertices: The hull vertices in micrometer. The first entry is converted with `hull_to_mask`.
+        output_path: The output directory.
+        dataset_name: The dataset name, used as the file name prefix.
+        voxel_size: The voxel size in micrometer, (x, y, z).
+        roi_halo: The halo around the crop center in voxels, (x, y, z).
+        shape: The ZYX shape of the volume. If given, the mask is clipped like a crop at the border.
     """
-    coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
     density_mask = hull_to_mask(
         hull_vertices[0],
         bb_center=coords,
         roi_halo=roi_halo,
         voxel_size=voxel_size,
     )
-    prefix = ""
-    if dataset_name is not None:
-        dataset_str = dataset_name.replace('_', '-')
-        prefix = f"{dataset_str}_"
-    coord_string = "-".join([str(int(round(c))).zfill(4) for c in coords])
-    output_name = f"{prefix}crop_{coord_string}_hull.tif"
-    output_path = os.path.join(output_path, output_name)
-
+    if shape is not None:
+        full_begin, _ = _crop_bounds(coords, roi_halo, voxel_size)
+        roi = _crop_roi(coords, roi_halo, voxel_size, shape)
+        density_mask = density_mask[tuple(slice(r.start - b, r.stop - b) for r, b in zip(roi, full_begin))]
+    output_path = os.path.join(output_path, _crop_file_name(coords, dataset_name, "hull", ".tif"))
     imageio.imwrite(output_path, density_mask, compression="zlib")
+
+
+def extract_points_single(
+    points: pd.DataFrame,
+    coords: List[float],
+    output_path: str,
+    shape: Tuple[int, int, int],
+    name: Optional[str] = None,
+    dataset_name: Optional[str] = None,
+    voxel_size: Union[float, Tuple[float, float, float]] = 0.38,
+    roi_halo: List[int] = [128, 128, 64],
+    force_overwrite: bool = False,
+    **_,
+) -> str:
+    """Write the points inside a crop as a napari points file.
+
+    The CSV file has the columns 'index', 'axis-0', 'axis-1', 'axis-2' with the ZYX position in voxels of the
+    crop, as written by `extract_block_single`, and the other columns of the point table as point properties.
+
+    Args:
+        points: The point table, with the positions in micrometer in the columns 'x', 'y', 'z'.
+        coords: The crop center in micrometer, (x, y, z).
+        output_path: The output directory.
+        shape: The ZYX shape of the volume. A crop at the border is clipped as in `extract_block_single`.
+        name: The name of the point table, used as the file name suffix.
+        dataset_name: The dataset name, used as the file name prefix.
+        voxel_size: The voxel size in micrometer, scalar or (x, y, z).
+        roi_halo: The halo around the crop center in voxels, (x, y, z).
+        force_overwrite: Overwrite an existing file.
+
+    Returns:
+        The path of the CSV file.
+    """
+    output_file = os.path.join(output_path, _crop_file_name(coords, dataset_name, name, ".csv"))
+    if os.path.exists(output_file) and not force_overwrite:
+        print(f"Skipping point extraction because {output_file} already exists.")
+        return output_file
+
+    roi = _crop_roi(coords, roi_halo, voxel_size, shape)
+    begin = np.array([r.start for r in roi])
+    end = np.array([r.stop for r in roi])
+    voxel_size = np.broadcast_to(np.asarray(voxel_size, dtype="float64"), (3,))
+    positions = points[["z", "y", "x"]].to_numpy(dtype="float64") / voxel_size[::-1]
+    voxels = np.round(positions)
+    inside = np.all((voxels >= begin) & (voxels < end), axis=1)
+    local = positions[inside] - begin
+
+    table = pd.DataFrame({
+        "index": np.arange(len(local)), "axis-0": local[:, 0], "axis-1": local[:, 1], "axis-2": local[:, 2],
+    })
+    properties = points[inside].drop(columns=["x", "y", "z"]).reset_index(drop=True)
+    table = pd.concat([table, properties.drop(columns=["index"], errors="ignore")], axis=1)
+    table.to_csv(output_file, index=False)
+    return output_file
+
+
+def _volume_shape(input_path: str, s3: bool, input_key: Optional[str] = None, s3_credentials: Optional[str] = None,
+                  s3_bucket_name: Optional[str] = None, s3_service_endpoint: Optional[str] = None,
+                  **_) -> Tuple[int, ...]:
+    data = read_image_data(input_path, input_key, from_s3=s3, bucket_name=s3_bucket_name,
+                           service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
+    return tuple(data.shape)
 
 
 def extract_block_json_wrapper(
     output_path: str,
     input_path: Optional[str] = None,
     json_file: Optional[str] = None,
-    coords: List[int] = [],
+    coords: Optional[List[float]] = None,
     mobie_dir: str = MOBIE_FOLDER,
     force: bool = False,
     s3: Optional[bool] = False,
+    point_tables: Optional[Dict[str, pd.DataFrame]] = None,
     **kwargs,
 ):
-    """Wrapper function for extracting blocks based on a dictionary in a JSON file.
+    """Extract a block for each crop center and image channel of a JSON file, or one block around `coords`.
 
     Args:
-        output_path: Output path for storing extracted blocks.
-        input_path: Input path for image channel.
-        json_file: JSON file containing parameter dictionary.
-        coords: List of center coordinates for extracting blocks.
+        output_path: Output directory, or output file for one block.
+        input_path: Image data for one block. Used without json_file.
+        json_file: JSON file with one block parameter dictionary, or a list of them. Each entry needs
+            'crop_centers'. The image data path comes from its 'dataset_name' and 'image_channel'.
+        coords: The block center in micrometer, (x, y, z). Used without json_file.
         mobie_dir: Local MoBIE directory used for creating data paths when a JSON dict is provided.
         force: Flag for forcefully overwriting output files.
         s3: Flag for accessing data stored on S3 bucket.
+        point_tables: Point tables with 'x', 'y', 'z' in micrometer, keyed by name. The points of each crop are
+            saved as a napari points file, see `extract_points_single`.
+        kwargs: Further arguments for `extract_block_single`. An entry of the JSON file overrides them.
     """
     if json_file is not None:
         with open(json_file, "r") as f:
             param_dicts = json.loads(f.read())
-        os.makedirs(output_path, exist_ok=True)
         if not isinstance(param_dicts, list):
             param_dicts = [param_dicts]
+        for index, params in enumerate(param_dicts):
+            if "crop_centers" not in params:
+                raise ValueError(
+                    f"Entry {index} ({params.get('dataset_name')}) of {json_file} has no 'crop_centers'. "
+                    "Find them with flamingo_tools.extract_blocks --find_centers."
+                )
+        if point_tables and len({params["dataset_name"] for params in param_dicts}) > 1:
+            raise ValueError("Point tables belong to one cochlea, but the JSON file has entries for several cochleae.")
+        os.makedirs(output_path, exist_ok=True)
         for params in param_dicts:
             cochlea = params["dataset_name"]
             if isinstance(params["image_channel"], list):
                 image_channels = params["image_channel"]
             else:
                 image_channels = [params["image_channel"]]
+            # The keys of one entry, e.g. 'roi_halo', must not carry over to the next entry.
+            entry_kwargs = {**kwargs, **params}
 
             for image_channel in image_channels:
-                if s3:
-                    input_path = f"{cochlea}/images/ome-zarr/{image_channel}.ome.zarr"
-                else:
-                    input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+                input_path = default_image_path(cochlea, image_channel, s3=s3, mobie_dir=mobie_dir)
 
                 for coords in params["crop_centers"]:
-                    kwargs.update(params)
                     extract_block_single(
                         input_path=input_path,
                         coords=coords,
@@ -296,60 +371,38 @@ def extract_block_json_wrapper(
                         channel_name=image_channel,
                         force_overwrite=force,
                         s3=s3,
-                        **kwargs,
+                        **entry_kwargs,
                     )
 
+            if "hull_vertices" in params or point_tables:
+                shape = _volume_shape(input_path, s3, **entry_kwargs)
+
             # crop out mask from hull vertices
-            if "hull_vertices" in list(params.keys()):
+            if "hull_vertices" in params:
                 for coords in params["crop_centers"]:
-                    save_mask_from_hull_vertices(coords=coords, output_path=output_path, **kwargs)
+                    save_mask_from_hull_vertices(coords=coords, output_path=output_path, shape=shape, **entry_kwargs)
+
+            if point_tables:
+                for coords in params["crop_centers"]:
+                    for name, points in point_tables.items():
+                        extract_points_single(points, coords, output_path, shape, name=name,
+                                              force_overwrite=force, **entry_kwargs)
 
     else:
-        if input_path is None:
-            raise ValueError("An input path to image data is required, if no JSON file is supplied.")
+        if input_path is None or coords is None:
+            raise ValueError("An input path to image data and coords are required, if no JSON file is supplied.")
+        if point_tables and not os.path.isdir(output_path):
+            raise ValueError("Point tables require an output directory.")
         extract_block_single(
             input_path=input_path,
             output_path=output_path,
+            channel_name=kwargs.get("image_channel"),
             force_overwrite=force,
             coords=coords,
             s3=s3,
             **kwargs,
         )
-
-
-def extract_central_block_from_json(
-    json_file: str,
-    output_path: str,
-    force_overwrite: bool = False,
-    s3: bool = False,
-    mobie_dir: str = MOBIE_FOLDER,
-    **kwargs,
-):
-    """Extract central blocks based on parameters in a JSON file.
-    This function combines the search of equidistant center coordinates and the subsequent block extraction.
-
-    Args:
-        json_file: JSON with parameter dictionary. Can be created using 'flamingo_tools.json_block_extraction'.
-        output_path: Output directory for storing extracted blocks.
-        force_overwrite: Force overwrite of extracted blocks.
-        s3: Flag for accessing data on the S3 bucket.
-        mobie_dir: Local MoBIE directory used for creating data paths.
-    """
-    from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_json_wrapper
-
-    # Refresh the crop centers of every entry in place, then extract once for the whole file.
-    # Extracting inside the loop repeated the whole file once per entry.
-    equidistant_centers_json_wrapper(
-        json_file=json_file, mobie_dir=mobie_dir, s3=s3, **kwargs,
-    )
-
-    os.makedirs(output_path, exist_ok=True)
-    extract_block_json_wrapper(
-        output_path=output_path,
-        json_file=json_file,
-        s3=s3,
-        input_key="s0",
-        mobie_dir=mobie_dir,
-        force=force_overwrite,
-        **kwargs,
-    )
+        if point_tables:
+            shape = _volume_shape(input_path, s3, **kwargs)
+            for name, points in point_tables.items():
+                extract_points_single(points, coords, output_path, shape, name=name, force_overwrite=force, **kwargs)

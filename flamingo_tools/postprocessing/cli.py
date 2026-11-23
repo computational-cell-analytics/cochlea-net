@@ -1,13 +1,16 @@
 """private
 """
 import argparse
+import os
+
+import pandas as pd
 
 from .label_components import label_components_json_wrapper, label_components_single
-from .cochlea_mapping import (CENTRAL_PATH_METHODS, equidistant_centers_json_wrapper,
-                              equidistant_centers_single, tonotopic_mapping_json_wrapper)
+from .cochlea_mapping import CENTRAL_PATH_METHODS, equidistant_centers_json_wrapper, tonotopic_mapping_json_wrapper
+from flamingo_tools.cli_utils import check_mode_options
 from flamingo_tools.json_util import export_dictionary_as_json
 from flamingo_tools.measurements import object_measures_json_wrapper
-from flamingo_tools.extract_block_util import extract_block_json_wrapper, extract_central_block_from_json
+from flamingo_tools.extract_block_util import extract_block_json_wrapper
 from flamingo_tools.s3_utils import MOBIE_FOLDER, split_table_path
 from flamingo_tools.analysis.central_path_utils import export_central_paths
 from flamingo_tools.analysis.density_utils import calc_sgn_density
@@ -18,134 +21,75 @@ PATH_METHOD_HELP = ("Method for finding the central path through the segmentatio
                     "'edt' is the method that was used for the CochleaNet paper.")
 
 
-def equidistant_centers():
+# The modes of extract_blocks, as named in its error messages.
+_INPUT = "--input"
+_EXTRACT = "--json_info without --find_centers"
+_CENTERS = "--json_info --find_centers"
+_CENTERS_ONLY = "--json_info --find_centers without --output"
+_CENTER_OPTIONS = ("n_blocks", "cell_type", "component_list", "include_gap", "path_method")
+
+
+def extract_blocks():
     parser = argparse.ArgumentParser(
-        description="Find equidistant center coordinates along the central path of a segmentation.")
+        description="Extract region of interest (ROI) blocks around center coordinates. "
+        "'--input' extracts one block from image data. '--json_info' extracts one block for each crop center "
+        "and image channel of a block parameter file, see flamingo_tools.json_extract_blocks.")
 
     source = parser.add_mutually_exclusive_group(required=True)
     source.add_argument("-i", "--input", type=str, default=None,
-                        help="Input path to segmentation table.")
+                        help="Input path to image data in n5/ome-zarr/TIF format. "
+                        "Extracts one block around '--coords'.")
     source.add_argument("--json_info", type=str, default=None,
-                        help="JSON file with parameters. The crop centers of every entry are "
-                        "recomputed and written back in place, using the segmentation table "
-                        "derived from its 'dataset_name' and 'segmentation_channel'.")
+                        help="JSON file with block parameters. The paths of the image data are derived from the "
+                        "'dataset_name' and 'image_channel' of each entry.")
     parser.add_argument("-o", "--output", type=str, default=None,
-                        help="Output path for JSON dictionary. Ignored for '--json_info', which "
-                        "updates the input file.")
-    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
-                        help="Directory containing MoBIE project. Only used for '--json_info'.")
+                        help="Output directory, or output file for one block. "
+                        "Optional only for '--json_info --find_centers', which then only updates the JSON file.")
 
-    # options for equidistant centers
-    parser.add_argument('-n', "--n_blocks", type=int, default=6,
-                        help="Number of blocks to find equidistant centers for. Default: 6")
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
-    parser.add_argument("-c", "--components", type=int, nargs="+", default=[1], help="List of connected components.")
-    parser.add_argument("--include_gap", action="store_true",
-                        help="Include the distance between different components for calculating the run length. "
-                        "Use the same setting as for the tonotopic mapping of the cochlea.")
-    parser.add_argument("--path_method", type=str, default=None, choices=sorted(CENTRAL_PATH_METHODS),
-                        help=PATH_METHOD_HELP)
-
-    # options for S3 bucket
-    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
-    parser.add_argument("--s3_credentials", type=str, default=None,
-                        help="Input file containing S3 credentials. "
-                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
-    parser.add_argument("--s3_bucket_name", type=str, default=None,
-                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
-    parser.add_argument("--s3_service_endpoint", type=str, default=None,
-                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
-
-    args = parser.parse_args()
-
-    shared = dict(
-        n_blocks=args.n_blocks,
-        cell_type=args.cell_type,
-        component_list=args.components,
-        include_gap=args.include_gap,
-        path_method=args.path_method,
-        s3=args.s3,
-        s3_credentials=args.s3_credentials,
-        s3_bucket_name=args.s3_bucket_name,
-        s3_service_endpoint=args.s3_service_endpoint,
-    )
-
-    if args.json_info is None:
-        equidistant_centers_single(table_path=args.input, output_path=args.output, **shared)
-    else:
-        # This command rewrites the file, so a flag the user typed must beat what the file
-        # records. Everything left at its default does not, since 45 of the block extraction
-        # files record n_blocks and 48 record cell_type and component_list.
-        dests = {"n_blocks": "n_blocks", "cell_type": "cell_type", "component_list": "components",
-                 "include_gap": "include_gap", "path_method": "path_method"}
-        overrides = {name: shared[name] for name, dest in dests.items()
-                     if getattr(args, dest) != parser.get_default(dest)}
-        equidistant_centers_json_wrapper(
-            json_file=args.json_info, mobie_dir=args.mobie_dir, overrides=overrides, **shared,
-        )
-
-
-def extract_block():
-    parser = argparse.ArgumentParser(
-        description="Script to extract region of interest (ROI) block around center coordinate.")
-
-    parser.add_argument("-o", "--output", type=str, required=True, help="Output directory or file.")
-    parser.add_argument("-i", "--input", type=str, default=None, help="Input path to data in n5/ome-zarr/TIF format.")
-    parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
-    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
-                        help="Directory containing MoBIE project. Only used for '--json_info'.")
-
-    # options for file naming
+    # options for one block
+    parser.add_argument("-c", "--coords", type=float, nargs=3, default=None, metavar=("X", "Y", "Z"),
+                        help="Center of the block in micrometer. Required for '--input'.")
+    parser.add_argument("--roi_halo", type=int, nargs=3, default=[128, 128, 64], metavar=("X", "Y", "Z"),
+                        help="ROI halo around the center in voxels, for '--input'. "
+                        "Each entry of a JSON file has its own. Default: 128 128 64")
     parser.add_argument("--dataset_name", type=str, default=None,
-                        help="Name of dataset/cochlea, e.g. M_AMD_N75_L. Used as prefix in output name.")
+                        help="Name of dataset/cochlea, e.g. M_AMD_N75_L, for '--input'. Used as prefix in output name.")
     parser.add_argument("--image_channel", type=str, default=None,
-                        help="Name of image channel/stain, e.g. PV. Used as suffix in output name.")
+                        help="Name of image channel/stain, e.g. PV, for '--input'. Used as suffix in output name.")
 
-    # options for block extraction
-    parser.add_argument("-c", "--coords", type=int, nargs="+", default=[],
-                        help="3D coordinate as center of extracted block [µm].")
-    parser.add_argument("--json_info", type=str, default=None,
-                        help="JSON file with crop information.")
+    # options for the JSON file
+    parser.add_argument("--mobie_dir", type=str, default=MOBIE_FOLDER,
+                        help="Directory containing MoBIE project, for '--json_info'.")
+    parser.add_argument("--find_centers", action="store_true",
+                        help="Find equidistant crop centers along the central path of the 'segmentation_channel' of "
+                        "each entry and write them into the JSON file before the extraction. This replaces the crop "
+                        "centers of every entry. If the number of crop centers of an entry differs from its "
+                        "'n_blocks', the crop centers were set by hand, and the command stops before the file "
+                        "changes.")
+    parser.add_argument("-n", "--n_blocks", type=int, default=6,
+                        help="Number of blocks, for '--find_centers'. Default: 6")
+    parser.add_argument("--cell_type", type=str, default="sgn", choices=["sgn", "ihc"],
+                        help="Cell type of segmentation, for '--find_centers'. Default: sgn")
+    parser.add_argument("--component_list", type=int, nargs="+", default=[1],
+                        help="List of connected components, for '--find_centers'. Default: 1")
+    parser.add_argument("--include_gap", action="store_true",
+                        help="Include the distance between different components for calculating the run length, "
+                        "for '--find_centers'. Use the same setting as for the tonotopic mapping of the cochlea.")
+    parser.add_argument("--path_method", type=str, default=None, choices=sorted(CENTRAL_PATH_METHODS),
+                        help=PATH_METHOD_HELP + " For '--find_centers'.")
+
+    # options for the extraction
     parser.add_argument("-k", "--input_key", type=str, default="s0",
-                        help="Input key for data in input file with n5/OME-ZARR format.")
+                        help="Input key for data in input file with n5/OME-ZARR format. Default: s0")
     parser.add_argument("--output_key", type=str, default=None,
                         help="Output key for data in output file with n5 format. Default: TIF file.")
     parser.add_argument("-v", "--voxel_size", type=float, nargs="+", default=[0.38, 0.38, 0.38],
-                        help="Voxel size of input in micrometer. Default: 0.38 0.38 0.38")
-    parser.add_argument("--roi_halo", type=int, nargs="+", default=[128, 128, 64],
-                        help="ROI halo around center coordinate [pixel]. Default: 128 128 64")
-
-    # options for S3 bucket
-    parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
-    parser.add_argument("--s3_credentials", type=str, default=None,
-                        help="Input file containing S3 credentials. "
-                        "Optional if AWS_ACCESS_KEY_ID and AWS_SECRET_ACCESS_KEY were exported.")
-    parser.add_argument("--s3_bucket_name", type=str, default=None,
-                        help="S3 bucket name. Optional if BUCKET_NAME was exported.")
-    parser.add_argument("--s3_service_endpoint", type=str, default=None,
-                        help="S3 service endpoint. Optional if SERVICE_ENDPOINT was exported.")
-
-    args = parser.parse_args()
-    args_dict = vars(args)
-    extract_block_json_wrapper(
-        input_path=args_dict.pop("input"),
-        output_path=args_dict.pop("output"),
-        json_file=args_dict.pop("json_info"),
-        **args_dict,
-    )
-
-
-def extract_central_blocks():
-    parser = argparse.ArgumentParser(
-        description="Script to extract multiple blocks for intensity annotation based on a JSON file.")
-
-    parser.add_argument("-i", "--input", type=str, default=None, help="Input JSON dictionary.")
-    parser.add_argument("-o", "--output", type=str, default=None,
-                        help="Output directory for extracted blocks.")
+                        help="Voxel size of input in micrometer. A value in the JSON file wins. "
+                        "Default: 0.38 0.38 0.38")
+    parser.add_argument("--point_tables", type=str, nargs="+", default=None,
+                        help="Local point tables with 'x', 'y', 'z' in micrometer, e.g. synapse detections. "
+                        "The points of each crop are saved as a napari points file (CSV), named after the table.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
-    parser.add_argument("-m", "--mobie_dir", type=str, default=MOBIE_FOLDER,
-                        help="Directory containing MoBIE project.")
 
     # options for S3 bucket
     parser.add_argument("--s3", action="store_true", help="Flag for using S3 bucket.")
@@ -159,31 +103,85 @@ def extract_central_blocks():
 
     args = parser.parse_args()
 
-    extract_central_block_from_json(
-        json_file=args.input,
-        output_path=args.output,
-        force_overwrite=args.force,
-        mobie_dir=args.mobie_dir,
+    if args.input is not None:
+        mode = _INPUT
+    elif not args.find_centers:
+        mode = _EXTRACT
+    elif args.output is None:
+        mode = _CENTERS_ONLY
+    else:
+        mode = _CENTERS
+    extraction_modes = {_INPUT, _EXTRACT, _CENTERS}
+    check_mode_options(parser, args, mode, {
+        **dict.fromkeys(["coords", "roi_halo", "dataset_name", "image_channel"], {_INPUT}),
+        "mobie_dir": {_EXTRACT, _CENTERS, _CENTERS_ONLY},
+        **dict.fromkeys(["find_centers", *_CENTER_OPTIONS], {_CENTERS, _CENTERS_ONLY}),
+        **dict.fromkeys(["input_key", "output_key", "voxel_size", "point_tables", "force"], extraction_modes),
+    })
+    if mode == _INPUT and args.coords is None:
+        parser.error("the following arguments are required: -c/--coords")
+    if mode != _CENTERS_ONLY and args.output is None:
+        parser.error("the following arguments are required: -o/--output")
+
+    point_tables = args.point_tables
+    if point_tables is not None:
+        names = [os.path.splitext(os.path.basename(path))[0] for path in point_tables]
+        if len(set(names)) != len(names):
+            parser.error(f"The point tables name the CSV files, so their file names must differ, got {names}.")
+        point_tables = {name: pd.read_csv(path, sep="\t") for name, path in zip(names, point_tables)}
+
+    s3_options = dict(
         s3=args.s3,
         s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name,
         s3_service_endpoint=args.s3_service_endpoint,
     )
+    block_options = dict(
+        input_key=args.input_key,
+        output_key=args.output_key,
+        voxel_size=args.voxel_size,
+        point_tables=point_tables,
+        force=args.force,
+        **s3_options,
+    )
+
+    if mode == _INPUT:
+        extract_block_json_wrapper(
+            output_path=args.output, input_path=args.input, coords=args.coords, roi_halo=args.roi_halo,
+            dataset_name=args.dataset_name, image_channel=args.image_channel, **block_options,
+        )
+        return
+
+    if args.find_centers:
+        center_options = {dest: getattr(args, dest) for dest in _CENTER_OPTIONS}
+        # The command rewrites the file, so an option the user typed must win over the file.
+        # An option left at its default must not, because most block extraction files record
+        # n_blocks, cell_type and component_list.
+        overrides = {dest: value for dest, value in center_options.items() if value != parser.get_default(dest)}
+        equidistant_centers_json_wrapper(
+            json_file=args.json_info, mobie_dir=args.mobie_dir, overrides=overrides, **center_options, **s3_options,
+        )
+    if args.output is not None:
+        extract_block_json_wrapper(
+            output_path=args.output, json_file=args.json_info, mobie_dir=args.mobie_dir, **block_options,
+        )
 
 
-def json_block_extraction():
+def json_extract_blocks():
     parser = argparse.ArgumentParser(
-        description="Script to create JSON dictionary used for extracting blocks for intensity annotation.")
+        description="Create the JSON file with block parameters for flamingo_tools.extract_blocks. "
+        "Next step: flamingo_tools.extract_blocks --json_info <file> --find_centers -o <output_dir>")
 
     parser.add_argument("-o", "--output", type=str, required=True,
                         help="Output path for JSON dictionary.")
     parser.add_argument("-d", "--dataset_name", type=str, required=True, help="Dataset name.")
     parser.add_argument("-i", "--image_channel", type=str, required=True, nargs="+",
                         help="Input image channel(s), e.g. PV, SGN_v2.")
-    parser.add_argument("-s", "--segmentation_channel", type=str, default="",
-                        help="Segmentation channel as reference for finding equidistant centers.")
-    parser.add_argument("--cell_type", type=str, default="sgn",
-                        help="Cell type of segmentation. Either 'sgn' or 'ihc'. Default: sgn")
+    parser.add_argument("-s", "--segmentation_channel", type=str, required=True,
+                        help="Segmentation channel for finding the crop centers with "
+                        "flamingo_tools.extract_blocks --find_centers.")
+    parser.add_argument("--cell_type", type=str, default="sgn", choices=["sgn", "ihc"],
+                        help="Cell type of segmentation. Default: sgn")
     parser.add_argument("-c", "--component_list", type=int, nargs="+", default=[1],
                         help="List of connected components.")
     parser.add_argument('-n', "--n_blocks", type=int, default=6,
@@ -191,8 +189,8 @@ def json_block_extraction():
     parser.add_argument("--include_gap", action="store_true",
                         help="Include the distance between different components for calculating the run length. "
                         "Use the same setting as for the tonotopic mapping of the cochlea.")
-    parser.add_argument("--roi_halo", type=int, nargs="+", default=[256, 256, 64],
-                        help="ROI halo around center coordinate [pixel]. "
+    parser.add_argument("--roi_halo", type=int, nargs=3, default=[256, 256, 64], metavar=("X", "Y", "Z"),
+                        help="ROI halo around each crop center in voxels. "
                         "Cropped mask has twice the size. Default: 256 256 64")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
@@ -522,7 +520,7 @@ def sgn_density():
                         help="Output path for JSON file with density results.")
     parser.add_argument("--json_output", type=str, default=None,
                         help="Optional output path for block-extraction JSON compatible with "
-                        "flamingo_tools.extract_block --json_info. "
+                        "flamingo_tools.extract_blocks --json_info. "
                         "Contains crop_centers derived from the density bounding boxes.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
     parser.add_argument(

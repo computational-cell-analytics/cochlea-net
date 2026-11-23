@@ -5,14 +5,23 @@ from unittest import mock
 
 import numpy as np
 import pandas as pd
+import torch
 import zarr
 from skimage.filters import gaussian
+from torch.nn.functional import mse_loss
 
 from flamingo_tools.synapse_detection.detection_dataset import (
     CsvHeatmapFlowTransform,
     CsvHeatmapTransform,
     DetectionDataset,
     MinPointSampler,
+    read_csv_points,
+)
+from flamingo_tools.synapse_detection.training import (
+    DetectionLoss,
+    EpochCosineSchedule,
+    _samples_per_dataset,
+    get_3d_model,
 )
 
 try:
@@ -116,21 +125,6 @@ class TestDetectionDataset(unittest.TestCase):
                 self.assertEqual(tuple(raw.shape), (1, *self.patch_shape))
                 self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
 
-    def test_dataset_default_label_transform(self):
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            raw_path, label_path = self._create_data(tmp_dir)
-            ds = DetectionDataset(
-                raw_path=raw_path, raw_key="raw", label_path=label_path,
-                patch_shape=self.patch_shape, sigma=1, n_samples=1,
-            )
-
-            self.assertIs(type(ds.label_transform), CsvHeatmapTransform)
-            self.assertEqual(ds.halo, 0)
-
-            raw, labels = ds[0]
-            self.assertEqual(tuple(raw.shape), (1, *self.patch_shape))
-            self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
-
     def test_dataset_halo_from_label_transform(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
             raw_path, label_path = self._create_data(tmp_dir)
@@ -148,8 +142,9 @@ class TestDetectionDataset(unittest.TestCase):
             labels = CsvHeatmapTransform(sigma=1, eps=1e-5)(label_path, self.shape, self.bb, self.bb)
             raw = np.zeros(self.patch_shape, dtype="float32")
 
-            self.assertTrue(MinPointSampler(min_points=1, p_reject=1.0)(raw, labels))
-            self.assertFalse(MinPointSampler(min_points=1000, p_reject=1.0)(raw, labels))
+            rng = np.random.default_rng(0)
+            self.assertTrue(MinPointSampler(min_points=1, p_reject=1.0)(raw, labels, rng))
+            self.assertFalse(MinPointSampler(min_points=1000, p_reject=1.0)(raw, labels, rng))
 
             # The sampler must not reject every patch when it is used in the dataset.
             ds = self._make_dataset(
@@ -158,6 +153,69 @@ class TestDetectionDataset(unittest.TestCase):
             )
             _, labels = ds[0]
             self.assertEqual(tuple(labels.shape), (1, *self.patch_shape))
+
+    def _seeded_dataset(self, raw_path, label_path, patch_seed, sampler=None):
+        return DetectionDataset(
+            raw_path=raw_path, raw_key="raw", label_path=label_path,
+            patch_shape=self.patch_shape, label_transform=CsvHeatmapTransform(sigma=1, eps=1e-5),
+            sampler=sampler, n_samples=4, patch_seed=patch_seed,
+        )
+
+    def test_patch_seed_fixes_the_patches(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            ds = self._seeded_dataset(raw_path, label_path, patch_seed=42)
+
+            first = [ds[index] for index in range(len(ds))]
+            second = [ds[index] for index in range(len(ds))]
+            for (raw_a, labels_a), (raw_b, labels_b) in zip(first, second):
+                self.assertTrue(torch.equal(raw_a, raw_b))
+                self.assertTrue(torch.equal(labels_a, labels_b))
+
+            # A fixed patch per index, not one fixed patch for the whole dataset.
+            self.assertFalse(torch.equal(first[0][0], first[1][0]))
+
+    def test_patch_seed_is_reproducible_across_datasets(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            same = self._seeded_dataset(raw_path, label_path, patch_seed=42)
+            other = self._seeded_dataset(raw_path, label_path, patch_seed=42)
+            different = self._seeded_dataset(raw_path, label_path, patch_seed=7)
+
+            self.assertTrue(torch.equal(same[0][0], other[0][0]))
+            self.assertFalse(torch.equal(same[0][0], different[0][0]))
+
+    def test_without_patch_seed_the_patches_are_redrawn(self):
+        # Training must keep seeing a new patch on every access.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            ds = self._seeded_dataset(raw_path, label_path, patch_seed=None)
+
+            draws = [ds[0][0] for _ in range(4)]
+            self.assertTrue(any(not torch.equal(draws[0], other) for other in draws[1:]))
+
+    def test_patch_seed_still_honours_the_sampler(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            ds = self._seeded_dataset(
+                raw_path, label_path, patch_seed=42,
+                sampler=MinPointSampler(min_points=10 ** 6, p_reject=1.0),
+            )
+            ds.max_sampling_attempts = 3
+
+            with self.assertRaises(RuntimeError):
+                ds[0]
+
+    def test_sampler_rejection_is_deterministic_with_a_seed(self):
+        # An empty heatmap never meets min_points, so every call reaches the rejection draw.
+        sampler = MinPointSampler(min_points=1, p_reject=0.5)
+        raw = np.zeros(self.patch_shape, dtype="float32")
+        labels = np.zeros((1, *self.patch_shape), dtype="float32")
+
+        decisions = [sampler(raw, labels, np.random.default_rng((42, i))) for i in range(8)]
+        repeated = [sampler(raw, labels, np.random.default_rng((42, i))) for i in range(8)]
+        self.assertEqual(decisions, repeated)
+        self.assertEqual(set(decisions), {True, False})
 
     def test_flow_transform_with_stub(self):
         """Exercise the flow branch where spotiflow is not installed."""
@@ -195,6 +253,56 @@ class TestDetectionDataset(unittest.TestCase):
             self.assertTrue(np.all(recorded["points"] >= 0))
             self.assertTrue(np.all(recorded["points"] < np.array(self.patch_shape)))
 
+    def test_patch_starts_reach_the_far_end(self):
+        # A halo must not keep the patches away from the last voxels of the crop.
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            raw_path, label_path = self._create_data(tmp_dir)
+            ds = self._make_dataset(raw_path, label_path, CsvHeatmapTransform(sigma=1, eps=1e-5))
+            ds.halo = 16
+            rng = np.random.default_rng(0)
+            starts = np.array([[s.start for s in ds._sample_bounding_box(rng)] for _ in range(500)])
+
+            self.assertEqual(starts.min(axis=0).tolist(), [0, 0, 0])
+            self.assertEqual(
+                starts.max(axis=0).tolist(), [sh - psh for sh, psh in zip(self.shape, self.patch_shape)]
+            )
+
+    def test_fixed_target_ignores_border_points(self):
+        """A point on the border of the loaded box must not lower the peaks of the other points."""
+        bb = tuple(slice(0, psh) for psh in self.patch_shape)
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            label_path = os.path.join(tmp_dir, "points.csv")
+            points = [(20.0, 56.0, 56.0), (0.0, 30.0, 30.0)]
+            pd.DataFrame(points, columns=["axis-0", "axis-1", "axis-2"]).to_csv(label_path, index=False)
+
+            legacy = CsvHeatmapTransform(sigma=1, eps=1e-5)(label_path, self.shape, bb, bb)[0]
+            fixed = CsvHeatmapTransform(sigma=1, eps=1e-5, fixed_target=True)(label_path, self.shape, bb, bb)[0]
+
+        # The target of every model up to v10.
+        self.assertAlmostEqual(float(legacy[20, 56, 56]), 2.28, delta=0.01)
+        self.assertAlmostEqual(float(fixed[20, 56, 56]), 4.0, places=5)
+        self.assertAlmostEqual(float(fixed[0, 30, 30]), 4.0, places=5)
+
+    def test_fixed_target_keeps_points_outside_the_patch(self):
+        transform = CsvHeatmapTransform(sigma=1, eps=1e-5, fixed_target=True)
+        self.assertEqual(transform.halo, 3)
+        self.assertEqual(CsvHeatmapTransform.halo, 0)
+
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            label_path = os.path.join(tmp_dir, "border.csv")
+            point = (self.bb[0].start - 1.0, 50.0, 60.0)
+            pd.DataFrame([point], columns=["axis-0", "axis-1", "axis-2"]).to_csv(label_path, index=False)
+
+            # DetectionDataset expands the patch by the halo, calls the transform and crops back.
+            halo = transform.halo
+            bb_for_loading = tuple(slice(axis.start - halo, axis.stop + halo) for axis in self.bb)
+            labels = transform(label_path, self.shape, bb_for_loading, bb_for_loading)
+            heatmap = labels[0][tuple(slice(halo, halo + size) for size in self.patch_shape)]
+
+        # One voxel from the annotation, inside the first plane of the patch.
+        local = (0, 50 - self.bb[1].start, 60 - self.bb[2].start)
+        self.assertAlmostEqual(float(heatmap[local]), 4 * np.exp(-0.5), places=4)
+
     @unittest.skipUnless(_HAVE_SPOTIFLOW, "spotiflow is required for the flow channels")
     def test_flow_transform(self):
         with tempfile.TemporaryDirectory() as tmp_dir:
@@ -209,6 +317,101 @@ class TestDetectionDataset(unittest.TestCase):
 
             self.assertEqual(flow_labels.shape, (5, *self.patch_shape))
             self.assertTrue(np.array_equal(flow_labels[0], heatmap_labels[0]))
+
+
+class TestReadCsvPoints(unittest.TestCase):
+    def test_consensus_rows_only(self):
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            label_path = os.path.join(tmp_dir, "crop.csv")
+            pd.DataFrame({
+                "annotator": ["consensus", "LR", "consensus"],
+                "axis-0": [1.0, 2.0, 3.0], "axis-1": [4.0, 5.0, 6.0], "axis-2": [7.0, 8.0, 9.0],
+            }).to_csv(label_path, index=False)
+            points = read_csv_points(label_path)
+        np.testing.assert_array_equal(points, [[1, 4, 7], [3, 6, 9]])
+
+
+class TestEpochCosineSchedule(unittest.TestCase):
+    def test_ignores_the_metric_and_decays_to_zero(self):
+        n_epochs = 10
+        learning_rates = []
+        for metric in (0.1, 1e3):
+            optimizer = torch.optim.AdamW([torch.nn.Parameter(torch.zeros(1))], lr=1e-4)
+            schedule = EpochCosineSchedule(optimizer, T_max=n_epochs)
+            lrs = []
+            for _ in range(n_epochs):
+                optimizer.step()
+                schedule.step(metric)
+                lrs.append(optimizer.param_groups[0]["lr"])
+            learning_rates.append(lrs)
+        self.assertEqual(learning_rates[0], learning_rates[1])
+        self.assertTrue(all(a > b for a, b in zip(learning_rates[0], learning_rates[0][1:])))
+        self.assertAlmostEqual(learning_rates[0][-1], 0.0)
+        self.assertEqual(schedule.init_kwargs, {"T_max": n_epochs})
+
+
+class TestDetectionLoss(unittest.TestCase):
+    shape = (2, 4, 8, 8)
+
+    def setUp(self):
+        torch.manual_seed(0)
+
+    def _sample(self, n_channels):
+        return torch.rand(self.shape[0], n_channels, *self.shape[1:])
+
+    def test_heatmap_only_matches_mse(self):
+        prediction, target = self._sample(1), self._sample(1)
+        # A single output channel must not touch the empty flow slice, which would give nan.
+        self.assertAlmostEqual(
+            float(DetectionLoss()(prediction, target)), float(mse_loss(prediction, target)), places=6
+        )
+
+    def test_flow_weighting(self):
+        prediction, target = self._sample(5), self._sample(5)
+        expected = (
+            mse_loss(prediction[:, :1], target[:, :1])
+            + 0.1 * mse_loss(prediction[:, 1:], target[:, 1:])
+        )
+        self.assertAlmostEqual(
+            float(DetectionLoss(flow_weight=0.1)(prediction, target)), float(expected), places=6
+        )
+
+    def test_channel_mismatch_raises(self):
+        # A flow target for a heatmap-only model would otherwise train on the heatmap alone.
+        with self.assertRaises(ValueError):
+            DetectionLoss()(self._sample(1), self._sample(5))
+
+
+class TestSamplesPerDataset(unittest.TestCase):
+    def test_distribution(self):
+        self.assertEqual(_samples_per_dataset(None, 3), [None, None, None])
+
+        for n_samples, n_datasets in [(3200, 26), (160, 3), (7, 3), (3, 3)]:
+            split = _samples_per_dataset(n_samples, n_datasets)
+            self.assertEqual(len(split), n_datasets)
+            self.assertEqual(sum(split), n_samples)
+            self.assertLessEqual(max(split) - min(split), 1)
+
+    def test_fewer_samples_than_datasets(self):
+        # The trailing crops get no sample at all and drop out of the epoch.
+        self.assertEqual(_samples_per_dataset(2, 4), [1, 1, 0, 0])
+
+
+class TestModelNormalization(unittest.TestCase):
+    def test_global_normalization_is_a_no_op(self):
+        """The U-Net standardizes its own input, so a global mean and std change nothing.
+
+        The training and the validation rely on this: neither mirrors the statistics of the
+        production run. If the first layer stops being an InstanceNorm, this test fails, and the
+        normalization has to match between training and inference again.
+        """
+        torch.manual_seed(0)
+        model = get_3d_model(in_channels=1, out_channels=1).eval()
+        raw = torch.rand(1, 1, 16, 64, 64) * 4000
+        with torch.no_grad():
+            unnormalized = model(raw)
+            standardized = model((raw - 167.0) / 303.0)
+        self.assertLess(float((unnormalized - standardized).abs().max()), 1e-3)
 
 
 if __name__ == "__main__":

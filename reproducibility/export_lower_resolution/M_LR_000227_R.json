@@ -3,7 +3,7 @@
 		"lower_resolution": {
 			"channels": [
 				"PV",
-				"VGlut3",
+				"Vglut3",
 				"CTBP2"
 			],
 			"roi_halo": [1200, 1200, 10]

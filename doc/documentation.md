@@ -143,6 +143,13 @@ Use `--file_ext .raw` for data in raw files. The extension of the output path (`
 - `.n5` writes the [bdv.n5 format](https://github.com/bigdataviewer/bigdataviewer-core/blob/master/BDV%20N5%20format.md). Open it with BigDataViewer via `Plugins->BigDataViewer->Open XML/HDF5`, or with [BigStitcher](https://imagej.net/plugins/bigstitcher/) as described [here](https://imagej.net/plugins/bigstitcher/open-existing).
 - `.ome.zarr` writes the [ome.zarr format](https://ngff.openmicroscopy.org/).
 
+`flamingo_tools.transfer_data` copies an N5 dataset, a directory or a file from UKON. It retries after a disconnect. Pass `--ingest` to upload to UKON:
+```bash
+flamingo_tools.transfer_data -u <GWDG-username> -p "UKON100\path\to\parent_dir" -d data.n5 -o /local/dest/dir
+```
+
+See the [data transfer documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/data_transfer.md) for all transfer options, and for the conversion over an unstable connection.
+
 `flamingo_tools.run_segmentation` segments cells in volumetric light microscopy data:
 ```bash
 flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -m SGN
@@ -151,24 +158,27 @@ flamingo_tools.run_segmentation -i /path/to/data.tif -o /path/to/output_folder -
 Use `--checkpoint_path` (`-c`) for a custom trained model.
 
 `flamingo_tools.run_detection` detects synapses in volumetric light microscopy data. Its usage is similar to `flamingo_tools.run_segmentation`.
+Both commands take `--stage` to run one stage of the processing as a separate job, as the [HPC pipelines](#hpc-pipelines) do.
 See the [segmentation documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/segmentation.md) for examples of both commands.
 
 The command line interface also provides commands for the analysis of segmentation tables:
 - `flamingo_tools.label_components`: finds the connected components of a segmentation.
 - `flamingo_tools.tonotopic_mapping`: assigns a frequency to each instance.
 - `flamingo_tools.object_measures`: measures the morphology and the intensity of each instance.
-- `flamingo_tools.json_block_extraction`, `flamingo_tools.equidistant_centers`, `flamingo_tools.extract_central_blocks` and `flamingo_tools.extract_block`: extract blocks along the cochlea, for example for the intensity annotation.
+- `flamingo_tools.json_extract_blocks` and `flamingo_tools.extract_blocks`: extract blocks along the cochlea, for example for the intensity annotation.
 - `flamingo_tools.sgn_density`: calculates the SGN density at positions along Rosenthal's canal.
 - `flamingo_tools.central_path_tifs`: exports the central paths v1 (`edt`) and v2 (`edt_refined`) through Rosenthal's canal as TIF files for napari.
 - `flamingo_tools.table_info`: finds the table row closest to a value of a column, for example a frequency.
+- `flamingo_tools.export_data`: exports image data, segmentations, marker labels, SGN subtypes, synapses and frequencies at a lower resolution, for example for overview images.
 
-See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md) and the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) for examples.
+See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md), the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) and the [export documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/export_data.md) for examples.
 
 Run `flamingo_tools.<COMMAND> -h` (for example `flamingo_tools.run_segmentation -h`) to show all options of a command.
 
 ### Python Library
 
 The `flamingo_tools` python library contains the functions of CochleaNet:
+- `flamingo_tools.export_data`: exports image data and analysis results at a lower resolution, from a file or from a cochlea in a MoBIE project.
 - `flamingo_tools.measurements`: measures morphological attributes and intensity statistics of segmented cells.
 - `flamingo_tools.mobie`: exports flamingo image data or segmentation results to a MoBIE project.
 - `flamingo_tools.postprocessing`: labels connected components and maps the tonotopy of segmented cells.

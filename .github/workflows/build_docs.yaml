@@ -4,7 +4,7 @@ on:
   push:
     paths:
       - "doc/*.md"   # Trigger on changes to any markdown file
-      - "flamigo_tools/**/*.py"   # Optionally include changes in Python files
+      - "flamingo_tools/**/*.py"   # Optionally include changes in Python files
     branches:
       - master       # Run the workflow only on pushes to the master branch
   workflow_dispatch:
@@ -26,10 +26,10 @@ jobs:
 
     steps:
     - name: Checkout Code
-      uses: actions/checkout@v4
+      uses: actions/checkout@v7
 
     - name: Set up Micromamba
-      uses: mamba-org/setup-micromamba@v2
+      uses: mamba-org/setup-micromamba@v3
       with:
         micromamba-version: "latest"
         environment-file: environment.yaml
@@ -57,7 +57,7 @@ jobs:
       run: ls -la _site/
 
     - name: Upload Documentation Artifact
-      uses: actions/upload-pages-artifact@v3
+      uses: actions/upload-pages-artifact@v5
       with:
         path: _site/
 
@@ -71,4 +71,4 @@ jobs:
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@v5

@@ -13,7 +13,7 @@ from skimage.measure import regionprops
 
 from flamingo_tools.analysis.seg_table_utils import filter_table
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import default_table_path, MOBIE_FOLDER, read_table
+from flamingo_tools.s3_utils import default_table_path, read_table
 from flamingo_tools.json_util import export_dictionary_as_json
 
 REFERENCE_PRESETS = {
@@ -116,7 +116,7 @@ def sgn_density_at_position(
             bb_min               - [x, y, z] lower corner of 3D bounding box (µm)
             bb_max               - [x, y, z] upper corner of 3D bounding box (µm)
             bb_center            - [x, y, z] center of 3D bounding box (µm); pass as `coords`
-                                   to flamingo_tools.extract_block for block visualisation
+                                   to flamingo_tools.extract_blocks for block visualisation
             min_overlap_fraction - value passed in (or None when not used)
             min_overlap_volume   - value passed in (or None when not used)
             hull_vertices        - list of anchor coordinates (µm) forming the convex hull
@@ -796,7 +796,7 @@ def _build_block_extraction_dict(
     roi_halo: Optional[List[int]] = None,
     voxel_size: Tuple[float, float, float] = (0.38, 0.38, 0.38),
 ) -> List[dict]:
-    """Build a block-extraction JSON list compatible with flamingo_tools.extract_block --json_info.
+    """Build a block-extraction JSON list compatible with flamingo_tools.extract_blocks --json_info.
 
     Returns a list of dicts, one per evaluated position. Each dict contains a single
     crop_center (the bb_center of that position, rounded to ints) and its own roi_halo
@@ -818,7 +818,7 @@ def _build_block_extraction_dict(
         voxel_size: Voxel size in µm per axis used for auto roi_halo computation.
 
     Returns:
-        List of dicts, each compatible with flamingo_tools.extract_block --json_info.
+        List of dicts, each compatible with flamingo_tools.extract_blocks --json_info.
         The list can be used directly as the JSON input for extract_block_json_wrapper.
     """
     # Metadata shared by all positions.
@@ -882,7 +882,7 @@ def hull_to_mask(
     """Convert convex hull vertices to a binary ZYX mask aligned with an extracted crop.
 
     The returned mask has the same spatial extent as a crop produced by
-    `flamingo_tools.extract_block` with the given `bb_center` and `roi_halo`, so it can be
+    `flamingo_tools.extract_blocks` with the given `bb_center` and `roi_halo`, so it can be
     loaded directly as a napari Labels layer alongside the image crop.
 
     Args:
@@ -908,6 +908,9 @@ def hull_to_mask(
     verts = np.asarray(hull_vertices, dtype=float)
     phys_idx = {"x": 0, "y": 1, "z": 2}
     mask_shape_zyx = (2 * roi_halo[2], 2 * roi_halo[1], 2 * roi_halo[0])
+    # extract_blocks centers the crop on the voxel of bb_center, so the mask uses the same center.
+    voxel_size = np.broadcast_to(np.asarray(voxel_size, dtype=float), (3,))
+    bb_center = np.round(np.asarray(bb_center, dtype=float) / voxel_size) * voxel_size
 
     if mode == "2d":
         proj_ax0, proj_ax1 = _AXIS_PROJECTION[axis]
@@ -985,7 +988,7 @@ def calc_sgn_density(
                          segmentation_channel, …). When 'seg_table_path' is absent the table path
                          is derived from dataset_name and segmentation_channel via 'mobie_dir'.
         json_output: Optional output path for block-extraction JSON compatible with
-                     flamingo_tools.extract_block --json_info.
+                     flamingo_tools.extract_blocks --json_info.
                      Contains crop_centers derived from the density bounding boxes.
         force_overwrite: Forcefully overwrite output.
         positions: Cochlear positions to evaluate. Use preset names ('apex', 'mid', 'base') or
@@ -1025,7 +1028,7 @@ def calc_sgn_density(
         min_overlap_volume: Analogous to min_overlap_fraction with explicit volume in µm³
         crop_output: Optional output directory for extracting image crops (segmentation and
                      optional 'img_paths' volumes) at each computed density position. Crop file
-                     names follow the naming scheme of flamingo_tools.extract_block, e.g.
+                     names follow the naming scheme of flamingo_tools.extract_blocks, e.g.
                      <dataset>_crop_<center>_<channel>.tif. Default: None (no crops extracted).
         img_paths: Additional image volume path(s) (local or S3 OME-Zarr) to crop at each density
                    position, alongside the segmentation. Only used when 'crop_output' is given;

@@ -2,146 +2,49 @@
 
 ## Network training
 
-Since PR `#133` the synapse detection network is trained without flow per default. The flow option has to be selected by supplying a `--use_flow` flag.
-The training data is located in separate `images` and `labels` directories, so the training/validation split has to be reproducible. The random state `--random_state 42` has to be passed for training the networks to test the variation to ensure the same split.
-An example script for training `synapses_v3-1` is `train_synapse_v3-1.sbatch`.
+`scripts/synapse_marker_detection/train_synapse_detection.py` trains the v11 recipe by default
+since 2026-10-28:
 
-A new synapse network v6 or its variation could be trained by substituting the function call with
-```bash
-# train synapse network v6
-python $SCRIPT_DIR/train_synapse_detection.py -v v6 --random_state 42
-# train synapse network v6-1
-python $SCRIPT_DIR/train_synapse_detection.py -v v6 -m v6-1 --random_state 42
-```
-The training data is already prepared in `/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/synapses/training_data/v6` and is identical to the `v5` one.
+- heatmap only, with `DetectionLoss` (mean squared error) as loss and as validation metric;
+- `MinPointSampler(1, 0.8)`: a patch needs two annotations, or it passes with probability 0.2;
+- fixed validation patches, seeded by `--random_state`;
+- the fixed target: every isolated annotation has a peak of 4, and an annotation up to 3 sigma
+  outside the patch keeps its Gaussian;
+- a cosine learning rate schedule from 1e-4 to zero over 3e4 iterations. Use `latest.pt`;
+- the `train_val_split.json` of the data folder. For `v11`, the val crops are the consensus
+  crops apex1 and base1.
 
-### Training-data and loss diagnostics (2026-08-27)
+The patch shape is 40 x 112 x 112 and the batch size is 32. One run takes about 5.7 A100 hours.
+`scripts_synapses/train_synapse_v11.sbatch` trains the three seeds v11-1 to v11-3. The training data
+`training_data/synapses/training_data/v11` holds the 29 crops of `v7`, which is stated to equal
+`v5` and `v6`, and the two consensus val crops. The model, the loaders, the loss and the trainer
+are in `flamingo_tools/synapse_detection/training.py`. The raw input needs no normalization,
+because the U-Net starts with an InstanceNorm (`TestModelNormalization`).
 
-The unusual v3 training dynamics are consistent with conflicting supervision from unlabeled
-CTBP2 spots. The training volumes contain many bright CTBP2 candidates outside the annotated
-IHC region. The model receives only the CTBP2 channel, so predicting a spot at such a location is
-penalized as background even when the local intensity profile resembles a synapse.
+**Retrain v3, v5 or v6-1 with `--legacy_recipe`.** It restores the unweighted mean squared error
+over every output channel as the validation metric, redrawn validation patches, no sampler
+without `--use_flow`, the old target and the plateau schedule over 1e5 iterations. Add
+`--use_flow` for the heatmap and flow model of v5. The archived scripts in `scripts_synapses/`
+pass the flags.
 
-#### Evidence in the v3 data
-
-CTBP2 local maxima were detected with a threshold calibrated independently for each volume. The
-results below use a conservative threshold: a candidate had to be at least as bright as the
-median local maximum at annotated synapses. A candidate was considered annotation-matched when
-it was within 4 voxels of an annotation.
-
-For the seven v3 volumes that contain `raw_ihc`, an unmatched candidate was classified as
-IHC-unsupported when the maximum IHC signal in a local neighborhood was below the fifth
-percentile measured at annotated synapses. This is the direct evidence for off-target spots. For
-the eight volumes without `raw_ihc`, candidates more than 40 voxels from every annotation were
-counted separately. These spatially distant candidates are suggestive, but they cannot be called
-off-target with the same confidence: some may be real synapses outside the manually annotated
-extent.
-
-| Median-intensity candidates | Train | Validation |
-|---|---:|---:|
-| Directly IHC-unsupported | 1,215 | 7 |
-| More than 40 voxels from an annotation, IHC unavailable | 534 | 108 |
-| Annotation-matched | 1,251 | 319 |
-
-The result is not caused only by a permissive intensity threshold. At the 75th percentile of the
-annotated intensities, the full v3 data still contained 1,209 IHC-unsupported or spatially distant
-candidates versus 766 annotation-matched candidates.
-
-The direct IHC evidence is highly stain/domain-specific. The three `m78l_*_cr-ctbp2` training
-volumes contribute 1,205 of the 1,222 directly IHC-unsupported median-intensity candidates in the
-full v3 split. All three CR volumes are in the training set. The issue is therefore severe in a
-specific part of the training distribution rather than equally severe in every crop.
-
-The extraction procedure explains why these objects are present. `extract_training_data` keeps
-the complete non-zero field of view; it only removes terminal zero padding and does not crop to
-the IHC or to the annotated region. It stores a second channel as `raw_ihc` when available, but
-`train_synapse_detection.py` trains exclusively from `raw`.
-
-#### How distinguishable are the off-target spots?
-
-The strongest version of the hypothesis, that *all* off-target objects are indistinguishable in
-the CTBP2 channel, is too strong. A five-fold held-volume classifier based on local CTBP2 patch
-summaries achieved an ROC AUC of 0.94 for annotation-matched versus directly IHC-unsupported
-candidates. Many off-target objects have broad, saturated, or otherwise recognizable profiles.
-
-There is nevertheless a substantial hard subset. At a threshold retaining 90% of the annotated
-candidates, the raw-only classifier also accepted 382 of 2,781 (13.7%) directly IHC-unsupported
-candidates from the represented v3 volumes. When restricted to compact spot-shape profiles, it
-accepted 736 of 2,781 (26.5%). A more accurate statement is therefore:
-
-> The training data contain a large population of unlabeled CTBP2 candidates, including a
-> substantial hard subset that cannot be rejected reliably from its local CTBP2 profile alone.
-
-This classifier is a diagnostic proxy, not proof that the U-Net cannot learn additional context.
-Manual review or checkpoint predictions at the candidate coordinates are needed to establish
-which individual candidates are genuinely ambiguous.
-
-#### Why these false negatives strongly affect MSE
-
-`CsvHeatmapTransform` creates a Gaussian target with sigma 1 and peak value 4. For the training
-patch shape `40 x 112 x 112`, one isolated, target-shaped prediction at an unlabeled position
-contributes approximately:
-
-| Predicted peak amplitude | MSE contribution |
-|---:|---:|
-| 0.5 | 0.00000277 |
-| 1 | 0.0000111 |
-| 2 | 0.0000444 |
-| 4 | 0.000178 |
-
-The best recorded v3-variant validation losses range from approximately 0.000112 to 0.000161.
-Thus, one confident target-shaped prediction at an unlabeled spot can contribute more than the
-entire reported validation loss. At the median-intensity candidate threshold, a uniformly sampled
-v3 training patch contains an estimated 1.97 IHC-unsupported or spatially distant candidates on
-average. Suppressing such candidates can lower voxelwise MSE while also suppressing true
-synapses, which is consistent with the low-loss, low-recall behavior of conservative seeds such
-as v3-1 and v3-2. This is a plausible mechanism, not yet a causal checkpoint-level demonstration.
-
-#### Critical independent bug: raw input is not normalized
-
-**The current v3-style training path does not normalize the raw input and must be fixed before
-the next training run.** `supervised_training` sets `raw_transform=None`. The local
-`DetectionDataset` stores this value unchanged and only applies a transform when it is not
-`None`; `ensure_tensor_with_channels` then casts the original values to floating point without
-normalizing them. Consequently, the network receives the native intensity scales of a mixture of
-`uint8` and `uint16` volumes. For example, `4.1L_mid_IHCribboncount_Z` is `uint8`, whereas the
-other v3 volumes are `uint16` with substantially different ranges.
-
-The upstream detection dataset normally falls back to standardization when no raw transform is
-provided, but the local dataset does not implement this fallback. This is separate from the
-missing-label problem and is another credible source of domain sensitivity and seed instability.
-Training should define and test an explicit normalization that is also applied identically during
-inference.
-
-#### Further confounder and recommended tests
-
-Validation patches are not fixed: `DetectionDataset.__getitem__` samples a new random bounding
-box on every access, and the validation loader is shuffled. Validation loss therefore measures a
-different set of patches at each evaluation. The off-target distribution makes this noise more
-consequential, but random validation sampling is an independent problem.
-
-Before interpreting another seed comparison, the training setup should:
-
-1. add an explicit and identical training/inference raw normalization;
-2. use a fixed validation patch set and a detection-level validation metric;
-3. mark regions outside the exhaustively annotated/IHC-valid region as *ignore*, rather than as
-   background in the loss;
-4. run a quick ablation without the three `m78l_*_cr-ctbp2` volumes, followed by a proper masked
-   training run that retains their valid annotations;
-5. apply the existing checkpoints at the confirmed candidate coordinates and test whether the
-   lowest-loss seeds suppress both off-target candidates and annotated synapses.
-
-An IHC-derived mask can be used only for the training loss, so this test does not require an IHC
-channel as network input at inference time. If the IHC channel is intended to be a model input
-instead, its availability and stain-dependent behavior must first be resolved for all training and
-production volumes.
+**Retrain v7 to v10 from the snapshot.** Their options are removed. Check out the tag
+`synapse-detection-investigation` for v7 and v10, and commit `4da9e70` for the masks of v8 and
+v9. The tag also holds the full, dated record of the investigation. "Network variation" below is
+its summary.
 
 ## Network application
 Potentially relevant for a new synapse network.
+
+The standard network is v11-2 `latest.pt`. Production still applies v3 (`get_model("Synapses")`
+and `synapses_v3` in slurm-workflows) until the open items below are done. The detection defaults
+(threshold 0.5, `min_distance` 1) are in `flamingo_tools.model_utils.get_default_detection_settings`.
+The `detect_synapses` template of slurm-workflows passes the threshold and keeps the default
+`min_distance`, so v3 also detects with `min_distance` 1 since 2026-10-28.
+
 An example script for cochlea `G_LR_000302_R` is `synapse_process_GLR000302R.sbatch`.
 The volume can be masked based on an IHC segmentation, which can be local or on the S3 bucket.
-The mask may cut off potential synapses because its size is currently limited to the extension of the IHC segmentation.
-Future updates may improve this by dilating the mask before applying the network.
+`build_ihc_mask` dilates the segmentation by 4 voxels at `s4`, which is 64 voxels at full
+resolution, so the mask does not cut off synapses at the border of the IHC segmentation.
 
 **Prefer the three-stage slurm workflow over `marker_detection` for a whole cochlea.**
 `synapse_process_GLR000302R.sbatch` runs prediction, peak detection and matching in one 10 h
@@ -160,7 +63,6 @@ before applying the network to a new cochlea.
 
 * transfer synapse detection to MoBIE
 * transfer to S3 bucket
-* check content of `flamingo_tools/postprocessing./synapse_per_ihc_utils.py` (probably already updated)
 
 ### Calculate synapses near IHC components
 This script reads the information of `synapse_per_ihc_utils.py`:
@@ -182,15 +84,199 @@ rclone copyto "$COCHLEA"_v11_syn-per-ihc.tsv cochlea-lightsheet:cochlea-lightshe
 
 ## Network variation
 
-The script `synapse_detect_v5-variation_F1val.sbatch` was used to apply the synapse network `v5` for the validation.
-The script has to be adapted once the variation scripts for v3 have been trained.
-Afterwards, the accuracy can be calculated using
+### Final state (2026-10-28)
+
+The investigation is closed. Decision (Martin, 2026-10-28):
+
+- The v11 recipe is the training default, see "Network training".
+- v11-2 `latest.pt` is the standard network.
+- Production detects at threshold 0.5 and `min_distance` 1. The values are in
+  `flamingo_tools.model_utils.get_default_detection_settings`.
+
+Test v11 (4 crops, 733 points), F1. `cons` is the setting that the gridsearch selects on the
+consensus val crops:
+
+| Model | (0.5, 2) | (0.5, 1) | `cons` |
+|---|---:|---:|---|
+| v5, v5-rep1 to v5-rep4, `best.pt` | 0.840 to 0.878, mean 0.861 | | 0.835 to 0.890, mean 0.868 |
+| v7-latest | 0.881 | | (0.35, 1), 0.896 |
+| v10 | 0.873 | | (0.15, 1), 0.901 |
+| v11-1-latest | 0.882 | 0.894 | (0.10, 1), 0.883 |
+| v11-2-latest | 0.889 | 0.907 | (0.20, 1), 0.908 |
+| v11-3-latest | 0.888 | 0.902 | (0.10, 1), 0.900 |
+
+### What was tried
+
+F1 on the six consensus crops at (0.5, 2), from `reproducibility/model_accuracy/synapses.json`:
+
+| Version | Change | F1 | Verdict |
+|---|---|---:|---|
+| v3, v3-1 to v3-7 | the released heatmap model and its seed replicates | 0.782 to 0.872 (IHC v4) | the seed spread is larger than every later recipe change |
+| v5 | flow channels and the `MinPointSampler` | 0.886 (`v5-ihc11`) | v7 matches it without flow, so the gain probably comes from the sampler |
+| v7 | heatmap only, `DetectionLoss` as metric, fixed val patches, the sampler | 0.876, latest 0.886 | the base of v8 to v11 |
+| v8 | loss only in cubes of half width 16 around the annotations | 0.712 (P 0.627) | failed |
+| v9 | loss without cubes around the unannotated CTBP2 spots | 0.875 | no gain |
+| v10 | target sigma 0.7 instead of 1 | 0.877 | no gain at (0.5, 2) |
+| v11-1 to v11-3 | fixed target, cosine schedule over 3e4 iterations, consensus val crops | see above | the standard |
+
+### Key findings
+
+1. **Close pairs limit the recall.** For 94 % of the false negatives of v7-latest, the matching
+   gave a detection within 3 um to a neighbour. 42 % of the consensus points have a neighbour
+   within 2 um. The IHC filter removes no true positive, so IHC context (as input or as loss
+   mask) cannot help. A narrower target (v10) does not separate the pairs. `min_distance` 1
+   instead of 2 helps every model by about 0.01 F1.
+2. **The loss masks fail.** The test crops are 35 to 78 % zero from the reslicing. The cube mask
+   of v8 removes the negative supervision at the borders between tissue and zero, and v8 fires
+   there. The masked metric could not see it. The candidate mask of v9 changes nothing.
+3. **The target of every model up to v10 depends on the patch.** `CsvHeatmapTransform` smoothed
+   with the `nearest` mode and divided by the patch maximum, so in 80 to 85 % of the patches the
+   peaks are 2.28 instead of 4. In 92 % of the patches, an annotation just outside the patch lost
+   its Gaussian. The fixed target of v11 removes both defects.
+4. **The plateau schedule collapses early.** Every run from v5 to v10 reached the floor of
+   1.22e-8 within 100 to 200 of 1,000 epochs, so about 86 % of the iterations did nothing.
+   `latest.pt` was never worse than `best.pt`. The cosine schedule over 3e4 iterations takes 5.6
+   times less training.
+5. **The old val crops are not representative.** In 20 of the 29 training crops, and in all three
+   old val crops, the labels mark close pairs 2 to 3 times less often than the consensus. A
+   selection on them chose too high a threshold (v3 and v5: -0.019 F1 on average). The new split
+   uses the consensus crops apex1 and base1 (416 points) as val crops and apex2, mid1, mid2 and
+   base2 (733 points) as test v11.
+6. **The selection must filter by the IHCs.** A radius filter around the annotations hides the
+   false positives far from them and selects too low a threshold (v9: -0.09 F1). The gridsearch
+   now filters by the distance to the IHCs, as the evaluation does (`--ihc_dir`).
+7. **The models are at human level.** Against the points that the other two annotators agree on,
+   a held-out annotator gets F1 0.871 to 0.916 (mean 0.901), and v7-latest 0.897 to 0.918. The
+   paired crop bootstrap of a model difference is about +-0.01.
+8. **v11 has a small seed spread.** At (0.5, 2) on test v11, the v5 seeds have SD 0.016 (worst
+   0.840) and the v11 seeds SD 0.004 (worst 0.882). Three seeds cannot prove a smaller spread.
+9. **`min_distance` 1 gives the gain of the selection, the low threshold does not.** The v11 seeds
+   select (0.10, 1), (0.20, 1) and (0.10, 1). At threshold 0.5, `min_distance` 1 gains +0.007 to
+   +0.013 on the val crops and +0.012 to +0.018 on the test crops. The low threshold adds false
+   positives that the two val crops do not show (v11-1 on base2: 37 at (0.10, 1), 3 at (0.5, 2)).
+10. **Block shape and halo matter, the normalization does not.** Predict with
+    `_PREDICTION_BLOCK_SHAPE` and `_PREDICTION_HALO`.
+
+### The v11 decision rules
+
+The rules were fixed before the results:
+
+1. Select the setting with the gridsearch on the consensus val crops.
+2. Score test v11 at the selected setting and at the median setting of the three seeds.
+3. Baseline: v5, v5-rep1 to v5-rep4, v7 and v7-latest at their `cons` setting: mean 0.874,
+   worst 0.835.
+4. Make the recipe the default if the mean is at least the baseline mean minus 0.01, no seed is
+   below the worst baseline seed, and the selected thresholds agree.
+5. Choose the released seed by its val F1.
+
+Rules 4.1 (mean 0.897) and 4.2 (worst 0.883) pass. Rule 4.3 fails on the threshold, but all three
+seeds select `min_distance` 1. Production therefore uses (0.5, 1): every seed is within 0.008 of
+its best val F1 there, at a precision of 0.97 or more. Rule 5 chooses v11-2 (val F1 0.925, then
+v11-3 0.916 and v11-1 0.909).
+
+### Reproduction
 
 ```bash
-python scripts/validation/synapses/run_evaluation.py -v v3-1 -o ~/flamingo-tools/reproducibility/model_accuracy/
-python scripts/validation/synapses/run_evaluation.py -v v3-2 -o ~/flamingo-tools/reproducibility/model_accuracy/
-python scripts/validation/synapses/run_evaluation.py -v v3-3 -o ~/flamingo-tools/reproducibility/model_accuracy/
-python scripts/validation/synapses/run_evaluation.py -v v3-4 -o ~/flamingo-tools/reproducibility/model_accuracy/
+ROOT=/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet
+DATA=$ROOT/training_data/synapses
+IHC=$ROOT/trained_models/IHC/v11_cochlea_distance_unet_IHC_supervised_2026-07-20
+# Train with the v11 recipe on the v11 data folder and its split.
+python scripts/synapse_marker_detection/train_synapse_detection.py -m <name> --random_state 42 -s <save_root>
+# Select the setting on the consensus val crops. --ihc_dir holds <crop>_ihc/segmentation.zarr.
+python -m flamingo_tools.synapse_detection.gridsearch -m <checkpoint>/latest.pt \
+    --ihc_dir $ROOT/predictions/val_synapses/production_2026-09-25/v7
+# Score test v11 once, at the production setting. Use a new output root for every run.
+OUT=$ROOT/predictions/val_synapses/production_<date>/<name>
+python scripts/validation/synapses/prediction.py -o $OUT -i $DATA/test_data/v11/images \
+    --model_synapse <checkpoint>/latest.pt --model_ihc $IHC
+python scripts/validation/synapses/run_evaluation.py -p $OUT -o reproducibility/model_accuracy/ \
+    -c $DATA/test_data/v11/images -r $ROOT/AnnotatedImageCrops/Synapses_2026-04/consensus_annotation
 ```
-The accuracy values will be written into `reproducibility/model_accuracy/synapses.json`.
-From there they can be read by `plot_fig2.py`.
+
+A registered version scores with `prediction.py -v <version>` and `run_evaluation.py -v <version>`.
+
+### Gotchas
+
+- `synapses.json` has two IHC eras. The entries written before 2026-09-24 were filtered against
+  IHC v4. Compare only the `-ihc11` keys and v7 or later. The plain `v3` and `v5` keys stay on
+  IHC v4 for Figure 2c and Supplementary Figure 2.
+- Every `synapses.json` entry written before 2026-10-28 used `min_distance` 2. The entries do not
+  store the setting.
+- The `v11-*` entries score the six consensus crops, which include the v11 val crops apex1 and
+  base1. Compare v11 with earlier models on the four test v11 crops only.
+- `run_evaluation.py` refuses to replace an entry without `--overwrite`. `prediction.py` skips a
+  crop that already has a prediction.
+- The pickled exports (`synapse_detection_v*.pt` up to v10, `synapse_detection_model_*.pt`) fail
+  in torch_em 0.10.7 and later. Use an env with torch_em 0.10.6 or earlier, or a trainer
+  checkpoint.
+- Use `consensus_annotation/` (1,149 points) as reference, not `test_data/v5/labels` (1,133
+  consensus points). 1,123 of the 1,149 points lie within 3 um of the IHCs.
+- The checkpoint folders `v5-f1` to `v5-f4` are seed replicates (`v5-rep1` to `v5-rep4`). The
+  exports `synapse_detection_model_v5-f{1..4}.pt` should be the fold models `v5-fold1..4/best.pt`,
+  but on the cluster they gave heatmaps identical to `v5-rep1` to `v5-rep4`. Compare them before
+  you score a fold model again.
+- Do not switch the branch of the cluster checkout while a job runs.
+- Never select a setting on the test crops, and never on the old val crops.
+
+### Open items
+
+- Compare (0.5, 1) with (0.5, 2) on one whole cochlea (`syn_per_IHC`). Predict it with v11-2 and
+  keep `predictions.zarr` (`--no-cleanup` in slurm-workflows). Then run only the detection stage,
+  once per `min_distance`. The template has no `min_distance` and overwrites the tables in the
+  same folder: copy the tables of the first run aside, and call
+  `run_synapse_detection_slurm(..., min_distance=2)` by hand for the second.
+- Copy the v11 checkpoints to `trained_models/Synapses/synapse_detection_v11-<i>[-latest].pt`, the
+  paths of `PREDICTION_DICT`, and add `synapses_v11` to the slurm-workflows project settings.
+- Publish v11-2 on BioImage.IO (loyal-ant v1). Then bump `MODELS["Synapses"]` in
+  `flamingo_tools/model_utils.py`. Until then, `get_model("Synapses")` gives v3.
+- A detection-level validation metric. The voxelwise MSE does not rank detectors (Spearman rho
+  0.39), but with the cosine schedule `latest.pt` does not depend on it.
+- `v6-1` has no IHC v11 score. That the `v7` data equals the `v5` data is not shown.
+
+### Settings of every model version
+
+Common to every run up to v10: patch shape 40 × 112 × 112, batch size 32, learning rate 1e-4
+with the torch_em `ReduceLROnPlateau` (factor 0.5, patience 5 epochs, see "Key findings"), 3,200
+training and 160 validation samples per epoch, no augmentation, a Gaussian target of peak 4 and
+sigma 1 voxel (v10: 0.7) divided by its patch maximum, and three validation crops. v11 differs
+as given in its row. The `synapses.json` entries of the production
+pipeline use threshold 0.5, `min_distance` 2, the IHC filter at 3 um and matching at 3 um on the
+six consensus test crops.
+
+| Version | Data | Output | Loss / validation metric | Sampler | Loss mask | Validation patches | Iterations | Export | Evaluation |
+|---|---|---|---|---|---|---|---|---|---|
+| v3 | `v3`, 15 crops | heatmap | MSE / MSE | none (passed, but dropped by the old upstream) | none | redrawn | 1e5 | not recorded | `v3`: production, IHC v4 (legacy pipeline: threshold 1.3); `v3-ihc11`: IHC v11 |
+| v3_05t | v3 checkpoint | | | | | | | | old per-version pipeline at threshold 0.5 |
+| v3-1 … v3-4 | `v3` | heatmap | MSE / MSE | none | none | redrawn | 1e5 | `best.pt` (epochs 750, 380, 848, 134) | production, IHC v4 |
+| v3-3-best | v3-3 | | | | | | | `best.pt`, epoch 848 | production, IHC v4 |
+| v3-5, v3-6, v3-7 | `v3` | heatmap | MSE / MSE | none | none | redrawn | 1e4 | v3-5: epoch 71 (`v3-5-epoch71`); v3-6: best, epoch 99; v3-7: best, epoch 43 | production, IHC v4; v3-7 not scored |
+| v3-flow-1 | `v3` | heatmap + flow | MSE + 0.1 flow / MSE over 5 channels | `MinPointSampler(1)` | none | redrawn | 1e5 | best and latest | not scored |
+| v4 | `v4`, 20 crops | heatmap + flow | upstream, not recorded in detail | `MinPointSampler(1)`, probably applied | none | redrawn | 1e5 | not recorded | legacy pipeline, IHC v4, never rescored |
+| v5 | `v5`, 29 crops | heatmap + flow | MSE + 0.1 flow / MSE over 5 channels | `MinPointSampler(1)`; last 21 voxels per axis not trained | none | redrawn | 1e5 | `best.pt` | `v5`: legacy pipeline at 0.5, IHC v4; `v5-ihc11`: production, IHC v11 |
+| v5_05t | v5 checkpoint | | | | | | | | old per-version pipeline at threshold 0.5 |
+| v5-f1 … v5-f4 | `v5`, four other splits: the exports are `v5-fold1..4/best.pt` | heatmap + flow | as v5 | as v5 | none | redrawn | 1e5 | `best.pt` (epochs 31, 698, 681, 64) | `run_detection` at 0.5, IHC v4; `v5-f0` has the counts of v5 |
+| v5-rep1 … v5-rep4 | `v5`, the v5 split; checkpoint folders `v5-f1..4` | heatmap + flow | as v5 | as v5 | none | redrawn | 1e5 | `best.pt` (epochs 278, 13, 109, 28) and `latest.pt` | test v11 only, at (0.5, 2) and `cons` (2026-10-26, in the snapshot) |
+| v6-1 | `v6` = v5 data | heatmap | MSE / MSE | none | none | redrawn | 1e5 | not recorded | not scored |
+| v7 | `v7` | heatmap | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v8 | `v8` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(0)` | cubes of half width 16 around the annotations; last 33 voxels per axis not trained; commit `4da9e70` | fixed, seed 42 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v9 | `v7` | heatmap | masked `DetectionLoss` / the same | `MinPointSampler(1)` | cubes of half width 3 around the unannotated candidates, percentile 10; commit `4da9e70` | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v10 | `v7` | heatmap, target sigma 0.7 | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42, other draws than v7 | 1e5 | `best.pt` and `latest.pt` | production, IHC v11 |
+| v11-1 … v11-3 | `v11` = `v7` + 2 consensus val crops; split file, the 3 old val crops train | heatmap, fixed target | `DetectionLoss` / the same | `MinPointSampler(1)` | none | fixed, seed 42 | 3e4, cosine learning rate | `best.pt` and `latest.pt` | production, IHC v11; selected on the consensus val crops: (0.10, 1), (0.20, 1), (0.10, 1); released: v11-2 `latest.pt` at (0.5, 1) |
+
+`MinPointSampler(k)` accepts a patch with more than `k` annotations, and otherwise with
+probability 0.2. v7 to v10 standardize the raw input, which is a no-op for this network; whether
+the earlier runs did is irrelevant for the same reason. Gaps and conflicts in the record:
+
+- The v3 split is 13/2 in the original 2025-06-15 script and 12/3 in the later notes.
+- The v4 training date and its export are not recorded, and v4 was never rescored with the
+  production settings.
+- `v5_05t` (F1 0.888) and `v5` (0.871) are both at threshold 0.5. The cause of the difference is
+  not recorded.
+- The plain `v3-3` export (0.851) is not documented. `v3-3-best` is the epoch 848 `best.pt`.
+- The commands of the v5 folds and of the v5 replicates are not recorded. The val crops of each
+  run are in its checkpoint, in `init["val_dataset"]`.
+- The thresholds behind `v5_f1val_threshold` and `v5_train_threshold` in
+  `plot_supp_fig2.py` are not recorded.
+- That the `v7` and `v8` data folders equal the v5/v6 data is stated, but not shown.
+- `v6-1` has no score.
+

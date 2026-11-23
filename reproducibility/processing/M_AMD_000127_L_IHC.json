@@ -48,5 +48,26 @@
 		"object_measures": {
 			"use_bg_mask": "yes"
 		}
+	},
+	{
+		"dataset_name": "M_AMD_000127_L",
+		"segmentation_channel": "IHC_v11b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"label_components": {
+			"min_size": 5000,
+			"min_component_length": 5,
+			"max_edge_distance": 30.0,
+			"component_list_path": [
+				16,
+				1,
+				4
+			],
+			"max_path_deviation": 15.0,
+			"refine_row": true,
+			"merge_components": true
+		}
 	}
 ]
