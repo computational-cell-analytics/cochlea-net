@@ -41,7 +41,7 @@ The parameters:
 - `--mode` is `2d` or `3d`. It selects the density per area or per volume.
 - `--min_overlap_fraction` is the minimum fraction of an SGN instance that must be inside the crop. The calculation does not include an SGN with a smaller fraction. In the examples, the calculation does not include SGNs with less than 20 % of their volume inside the crop.
 - `--min_overlap_volume` is the same limit as `--min_overlap_fraction`, given as a volume in cubic micrometer.
-- `--json_output` is a JSON file with the crop centers and the ROI halos. Use it as the `--json_info` argument of `flamingo_tools.extract_block` to extract the subvolumes.
+- `--json_output` is a JSON file with the crop centers and the ROI halos. Use it as the `--json_info` argument of `flamingo_tools.extract_blocks` to extract the subvolumes.
 - `--positions` sets the positions for the density as length fractions of Rosenthal's canal. The defaults are apex (0.15), mid (0.5) and base (0.85).
 - `--run_length_tolerance` is the maximum distance of an instance from the requested position along Rosenthal's canal, as a fraction of the total run length. Default: 0.1.
 - By default, the command limits the slice to one turn of Rosenthal's canal.
@@ -51,16 +51,16 @@ The parameters:
     - `--no_cluster_filter` disables this filter. The command then measures all instances in the slice.
     - `--max_edge_distance` is the maximum distance in micrometer between two instances of one cluster. Default: 40.0.
     - `--min_cluster_size` is the minimum number of instances in a cluster that the command can select. The command treats smaller clusters as fragments. Default: 10.
-- `--crop_output` and `--img_path` extract the image crops of each density position directly. Use them instead of the block-extraction JSON for `flamingo_tools.extract_block`.
+- `--crop_output` and `--img_path` extract the image crops of each density position directly. Use them instead of the block-extraction JSON for `flamingo_tools.extract_blocks`.
 - `flamingo_tools.sgn_density -h` explains the other parameters.
 
 
 ## Crop slices/volumes used for density calculation
 
-Use `flamingo_tools.extract_block` to extract the crops of the density calculation:
+Use `flamingo_tools.extract_blocks` to extract the crops of the density calculation:
 
 ```bash
 # crop data on S3 bucket
-flamingo_tools.extract_block --s3 --json_info MLR155L_crop_2d.json -o /path/to/output_crops
+flamingo_tools.extract_blocks --s3 --json_info MLR155L_crop_2d.json -o /path/to/output_crops
 ```
 You can then also give a crop as the `--seg_path` argument to calculate the SGN density.

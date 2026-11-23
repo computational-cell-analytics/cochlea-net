@@ -153,31 +153,34 @@ The blocks give the thresholds for positive and negative instances.
 
 Create a JSON file with the parameters of the block extraction:
 ```bash
-flamingo_tools.json_block_extraction -o M_AMD_N162_L.json -d M_AMD_N162_L -i PV SGN_v2 --cell_type sgn -c 1 -n 6 --roi_halo 256 256 64 -s SGN_v2
+flamingo_tools.json_extract_blocks -o M_AMD_N162_L.json -d M_AMD_N162_L -i PV SGN_v2 --cell_type sgn -c 1 -n 6 --roi_halo 256 256 64 -s SGN_v2
 ```
-Extract the blocks with this JSON file:
+Find the crop centers and extract the blocks with this JSON file:
 ```bash
 # data on the S3 bucket
-flamingo_tools.extract_central_blocks --input M_AMD_N162_L.json -o <output_dir> --s3
+flamingo_tools.extract_blocks --json_info M_AMD_N162_L.json --find_centers -o <output_dir> --s3
 # data in a local MoBIE project
-flamingo_tools.extract_central_blocks --input M_AMD_N162_L.json -o <output_dir> --mobie_dir <mobie_project_dir>
+flamingo_tools.extract_blocks --json_info M_AMD_N162_L.json --find_centers -o <output_dir> --mobie_dir <mobie_project_dir>
 ```
+`--find_centers` finds coordinates at equal distances along the center of Rosenthal's canal (SGN) or along the IHC segmentation.
+It writes the coordinates as `crop_centers` into the JSON file and replaces the crop centers that the file has.
+An entry with crop centers must have an `n_blocks` equal to their number, because other crop centers were set by hand.
+Otherwise the command stops before it changes the file.
+Then the command extracts one block for each crop center and image channel of the JSON file.
 
 #### Step-by-Step
-You can also do the two parts of `flamingo_tools.extract_central_blocks` one after the other.
-
-`flamingo_tools.equidistant_centers` finds coordinates at equal distances along the center of Rosenthal's canal (SGN) or along the IHC segmentation.
-With `--json_info`, the command writes the coordinates as `crop_centers` into the JSON file:
+You can also do the two parts one after the other.
+Without `-o`, the command only writes the crop centers into the JSON file:
 ```bash
-flamingo_tools.equidistant_centers --json_info M_AMD_N162_L.json --s3
+flamingo_tools.extract_blocks --json_info M_AMD_N162_L.json --find_centers --s3
 ```
-`flamingo_tools.extract_block` then extracts one block for each crop center and image channel of the JSON file:
+Without `--find_centers`, the command only extracts the blocks at the crop centers of the JSON file:
 ```bash
-flamingo_tools.extract_block --json_info M_AMD_N162_L.json -o <output_dir> --s3
+flamingo_tools.extract_blocks --json_info M_AMD_N162_L.json -o <output_dir> --s3
 ```
 To extract one block, give the image data and the center coordinate in micrometer:
 ```bash
-flamingo_tools.extract_block --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr -o crop.tif -c x y z --s3
+flamingo_tools.extract_blocks --input M_AMD_N162_L/images/ome-zarr/SGN_v2.ome.zarr -o crop.tif -c x y z --s3
 ```
 
 ### 2 - Calculation of object measures
@@ -445,7 +448,7 @@ flamingo_tools.label_components -i MLR153L_default.tsv -o MLR153L_labeled.tsv --
 flamingo_tools.tonotopic_mapping -i MLR153L_labeled.tsv -o MLR153L_tonotopic.tsv --cell_type sgn -c 1 2 3 --animal mouse
 
 # create a JSON file as input for the next steps
-flamingo_tools.json_block_extraction -o M_LR_000153_L.json -d M_LR_000153_L -i PV CR GFP SGN_v2 --cell_type sgn -c 1 2 3 -n 6 --roi_halo 256 256 64 -s SGN_v2
+flamingo_tools.json_extract_blocks -o M_LR_000153_L.json -d M_LR_000153_L -i PV CR GFP SGN_v2 --cell_type sgn -c 1 2 3 -n 6 --roi_halo 256 256 64 -s SGN_v2
 
 # object measures without a background mask
 flamingo_tools.object_measures -o . --json_info M_LR_000153_L.json --s3
@@ -613,9 +616,9 @@ The crops are 256 voxels (97 µm) on each side.
 - `M_AMD_N179_L_IHC_synapses.json` and `M_AMD_N179_R_IHC_synapses.json` have six crops each at equidistant positions along the IHC row, with `IHC_v11b` and the valid components of the cochlea.
 - `M_AMD_000117_L_IHC_synapses.json` has six crops at equidistant positions along the IHC row:
   ```bash
-  flamingo_tools.json_block_extraction -o M_AMD_000117_L_IHC_synapses.json -d M_AMD_000117_L \
+  flamingo_tools.json_extract_blocks -o M_AMD_000117_L_IHC_synapses.json -d M_AMD_000117_L \
       -i CTBP2 Homer1 Vglut3 IHC_v11 -s IHC_v11 --cell_type ihc -c 1 -n 6 --roi_halo 128 128 128
-  flamingo_tools.equidistant_centers --json_info M_AMD_000117_L_IHC_synapses.json --s3
+  flamingo_tools.extract_blocks --json_info M_AMD_000117_L_IHC_synapses.json --find_centers --s3
   ```
 - `M_AMD_000117_L_IHC_synapses_homer1-excess.json` has three crops at the IHCs with the most Homer1 spots without a CtBP2 partner.
   The crops do not overlap.
@@ -624,16 +627,16 @@ The crops are 256 voxels (97 µm) on each side.
   --crop_json M_AMD_000117_L_IHC_synapses_homer1-excess.json --n_crops 3 --dataset_name M_AMD_000117_L \
   --image_channel CTBP2 Homer1 Vglut3 IHC_v11 --segmentation_channel IHC_v11 --roi_halo 128 128 128
   ```
-  Keep the two files apart. `flamingo_tools.equidistant_centers` replaces the crop centers of every entry in a file.
+  Keep the two files apart. `--find_centers` replaces the crop centers of every entry in a file.
 - `M_AMD_000126_L_IHC_synapses.json` to `M_AMD_000137_R_IHC_synapses.json` (126, 127 and 137, left and right) have three crops each along the IHC row of `IHC_v11b`.
   The crops are at the length fractions 0.85 (base), 0.5 (mid) and 0.15 (apex), in this order, and hold CTBP2, Vglut3 and `IHC_v11b`, but not Homer1.
   The key `length_fraction` records the positions. No tool reads it.
-  Do not run `flamingo_tools.equidistant_centers` on these files, because it replaces the crop centers.
+  Do not use `--find_centers` for these files, because it replaces the crop centers.
 
-Extract the crops with `flamingo_tools.extract_block`.
+Extract the crops with `flamingo_tools.extract_blocks`.
 `--point_tables` also writes the spots of each crop as a napari points file (CSV), named after the table:
 ```bash
-flamingo_tools.extract_block --json_info reproducibility/block_extraction/M_AMD_000117_L_IHC_synapses.json \
+flamingo_tools.extract_blocks --json_info reproducibility/block_extraction/M_AMD_000117_L_IHC_synapses.json \
     -o <out-dir> --s3 --point_tables <out-dir>/CTBP2_spots_matched.tsv <out-dir>/Homer1_spots_matched.tsv
 ```
 The columns `axis-0`, `axis-1`, `axis-2` are the ZYX position in voxels of the crop.

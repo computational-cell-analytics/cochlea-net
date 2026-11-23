@@ -62,7 +62,7 @@ def _crop_file_name(coords: List[float], dataset_name: Optional[str], suffix: Op
 
 def extract_block_single(
     input_path: str,
-    coords: List[int],
+    coords: List[float],
     output_path: str,
     dataset_name: Optional[str] = None,
     channel_name: Optional[str] = None,
@@ -86,13 +86,13 @@ def extract_block_single(
 
     Args:
         input_path: Input folder in n5 / ome-zarr format.
-        coords: Center coordinates of extracted 3D volume.
+        coords: The block center in micrometer, (x, y, z).
         output_path: Output directory or file. In a directory, the crop is named after the dataset, the center and
             the channel.
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
         voxel_size: The voxel size of the data in micrometer.
-        roi_halo: ROI halo of extracted 3D volume.
+        roi_halo: The halo around the block center in voxels, (x, y, z).
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -315,34 +315,42 @@ def extract_block_json_wrapper(
     output_path: str,
     input_path: Optional[str] = None,
     json_file: Optional[str] = None,
-    coords: List[int] = [],
+    coords: Optional[List[float]] = None,
     mobie_dir: str = MOBIE_FOLDER,
     force: bool = False,
     s3: Optional[bool] = False,
     point_tables: Optional[Dict[str, pd.DataFrame]] = None,
     **kwargs,
 ):
-    """Wrapper function for extracting blocks based on a dictionary in a JSON file.
+    """Extract a block for each crop center and image channel of a JSON file, or one block around `coords`.
 
     Args:
-        output_path: Output path for storing extracted blocks.
-        input_path: Input path for image channel.
-        json_file: JSON file containing parameter dictionary.
-        coords: List of center coordinates for extracting blocks.
+        output_path: Output directory, or output file for one block.
+        input_path: Image data for one block. Used without json_file.
+        json_file: JSON file with one block parameter dictionary, or a list of them. Each entry needs
+            'crop_centers'. The image data path comes from its 'dataset_name' and 'image_channel'.
+        coords: The block center in micrometer, (x, y, z). Used without json_file.
         mobie_dir: Local MoBIE directory used for creating data paths when a JSON dict is provided.
         force: Flag for forcefully overwriting output files.
         s3: Flag for accessing data stored on S3 bucket.
         point_tables: Point tables with 'x', 'y', 'z' in micrometer, keyed by name. The points of each crop are
             saved as a napari points file, see `extract_points_single`.
+        kwargs: Further arguments for `extract_block_single`. An entry of the JSON file overrides them.
     """
     if json_file is not None:
         with open(json_file, "r") as f:
             param_dicts = json.loads(f.read())
-        os.makedirs(output_path, exist_ok=True)
         if not isinstance(param_dicts, list):
             param_dicts = [param_dicts]
+        for index, params in enumerate(param_dicts):
+            if "crop_centers" not in params:
+                raise ValueError(
+                    f"Entry {index} ({params.get('dataset_name')}) of {json_file} has no 'crop_centers'. "
+                    "Find them with flamingo_tools.extract_blocks --find_centers."
+                )
         if point_tables and len({params["dataset_name"] for params in param_dicts}) > 1:
             raise ValueError("Point tables belong to one cochlea, but the JSON file has entries for several cochleae.")
+        os.makedirs(output_path, exist_ok=True)
         for params in param_dicts:
             cochlea = params["dataset_name"]
             if isinstance(params["image_channel"], list):
@@ -384,8 +392,8 @@ def extract_block_json_wrapper(
                                               force_overwrite=force, **entry_kwargs)
 
     else:
-        if input_path is None:
-            raise ValueError("An input path to image data is required, if no JSON file is supplied.")
+        if input_path is None or coords is None:
+            raise ValueError("An input path to image data and coords are required, if no JSON file is supplied.")
         if point_tables and not os.path.isdir(output_path):
             raise ValueError("Point tables require an output directory.")
         extract_block_single(
@@ -401,41 +409,3 @@ def extract_block_json_wrapper(
             shape = _volume_shape(input_path, s3, **kwargs)
             for name, points in point_tables.items():
                 extract_points_single(points, coords, output_path, shape, name=name, force_overwrite=force, **kwargs)
-
-
-def extract_central_block_from_json(
-    json_file: str,
-    output_path: str,
-    force_overwrite: bool = False,
-    s3: bool = False,
-    mobie_dir: str = MOBIE_FOLDER,
-    **kwargs,
-):
-    """Extract central blocks based on parameters in a JSON file.
-    This function combines the search of equidistant center coordinates and the subsequent block extraction.
-
-    Args:
-        json_file: JSON with parameter dictionary. Can be created using 'flamingo_tools.json_block_extraction'.
-        output_path: Output directory for storing extracted blocks.
-        force_overwrite: Force overwrite of extracted blocks.
-        s3: Flag for accessing data on the S3 bucket.
-        mobie_dir: Local MoBIE directory used for creating data paths.
-    """
-    from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_json_wrapper
-
-    # Refresh the crop centers of every entry in place, then extract once for the whole file.
-    # Extracting inside the loop repeated the whole file once per entry.
-    equidistant_centers_json_wrapper(
-        json_file=json_file, mobie_dir=mobie_dir, s3=s3, **kwargs,
-    )
-
-    os.makedirs(output_path, exist_ok=True)
-    extract_block_json_wrapper(
-        output_path=output_path,
-        json_file=json_file,
-        s3=s3,
-        input_key="s0",
-        mobie_dir=mobie_dir,
-        force=force_overwrite,
-        **kwargs,
-    )

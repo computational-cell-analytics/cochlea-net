@@ -165,7 +165,7 @@ The command line interface also provides commands for the analysis of segmentati
 - `flamingo_tools.label_components`: finds the connected components of a segmentation.
 - `flamingo_tools.tonotopic_mapping`: assigns a frequency to each instance.
 - `flamingo_tools.object_measures`: measures the morphology and the intensity of each instance.
-- `flamingo_tools.json_block_extraction`, `flamingo_tools.equidistant_centers`, `flamingo_tools.extract_central_blocks` and `flamingo_tools.extract_block`: extract blocks along the cochlea, for example for the intensity annotation.
+- `flamingo_tools.json_extract_blocks` and `flamingo_tools.extract_blocks`: extract blocks along the cochlea, for example for the intensity annotation.
 - `flamingo_tools.sgn_density`: calculates the SGN density at positions along Rosenthal's canal.
 - `flamingo_tools.central_path_tifs`: exports the central paths v1 (`edt`) and v2 (`edt_refined`) through Rosenthal's canal as TIF files for napari.
 - `flamingo_tools.table_info`: finds the table row closest to a value of a column, for example a frequency.

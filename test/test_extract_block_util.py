@@ -204,6 +204,23 @@ class TestExtractBlockSingle(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract_block_json_wrapper(self.output_dir, json_file=json_file, point_tables={"spots": points})
 
+    def test_json_entry_without_crop_centers(self):
+        """A file of flamingo_tools.json_extract_blocks has no crop centers until '--find_centers' finds them."""
+        import json
+        from flamingo_tools.extract_block_util import extract_block_json_wrapper
+
+        json_file = os.path.join(self.tmpdir.name, "crops.json")
+        with open(json_file, "w") as f:
+            json.dump([
+                {"dataset_name": "M_A_L", "image_channel": "PV", "crop_centers": [[10, 5, 8]], "roi_halo": [4, 3, 3]},
+                {"dataset_name": "M_A_L", "image_channel": "PV", "segmentation_channel": "SGN_v2", "n_blocks": 6},
+            ], f)
+        output_dir = os.path.join(self.tmpdir.name, "new_crops")
+        with self.assertRaisesRegex(ValueError, "Entry 1 \\(M_A_L\\).*--find_centers"):
+            extract_block_json_wrapper(output_dir, json_file=json_file)
+        # The check runs before the first block is extracted.
+        self.assertFalse(os.path.exists(output_dir))
+
 
 class TestExtractPoints(unittest.TestCase):
 

@@ -191,9 +191,11 @@ Blocks are needed for annotations, for empty crops, and for other regions of int
 parameters live in `block_extraction` and keep the older flat format.
 
 ```bash
-flamingo_tools.extract_block --json_info <JSON-file> -o <out-dir> --s3
+flamingo_tools.extract_blocks --json_info <JSON-file> -o <out-dir> --s3
 ```
 
-`flamingo_tools.equidistant_centers --json_info <JSON-file>` recomputes evenly spaced crop centers
-along the cochlea and writes them back into the file. `flamingo_tools.extract_central_blocks` does
-both at once, and takes its parameter file with `-i` rather than `--json_info`.
+`--find_centers` first recomputes evenly spaced crop centers along the cochlea and writes them
+back into the file. Without `-o`, the command only writes the crop centers. Do not use
+`--find_centers` for a file with crop centers set by hand, because it replaces them. An entry with
+crop centers must have an `n_blocks` equal to their number. Otherwise the command stops before it
+changes the file.
