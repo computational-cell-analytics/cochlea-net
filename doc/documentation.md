@@ -169,14 +169,16 @@ The command line interface also provides commands for the analysis of segmentati
 - `flamingo_tools.sgn_density`: calculates the SGN density at positions along Rosenthal's canal.
 - `flamingo_tools.central_path_tifs`: exports the central paths v1 (`edt`) and v2 (`edt_refined`) through Rosenthal's canal as TIF files for napari.
 - `flamingo_tools.table_info`: finds the table row closest to a value of a column, for example a frequency.
+- `flamingo_tools.export_data`: exports image data, segmentations, marker labels, SGN subtypes, synapses and frequencies at a lower resolution, for example for overview images.
 
-See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md) and the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) for examples.
+See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md), the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) and the [export documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/export_data.md) for examples.
 
 Run `flamingo_tools.<COMMAND> -h` (for example `flamingo_tools.run_segmentation -h`) to show all options of a command.
 
 ### Python Library
 
 The `flamingo_tools` python library contains the functions of CochleaNet:
+- `flamingo_tools.export_data`: exports image data and analysis results at a lower resolution, from a file or from a cochlea in a MoBIE project.
 - `flamingo_tools.measurements`: measures morphological attributes and intensity statistics of segmented cells.
 - `flamingo_tools.mobie`: exports flamingo image data or segmentation results to a MoBIE project.
 - `flamingo_tools.postprocessing`: labels connected components and maps the tonotopy of segmented cells.
