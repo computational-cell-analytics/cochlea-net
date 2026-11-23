@@ -182,7 +182,6 @@ def export_lower_resolution(
     for s in normalize_scales(scale):
         folder_name = f"scale{s}" if mask is None else f"scale{s}_dilation{filter_dilation_iterations}"
         out_folder = os.path.join(output_folder, folder_name)
-        os.makedirs(out_folder, exist_ok=True)
         out_path = export_output_path(out_folder, name, ome_zarr, crop_center, axis, suffix)
         if os.path.exists(out_path) and not force:
             print(f"Skipping {out_path}. File already exists.")
@@ -208,6 +207,7 @@ def export_lower_resolution(
         if binarize:
             data = data > 0
 
+        os.makedirs(out_folder, exist_ok=True)
         write_volume(out_path, data.astype("float32", copy=False), voxel_size, s, ome_zarr=ome_zarr)
 
 

@@ -114,7 +114,6 @@ def export_marker(
 
     for s in normalize_scales(scale):
         out_folder = os.path.join(output_folder, f"scale{s}")
-        os.makedirs(out_folder, exist_ok=True)
 
         out_paths = {}
         for group in MARKER_GROUPS:
@@ -134,6 +133,7 @@ def export_marker(
         segmentation = level.read(start, stop, labels=True)
         print("Data shape", segmentation.shape)
 
+        os.makedirs(out_folder, exist_ok=True)
         for group, out_path in out_paths.items():
             print(f"Filtering {group} marker instances.")
             data = apply_marker_labels(segmentation.copy(), label_ids_positive, label_ids_negative, group=group)

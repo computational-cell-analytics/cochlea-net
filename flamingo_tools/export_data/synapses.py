@@ -88,7 +88,6 @@ def export_synapses(
 
     for s in normalize_scales(scale):
         out_folder = os.path.join(output_folder, f"scale{s}")
-        os.makedirs(out_folder, exist_ok=True)
         out_path = os.path.join(out_folder, f"{name}{offset_suffix}{out_suffix}{extension}")
         if os.path.exists(out_path) and not force:
             print(f"Skipping {out_path}. File already exists.")
@@ -112,6 +111,7 @@ def export_synapses(
             syn_ids = syn_ids[inside]
             shape = tuple(int(sto - sta) for sta, sto in zip(start, stop))
 
+        os.makedirs(out_folder, exist_ok=True)
         if points:
             # The axis-N column names make napari's built-in CSV reader open the file as a points layer.
             point_table = pd.DataFrame(coords_px, columns=["axis-0", "axis-1", "axis-2"])

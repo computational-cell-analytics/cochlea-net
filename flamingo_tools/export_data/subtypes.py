@@ -188,7 +188,6 @@ def export_subtypes(
 
     for s in normalize_scales(scale):
         out_folder = os.path.join(output_folder, f"scale{s}")
-        os.makedirs(out_folder, exist_ok=True)
 
         out_paths = {}
         for output in outputs:
@@ -208,6 +207,7 @@ def export_subtypes(
         segmentation = level.read(start, stop, labels=True)
         print("Data shape", segmentation.shape)
 
+        os.makedirs(out_folder, exist_ok=True)
         for output, out_path in out_paths.items():
             if merge_masks:
                 data = merge_subtype_masks(segmentation, table, stains, subtype_ids)

@@ -8,6 +8,9 @@ import pandas as pd
 import tifffile
 import zarr
 
+# Crop options for a crop that does not overlap a small test volume with the voxel size 1.
+CROP_OUTSIDE = dict(crop_center=[100.0, 0.0, 0.0], roi_halo=[1, 1, 1], voxel_size=1.0)
+
 
 def _write_zarr(path, arrays, chunks=None):
     f = zarr.open(path, mode="w")
@@ -280,8 +283,8 @@ class TestExportLowerResolution(unittest.TestCase):
             with self.subTest(scale=scale, crop=crop), self.assertRaisesRegex(ValueError, "outside the volume"):
                 export_lower_resolution(path, self.output_folder, [scale], crop_center=[100.0, 1.0, 1.0],
                                         voxel_size=1.0, **crop)
-            # A failed export leaves no file that a later run would skip as existing.
-            self.assertEqual(os.listdir(os.path.join(self.output_folder, f"scale{scale}")), [])
+            # A failed export leaves no file that a later run would skip as existing, and no empty folder.
+            self.assertFalse(os.path.exists(self.output_folder))
 
     def test_negative_scale(self):
         from flamingo_tools.export_data import export_lower_resolution
@@ -410,6 +413,17 @@ class TestExportMarker(unittest.TestCase):
         np.testing.assert_array_equal(positive, [[[0, 1, 0, 1, 0]]])
         np.testing.assert_array_equal(negative, [[[0, 0, 2, 0, 0]]])
 
+    def test_crop_outside_the_volume(self):
+        from flamingo_tools.export_data import export_marker
+
+        with tempfile.TemporaryDirectory() as folder:
+            path = _write_zarr(os.path.join(folder, "IHC.ome.zarr"), {"s0": np.zeros((1, 1, 5), dtype="uint64")})
+            table = pd.DataFrame({"label_id": [1], "marker_labels": [1]})
+            output_folder = os.path.join(folder, "out")
+            with self.assertRaisesRegex(ValueError, "outside the volume"):
+                export_marker(path, output_folder, [0], table, **CROP_OUTSIDE)
+            self.assertFalse(os.path.exists(output_folder))
+
 
 class TestExportSubtypes(unittest.TestCase):
 
@@ -467,6 +481,14 @@ class TestExportSubtypes(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "No subtype is defined"):
             export_subtypes(self.path, self.folder, [0], table, ["Foo"], merge_masks=True)
 
+    def test_crop_outside_the_volume(self):
+        from flamingo_tools.export_data import export_subtypes
+
+        output_folder = os.path.join(self.folder, "out")
+        with self.assertRaisesRegex(ValueError, "outside the volume"):
+            export_subtypes(self.path, output_folder, [0], self.table, ["Calb1", "Ntng1"], **CROP_OUTSIDE)
+        self.assertFalse(os.path.exists(output_folder))
+
 
 class TestExportSynapses(unittest.TestCase):
 
@@ -507,6 +529,15 @@ class TestExportSynapses(unittest.TestCase):
         self.assertEqual(points.spot_id.tolist(), [2])
         self.assertEqual(points[["axis-0", "axis-1", "axis-2"]].values.tolist(), [[4.0, 4.0, 4.0]])
 
+    def test_crop_outside_the_volume(self):
+        from flamingo_tools.export_data import export_synapses
+
+        output_folder = os.path.join(self.folder, "out")
+        for points in (False, True):
+            with self.subTest(points=points), self.assertRaisesRegex(ValueError, "outside the volume"):
+                export_synapses(self.path, output_folder, [0], self.table, points=points, **CROP_OUTSIDE)
+            self.assertFalse(os.path.exists(output_folder))
+
 
 class TestExportFrequency(unittest.TestCase):
 
@@ -546,6 +577,15 @@ class TestExportFrequency(unittest.TestCase):
 
         with self.assertRaisesRegex(ValueError, "no objects of the components"):
             export_frequency(self.path, self.folder, [0], self.table, components=[9])
+
+    def test_crop_outside_the_volume(self):
+        from flamingo_tools.export_data import export_frequency
+
+        output_folder = os.path.join(self.folder, "out")
+        for colormap in (None, "viridis"):
+            with self.subTest(colormap=colormap), self.assertRaisesRegex(ValueError, "outside the volume"):
+                export_frequency(self.path, output_folder, [0], self.table, colormap=colormap, **CROP_OUTSIDE)
+            self.assertFalse(os.path.exists(output_folder))
 
     def test_colormap(self):
         from flamingo_tools.export_data import export_frequency

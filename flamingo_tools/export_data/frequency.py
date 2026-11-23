@@ -90,7 +90,6 @@ def export_frequency(
     out_name = f"frequencies_{name}" if colormap is None else f"frequencies_{name}_{colormap}"
     for s in normalize_scales(scale):
         out_folder = os.path.join(output_folder, f"scale{s}")
-        os.makedirs(out_folder, exist_ok=True)
         out_path = export_output_path(out_folder, out_name, False, crop_center, axis, suffix)
         if os.path.exists(out_path) and not force:
             print(f"Skipping {out_path}. File already exists.")
@@ -108,6 +107,7 @@ def export_frequency(
         lut[table.label_id.values.astype("int64")] = frequencies
         output = lut[segmentation]
 
+        os.makedirs(out_folder, exist_ok=True)
         if colormap is None:
             write_volume(out_path, output, voxel_size, s)
             continue
