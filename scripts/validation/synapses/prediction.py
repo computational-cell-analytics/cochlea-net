@@ -8,11 +8,12 @@ mirrored here:
   * peak detection threshold 0.5, the value hard-coded in every whole-cochlea caller,
   * the production prediction block shape / halo,
   * `output_channels` taken from the model rather than assumed to be 1,
-  * IHC matching at the production `max_distance`,
-  * the raw input intensities, which the first InstanceNorm of the U-Net standardizes per block.
+  * IHC matching at the production `max_distance`.
 
 The production block shape only tiles volumes much larger than one block, so the crops are
-zero-padded (see `_padded_input`).
+zero-padded (see `_padded_input`). The normalization needs no mirroring: the network starts with
+an InstanceNorm on its input, so every block is standardized inside the network, and a global
+mean and standard deviation change the prediction by about 2e-5.
 """
 
 import argparse
@@ -163,11 +164,7 @@ def _drop_padding_detections(detection_path: str, shape: Tuple[int, ...]) -> Non
         det[keep].to_csv(path, index=False, sep="\t")
 
 
-def pred_synapse_impl(
-    input_path: str,
-    output_folder: str,
-    model_path: str,
-):
+def pred_synapse_impl(input_path: str, output_folder: str, model_path: str):
     """Predict synapses for a single file using the production settings.
 
     Args:
@@ -203,12 +200,9 @@ def pred_synapse_impl(
     _drop_padding_detections(detection_path, shape)
 
 
-def predict_synapses(
-    input_root: str,
-    output_root: str,
-    model_path: str,
-):
-    """Predict synapses for multiple files in an input directory."""
+def predict_synapses(input_root: str, output_root: str, model_path: str):
+    """Predict synapses for multiple files in an input directory.
+    """
     files = sorted(glob(os.path.join(input_root, "*.zarr")))
     for ff in files:
         output_folder = os.path.join(output_root, Path(ff).stem)
