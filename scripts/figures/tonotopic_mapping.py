@@ -203,6 +203,7 @@ def plot_synapses_along_cochlea(
     show_legend: bool = False,
     length_info: bool = False,
     alpha: Optional[float] = None,
+    ylabel: str = "Synapse per IHC",
 ):
     """Plot the synapses per IHC over the length fraction, with the counts of Meyer et al. 2009.
 
@@ -226,6 +227,7 @@ def plot_synapses_along_cochlea(
         show_legend: Show legend within plot.
         length_info: Print info for length of entire cochlea and bins used for plotting.
         alpha: Alpha of the cochlea points. Defaults to 0.5 with a cohort_dict and 1 without.
+        ylabel: Y-axis label.
     """
     if alpha is None:
         alpha = 0.5 if cohort_dict else 1
@@ -348,7 +350,7 @@ def plot_synapses_along_cochlea(
     ax.tick_params(axis='x', labelsize=tick_size)
     ax.tick_params(axis='y', labelsize=tick_size)
     ax.set_xlabel("Length fraction", fontsize=main_label_size)
-    ax.set_ylabel("Synapse per IHC", fontsize=main_label_size)
+    ax.set_ylabel(ylabel, fontsize=main_label_size)
 
     plt.tight_layout()
 

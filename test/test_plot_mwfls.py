@@ -14,7 +14,7 @@ FIGURE_DIR = os.path.join(REPO_ROOT, "scripts", "figures")
     any(importlib.util.find_spec(name) is None for name in ("matplotlib", "sklearn")),
     "the figure scripts need matplotlib and scikit-learn",
 )
-class TestColocalizationTable(unittest.TestCase):
+class TestPlotMwfls(unittest.TestCase):
 
     @classmethod
     def setUpClass(cls):
@@ -42,6 +42,25 @@ class TestColocalizationTable(unittest.TestCase):
         self.assertEqual(table["median_per_ihc"].tolist(), [2.0, 1.0, 0.0])
         np.testing.assert_allclose(table["colocalized_share"].iloc[:2], [0.5, 3 / 7])
         self.assertTrue(np.isnan(table.loc["Co-localized pairs", "colocalized_share"]))
+
+    def test_cohort_values(self):
+        plot_mwfls = self.plot_mwfls
+        cochleae = plot_mwfls.cohort_cochleae("mwfls")
+        outlier, = plot_mwfls.OUTLIER_DICT["synapse"]
+        tables = {
+            "SGN": {name: pd.DataFrame({"label_id": np.arange(100 + i)}) for i, name in enumerate(cochleae)},
+            "IHC": {name: pd.DataFrame({"syn_per_IHC": [i, i + 2]}) for i, name in enumerate(cochleae)},
+        }
+        counts = [100 + i for i in range(len(cochleae))]
+        self.assertEqual(plot_mwfls.cohort_values(tables, "SGN", "mwfls"), (counts, []))
+        self.assertEqual(plot_mwfls.cohort_values(tables, "IHC", "mwfls"), ([2] * len(cochleae), []))
+
+        means = [i + 1.0 for i in range(len(cochleae))]
+        self.assertEqual(plot_mwfls.cohort_values(tables, "synapse", "mwfls"), (means, []))
+        values, outliers = plot_mwfls.cohort_values(tables, "synapse", "mwfls", remove_outliers=True)
+        outlier_mean = means[cochleae.index(outlier)]
+        self.assertEqual(outliers, [outlier_mean])
+        self.assertEqual(values, [mean for mean in means if mean != outlier_mean])
 
     def test_row_ihcs(self):
         # 100 IHC positions, 9 um apart on an arc with a radius of 300 um. Cells 41-47 are missing, so the
