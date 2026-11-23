@@ -213,7 +213,7 @@ def write_crop_json(
     segmentation_channel: Optional[str] = None,
     force_overwrite: bool = False,
 ) -> dict:
-    """Write a block-extraction JSON file for `flamingo_tools.extract_block --json_info`.
+    """Write a block-extraction JSON file for `flamingo_tools.extract_blocks --json_info`.
 
     Args:
         output_path: The output JSON file.
@@ -370,7 +370,7 @@ def main():
     crops = parser.add_argument_group(
         "crops", "Write a block-extraction JSON file with crops at the IHCs with the most unmatched test spots."
     )
-    crops.add_argument("--crop_json", default=None, help="Output JSON file for flamingo_tools.extract_block.")
+    crops.add_argument("--crop_json", default=None, help="Output JSON file for flamingo_tools.extract_blocks.")
     crops.add_argument("--n_crops", type=int, default=3, help="Number of crops. Default: 3")
     crops.add_argument("--dataset_name", default=None, help="Name of the cochlea.")
     crops.add_argument("--image_channel", nargs="+", default=None, help="Channels to crop.")
