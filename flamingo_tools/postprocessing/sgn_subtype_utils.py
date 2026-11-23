@@ -201,8 +201,6 @@ def stain_to_type(stain):
         stain_norm = f"{s1}/{s2}"
 
     if stain_norm not in STAIN_TO_TYPE:
-        print(stain_norm)
-        breakpoint()
         raise ValueError(f"Invalid stain combination: {stain_norm}")
 
     return STAIN_TO_TYPE[stain_norm], stain_norm
