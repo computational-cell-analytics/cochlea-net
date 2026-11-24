@@ -240,7 +240,7 @@ class TestRemoteSizeMap(unittest.TestCase):
     def test_parse(self):
         rec = Recorder([(self.FIXTURE, False, 0)])
         with patch_run_smbclient(rec):
-            size_map = smb.build_remote_size_map("u", "p", "P/n5", ".")
+            size_map = dtu.build_remote_size_map("u", "p", "P/n5", ".")
         self.assertEqual(size_map, {
             "attributes.json": 50,
             "setup0/timepoint0/s0/attributes.json": 80,
@@ -250,7 +250,7 @@ class TestRemoteSizeMap(unittest.TestCase):
     def test_disconnect_returns_none(self):
         rec = Recorder([([], True, 0)])
         with patch_run_smbclient(rec):
-            self.assertIsNone(smb.build_remote_size_map("u", "p", "P/n5", "."))
+            self.assertIsNone(dtu.build_remote_size_map("u", "p", "P/n5", "."))
 
 
 class TestVerifyAndRepairUpload(unittest.TestCase):
@@ -274,6 +274,16 @@ class TestVerifyAndRepairUpload(unittest.TestCase):
                 smb.verify_and_repair_upload("u", "p", "P", "n5", tmp)
         # The mismatched root attributes.json was re-uploaded via put.
         self.assertIn(['cd "P/n5"', "put attributes.json"], rec.command_lists)
+
+    def test_logs_failed_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_n5(tmp)
+            log_file = os.path.join(tmp, "log.txt")
+            with patch_run_smbclient(Recorder()), mock.patch.object(dtu.time, "sleep"), \
+                 patch_both("build_remote_size_map", return_value=None):
+                smb.verify_and_repair_upload("u", "p", "P", "n5", tmp, log_file=log_file)
+            with open(log_file) as f:
+                self.assertIn("could not list the remote tree P/n5 for verification", f.read())
 
 
 class TestRetryScaffold(unittest.TestCase):
@@ -424,6 +434,27 @@ class TestGenericDownloadVerify(unittest.TestCase):
                 smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp)
             self.assertIn(['cd "P/data/sub/dir"', "recurse", "prompt", 'mget "big.bin"'],
                           rec.command_lists)
+
+    def test_retries_dropped_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _touch(os.path.join(tmp, "data", "a.bin"), 5)
+            log_file = os.path.join(tmp, "log.txt")
+            with patch_run_smbclient(Recorder()), mock.patch.object(dtu.time, "sleep"), \
+                 patch_both("build_remote_size_map", side_effect=[None, {"a.bin": 5}]) as listing:
+                smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp, log_file=log_file)
+            self.assertEqual(listing.call_count, 2)
+            self.assertFalse(os.path.exists(log_file))
+
+    def test_logs_failed_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _touch(os.path.join(tmp, "data", "a.bin"), 5)
+            log_file = os.path.join(tmp, "log.txt")
+            with patch_run_smbclient(Recorder()), mock.patch.object(dtu.time, "sleep"), \
+                 patch_both("build_remote_size_map", return_value=None) as listing:
+                smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp, log_file=log_file)
+            self.assertEqual(listing.call_count, dtu.MAX_RETRIES)
+            with open(log_file) as f:
+                self.assertIn("could not list the remote tree P/data for verification", f.read())
 
 
 class TestGenericUpload(unittest.TestCase):

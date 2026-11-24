@@ -39,7 +39,6 @@ from .data_transfer_utils import (
     SMB_SERVER,
     UPLOAD_ERROR_TOKENS,
     append_log,
-    build_remote_size_map,
     ensure_remote_path,
     list_remote_dirs,
     log_size,
@@ -544,11 +543,11 @@ def verify_and_repair_upload(
         # Normalise to posix and de-duplicate.
         return sorted({pathlib.PurePath(r).as_posix() for r in rel_files})
 
+    listing_error = f"[error] could not list the remote tree {full_remote} for verification; file sizes not checked"
     for attempt in range(1, max_passes + 1):
-        size_map = build_remote_size_map(username, password, full_remote, local_n5, smb_server=smb_server)
+        size_map = remote_size_map_with_retry(username, password, full_remote, local_n5, smb_server=smb_server)
         if size_map is None:
-            print("  [warn] could not list remote dataset for verification — "
-                  "relying on per-piece retries instead")
+            _log_warning(log_file, listing_error)
             return
 
         bad_files = []
@@ -577,13 +576,15 @@ def verify_and_repair_upload(
                 log_file=log_file, smb_server=smb_server,
             )
 
-    size_map = build_remote_size_map(username, password, full_remote, local_n5, smb_server=smb_server)
+    size_map = remote_size_map_with_retry(username, password, full_remote, local_n5, smb_server=smb_server)
+    if size_map is None:
+        _log_warning(log_file, listing_error)
+        return
     remaining = []
-    if size_map is not None:
-        for rel in _local_rel_files():
-            local_size = os.path.getsize(os.path.join(local_n5, rel))
-            if size_map.get(rel) != local_size:
-                remaining.append(rel)
+    for rel in _local_rel_files():
+        local_size = os.path.getsize(os.path.join(local_n5, rel))
+        if size_map.get(rel) != local_size:
+            remaining.append(rel)
     if remaining:
         print(f"\n[error] {len(remaining)} file(s) still mismatched after {max_passes} repair passes:")
         for rel in remaining:
@@ -710,12 +711,12 @@ def verify_and_repair_download_generic(
                 bad.append(rel)
         return bad
 
+    listing_error = f"[error] could not list the remote tree {full_remote} for verification; file sizes not checked"
     for attempt in range(1, max_passes + 1):
-        size_map = build_remote_size_map(username, password, full_remote, output_dir,
-                                         smb_server=smb_server)
+        size_map = remote_size_map_with_retry(username, password, full_remote, output_dir,
+                                              smb_server=smb_server)
         if size_map is None:
-            print("  [warn] could not list the remote tree for verification — "
-                  "relying on per-file retries instead")
+            _log_warning(log_file, listing_error)
             return
         bad = _bad_files(size_map)
         if not bad:
@@ -727,8 +728,11 @@ def verify_and_repair_download_generic(
             print(f"  -> re-fetching {rel}")
             _refetch(rel)
 
-    size_map = build_remote_size_map(username, password, full_remote, output_dir, smb_server=smb_server)
-    remaining = _bad_files(size_map) if size_map is not None else []
+    size_map = remote_size_map_with_retry(username, password, full_remote, output_dir, smb_server=smb_server)
+    if size_map is None:
+        _log_warning(log_file, listing_error)
+        return
+    remaining = _bad_files(size_map)
     if remaining:
         print(f"\n[error] {len(remaining)} file(s) still mismatched after {max_passes} repair passes:")
         for rel in remaining:
