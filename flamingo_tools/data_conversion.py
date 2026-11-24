@@ -555,8 +555,15 @@ def _integer_block_mean(data, factor, out_shape):
     """Return the block-wise mean of unsigned integer data, truncated to the input dtype.
 
     The result is identical to the float mean of pybdv cast to the dtype, because the truncated
-    quotient of non-negative integers equals the integer division. It is ~5x faster.
+    quotient of non-negative integers equals the integer division. It is ~5x faster. As in pybdv,
+    the rest of an axis beyond out_shape * factor is dropped, and the missing voxels of an
+    incomplete window count as 0.
     """
+    data = data[tuple(slice(0, n * sf) for n, sf in zip(out_shape, factor))]
+    padding = [(0, n * sf - size) for size, n, sf in zip(data.shape, out_shape, factor)]
+    if any(after > 0 for _, after in padding):
+        data = np.pad(data, padding)
+
     # Summing into the wider dtype axis by axis avoids a wide copy of the whole input.
     acc_dtype = np.uint64 if data.dtype.itemsize >= 4 else np.uint32
     total = data
@@ -628,7 +635,6 @@ class _PyramidCascade:
         out_z1 = min((z0 + data.shape[0]) // factor[0], ds.shape[0])
         if out_z1 > out_z0:
             out_shape = (out_z1 - out_z0,) + tuple(ds.shape[1:])
-            data = data[tuple(slice(0, n * sf) for n, sf in zip(out_shape, factor))]
             pending.append(self._mean(data, factor, out_shape).astype(ds.dtype, copy=False))
 
         n_pending = sum(planes.shape[0] for planes in pending)

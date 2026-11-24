@@ -355,8 +355,10 @@ class TestPyramidCascade(unittest.TestCase):
         self.addCleanup(tmp_dir.cleanup)
         self.folder = tmp_dir.name
         self.root = os.path.join(self.folder, "input")
-        make_raw_input(self.root, n_tiles=1, shape=self.SHAPE)
         self.out_path = os.path.join(self.folder, "out.n5")
+
+    def _make_input(self, shape=SHAPE):
+        make_raw_input(self.root, n_tiles=1, shape=shape)
 
     def _convert(self, **kwargs):
         from flamingo_tools import convert_lightsheet_to_bdv
@@ -378,6 +380,7 @@ class TestPyramidCascade(unittest.TestCase):
     def test_matches_pybdv_without_reading_s0_back(self):
         import flamingo_tools.data_conversion as dc
 
+        self._make_input()
         with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
             self._convert()
         read_back.assert_not_called()
@@ -386,6 +389,7 @@ class TestPyramidCascade(unittest.TestCase):
     def test_resumed_tile_reads_s0_back(self):
         import flamingo_tools.data_conversion as dc
 
+        self._make_input()
         real_iter = dc._iter_slabs
         budget = {"slabs": 2}
 
@@ -407,10 +411,21 @@ class TestPyramidCascade(unittest.TestCase):
     def test_factor_that_does_not_divide_the_chunk_depth_reads_s0_back(self):
         import flamingo_tools.data_conversion as dc
 
+        self._make_input()
         with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
             self._convert(scale_factors=[[3, 3, 3]])
         self.assertEqual(read_back.call_count, 1)
         self._assert_matches_pybdv([[3, 3, 3]])
+
+    def test_axis_shorter_than_its_factor_reads_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        # s4 has 1 plane, so the z window of s5 is incomplete.
+        self._make_input((20, 64, 64))
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert()
+        self.assertEqual(read_back.call_count, 5)
+        self._assert_matches_pybdv([[2, 2, 2]] * 5)
 
 
 class TestIntegerBlockMean(unittest.TestCase):
@@ -428,6 +443,22 @@ class TestIntegerBlockMean(unittest.TestCase):
                 result = _integer_block_mean(data, factor, out_shape)
                 self.assertEqual(result.dtype, np.dtype(dtype))
                 self.assertTrue(np.array_equal(result, expected), (dtype, factor))
+
+    def test_matches_pybdv_for_incomplete_windows(self):
+        from pybdv.downsample import get_downsampler, sample_shape
+        from flamingo_tools.data_conversion import _integer_block_mean
+
+        float_mean = get_downsampler("mean")
+        rng = np.random.default_rng(0)
+        factor = (2, 2, 2)
+        # pybdv gives an axis that is shorter than its factor 1 voxel, and drops the rest of an
+        # axis that the factor does not divide.
+        for shape in ((1, 6, 5), (3, 4, 5), (2, 1, 3)):
+            data = rng.integers(0, 65535, size=shape, dtype="uint16", endpoint=True)
+            out_shape = sample_shape(shape, factor)
+            expected = float_mean(data, factor, out_shape).astype("uint16")
+            result = _integer_block_mean(data, factor, out_shape)
+            self.assertTrue(np.array_equal(result, expected), shape)
 
 
 class TestPrefetch(unittest.TestCase):
