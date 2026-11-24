@@ -343,6 +343,76 @@ class TestRawConversion(unittest.TestCase):
         self.assertFalse(os.path.exists(self.out_path))
 
 
+class TestPyramidCascade(unittest.TestCase):
+    """The pyramid is computed from the s0 slabs in memory, with the values of pybdv."""
+
+    # Slab depth 128: the last slab is partial, two slabs make one s1 chunk, and the z size of
+    # s3 is odd (57).
+    SHAPE = (456, 200, 136)
+
+    def setUp(self):
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
+        self.root = os.path.join(self.folder, "input")
+        make_raw_input(self.root, n_tiles=1, shape=self.SHAPE)
+        self.out_path = os.path.join(self.folder, "out.n5")
+
+    def _convert(self, **kwargs):
+        from flamingo_tools import convert_lightsheet_to_bdv
+
+        convert_lightsheet_to_bdv(self.root, out_path=self.out_path, file_ext=".raw", slab_memory=0.001, **kwargs)
+
+    def _assert_matches_pybdv(self, scale_factors):
+        from elf.io import open_file
+        from pybdv.downsample import downsample
+
+        in_key = "setup0/timepoint0/s0"
+        for level, factor in enumerate(scale_factors, 1):
+            downsample(self.out_path, in_key, f"reference/s{level}", factor, "mean")
+            in_key = f"reference/s{level}"
+        with open_file(self.out_path, "r") as f:
+            for level in range(1, len(scale_factors) + 1):
+                self.assertTrue(np.array_equal(read_setup(self.out_path, 0, level), f[f"reference/s{level}"][:]))
+
+    def test_matches_pybdv_without_reading_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert()
+        read_back.assert_not_called()
+        self._assert_matches_pybdv([[2, 2, 2]] * 5)
+
+    def test_resumed_tile_reads_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        real_iter = dc._iter_slabs
+        budget = {"slabs": 2}
+
+        def failing_iter(*args, **kwargs):
+            for z0, z1, slab in real_iter(*args, **kwargs):
+                if budget["slabs"] <= 0:
+                    raise OSError(errno.EIO, "simulated connection loss")
+                budget["slabs"] -= 1
+                yield z0, z1, slab
+
+        with mock.patch.object(dc, "_iter_slabs", failing_iter):
+            with self.assertRaises(OSError):
+                self._convert()
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert()
+        self.assertEqual(read_back.call_count, 5)
+        self._assert_matches_pybdv([[2, 2, 2]] * 5)
+
+    def test_factor_that_does_not_divide_the_chunk_depth_reads_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert(scale_factors=[[3, 3, 3]])
+        self.assertEqual(read_back.call_count, 1)
+        self._assert_matches_pybdv([[3, 3, 3]])
+
+
 class TestIntegerBlockMean(unittest.TestCase):
     def test_matches_the_truncated_float_mean(self):
         from pybdv.downsample import get_downsampler

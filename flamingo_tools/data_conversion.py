@@ -557,21 +557,104 @@ def _integer_block_mean(data, factor, out_shape):
     The result is identical to the float mean of pybdv cast to the dtype, because the truncated
     quotient of non-negative integers equals the integer division. It is ~5x faster.
     """
-    total = data.astype(np.uint64 if data.dtype.itemsize >= 4 else np.uint32)
+    # Summing into the wider dtype axis by axis avoids a wide copy of the whole input.
+    acc_dtype = np.uint64 if data.dtype.itemsize >= 4 else np.uint32
+    total = data
     for axis, sf in enumerate(factor):
-        parts = [total[(slice(None),) * axis + (slice(i, None, sf),)] for i in range(sf)]
-        total = sum(parts[1:], parts[0])
+        index = (slice(None),) * axis
+        summed = total[index + (slice(0, None, sf),)].astype(acc_dtype)
+        for i in range(1, sf):
+            summed += total[index + (slice(i, None, sf),)]
+        total = summed
     return (total // int(np.prod(factor))).astype(data.dtype)
+
+
+def _mean_function(dtype):
+    """Return the block-wise mean of pybdv's "mean" mode for a dtype."""
+    return _integer_block_mean if np.issubdtype(dtype, np.unsignedinteger) else get_downsampler("mean")
+
+
+def _cascade_fits(shapes, scale_factors):
+    """Return True when _PyramidCascade can compute every level of these shapes.
+
+    Each level must start on plane boundaries that the z factor divides, and every output
+    voxel must have a complete input window. pybdv's sample_shape gives at least 1 voxel per
+    axis, so an axis that is shorter than its factor has an incomplete window.
+    """
+    for shape_in, shape_out, factor in zip(shapes[:-1], shapes[1:], scale_factors):
+        if CHUNK_DEPTH % factor[0] != 0:
+            return False
+        if any(n_out * sf > n_in for n_in, n_out, sf in zip(shape_in, shape_out, factor)):
+            return False
+    return True
+
+
+class _PyramidCascade:
+    """Write the pyramid levels of one setup from the s0 slabs while they are in memory.
+
+    Reading s0 back is slow on a network file system, because the page cache of a small job
+    cannot hold it. Each level collects whole chunk depths of planes before it writes them, so
+    every write is chunk-aligned. The values are those of _write_pyramid_level.
+    """
+
+    def __init__(self, f, timepoint, setup_id, scale_factors, n_threads):
+        self._datasets = []
+        for scale in range(1, len(scale_factors) + 1):
+            ds = f[get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale)]
+            ds.n_threads = n_threads
+            self._datasets.append(ds)
+        self._factors = [tuple(factor) for factor in scale_factors]
+        self._mean = _mean_function(self._datasets[0].dtype)
+        self._pending = [[] for _ in self._datasets]
+        self._z_written = [0] * len(self._datasets)
+
+    def add(self, z0, slab):
+        """Add the s0 planes that start at z0.
+
+        The slabs must arrive in z order, from z0 = 0. Each z0 must be a multiple of CHUNK_DEPTH.
+        """
+        self._feed(0, z0, slab)
+
+    def complete(self):
+        return all(z == ds.shape[0] for z, ds in zip(self._z_written, self._datasets))
+
+    def _feed(self, level, z0, data):
+        """Compute the planes of `level` from the planes of the level above that start at z0."""
+        if level == len(self._datasets):
+            return
+        ds, factor, pending = self._datasets[level], self._factors[level], self._pending[level]
+
+        out_z0 = z0 // factor[0]
+        out_z1 = min((z0 + data.shape[0]) // factor[0], ds.shape[0])
+        if out_z1 > out_z0:
+            out_shape = (out_z1 - out_z0,) + tuple(ds.shape[1:])
+            data = data[tuple(slice(0, n * sf) for n, sf in zip(out_shape, factor))]
+            pending.append(self._mean(data, factor, out_shape).astype(ds.dtype, copy=False))
+
+        n_pending = sum(planes.shape[0] for planes in pending)
+        z_start = self._z_written[level]
+        at_end = z_start + n_pending == ds.shape[0]
+        n_write = n_pending if at_end else n_pending // CHUNK_DEPTH * CHUNK_DEPTH
+        if n_write == 0:
+            return
+
+        planes = np.concatenate(pending) if len(pending) > 1 else pending[0]
+        block, rest = planes[:n_write], planes[n_write:]
+        ds[z_start:z_start + n_write] = block
+        self._pending[level] = [rest] if rest.shape[0] > 0 else []
+        self._z_written[level] = z_start + n_write
+        self._feed(level + 1, z_start, block)
 
 
 def _write_pyramid_level(f, in_key, out_key, factor, n_threads):
     """Write one pyramid level as the block-wise mean of the level above.
 
-    This replaces pybdv.downsample.downsample, which deletes the output dataset and creates it
-    again with the default compression level and without its attributes. The values are the same.
+    _convert_tile uses this when _PyramidCascade does not apply, e.g. for a resumed tile. It
+    replaces pybdv.downsample.downsample, which deletes the output dataset and creates it again
+    with the default compression level and without its attributes. The values are the same.
     """
     ds_in, ds_out = f[in_key], f[out_key]
-    mean = _integer_block_mean if np.issubdtype(ds_in.dtype, np.unsignedinteger) else get_downsampler("mean")
+    mean = _mean_function(ds_in.dtype)
 
     def _write_block(bb):
         data = ds_in[tuple(slice(b.start * sf, b.stop * sf) for b, sf in zip(bb, factor))]
@@ -636,15 +719,34 @@ def _convert_tile(out_path, tile, state, scale_factors, n_threads, config):
         with open_file(out_path, "a") as f:
             ds = f[base_key]
             ds.n_threads = n_threads
+            # A resumed tile has no s0 planes in memory for the part that is already written,
+            # so its pyramid is read back from s0 after the loop.
+            cascade = None
+            shapes = [
+                f[get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale)].shape
+                for scale in range(len(scale_factors) + 1)
+            ]
+            if z_done == 0 and _cascade_fits(shapes, scale_factors):
+                cascade = _PyramidCascade(f, timepoint, setup_id, scale_factors, n_threads)
+
             t0 = time.perf_counter()
             for z0, z1, slab in _prefetch(slabs):
                 t1 = time.perf_counter()
-                t_wait += t1 - t0
                 ds[z0:z1] = slab
+                t2 = time.perf_counter()
+                if cascade is not None:
+                    cascade.add(z0, slab)
+                t3 = time.perf_counter()
                 state.update(attribute_id, z_done=z1)
                 print(f"  setup {setup_id}: {z1} / {shape[0]} planes written")
-                t0 = time.perf_counter()
-                t_write += t0 - t1
+                t4 = time.perf_counter()
+                t_wait += t1 - t0
+                t_write += (t2 - t1) + (t4 - t3)
+                t_pyramid += t3 - t2
+                t0 = t4
+
+        if cascade is not None and cascade.complete():
+            entry = state.update(attribute_id, pyramid_done=True)
 
     if not entry.get("pyramid_done"):
         t0 = time.perf_counter()
@@ -653,7 +755,7 @@ def _convert_tile(out_path, tile, state, scale_factors, n_threads, config):
                 in_key = get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale)
                 out_key = get_key(False, timepoint=timepoint, setup_id=setup_id, scale=scale + 1)
                 _write_pyramid_level(f, in_key, out_key, factor, n_threads)
-        t_pyramid = time.perf_counter() - t0
+        t_pyramid += time.perf_counter() - t0
         state.update(attribute_id, pyramid_done=True)
 
     state.update(attribute_id, done=True)
@@ -859,10 +961,11 @@ def convert_lightsheet_to_bdv(
 
     The image data is read one z-slab at a time and every read is retried, so a conversion
     survives a connection that drops. A background thread reads the next slab while the current
-    slab is compressed and written. Progress is recorded per slab in a file next to the output,
-    so an interrupted run continues where it stopped. Never point this function at a
-    memory-mapped copy of remote data: a failed page fault on a mapped network file kills the
-    process without a Python traceback.
+    slab is compressed and written. The pyramid levels are computed from each slab in memory, so
+    the full-resolution data is not read back. A resumed tile reads it back. Progress is recorded
+    per slab in a file next to the output, so an interrupted run continues where it stopped. Never
+    point this function at a memory-mapped copy of remote data: a failed page fault on a mapped
+    network file kills the process without a Python traceback.
 
     There are three ways to reach the input data:
 
