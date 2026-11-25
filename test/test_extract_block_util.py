@@ -204,6 +204,78 @@ class TestExtractBlockSingle(unittest.TestCase):
         with self.assertRaises(ValueError):
             extract_block_json_wrapper(self.output_dir, json_file=json_file, point_tables={"spots": points})
 
+    def test_point_table_without_positions_stops_before_extraction(self):
+        import pandas as pd
+        from flamingo_tools.extract_block_util import extract_block_json_wrapper
+
+        points = pd.DataFrame({"anchor_x": [10.0], "anchor_y": [5.0], "anchor_z": [8.0]})
+        with self.assertRaises(ValueError):
+            extract_block_json_wrapper(self.output_dir, input_path=self.input_path, coords=[10, 5, 8],
+                                       input_key=None, voxel_size=self.voxel_size, point_tables={"spots": points})
+        self.assertEqual(os.listdir(self.output_dir), [])
+
+    def test_point_sources_of_each_cochlea(self):
+        import json
+        import pandas as pd
+        import zarr
+        from flamingo_tools.extract_block_util import extract_block_json_wrapper
+
+        mobie_dir = os.path.join(self.tmpdir.name, "mobie")
+        for cochlea, x in (("M_A_L", 10.0), ("M_B_R", 11.0)):
+            path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", "PV.ome.zarr")
+            zarr.open_group(path, mode="w").create_array("s0", data=self.data)
+            table_dir = os.path.join(mobie_dir, cochlea, "tables", "spots")
+            os.makedirs(table_dir)
+            pd.DataFrame({"spot_id": [1], "x": [x], "y": [5.0], "z": [8.0], "matched_ihc": [7]}).to_csv(
+                os.path.join(table_dir, "default.tsv"), sep="\t", index=False,
+            )
+        json_file = os.path.join(self.tmpdir.name, "crops.json")
+        params = {"image_channel": "PV", "crop_centers": [[10, 5, 8]], "roi_halo": [4, 3, 2]}
+        with open(json_file, "w") as f:
+            json.dump([{"dataset_name": "M_A_L", **params}, {"dataset_name": "M_B_R", **params}], f)
+
+        extract_block_json_wrapper(self.output_dir, json_file=json_file, mobie_dir=mobie_dir, input_key="s0",
+                                   voxel_size=self.voxel_size, point_sources=["spots"])
+        # The crop starts at the voxel (6, 7, 16). Each cochlea gets the points of its own table.
+        for cochlea, x_voxel in (("M-A-L", 4), ("M-B-R", 6)):
+            table = pd.read_csv(os.path.join(self.output_dir, f"{cochlea}_crop_0010-0005-0008_spots.csv"))
+            np.testing.assert_allclose(table[["axis-0", "axis-1", "axis-2"]].values, [[2, 3, x_voxel]])
+            self.assertEqual(table.matched_ihc.tolist(), [7])
+
+        with self.assertRaises(ValueError):
+            extract_block_json_wrapper(self.output_dir, input_path=self.input_path, coords=[10, 5, 8],
+                                       point_sources=["spots"])
+        # The name of a point table is the suffix of its CSV files, so a local table and a source must differ.
+        with self.assertRaises(ValueError):
+            extract_block_json_wrapper(self.output_dir, json_file=json_file, mobie_dir=mobie_dir,
+                                       point_tables={"spots": pd.DataFrame({"x": [], "y": [], "z": []})},
+                                       point_sources=["spots"])
+
+    def test_invalid_point_source_stops_before_extraction(self):
+        import json
+        import pandas as pd
+        from flamingo_tools.extract_block_util import extract_block_json_wrapper
+
+        json_file = os.path.join(self.tmpdir.name, "crops.json")
+        with open(json_file, "w") as f:
+            json.dump({"dataset_name": "M_A_L", "image_channel": "PV", "crop_centers": [[10, 5, 8]]}, f)
+        output_dir = os.path.join(self.tmpdir.name, "new_crops")
+        mobie_dir = os.path.join(self.tmpdir.name, "mobie")
+        with self.assertRaises(FileNotFoundError):
+            extract_block_json_wrapper(output_dir, json_file=json_file, mobie_dir=mobie_dir, point_sources=["spots"])
+        self.assertFalse(os.path.exists(output_dir))
+
+        # A segmentation table has 'anchor_x', 'anchor_y', 'anchor_z' instead of 'x', 'y', 'z'.
+        table_dir = os.path.join(mobie_dir, "M_A_L", "tables", "IHC_v11b")
+        os.makedirs(table_dir)
+        pd.DataFrame({"label_id": [1], "anchor_x": [10.0], "anchor_y": [5.0], "anchor_z": [8.0]}).to_csv(
+            os.path.join(table_dir, "default.tsv"), sep="\t", index=False,
+        )
+        with self.assertRaises(ValueError):
+            extract_block_json_wrapper(output_dir, json_file=json_file, mobie_dir=mobie_dir,
+                                       point_sources=["IHC_v11b"])
+        self.assertFalse(os.path.exists(output_dir))
+
     def test_json_entry_without_crop_centers(self):
         """A file of flamingo_tools.json_extract_blocks has no crop centers until '--find_centers' finds them."""
         import json

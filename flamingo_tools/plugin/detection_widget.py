@@ -7,6 +7,7 @@ from skimage.feature import peak_local_max
 from torch_em.util.prediction import predict_with_halo
 
 from .base_widget import BaseWidget
+from .reader import POINT_SIZE
 from .util import _load_custom_model, _available_devices, _get_current_tiling
 from ..model_utils import MODELS, get_model, get_device, get_default_tiling, get_default_detection_settings
 
@@ -29,7 +30,7 @@ def _run_detection(image, model, model_type, tiling, device, return_intermediate
 def _add_detection_layers(viewer, detections, model_type, heatmap=None):
     if heatmap is not None:
         viewer.add_image(heatmap, name=f"{model_type} heatmap")
-    viewer.add_points(detections, name=model_type)
+    viewer.add_points(detections, name=model_type, size=POINT_SIZE)
 
 
 class DetectionWidget(BaseWidget):

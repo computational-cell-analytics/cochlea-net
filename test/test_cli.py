@@ -181,7 +181,7 @@ class TestExtractBlocksArguments(unittest.TestCase):
 
     s3 = {"s3": False, "s3_credentials": None, "s3_bucket_name": None, "s3_service_endpoint": None}
     block = {"input_key": "s0", "output_key": None, "voxel_size": [0.38, 0.38, 0.38], "point_tables": None,
-             "force": False}
+             "point_sources": None, "force": False}
     centers = {"n_blocks": 6, "cell_type": "sgn", "component_list": [1], "include_gap": False, "path_method": None}
 
     def call(self, argv):
@@ -241,6 +241,15 @@ class TestExtractBlocksArguments(unittest.TestCase):
 
             # The table name is the CSV file name, so two tables with one file name are rejected.
             self.check_rejected(["--json_info", "f.json", "-o", "out", "--point_tables", *paths])
+
+            # A plain name is a table of the MoBIE project, which only a JSON entry can locate.
+            parent = self.call(["--json_info", "f.json", "-o", "out", "--point_tables", paths[0], "Homer1_spots"])
+            self.assertEqual(list(parent.extract.call_args.kwargs["point_tables"]), ["CTBP2_spots"])
+            self.assertEqual(parent.extract.call_args.kwargs["point_sources"], ["Homer1_spots"])
+            parent = self.call(["--json_info", "f.json", "-o", "out", "--point_tables", "Homer1_spots"])
+            self.assertIsNone(parent.extract.call_args.kwargs["point_tables"])
+            self.check_rejected(["--json_info", "f.json", "-o", "out", "--point_tables", paths[0], "CTBP2_spots"])
+            self.check_rejected(["-i", "in.zarr", "-c", "1", "2", "3", "-o", "out", "--point_tables", "Homer1_spots"])
 
     def test_options_outside_their_mode(self):
         one_block = ["-i", "in.zarr", "-c", "1", "2", "3", "-o", "out"]
