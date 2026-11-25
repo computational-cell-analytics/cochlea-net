@@ -26,7 +26,8 @@ When -d names a single file, a download continues an interrupted transfer where 
 
 Pass --password-stdin to read the password from the first line of stdin instead of a prompt, e.g.
 from a driver process that holds it in memory. Pass --resume to continue an interrupted
-transfer of a directory: it keeps the files that have the same size on both sides.
+transfer of a directory: it keeps the files that have the same size on both sides. Pass --check
+to log in and look up the remote data without a transfer.
 """
 
 import argparse
@@ -1022,6 +1023,16 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     _verify()
 
 
+def _check_remote(args, password, remote_dir, name, cwd):
+    """Log in and look up the remote data, without a transfer. A rejected login exits in run_smbclient."""
+    full_remote = f"{remote_dir}/{name}"
+    entry = remote_entry(args.username, password, remote_dir, name, cwd, smb_server=args.smb_server)
+    if entry is None:
+        raise SystemExit(f"{full_remote} was not found on the share, or its listing failed.")
+    kind = "a directory" if entry[0] else f"a file of {entry[1]} bytes"
+    print(f"Login OK: {full_remote} is {kind}.")
+
+
 def _read_password(from_stdin: bool) -> str:
     """Return the password from the first line of stdin, or from a prompt."""
     if not from_stdin:
@@ -1080,10 +1091,15 @@ def transfer_data_cli():
                              "chunk directories and scales that are incomplete on the share.")
     parser.add_argument("--password-stdin", action="store_true",
                         help="Read the password from the first line of stdin instead of a prompt.")
+    parser.add_argument("--check", action="store_true",
+                        help="Download only: log in and check that the remote data exists, then stop without "
+                             "a transfer. Exits with 1 if the login fails or the data is not found.")
     args = parser.parse_args()
 
     if args.generic and args.setup:
         parser.error("--generic and --setup are mutually exclusive (--setup applies to N5 data only)")
+    if args.check and args.ingest:
+        parser.error("--check applies to a download only")
     if args.resume and args.setup:
         parser.error("--resume transfers the whole directory, so it cannot be combined with --setup")
 
@@ -1110,6 +1126,9 @@ def transfer_data_cli():
             parser.error(str(e))
 
     password = _read_password(args.password_stdin)
+    if args.check:
+        _check_remote(args, password, remote_dir, n5_name, output_dir)
+        return
     if args.ingest:
         _run_ingest(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     else:

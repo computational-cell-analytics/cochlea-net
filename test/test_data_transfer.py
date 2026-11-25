@@ -715,6 +715,24 @@ class TestTransferDataCli(unittest.TestCase):
                 smb.transfer_data_cli()
         self.assertTrue(ingest.call_args.args[0].resume)
 
+    def test_check_looks_up_the_data_without_a_transfer(self):
+        with mock.patch.object(smb, "remote_entry", return_value=(True, 0)) as entry, \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            _, download = self._run_cli(["--check", "--password-stdin"], stdin="pw\n")
+        download.assert_not_called()
+        self.assertEqual(entry.call_args.args[1:4], ("pw", "P", "data"))
+        self.assertIn("Login OK: P/data is a directory", out.getvalue())
+
+    def test_check_stops_if_the_data_is_missing(self):
+        with mock.patch.object(smb, "remote_entry", return_value=None), \
+             self.assertRaises(SystemExit) as stop:
+            self._run_cli(["--check"])
+        self.assertIn("P/data was not found", str(stop.exception))
+
+    def test_check_rejects_ingest(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self._run_cli(["--check", "--ingest"])
+
     def test_password_stdin_on_terminal_stops(self):
         terminal = io.StringIO("visible\n")
         terminal.isatty = lambda: True

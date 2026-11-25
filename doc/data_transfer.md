@@ -57,6 +57,10 @@ flamingo_tools.transfer_data \
 
 The data lands in `<output_dir>/<name>`. The default output directory is the current directory.
 
+`--check` logs in and checks that `<name>` exists in `-p` on the share, and then stops without a transfer. It exits with
+code 1 if the login fails or the data is not found. A program can use it to check the password before a long wait.
+`--check` applies to a download only.
+
 ### N5 datasets
 
 An N5 dataset has top-level `setupN` directories. The command detects it automatically.
