@@ -638,10 +638,15 @@ The crops are 256 voxels (97 µm) on each side.
   Do not use `--find_centers` for these files, because it replaces the crop centers.
 
 Extract the crops with `flamingo_tools.extract_blocks`.
-`--point_tables` also writes the spots of each crop as a napari points file (CSV), named after the table:
+`--point_tables` also writes the spots of each crop as a napari points file (CSV), named after the table.
+- A value with a path separator or a file extension is a local TSV file, for example a `<name>_matched.tsv` of `stain_comparison`.
+- A plain name is a table of the MoBIE project, for example `synapse_v11_ihc_v11b`.
+  Each entry uses the table `<cochlea>/tables/<name>/default.tsv` of its cochlea, from the S3 bucket with `--s3`, else from `--mobie_dir`.
+  The table has all detections of the cochlea, also the detections at IHCs outside the valid components.
 ```bash
 flamingo_tools.extract_blocks --json_info reproducibility/block_extraction/M_AMD_000117_L_IHC_synapses.json \
-    -o <out-dir> --s3 --point_tables <out-dir>/CTBP2_spots_matched.tsv <out-dir>/Homer1_spots_matched.tsv
+    -o <out-dir> --s3 --point_tables <comparison-dir>/CTBP2_spots_matched.tsv <comparison-dir>/Homer1_spots_matched.tsv \
+    synapse_v11_ihc_v11b Homer1_synapse_v11_ihc_v11b
 ```
 The columns `axis-0`, `axis-1`, `axis-2` are the ZYX position in voxels of the crop.
 The other columns of the table, for example `matched` and `Homer1_snr`, become point properties in napari.
