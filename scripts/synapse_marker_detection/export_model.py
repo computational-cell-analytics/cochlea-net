@@ -1,15 +1,6 @@
 import argparse
-import sys
 
-import flamingo_tools.synapse_detection.detection_dataset as _dd
 from flamingo_tools.model_utils import export_model
-
-# Allow loading checkpoints that were saved when detection_dataset was a local script.
-sys.modules["detection_dataset"] = _dd
-
-sys.path.append("/home/pape/Work/my_projects/czii-protein-challenge")
-sys.path.append("/user/pape41/u12086/Work/my_projects/czii-protein-challenge")
-sys.path.append("/user/schilling40/u15000/czii-protein-challenge")
 
 
 def main():

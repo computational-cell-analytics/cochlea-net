@@ -18,10 +18,8 @@ setup(
             "flamingo_tools.run_detection = flamingo_tools.segmentation.cli:run_detection",
             "flamingo_tools.download_model = flamingo_tools.model_utils:download_model",
             "flamingo_tools.info = flamingo_tools.info:module_info",
-            "flamingo_tools.equidistant_centers = flamingo_tools.postprocessing.cli:equidistant_centers",
-            "flamingo_tools.extract_block = flamingo_tools.postprocessing.cli:extract_block",
-            "flamingo_tools.extract_central_blocks = flamingo_tools.postprocessing.cli:extract_central_blocks",
-            "flamingo_tools.json_block_extraction = flamingo_tools.postprocessing.cli:json_block_extraction",
+            "flamingo_tools.extract_blocks = flamingo_tools.postprocessing.cli:extract_blocks",
+            "flamingo_tools.json_extract_blocks = flamingo_tools.postprocessing.cli:json_extract_blocks",
             "flamingo_tools.label_components = flamingo_tools.postprocessing.cli:label_components",
             "flamingo_tools.object_measures = flamingo_tools.postprocessing.cli:object_measures",
             "flamingo_tools.tonotopic_mapping = flamingo_tools.postprocessing.cli:tonotopic_mapping",
@@ -29,6 +27,7 @@ setup(
             "flamingo_tools.central_path_tifs = flamingo_tools.postprocessing.cli:central_path_tifs",
             "flamingo_tools.table_info = flamingo_tools.analysis.cli:table_info",
             "flamingo_tools.correct_annotation = flamingo_tools.annotation.cli:correct_annotation",
+            "flamingo_tools.export_data = flamingo_tools.export_data.cli:export_data",
             # TODO: MoBIE conversion
         ],
         "napari.manifest": [

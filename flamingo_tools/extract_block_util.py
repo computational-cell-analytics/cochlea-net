@@ -3,7 +3,7 @@
 
 import json
 import os
-from typing import Dict, Optional, List, Union, Tuple
+from typing import Dict, Optional, List, Sequence, Union, Tuple
 
 import imageio.v3 as imageio
 import numpy as np
@@ -12,7 +12,7 @@ import zarr
 from skimage.transform import rescale
 
 from flamingo_tools.file_utils import read_image_data
-from flamingo_tools.s3_utils import MOBIE_FOLDER
+from flamingo_tools.s3_utils import MOBIE_FOLDER, default_image_path, default_table_path, read_table
 from flamingo_tools.analysis.density_utils import hull_to_mask
 
 
@@ -62,7 +62,7 @@ def _crop_file_name(coords: List[float], dataset_name: Optional[str], suffix: Op
 
 def extract_block_single(
     input_path: str,
-    coords: List[int],
+    coords: List[float],
     output_path: str,
     dataset_name: Optional[str] = None,
     channel_name: Optional[str] = None,
@@ -86,13 +86,13 @@ def extract_block_single(
 
     Args:
         input_path: Input folder in n5 / ome-zarr format.
-        coords: Center coordinates of extracted 3D volume.
+        coords: The block center in micrometer, (x, y, z).
         output_path: Output directory or file. In a directory, the crop is named after the dataset, the center and
             the channel.
         input_key: Input key for data in input file.
         output_key: Output key for data in n5 format. If None is supplied, output is TIF file.
         voxel_size: The voxel size of the data in micrometer.
-        roi_halo: ROI halo of extracted 3D volume.
+        roi_halo: The halo around the block center in voxels, (x, y, z).
         s3: Flag for accessing data stored on S3 bucket.
         s3_credentials: File path to credentials for S3 bucket.
         s3_bucket_name: S3 bucket name.
@@ -311,38 +311,93 @@ def _volume_shape(input_path: str, s3: bool, input_key: Optional[str] = None, s3
     return tuple(data.shape)
 
 
+def _read_point_sources(
+    param_dicts: List[dict],
+    point_sources: Sequence[str],
+    s3: bool,
+    mobie_dir: str,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+    **_,
+) -> Dict[Tuple[str, str], pd.DataFrame]:
+    """Read the point table of each source name for each cochlea of the entries, keyed by (cochlea, name)."""
+    tables = {}
+    for params in param_dicts:
+        cochlea = params["dataset_name"]
+        for name in point_sources:
+            if (cochlea, name) not in tables:
+                tables[(cochlea, name)] = read_table(
+                    default_table_path(cochlea, name, s3=s3, mobie_dir=mobie_dir), s3, bucket_name=s3_bucket_name,
+                    service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+                )
+    return tables
+
+
+def _check_point_columns(tables: Dict[str, pd.DataFrame]) -> None:
+    for name, table in tables.items():
+        missing = [axis for axis in ("x", "y", "z") if axis not in table.columns]
+        if missing:
+            raise ValueError(f"The point table {name} has no columns {missing}. "
+                             "A point table needs 'x', 'y', 'z' in micrometer, e.g. a synapse table.")
+
+
 def extract_block_json_wrapper(
     output_path: str,
     input_path: Optional[str] = None,
     json_file: Optional[str] = None,
-    coords: List[int] = [],
+    coords: Optional[List[float]] = None,
     mobie_dir: str = MOBIE_FOLDER,
     force: bool = False,
     s3: Optional[bool] = False,
     point_tables: Optional[Dict[str, pd.DataFrame]] = None,
+    point_sources: Optional[Sequence[str]] = None,
     **kwargs,
 ):
-    """Wrapper function for extracting blocks based on a dictionary in a JSON file.
+    """Extract a block for each crop center and image channel of a JSON file, or one block around `coords`.
 
     Args:
-        output_path: Output path for storing extracted blocks.
-        input_path: Input path for image channel.
-        json_file: JSON file containing parameter dictionary.
-        coords: List of center coordinates for extracting blocks.
+        output_path: Output directory, or output file for one block.
+        input_path: Image data for one block. Used without json_file.
+        json_file: JSON file with one block parameter dictionary, or a list of them. Each entry needs
+            'crop_centers'. The image data path comes from its 'dataset_name' and 'image_channel'.
+        coords: The block center in micrometer, (x, y, z). Used without json_file.
         mobie_dir: Local MoBIE directory used for creating data paths when a JSON dict is provided.
         force: Flag for forcefully overwriting output files.
         s3: Flag for accessing data stored on S3 bucket.
         point_tables: Point tables with 'x', 'y', 'z' in micrometer, keyed by name. The points of each crop are
             saved as a napari points file, see `extract_points_single`.
+        point_sources: Names of point tables in the MoBIE project, e.g. 'synapse_v11_ihc_v11b'. Each entry uses
+            the table <cochlea>/tables/<name>/default.tsv of its cochlea, from the S3 bucket or from mobie_dir.
+            The points are saved like the points of point_tables. Requires json_file.
+        kwargs: Further arguments for `extract_block_single`. An entry of the JSON file overrides them.
     """
+    point_tables = point_tables or {}
+    point_sources = list(point_sources or [])
+    shared_names = set(point_tables) & set(point_sources)
+    if shared_names:
+        raise ValueError(f"The names {sorted(shared_names)} are in point_tables and in point_sources.")
+    _check_point_columns(point_tables)
+
     if json_file is not None:
         with open(json_file, "r") as f:
             param_dicts = json.loads(f.read())
-        os.makedirs(output_path, exist_ok=True)
         if not isinstance(param_dicts, list):
             param_dicts = [param_dicts]
+        for index, params in enumerate(param_dicts):
+            if "crop_centers" not in params:
+                raise ValueError(
+                    f"Entry {index} ({params.get('dataset_name')}) of {json_file} has no 'crop_centers'. "
+                    "Find them with flamingo_tools.extract_blocks --find_centers."
+                )
         if point_tables and len({params["dataset_name"] for params in param_dicts}) > 1:
-            raise ValueError("Point tables belong to one cochlea, but the JSON file has entries for several cochleae.")
+            raise ValueError(
+                "Local point tables belong to one cochlea, but the JSON file has entries for several cochleae. "
+                "Give the name of a MoBIE table instead. Each entry reads it for its own cochlea."
+            )
+        source_tables = _read_point_sources(param_dicts, point_sources, s3, mobie_dir, **kwargs)
+        _check_point_columns({f"{name} of {cochlea}": table for (cochlea, name), table in source_tables.items()})
+        os.makedirs(output_path, exist_ok=True)
         for params in param_dicts:
             cochlea = params["dataset_name"]
             if isinstance(params["image_channel"], list):
@@ -353,10 +408,7 @@ def extract_block_json_wrapper(
             entry_kwargs = {**kwargs, **params}
 
             for image_channel in image_channels:
-                if s3:
-                    input_path = f"{cochlea}/images/ome-zarr/{image_channel}.ome.zarr"
-                else:
-                    input_path = os.path.join(mobie_dir, cochlea, "images", "ome-zarr", f"{image_channel}.ome.zarr")
+                input_path = default_image_path(cochlea, image_channel, s3=s3, mobie_dir=mobie_dir)
 
                 for coords in params["crop_centers"]:
                     extract_block_single(
@@ -369,7 +421,8 @@ def extract_block_json_wrapper(
                         **entry_kwargs,
                     )
 
-            if "hull_vertices" in params or point_tables:
+            entry_points = {**point_tables, **{name: source_tables[(cochlea, name)] for name in point_sources}}
+            if "hull_vertices" in params or entry_points:
                 shape = _volume_shape(input_path, s3, **entry_kwargs)
 
             # crop out mask from hull vertices
@@ -377,15 +430,17 @@ def extract_block_json_wrapper(
                 for coords in params["crop_centers"]:
                     save_mask_from_hull_vertices(coords=coords, output_path=output_path, shape=shape, **entry_kwargs)
 
-            if point_tables:
+            if entry_points:
                 for coords in params["crop_centers"]:
-                    for name, points in point_tables.items():
+                    for name, points in entry_points.items():
                         extract_points_single(points, coords, output_path, shape, name=name,
                                               force_overwrite=force, **entry_kwargs)
 
     else:
-        if input_path is None:
-            raise ValueError("An input path to image data is required, if no JSON file is supplied.")
+        if input_path is None or coords is None:
+            raise ValueError("An input path to image data and coords are required, if no JSON file is supplied.")
+        if point_sources:
+            raise ValueError("point_sources requires a JSON file, which names the cochlea of each entry.")
         if point_tables and not os.path.isdir(output_path):
             raise ValueError("Point tables require an output directory.")
         extract_block_single(
@@ -401,41 +456,3 @@ def extract_block_json_wrapper(
             shape = _volume_shape(input_path, s3, **kwargs)
             for name, points in point_tables.items():
                 extract_points_single(points, coords, output_path, shape, name=name, force_overwrite=force, **kwargs)
-
-
-def extract_central_block_from_json(
-    json_file: str,
-    output_path: str,
-    force_overwrite: bool = False,
-    s3: bool = False,
-    mobie_dir: str = MOBIE_FOLDER,
-    **kwargs,
-):
-    """Extract central blocks based on parameters in a JSON file.
-    This function combines the search of equidistant center coordinates and the subsequent block extraction.
-
-    Args:
-        json_file: JSON with parameter dictionary. Can be created using 'flamingo_tools.json_block_extraction'.
-        output_path: Output directory for storing extracted blocks.
-        force_overwrite: Force overwrite of extracted blocks.
-        s3: Flag for accessing data on the S3 bucket.
-        mobie_dir: Local MoBIE directory used for creating data paths.
-    """
-    from flamingo_tools.postprocessing.cochlea_mapping import equidistant_centers_json_wrapper
-
-    # Refresh the crop centers of every entry in place, then extract once for the whole file.
-    # Extracting inside the loop repeated the whole file once per entry.
-    equidistant_centers_json_wrapper(
-        json_file=json_file, mobie_dir=mobie_dir, s3=s3, **kwargs,
-    )
-
-    os.makedirs(output_path, exist_ok=True)
-    extract_block_json_wrapper(
-        output_path=output_path,
-        json_file=json_file,
-        s3=s3,
-        input_key="s0",
-        mobie_dir=mobie_dir,
-        force=force_overwrite,
-        **kwargs,
-    )

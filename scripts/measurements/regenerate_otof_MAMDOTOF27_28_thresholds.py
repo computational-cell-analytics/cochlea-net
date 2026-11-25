@@ -7,7 +7,6 @@ governs the band up to the middle of the distance to its neighbour.
 """
 import argparse
 import copy
-import json
 import os
 from typing import Dict, List, Optional, Tuple
 

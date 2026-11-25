@@ -3,8 +3,6 @@ import os
 from datetime import datetime
 from typing import List, Optional, Tuple
 
-import numpy as np
-
 from micro_sam.training import default_sam_loader, train_instance_segmentation
 from micro_sam.training.util import get_raw_transform
 

@@ -8,8 +8,11 @@ from glob import glob
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
+import pandas as pd
+import tifffile
+import zarr
 
-from flamingo_tools.s3_utils import BUCKET_NAME, create_s3_target
+from flamingo_tools.s3_utils import BUCKET_NAME, MOBIE_FOLDER, create_s3_target, default_table_path, read_table
 
 # Short aliases for source names that differ between cochleae, mapped to
 # (source type, name prefix, preferred source names). A cochlea often holds several versions of a
@@ -51,6 +54,14 @@ def normalize_voxel_size(voxel_size: Union[float, Sequence[float]]) -> Tuple[flo
     if len(values) != 3:
         raise ValueError(f"voxel_size must have 1 or 3 values, got {len(values)}.")
     return values
+
+
+def normalize_scales(scale: Union[int, Sequence[int]]) -> List[int]:
+    """Normalize one scale level or a sequence of scale levels to a list."""
+    scales = [int(scale)] if isinstance(scale, (int, np.integer)) else [int(s) for s in scale]
+    if any(s < 0 for s in scales):
+        raise ValueError(f"The scale levels must be non-negative, got {scales}.")
+    return scales
 
 
 def filter_volume_downscale_factors(
@@ -125,6 +136,46 @@ def compute_crop_bb(
     return start, stop
 
 
+def export_bounding_box(
+    shape: Tuple[int, int, int],
+    crop_center: Optional[List[float]],
+    roi_halo: Optional[List[int]],
+    voxel_size: Union[float, Sequence[float]],
+    scale: int,
+    axis: Optional[int] = None,
+) -> Tuple[np.ndarray, np.ndarray]:
+    """Compute the bounding box of an export: the crop, or the full volume without a crop center.
+
+    Args:
+        shape: Array shape in ZYX order at the target scale.
+        crop_center: Optional crop center as [x, y, z] in µm, see `compute_crop_bb`.
+        roi_halo: Halo around the crop center, see `compute_crop_bb`.
+        voxel_size: Voxel size in µm at full resolution (scale 0), scalar or (x, y, z).
+        scale: Scale level.
+        axis: Optional axis index into (x, y, z) for a 2D crop. Requires `crop_center`.
+
+    Returns:
+        start: ZYX start pixel coordinates.
+        stop: ZYX stop pixel coordinates.
+
+    Raises:
+        ValueError: If the crop does not overlap the volume.
+    """
+    if crop_center is None:
+        if axis is not None:
+            raise ValueError("axis requires crop_center.")
+        return np.zeros(3, dtype=int), np.array(shape, dtype=int)
+
+    start, stop = compute_crop_bb(crop_center, roi_halo, voxel_size=voxel_size, scale=scale, shape=shape, axis=axis)
+    if np.any(start >= stop) or np.any(start < 0) or np.any(stop > np.array(shape)):
+        raise ValueError(
+            f"The crop at {list(crop_center)} (x, y, z in micrometer) is outside the volume with the shape "
+            f"{tuple(shape)} (ZYX) "
+            f"at scale {scale}."
+        )
+    return start, stop
+
+
 def crop_suffix(crop_center: List[float], axis: Optional[int] = None, suffix: Optional[str] = None) -> str:
     """Build the output filename suffix for a crop.
 
@@ -172,6 +223,88 @@ def export_output_path(
     base = name if crop_center is None else f"{name}{crop_suffix(crop_center, axis, suffix)}"
     extension = "ome.zarr" if ome_zarr else "tif"
     return os.path.join(out_folder, f"{base}.{extension}")
+
+
+def export_name(input_path: str) -> str:
+    """Derive the name of an export from the input path, i.e. the file name without its extension.
+
+    Args:
+        input_path: Path to a tif file or a zarr/n5 container, e.g. "M_LR_000227_R/images/ome-zarr/PV.ome.zarr".
+
+    Returns:
+        The name, e.g. "PV".
+    """
+    name = os.path.basename(os.path.normpath(input_path))
+    for extension in (".ome.zarr", ".zarr", ".n5", ".tiff", ".tif"):
+        if name.lower().endswith(extension):
+            return name[:-len(extension)]
+    return name
+
+
+def write_volume(
+    out_path: str,
+    data: np.ndarray,
+    voxel_size: Union[float, Sequence[float]],
+    scale: int,
+    ome_zarr: bool = False,
+) -> None:
+    """Write an exported volume as a TIF file with its voxel size, or into a zarr container.
+
+    Args:
+        out_path: The output path, see `export_output_path`.
+        data: The 3D data, ZYX.
+        voxel_size: Voxel size in µm at full resolution (scale 0), scalar or (x, y, z).
+        scale: Scale level of the data. The voxel size of the TIF metadata is `voxel_size` * 2^scale.
+        ome_zarr: Whether to write the data to the dataset "image" of a zarr container instead of a TIF file.
+    """
+    print("Writing", out_path)
+    if ome_zarr:
+        f_out = zarr.open(out_path, mode="w")
+        f_out.create_array("image", data=data, compressors=zarr.codecs.GzipCodec())
+        return
+
+    voxel_size = np.asarray(normalize_voxel_size(voxel_size), dtype="float64") * 2 ** scale
+    metadata = {
+        "axes": "ZYX",
+        "PhysicalSizeX": voxel_size[0],
+        "PhysicalSizeXUnit": "µm",
+        "PhysicalSizeY": voxel_size[1],
+        "PhysicalSizeYUnit": "µm",
+        "PhysicalSizeZ": voxel_size[2],
+        "PhysicalSizeZUnit": "µm",
+    }
+    tifffile.imwrite(
+        out_path, data, bigtiff=True, compression="zlib", photometric="minisblack", ome=True, metadata=metadata,
+    )
+
+
+def cochlea_table(
+    cochlea: str,
+    source: str,
+    s3: bool = False,
+    mobie_dir: str = MOBIE_FOLDER,
+    s3_credentials: Optional[str] = None,
+    s3_bucket_name: Optional[str] = None,
+    s3_service_endpoint: Optional[str] = None,
+) -> pd.DataFrame:
+    """Read the default table of a segmentation or spots source of a cochlea.
+
+    Args:
+        cochlea: Name of the cochlea.
+        source: Name of the source, e.g. "SGN_v2".
+        s3: Whether to read the table from the S3 bucket instead of the local MoBIE project.
+        mobie_dir: Local MoBIE project directory. Ignored when s3 is set.
+        s3_credentials: File path to credentials for the S3 bucket.
+        s3_bucket_name: S3 bucket name.
+        s3_service_endpoint: S3 service endpoint.
+
+    Returns:
+        The table <cochlea>/tables/<source>/default.tsv.
+    """
+    return read_table(
+        default_table_path(cochlea, source, s3=s3, mobie_dir=mobie_dir), s3=s3,
+        bucket_name=s3_bucket_name, service_endpoint=s3_service_endpoint, credential_file=s3_credentials,
+    )
 
 
 def crop_filter_volume(

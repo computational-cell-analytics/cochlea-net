@@ -30,7 +30,7 @@ Here, `-i` must point to the xml file of the fused data exported from BigSticher
 
 ### Individual Workflow Steps
 
-You can also run individual steps of the workflow, like prediction and segmentation: 
+You can also run individual steps of the workflow, like prediction and segmentation:
 
 You can run it like this for an input volume that is stored in n5, e.g. the fused export from bigstitcher:
 ```
@@ -47,7 +47,7 @@ python run_prediction_distance_unet.py -i /path/to/volume.tif -m /path/to/model 
 The result will be stored as `segmentation.zarr` in the output folder, where also the intermediate files `prediction.zarr` and `seeds.zarr` are saved.
 
 In order to downsample the segmentation on the fly for the segmentation process you can use the argument `--scale`.
-E.g. run the command 
+E.g. run the command
 ```
 python run_prediction_distance_unet.py ... --scale 2
 ```

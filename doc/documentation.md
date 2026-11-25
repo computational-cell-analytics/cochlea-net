@@ -127,6 +127,13 @@ The detection plugin works in the same way. It currently provides the model for 
 
 Select `Show intermediate outputs` in the advanced settings to also add the synapse heatmap as an image layer.
 
+The plugin also reads napari points CSV files, for example the point crops from `flamingo_tools.extract_blocks`.
+The plugin gives these points and the detected synapses a size of 2 voxels. The napari default of 10 voxels hides the signal of small objects such as synapses.
+Drag the CSV file into napari and select `CochleaNet` in the reader dialog.
+Select the option to remember the choice to use this reader for all CSV files.
+To change the size of all loaded points, select the points layer, press `S`, press `Ctrl+A`, and then move the `point size` slider.
+The slider changes only the size of selected points.
+
 For more information on napari, see the tutorials at [www.napari.org](https://napari.org/stable/).
 
 **The napari plugin needs `napari` and `pyqt` in your environment. See [installation](#installation) for details.**
@@ -165,18 +172,20 @@ The command line interface also provides commands for the analysis of segmentati
 - `flamingo_tools.label_components`: finds the connected components of a segmentation.
 - `flamingo_tools.tonotopic_mapping`: assigns a frequency to each instance.
 - `flamingo_tools.object_measures`: measures the morphology and the intensity of each instance.
-- `flamingo_tools.json_block_extraction`, `flamingo_tools.equidistant_centers`, `flamingo_tools.extract_central_blocks` and `flamingo_tools.extract_block`: extract blocks along the cochlea, for example for the intensity annotation.
+- `flamingo_tools.json_extract_blocks` and `flamingo_tools.extract_blocks`: extract blocks along the cochlea, for example for the intensity annotation.
 - `flamingo_tools.sgn_density`: calculates the SGN density at positions along Rosenthal's canal.
 - `flamingo_tools.central_path_tifs`: exports the central paths v1 (`edt`) and v2 (`edt_refined`) through Rosenthal's canal as TIF files for napari.
 - `flamingo_tools.table_info`: finds the table row closest to a value of a column, for example a frequency.
+- `flamingo_tools.export_data`: exports image data, segmentations, marker labels, SGN subtypes, synapses and frequencies at a lower resolution, for example for overview images.
 
-See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md) and the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) for examples.
+See the [analysis documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/analysis.md), the [SGN density documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/sgn_density.md) and the [export documentation](https://github.com/computational-cell-analytics/cochlea-net/blob/master/doc/export_data.md) for examples.
 
 Run `flamingo_tools.<COMMAND> -h` (for example `flamingo_tools.run_segmentation -h`) to show all options of a command.
 
 ### Python Library
 
 The `flamingo_tools` python library contains the functions of CochleaNet:
+- `flamingo_tools.export_data`: exports image data and analysis results at a lower resolution, from a file or from a cochlea in a MoBIE project.
 - `flamingo_tools.measurements`: measures morphological attributes and intensity statistics of segmented cells.
 - `flamingo_tools.mobie`: exports flamingo image data or segmentation results to a MoBIE project.
 - `flamingo_tools.postprocessing`: labels connected components and maps the tonotopy of segmented cells.

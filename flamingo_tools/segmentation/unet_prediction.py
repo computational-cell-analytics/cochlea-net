@@ -6,7 +6,6 @@ and divide the process into preprocessing, prediction, and segmentation.
 import json
 import multiprocessing as mp
 import os
-import re
 from concurrent import futures
 from functools import partial
 from typing import Dict, Optional, Tuple, Union
@@ -31,7 +30,7 @@ from tqdm import tqdm
 
 import flamingo_tools.s3_utils as s3_utils
 from flamingo_tools.cpu_utils import available_cpus
-from flamingo_tools.file_utils import read_image_data
+from flamingo_tools.file_utils import pyramid_key, read_image_data
 from flamingo_tools.model_utils import load_model_from_path
 
 
@@ -287,21 +286,9 @@ _POOLING_MEAN_TOLERANCE = 0.05
 _POOLING_STD_FACTOR = 2.0
 
 
-def _lowres_key(input_key: Optional[str]) -> Optional[str]:
-    """Return the key of the pyramid level LOWRES_LEVELS below `input_key`, e.g. 's0' -> 's3'."""
-    if input_key is None:
-        return None
-    head, _, last = input_key.rstrip("/").rpartition("/")
-    match = re.fullmatch(r"s(\d+)", last)
-    if match is None:
-        return None
-    level = f"s{int(match.group(1)) + LOWRES_LEVELS}"
-    return f"{head}/{level}" if head else level
-
-
 def _read_pyramid_level(input_path, input_key, shape):
     """Return the low-res pyramid level of the input as an array, or None if it does not fit."""
-    key = _lowres_key(input_key)
+    key = pyramid_key(input_key, LOWRES_LEVELS)
     if key is None:
         return None, None
     try:

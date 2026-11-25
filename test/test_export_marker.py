@@ -1,20 +1,14 @@
-import os
-import sys
-import tempfile
 import unittest
 
 import numpy as np
 import pandas as pd
 
-SCRIPTS_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "scripts", "export_data")
-sys.path.insert(0, SCRIPTS_DIR)
-
 
 class TestApplyMarkerLabels(unittest.TestCase):
 
     def setUp(self):
-        import export_lower_resolution_marker
-        self.fn = export_lower_resolution_marker.apply_marker_labels
+        from flamingo_tools.export_data.marker import apply_marker_labels
+        self.fn = apply_marker_labels
         # label_id 5 is not in either list, so it must be dropped.
         self.segmentation = np.array([[[0, 1, 2, 3, 4, 5]]], dtype="float32")
 
@@ -51,38 +45,19 @@ class TestApplyMarkerLabels(unittest.TestCase):
         self.assertEqual(result.dtype, np.dtype("float32"))
 
 
-class TestLocalMarkerTable(unittest.TestCase):
+class TestMarkerLabelIds(unittest.TestCase):
 
-    def test_filters_with_local_table(self):
-        import export_lower_resolution_marker as exporter
+    def test_ids_per_class(self):
+        from flamingo_tools.export_data.marker import marker_label_ids
 
-        table = pd.DataFrame({"label_id": [1, 2, 3], "marker_labels": [2, 1, 0]})
-        segmentation = np.array([[[0, 1, 2, 3]]], dtype="uint16")
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            table_path = os.path.join(temporary_directory, "edited.tsv")
-            table.to_csv(table_path, sep="\t", index=False)
-            result = exporter.filter_marker_instances(
-                "unused",
-                segmentation,
-                "IHC_v11",
-                table_path=table_path,
-            )
+        table = pd.DataFrame({"label_id": [1, 2, 3, 4], "marker_labels": [2, 1, 0, 1]})
+        self.assertEqual(marker_label_ids(table), ([2, 4], [1]))
 
-        np.testing.assert_array_equal(result, [[[0, 2, 1, 0]]])
+    def test_rejects_table_without_marker_labels(self):
+        from flamingo_tools.export_data.marker import marker_label_ids
 
-    def test_rejects_local_table_without_marker_labels(self):
-        import export_lower_resolution_marker as exporter
-
-        with tempfile.TemporaryDirectory() as temporary_directory:
-            table_path = os.path.join(temporary_directory, "edited.tsv")
-            pd.DataFrame({"label_id": [1]}).to_csv(table_path, sep="\t", index=False)
-            with self.assertRaisesRegex(ValueError, "missing required columns"):
-                exporter.filter_marker_instances(
-                    "unused",
-                    np.array([[[1]]], dtype="uint16"),
-                    "IHC_v11",
-                    table_path=table_path,
-                )
+        with self.assertRaisesRegex(ValueError, "missing required columns"):
+            marker_label_ids(pd.DataFrame({"label_id": [1]}))
 
 
 if __name__ == "__main__":

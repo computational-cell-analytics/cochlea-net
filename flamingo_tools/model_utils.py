@@ -134,8 +134,8 @@ def load_model_from_path(
 
     Args:
         model_path: The path of the checkpoint folder or of the model file.
-        device: The device of the model. If None, a model that is created with its constructor stays on the CPU,
-            and any other pickled model keeps the device it was saved on.
+        device: The device of the model. If None, a model file loads on the CPU, so that a file saved on a GPU
+            also loads on a node without CUDA.
 
     Returns:
         The model.
@@ -144,7 +144,7 @@ def load_model_from_path(
         warnings.simplefilter("ignore")
         if os.path.isdir(model_path):
             return load_model(model_path, device=device)
-        obj = torch.load(model_path, weights_only=False, map_location=device)
+        obj = torch.load(model_path, weights_only=False, map_location="cpu" if device is None else device)
     if isinstance(obj, dict) and "model_state" in obj:
         model = _model_from_checkpoint(obj)
     elif isinstance(obj, torch.nn.Module) and hasattr(obj, "init_kwargs"):
@@ -324,6 +324,26 @@ def get_default_segmentation_settings(model_type: str) -> Dict[str, Union[str, f
         raise ValueError(f"Invalid model: {model_type}. Choose one of {list(all_default_kwargs.keys())}.")
     default_kwargs = all_default_kwargs[model_type]
     return default_kwargs
+
+
+def get_default_detection_settings(model_type: str) -> Dict[str, Union[int, float]]:
+    """Get the default settings for the peak detection of a given detection model.
+
+    Args:
+        model_type: The model. Only 'Synapses'.
+
+    Returns:
+        Dictionary with the threshold and the min_distance of the peak detection.
+    """
+    all_default_kwargs = {
+        # Every v11 seed and v3, the BioImage.IO model, select min_distance 1 on the consensus
+        # validation crops. Their selected thresholds disagree, so 0.5 stays (2026-10-28, see
+        # "The v11 decision rules" in to-do_revision/synapses.md).
+        "Synapses": {"threshold": 0.5, "min_distance": 1},
+    }
+    if model_type not in all_default_kwargs:
+        raise ValueError(f"Invalid model: {model_type}. Choose one of {list(all_default_kwargs.keys())}.")
+    return all_default_kwargs[model_type]
 
 
 def get_default_tiling() -> Dict[str, Dict[str, int]]:
