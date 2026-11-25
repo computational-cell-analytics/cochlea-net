@@ -485,7 +485,7 @@ Without `--ihc_table`, the script uses all synapses, also the synapses of instan
 ### Example
 
 The cochlea `M_AMD_000117_L` has the stains CtBP2 and Homer1.
-The IHC_v11 table on the bucket has the component labels of `reproducibility/processing/M_AMD_000117_L_IHC.json`, and the valid IHCs are component 1.
+The IHC_v11 table on the bucket has the component labels of the `IHC_v11` entry of `reproducibility/processing/M_AMD_000117_L_IHC.json`, and the valid IHCs are component 1.
 All three tables are on the bucket, so give the bucket paths and `--s3`:
 ```bash
 python scripts/measurements/synapse_colocalization.py \
@@ -580,11 +580,11 @@ Measure the CtBP2 and the Homer1 spots of `M_AMD_000117_L` in both stains.
 `--s3_table` and `--s3_images` read the spot table and the images from the bucket:
 ```bash
 python -m flamingo_tools.synapse_detection.spot_intensity \
-    -t M_AMD_000117_L/tables/synapse_v3_ihc_v11/default.tsv --s3_table \
+    -t M_AMD_000117_L/tables/synapse_v11_ihc_v11b/default.tsv --s3_table \
     -i M_AMD_000117_L/images/ome-zarr/CTBP2.ome.zarr M_AMD_000117_L/images/ome-zarr/Homer1.ome.zarr --s3_images \
     -o CTBP2_spots.tsv
 python -m flamingo_tools.synapse_detection.spot_intensity \
-    -t M_AMD_000117_L/tables/Homer1_synapse_v3_ihc_v11/default.tsv --s3_table \
+    -t M_AMD_000117_L/tables/Homer1_synapse_v11_ihc_v11b/default.tsv --s3_table \
     -i M_AMD_000117_L/images/ome-zarr/CTBP2.ome.zarr M_AMD_000117_L/images/ome-zarr/Homer1.ome.zarr --s3_images \
     -o Homer1_spots.tsv
 ```
@@ -595,7 +595,7 @@ The reference and the test stain have the same roles as in the synapse colocaliz
 ```bash
 python -m flamingo_tools.synapse_detection.stain_comparison \
     -r CTBP2_spots.tsv -t Homer1_spots.tsv --reference_channel CTBP2 --test_channel Homer1 \
-    --ihc_table M_AMD_000117_L/tables/IHC_v11/default.tsv -c 1 --s3 -o <out-dir>
+    --ihc_table M_AMD_000117_L/tables/IHC_v11b/default.tsv -c 1 --s3 -o <out-dir>
 ```
 Compare each cochlea with its own valid IHCs.
 For example, `M_AMD_N179_L` uses `IHC_v11b` with the components 1 to 5, and `M_AMD_N179_R` uses the components 1 to 4 (see `reproducibility/processing`).
@@ -614,18 +614,22 @@ The output folder holds:
 `reproducibility/block_extraction` has crops for the stains CTBP2, Homer1 and Vglut3 and the IHC segmentation.
 The crops are 256 voxels (97 µm) on each side.
 - `M_AMD_N179_L_IHC_synapses.json` and `M_AMD_N179_R_IHC_synapses.json` have six crops each at equidistant positions along the IHC row, with `IHC_v11b` and the valid components of the cochlea.
-- `M_AMD_000117_L_IHC_synapses.json` has six crops at equidistant positions along the IHC row:
+- `M_AMD_000117_L_IHC_synapses.json` has six crops at equidistant positions along the IHC row of `IHC_v11`:
   ```bash
   flamingo_tools.json_extract_blocks -o M_AMD_000117_L_IHC_synapses.json -d M_AMD_000117_L \
       -i CTBP2 Homer1 Vglut3 IHC_v11 -s IHC_v11 --cell_type ihc -c 1 -n 6 --roi_halo 128 128 128
   flamingo_tools.extract_blocks --json_info M_AMD_000117_L_IHC_synapses.json --find_centers --s3
   ```
+  The crop centers come from `IHC_v11`.
+  The file crops `IHC_v11b` at these centers, so that the crops stay comparable with the earlier `IHC_v11` crops.
+  Do not use `--find_centers` for this file.
 - `M_AMD_000117_L_IHC_synapses_homer1-excess.json` has three crops at the IHCs with the most Homer1 spots without a CtBP2 partner.
-  The crops do not overlap.
-  Add these options to the `stain_comparison` command above:
+  The crops come from the comparison of `synapse_v3_ihc_v11` and `Homer1_synapse_v3_ihc_v11`, and do not overlap.
+  The file crops `IHC_v11b` at these centers.
+  For new crops, add these options to the `stain_comparison` command above:
   ```bash
   --crop_json M_AMD_000117_L_IHC_synapses_homer1-excess.json --n_crops 3 --dataset_name M_AMD_000117_L \
-  --image_channel CTBP2 Homer1 Vglut3 IHC_v11 --segmentation_channel IHC_v11 --roi_halo 128 128 128
+  --image_channel CTBP2 Homer1 Vglut3 IHC_v11b --segmentation_channel IHC_v11b --roi_halo 128 128 128
   ```
   Keep the two files apart. `--find_centers` replaces the crop centers of every entry in a file.
 - `M_AMD_000126_L_IHC_synapses.json` to `M_AMD_000137_R_IHC_synapses.json` (126, 127 and 137, left and right) have three crops each along the IHC row of `IHC_v11b`.

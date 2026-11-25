@@ -1,22 +1,45 @@
-{
-	"dataset_name": "M_AMD_000117_L",
-	"segmentation_channel": "IHC_v11",
-	"cell_type": "ihc",
-	"component_list": [
-		1
-	],
-	"label_components": {
-		"min_size": 5000,
-		"min_component_length": 5,
-		"max_edge_distance": 30.0,
-		"component_list_path": [
-			2,
-			3,
+[
+	{
+		"dataset_name": "M_AMD_000117_L",
+		"segmentation_channel": "IHC_v11",
+		"cell_type": "ihc",
+		"component_list": [
 			1
 		],
-		"max_path_deviation": 15.0,
-		"refine_row": true,
-		"merge_components": true
+		"label_components": {
+			"min_size": 5000,
+			"min_component_length": 5,
+			"max_edge_distance": 30.0,
+			"component_list_path": [
+				2,
+				3,
+				1
+			],
+			"max_path_deviation": 15.0,
+			"refine_row": true,
+			"merge_components": true
+		},
+		"tonotopic_mapping": {}
 	},
-	"tonotopic_mapping": {}
-}
+	{
+		"dataset_name": "M_AMD_000117_L",
+		"segmentation_channel": "IHC_v11b",
+		"cell_type": "ihc",
+		"component_list": [
+			1
+		],
+		"label_components": {
+			"min_size": 5000,
+			"min_component_length": 10,
+			"max_edge_distance": 30.0,
+			"component_list_path": [
+				2,
+				3,
+				1
+			],
+			"max_path_deviation": 15.0,
+			"refine_row": true,
+			"merge_components": true
+		}
+	}
+]
