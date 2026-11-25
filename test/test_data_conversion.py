@@ -151,6 +151,39 @@ class TestRawConversion(unittest.TestCase):
             for level in range(6):
                 self.assertIn(f"setup0/timepoint0/s{level}", f)
 
+    def test_every_level_has_the_gzip_level_and_its_factors(self):
+        import json
+        from flamingo_tools.data_conversion import GZIP_LEVEL
+
+        self._convert()
+        for level in range(6):
+            path = os.path.join(self.out_path, "setup0", "timepoint0", f"s{level}", "attributes.json")
+            with open(path) as f:
+                attributes = json.load(f)
+            self.assertEqual(attributes["compression"], {"type": "gzip", "level": GZIP_LEVEL})
+            self.assertEqual(attributes["downsamplingFactors"], [2 ** level] * 3)
+
+    def test_pyramid_matches_pybdv_downsample(self):
+        from elf.io import open_file
+        from pybdv.downsample import downsample
+
+        self._convert()
+        in_key = "setup0/timepoint0/s0"
+        for level in range(1, 6):
+            downsample(self.out_path, in_key, f"reference/s{level}", [2, 2, 2], "mean")
+            in_key = f"reference/s{level}"
+        with open_file(self.out_path, "r") as f:
+            for level in range(1, 6):
+                self.assertTrue(np.array_equal(read_setup(self.out_path, 0, level), f[f"reference/s{level}"][:]))
+
+    def test_n_threads_defaults_to_the_slurm_allocation(self):
+        import flamingo_tools.data_conversion as dc
+
+        with mock.patch.dict(os.environ, {"SLURM_CPUS_PER_TASK": "3"}), \
+             mock.patch.object(dc, "_convert_tile", wraps=dc._convert_tile) as convert_tile:
+            self._convert()
+        self.assertEqual({call.args[4] for call in convert_tile.call_args_list}, {3})
+
     def test_rerun_is_a_no_op(self):
         self._convert()
         self._convert()
@@ -308,6 +341,165 @@ class TestRawConversion(unittest.TestCase):
     def test_dry_run_writes_nothing(self):
         self._convert(dry_run=True)
         self.assertFalse(os.path.exists(self.out_path))
+
+
+class TestPyramidCascade(unittest.TestCase):
+    """The pyramid is computed from the s0 slabs in memory, with the values of pybdv."""
+
+    # Slab depth 128: the last slab is partial, two slabs make one s1 chunk, and the z size of
+    # s3 is odd (57).
+    SHAPE = (456, 200, 136)
+
+    def setUp(self):
+        tmp_dir = TemporaryDirectory()
+        self.addCleanup(tmp_dir.cleanup)
+        self.folder = tmp_dir.name
+        self.root = os.path.join(self.folder, "input")
+        self.out_path = os.path.join(self.folder, "out.n5")
+
+    def _make_input(self, shape=SHAPE):
+        make_raw_input(self.root, n_tiles=1, shape=shape)
+
+    def _convert(self, **kwargs):
+        from flamingo_tools import convert_lightsheet_to_bdv
+
+        convert_lightsheet_to_bdv(self.root, out_path=self.out_path, file_ext=".raw", slab_memory=0.001, **kwargs)
+
+    def _assert_matches_pybdv(self, scale_factors):
+        from elf.io import open_file
+        from pybdv.downsample import downsample
+
+        in_key = "setup0/timepoint0/s0"
+        for level, factor in enumerate(scale_factors, 1):
+            downsample(self.out_path, in_key, f"reference/s{level}", factor, "mean")
+            in_key = f"reference/s{level}"
+        with open_file(self.out_path, "r") as f:
+            for level in range(1, len(scale_factors) + 1):
+                self.assertTrue(np.array_equal(read_setup(self.out_path, 0, level), f[f"reference/s{level}"][:]))
+
+    def test_matches_pybdv_without_reading_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        self._make_input()
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert()
+        read_back.assert_not_called()
+        self._assert_matches_pybdv([[2, 2, 2]] * 5)
+
+    def test_resumed_tile_reads_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        self._make_input()
+        real_iter = dc._iter_slabs
+        budget = {"slabs": 2}
+
+        def failing_iter(*args, **kwargs):
+            for z0, z1, slab in real_iter(*args, **kwargs):
+                if budget["slabs"] <= 0:
+                    raise OSError(errno.EIO, "simulated connection loss")
+                budget["slabs"] -= 1
+                yield z0, z1, slab
+
+        with mock.patch.object(dc, "_iter_slabs", failing_iter):
+            with self.assertRaises(OSError):
+                self._convert()
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert()
+        self.assertEqual(read_back.call_count, 5)
+        self._assert_matches_pybdv([[2, 2, 2]] * 5)
+
+    def test_factor_that_does_not_divide_the_chunk_depth_reads_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        self._make_input()
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert(scale_factors=[[3, 3, 3]])
+        self.assertEqual(read_back.call_count, 1)
+        self._assert_matches_pybdv([[3, 3, 3]])
+
+    def test_axis_shorter_than_its_factor_reads_s0_back(self):
+        import flamingo_tools.data_conversion as dc
+
+        # s4 has 1 plane, so the z window of s5 is incomplete.
+        self._make_input((20, 64, 64))
+        with mock.patch.object(dc, "_write_pyramid_level", wraps=dc._write_pyramid_level) as read_back:
+            self._convert()
+        self.assertEqual(read_back.call_count, 5)
+        self._assert_matches_pybdv([[2, 2, 2]] * 5)
+
+
+class TestIntegerBlockMean(unittest.TestCase):
+    def test_matches_the_truncated_float_mean(self):
+        from pybdv.downsample import get_downsampler
+        from flamingo_tools.data_conversion import _integer_block_mean
+
+        float_mean = get_downsampler("mean")
+        rng = np.random.default_rng(0)
+        for dtype, high in (("uint8", 255), ("uint16", 65535), ("uint32", 2 ** 32 - 1)):
+            data = rng.integers(0, high, size=(8, 12, 16), dtype=dtype, endpoint=True)
+            for factor in ([2, 2, 2], [1, 2, 2], [2, 3, 4]):
+                out_shape = tuple(sh // sf for sh, sf in zip(data.shape, factor))
+                expected = float_mean(data, factor, out_shape).astype(dtype)
+                result = _integer_block_mean(data, factor, out_shape)
+                self.assertEqual(result.dtype, np.dtype(dtype))
+                self.assertTrue(np.array_equal(result, expected), (dtype, factor))
+
+    def test_matches_pybdv_for_incomplete_windows(self):
+        from pybdv.downsample import get_downsampler, sample_shape
+        from flamingo_tools.data_conversion import _integer_block_mean
+
+        float_mean = get_downsampler("mean")
+        rng = np.random.default_rng(0)
+        factor = (2, 2, 2)
+        # pybdv gives an axis that is shorter than its factor 1 voxel, and drops the rest of an
+        # axis that the factor does not divide.
+        for shape in ((1, 6, 5), (3, 4, 5), (2, 1, 3)):
+            data = rng.integers(0, 65535, size=shape, dtype="uint16", endpoint=True)
+            out_shape = sample_shape(shape, factor)
+            expected = float_mean(data, factor, out_shape).astype("uint16")
+            result = _integer_block_mean(data, factor, out_shape)
+            self.assertTrue(np.array_equal(result, expected), shape)
+
+
+class TestPrefetch(unittest.TestCase):
+    def test_yields_every_item_in_order(self):
+        from flamingo_tools.data_conversion import _prefetch
+
+        self.assertEqual(list(_prefetch(iter(range(10)))), list(range(10)))
+
+    def test_reader_error_reaches_the_caller(self):
+        from flamingo_tools.data_conversion import _prefetch
+
+        def failing_reader():
+            yield 0
+            yield 1
+            raise OSError(errno.EIO, "simulated read error")
+
+        received = []
+        with self.assertRaises(OSError):
+            for item in _prefetch(failing_reader()):
+                received.append(item)
+        self.assertEqual(received, [0, 1])
+
+    def test_reader_stops_when_the_caller_stops(self):
+        import itertools
+        import threading
+        from flamingo_tools.data_conversion import _prefetch
+
+        produced = []
+
+        def endless_reader():
+            for i in itertools.count():
+                produced.append(i)
+                yield i
+
+        n_threads = threading.active_count()
+        items = _prefetch(endless_reader())
+        self.assertEqual(next(items), 0)
+        items.close()
+        self.assertEqual(threading.active_count(), n_threads)
+        # One item was taken, one waits in the queue, one waits to be put.
+        self.assertLessEqual(len(produced), 3)
 
 
 if __name__ == "__main__":
