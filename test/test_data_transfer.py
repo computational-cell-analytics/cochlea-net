@@ -5,6 +5,7 @@ smbclient binary nor a network connection.
 """
 
 import contextlib
+import io
 import os
 import tempfile
 import types
@@ -573,6 +574,42 @@ class TestDownloadDispatch(unittest.TestCase):
                 smb._run_download(self._args(generic=True), "p", "P", "n5", tmp, "log", None)
         it_gen.assert_called_once()
         it_n5.assert_not_called()
+
+
+class TestTransferDataCli(unittest.TestCase):
+    def _run_cli(self, argv, stdin=""):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("sys.argv", ["transfer_data", "-u", "u", "-p", "P", "-d", "data", "-o", tmp] + argv), \
+             mock.patch("sys.stdin", io.StringIO(stdin)), \
+             mock.patch.object(smb.getpass, "getpass", return_value="prompted") as prompt, \
+             mock.patch.object(smb, "_run_download") as download:
+            smb.transfer_data_cli()
+        return prompt, download
+
+    def test_password_from_stdin(self):
+        prompt, download = self._run_cli(["--password-stdin"], stdin="pass word\nrest\n")
+        prompt.assert_not_called()
+        self.assertEqual(download.call_args.args[1], "pass word")
+
+    def test_password_from_prompt(self):
+        prompt, download = self._run_cli([])
+        prompt.assert_called_once()
+        self.assertEqual(download.call_args.args[1], "prompted")
+
+    def test_password_from_stdin_drops_crlf(self):
+        _, download = self._run_cli(["--password-stdin"], stdin="pass\r\n")
+        self.assertEqual(download.call_args.args[1], "pass")
+
+    def test_empty_stdin_stops(self):
+        with self.assertRaises(SystemExit):
+            self._run_cli(["--password-stdin"], stdin="\n")
+
+    def test_password_stdin_on_terminal_stops(self):
+        terminal = io.StringIO("visible\n")
+        terminal.isatty = lambda: True
+        with mock.patch("sys.stdin", terminal), self.assertRaises(SystemExit) as stop:
+            smb._read_password(True)
+        self.assertIn("pipe", str(stop.exception))
 
 
 class TestIngestDispatch(unittest.TestCase):

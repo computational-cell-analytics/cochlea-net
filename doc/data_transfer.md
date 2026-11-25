@@ -10,7 +10,12 @@ UKON is the SMB storage of the UMG imaging data. The command `flamingo_tools.tra
 | UKON_spezial | `//wfs-medizin-spezial.top.gwdg.de/ukon-all$` |
 
 The tools connect to UKON_spezial. Select another share with `-s`.
-Each tool asks for your GWDG password and then starts.
+Each tool asks for your GWDG password and then starts. `flamingo_tools.transfer_data --password-stdin` reads the
+password from the first line of stdin instead, for a program that holds the password in memory, such as
+`slurm_wf.convert` of slurm-workflows.
+
+On the cluster, only the login nodes reach UKON. The compute nodes cannot open port 445, also not with
+`--constraint=inet` (tested on 2026-11-25).
 
 The connection to UKON is unstable. The tools retry each transfer unit after a disconnect, without a new password
 prompt.

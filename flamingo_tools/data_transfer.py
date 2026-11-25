@@ -23,6 +23,9 @@ few large files on an unstable connection. Pass --generic to force this per-file
 
 When -d names a single file, a download continues an interrupted transfer where it stopped
 (smbclient `reget`), and both directions compare the file size at the end.
+
+Pass --password-stdin to read the password from the first line of stdin instead of a prompt, e.g.
+from a driver process that holds it in memory.
 """
 
 import argparse
@@ -933,6 +936,23 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
                              setup_filter=setup_filter, base=base)
 
 
+def _read_password(from_stdin: bool) -> str:
+    """Return the password from the first line of stdin, or from a prompt."""
+    if not from_stdin:
+        return getpass.getpass("Enter password: ")
+    # A terminal shows what the user types, unlike the prompt.
+    if sys.stdin.isatty():
+        raise SystemExit("--password-stdin reads the password from a pipe. On a terminal, omit it to get a prompt.")
+    password = sys.stdin.readline()
+    for ending in ("\r\n", "\n"):
+        if password.endswith(ending):
+            password = password[:-len(ending)]
+            break
+    if not password:
+        raise SystemExit("--password-stdin: the first line of stdin is empty.")
+    return password
+
+
 def transfer_data_cli():
     """@private
     """
@@ -965,6 +985,8 @@ def transfer_data_cli():
     parser.add_argument("--generic", action="store_true",
                         help="Force the generic per-file transfer, bypassing N5 detection. Suits "
                              "arbitrary directory trees. Non-N5 data is detected automatically too.")
+    parser.add_argument("--password-stdin", action="store_true",
+                        help="Read the password from the first line of stdin instead of a prompt.")
     args = parser.parse_args()
 
     if args.generic and args.setup:
@@ -992,7 +1014,7 @@ def transfer_data_cli():
         except ValueError as e:
             parser.error(str(e))
 
-    password = getpass.getpass("Enter password: ")
+    password = _read_password(args.password_stdin)
     if args.ingest:
         _run_ingest(args, password, remote_dir, n5_name, output_dir, log_file, setup_filter)
     else:
