@@ -26,8 +26,7 @@ When -d names a single file, a download continues an interrupted transfer where 
 
 Pass --password-stdin to read the password from the first line of stdin instead of a prompt, e.g.
 from a driver process that holds it in memory. Pass --resume to continue an interrupted
-download of a directory: it keeps the local files that have the remote size and continues
-shorter ones.
+transfer of a directory: it keeps the files that have the same size on both sides.
 """
 
 import argparse
@@ -370,6 +369,7 @@ def iterative_n5_upload(
     smb_server: str = SMB_SERVER,
     setup_filter: Optional[list[str]] = None,
     base: Optional[str] = None,
+    size_map: Optional[dict] = None,
 ):
     """Phase 2 (ingest): upload an N5 dataset setup-by-setup, scale-by-scale.
 
@@ -391,11 +391,26 @@ def iterative_n5_upload(
         setup_filter: Restrict upload to these setup(s) (e.g. ["setup0"]).
             Uploads all discovered setups when not given.
         base: Prefix assumed to already exist on the share. Defaults to remote_dir.
+        size_map: Sizes of the files on the share, relative to the dataset, from
+            remote_size_map_with_retry. A chunk directory or a scale whose files all have
+            these sizes is skipped. Without it, every unit is uploaded.
     """
     remote_dir = remote_dir.replace("\\", "/")
     full_remote = f"{remote_dir}/{n5_name}"
     local_n5 = os.path.join(source_dir, n5_name)
     base = base if base is not None else remote_dir
+    skipped = 0
+
+    def _on_share(local_dir: str) -> bool:
+        if size_map is None:
+            return False
+        for root, _dirs, files in os.walk(local_dir):
+            for fname in files:
+                path = os.path.join(root, fname)
+                rel = pathlib.PurePath(os.path.relpath(path, local_n5)).as_posix()
+                if size_map.get(rel) != os.path.getsize(path):
+                    return False
+        return True
 
     print("\n=== Iterative N5 ingest mode ===")
 
@@ -466,6 +481,9 @@ def iterative_n5_upload(
                     print(f"{scale} chunk directories: {chunk_dirs[0]} … {chunk_dirs[-1]} "
                           f"({len(chunk_dirs)} total)")
                     for chunk_dir in chunk_dirs:
+                        if _on_share(os.path.join(scale_local, chunk_dir)):
+                            skipped += 1
+                            continue
                         print(f"    -> {scale}/{chunk_dir}")
                         upload_path(
                             username, password,
@@ -476,6 +494,9 @@ def iterative_n5_upload(
                             log_file=log_file, smb_server=smb_server,
                         )
                 else:
+                    if _on_share(scale_local):
+                        skipped += 1
+                        continue
                     # Upload the entire scale in one shot.
                     print(f"\n  -- {setup}/{tp}/{scale}")
                     upload_path(
@@ -487,6 +508,8 @@ def iterative_n5_upload(
                         log_file=log_file, smb_server=smb_server,
                     )
 
+    if size_map is not None:
+        print(f"\n  Skipped {skipped} chunk directories and scales that are complete on the share")
     print("\n=== Iterative ingest complete ===")
 
 
@@ -908,6 +931,10 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     Detects N5 vs a generic tree from the local source. A generic tree is uploaded per file in
     the Phase-2 fallback; verification is size-based for both (verify_and_repair_upload).
     A single file is uploaded with one put, then its remote size is compared.
+
+    With --resume, the files that have the local size on the share stay. If the remote dataset
+    exists, Phase 1 is skipped. An N5 then uploads only the incomplete units, and a generic
+    tree goes straight to the per-file repair of verify_and_repair_upload.
     """
     local_n5 = os.path.join(source_dir, n5_name)
     is_n5 = not args.generic and (bool(setup_filter) or _looks_like_n5_local(local_n5))
@@ -936,6 +963,30 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
                                    f"the local file has {local_size} bytes")
         return
 
+    def _remote_sizes():
+        size_map = remote_size_map_with_retry(args.username, password, full_remote, local_n5,
+                                              smb_server=args.smb_server)
+        if size_map is None:
+            print(f"[warn] could not list {full_remote}; every unit is uploaded again")
+        return size_map
+
+    def _verify():
+        verify_and_repair_upload(args.username, password, remote_dir, n5_name, source_dir,
+                                 log_file=log_file, smb_server=args.smb_server,
+                                 setup_filter=setup_filter, base=base)
+
+    if args.resume:
+        entry = remote_entry(args.username, password, remote_dir, n5_name, source_dir,
+                             smb_server=args.smb_server)
+        size_map = _remote_sizes() if entry is not None and entry[0] else None
+        if size_map is not None:
+            print(f"Resuming the upload into {full_remote}: only missing files and files with the wrong size.")
+            if is_n5:
+                iterative_n5_upload(args.username, password, remote_dir, n5_name, source_dir,
+                                    log_file=log_file, smb_server=args.smb_server, base=base, size_map=size_map)
+            _verify()
+            return
+
     print("Connecting to SMB server and starting bulk ingest...")
     if setup_filter:
         ensure_remote_path(args.username, password, base=base, target=full_remote,
@@ -953,9 +1004,7 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
 
     if not had_disconnect and rc == 0 and not upload_error:
         print("File ingest completed successfully.")
-        verify_and_repair_upload(args.username, password, remote_dir, n5_name, source_dir,
-                                 log_file=log_file, smb_server=args.smb_server,
-                                 setup_filter=setup_filter, base=base)
+        _verify()
         return
 
     if not had_disconnect:
@@ -965,13 +1014,12 @@ def _run_ingest(args, password, remote_dir, n5_name, source_dir, log_file, setup
     if is_n5:
         iterative_n5_upload(args.username, password, remote_dir, n5_name, source_dir,
                             log_file=log_file, smb_server=args.smb_server,
-                            setup_filter=setup_filter, base=base)
-    else:
+                            setup_filter=setup_filter, base=base,
+                            size_map=_remote_sizes() if args.resume else None)
+    elif not args.resume:
         generic_iterative_upload(args.username, password, remote_dir, n5_name, source_dir,
                                  log_file=log_file, smb_server=args.smb_server, base=base)
-    verify_and_repair_upload(args.username, password, remote_dir, n5_name, source_dir,
-                             log_file=log_file, smb_server=args.smb_server,
-                             setup_filter=setup_filter, base=base)
+    _verify()
 
 
 def _read_password(from_stdin: bool) -> str:
@@ -1024,19 +1072,18 @@ def transfer_data_cli():
                         help="Force the generic per-file transfer, bypassing N5 detection. Suits "
                              "arbitrary directory trees. Non-N5 data is detected automatically too.")
     parser.add_argument("--resume", action="store_true",
-                        help="Download only: continue an interrupted download of a directory. A local file "
-                             "with the remote size counts as complete, and a shorter local file continues "
-                             "where it stopped. If the local directory exists, the bulk transfer is skipped. "
-                             "Use it only for data that does not change on the share, such as 1_raw. It is "
-                             "slow for an N5 with many chunks, because it fetches one file at a time.")
+                        help="Continue an interrupted transfer of a directory. A file with the same size on "
+                             "both sides counts as complete. If the target directory exists, the bulk "
+                             "transfer is skipped. Download: a shorter local file continues where it "
+                             "stopped; use it only for data that does not change on the share, such as "
+                             "1_raw; it is slow for an N5 with many chunks. Ingest: an N5 uploads only the "
+                             "chunk directories and scales that are incomplete on the share.")
     parser.add_argument("--password-stdin", action="store_true",
                         help="Read the password from the first line of stdin instead of a prompt.")
     args = parser.parse_args()
 
     if args.generic and args.setup:
         parser.error("--generic and --setup are mutually exclusive (--setup applies to N5 data only)")
-    if args.resume and args.ingest:
-        parser.error("--resume applies to a download only")
     if args.resume and args.setup:
         parser.error("--resume transfers the whole directory, so it cannot be combined with --setup")
 

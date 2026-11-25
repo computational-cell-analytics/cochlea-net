@@ -177,11 +177,37 @@ class TestIterativeUpload(unittest.TestCase):
         self.assertIn("setup0", joined)
         self.assertNotIn("setup1", joined)
 
+    def test_size_map_skips_complete_units(self):
+        # s0/0 and s4 are complete on the share, s0/1/0 is missing.
+        size_map = {"attributes.json": 50, "setup0/timepoint0/s0/attributes.json": 80,
+                    "setup0/timepoint0/s0/0/0": 1024, "setup0/timepoint0/s4/attributes.json": 60,
+                    "setup0/timepoint0/s4/0/0": 128}
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_n5(tmp)
+            rec = Recorder()
+            with patch_run_smbclient(rec):
+                smb.iterative_n5_upload("u", "p", remote_dir="P", n5_name="n5",
+                                        source_dir=tmp, base="P", size_map=size_map)
+        mputs = [cmds for cmds in rec.command_lists if any(c.startswith("mput") for c in cmds)]
+        self.assertEqual(mputs, [['cd "P/n5/setup0/timepoint0/s0"', "recurse", "prompt", "mput 1"]])
+        # The small attributes.json files are always put.
+        self.assertIn(['cd "P/n5"', "put attributes.json"], rec.command_lists)
+
+    def test_size_mismatch_uploads_the_unit(self):
+        size_map = {"setup0/timepoint0/s4/attributes.json": 60, "setup0/timepoint0/s4/0/0": 64}
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_n5(tmp)
+            rec = Recorder()
+            with patch_run_smbclient(rec):
+                smb.iterative_n5_upload("u", "p", remote_dir="P", n5_name="n5",
+                                        source_dir=tmp, base="P", size_map=size_map)
+        self.assertIn(['cd "P/n5/setup0/timepoint0"', "recurse", "prompt", "mput s4"], rec.command_lists)
+
 
 class TestPhase1Ingest(unittest.TestCase):
     def _args(self, create_parents=False):
         return types.SimpleNamespace(
-            username="u", smb_server=smb.SMB_SERVER, create_parents=create_parents, generic=False,
+            username="u", smb_server=smb.SMB_SERVER, create_parents=create_parents, generic=False, resume=False,
         )
 
     def test_bulk_non_filtered(self):
@@ -675,11 +701,19 @@ class TestTransferDataCli(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self._run_cli(["--password-stdin"], stdin="\n")
 
-    def test_resume_rejects_ingest_and_setup(self):
-        with contextlib.redirect_stderr(io.StringIO()):
-            for extra in (["--ingest"], ["--setup", "0"]):
-                with self.assertRaises(SystemExit):
-                    self._run_cli(["--resume"] + extra)
+    def test_resume_rejects_setup(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self._run_cli(["--resume", "--setup", "0"])
+
+    def test_resume_applies_to_ingest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "data"))
+            argv = ["transfer_data", "-u", "u", "-p", "P", "-d", "data", "-o", tmp, "--ingest", "--resume"]
+            with mock.patch("sys.argv", argv), \
+                 mock.patch.object(smb.getpass, "getpass", return_value="p"), \
+                 mock.patch.object(smb, "_run_ingest") as ingest:
+                smb.transfer_data_cli()
+        self.assertTrue(ingest.call_args.args[0].resume)
 
     def test_password_stdin_on_terminal_stops(self):
         terminal = io.StringIO("visible\n")
@@ -690,20 +724,57 @@ class TestTransferDataCli(unittest.TestCase):
 
 
 class TestIngestDispatch(unittest.TestCase):
-    def _args(self, generic=False):
+    def _args(self, generic=False, resume=False):
         return types.SimpleNamespace(username="u", smb_server=smb.SMB_SERVER,
-                                     generic=generic, create_parents=False)
+                                     generic=generic, create_parents=False, resume=resume)
 
-    def _run(self, make_tree, name, generic=False):
+    def _run(self, make_tree, name, generic=False, resume=False, remote=None, disconnect=True):
+        """Run the ingest. `remote` is the remote_entry of the dataset; returns the mocks and the recorder."""
+        rec = Recorder([([], disconnect, 0)])
         with tempfile.TemporaryDirectory() as tmp:
             make_tree(tmp)
-            with patch_run_smbclient(Recorder([([], True, 0)])), \
+            with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "require_remote_dir"), \
+                 mock.patch.object(smb, "remote_entry", return_value=remote), \
+                 mock.patch.object(smb, "remote_size_map_with_retry", return_value={"x": 1}) as listing, \
                  mock.patch.object(smb, "iterative_n5_upload") as up_n5, \
                  mock.patch.object(smb, "generic_iterative_upload") as up_gen, \
                  mock.patch.object(smb, "verify_and_repair_upload") as v_up:
-                smb._run_ingest(self._args(generic), "p", "P", name, tmp, "log", None)
-            return up_n5, up_gen, v_up
+                smb._run_ingest(self._args(generic, resume), "p", "P", name, tmp, "log", None)
+        self.listing = listing
+        self.mputs = [cmds for cmds in rec.command_lists if any(c.startswith("mput") for c in cmds)]
+        return up_n5, up_gen, v_up
+
+    def test_resume_with_remote_dataset_skips_bulk_ingest(self):
+        up_n5, up_gen, v_up = self._run(_make_n5, "n5", resume=True, remote=(True, 0))
+        self.assertEqual(self.mputs, [])
+        self.assertEqual(up_n5.call_args.kwargs["size_map"], {"x": 1})
+        up_gen.assert_not_called()
+        v_up.assert_called_once()
+
+    def test_resume_generic_goes_to_the_repair(self):
+        up_n5, up_gen, v_up = self._run(_make_generic_tree, "data", resume=True, remote=(True, 0))
+        self.assertEqual(self.mputs, [])
+        up_n5.assert_not_called()
+        up_gen.assert_not_called()
+        v_up.assert_called_once()
+
+    def test_resume_without_remote_dataset_runs_bulk_ingest(self):
+        up_n5, _, v_up = self._run(_make_n5, "n5", resume=True, remote=None, disconnect=False)
+        self.assertEqual(self.mputs, [['cd "P"', "recurse", "prompt", "mput n5"]])
+        self.listing.assert_not_called()
+        up_n5.assert_not_called()
+        v_up.assert_called_once()
+
+    def test_resume_fallback_skips_complete_units(self):
+        up_n5, up_gen, _ = self._run(_make_n5, "n5", resume=True, remote=None)
+        self.assertEqual(up_n5.call_args.kwargs["size_map"], {"x": 1})
+        up_gen.assert_not_called()
+
+    def test_fallback_without_resume_uploads_everything(self):
+        up_n5, _, _ = self._run(_make_n5, "n5")
+        self.assertIsNone(up_n5.call_args.kwargs["size_map"])
+        self.listing.assert_not_called()
 
     def test_n5_fallback_uses_n5_upload(self):
         up_n5, up_gen, v_up = self._run(_make_n5, "n5")

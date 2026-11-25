@@ -40,8 +40,8 @@ The tools append each transfer unit that still fails after all retries to a log 
 `transfer_log.txt` in the output directory. Select another file with `-l`.
 
 A tool exits with code 1 when its log file grew: a transfer unit failed, or expected data was not found. Run the same
-command again: a repeated transfer overwrites the existing files. To continue the download of a directory instead,
-add `--resume`, see [Other directories](#other-directories).
+command again: a repeated transfer overwrites the existing files. To continue the transfer of a directory instead,
+add `--resume`, see [Other directories](#other-directories) and [Upload (ingest)](#upload-ingest).
 
 ## Copy an N5 dataset, a directory or a file
 
@@ -109,6 +109,12 @@ flamingo_tools.transfer_data \
 - The upload of a directory uses the same two phases as the download. At the end, the command compares the size of
   each file with the local file, and uploads each missing file or each file with a different size again.
 - An upload of a single file always starts again after a disconnect. `smbclient` cannot continue an upload.
+- `--resume` continues an interrupted upload of a directory. A file with the same size on the share counts as
+  complete. If the directory exists on the share, the command skips phase 1:
+  - An N5 dataset uploads only the chunk directories (`s0`-`s3`) and scales (the other scales) that have a missing
+    file or a file with a different size.
+  - Another directory uploads only the missing files and the files with a different size, one file at a time.
+  - After a disconnect in phase 1, phase 2 also skips the complete pieces.
 - `-p` must exist on the share. The command stops otherwise, so a typo cannot create stray folders on the shared server.
   `--create-parents` creates the missing parent directories.
 - `--setup` and `--generic` work as for the download.
