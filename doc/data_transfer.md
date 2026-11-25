@@ -40,7 +40,8 @@ The tools append each transfer unit that still fails after all retries to a log 
 `transfer_log.txt` in the output directory. Select another file with `-l`.
 
 A tool exits with code 1 when its log file grew: a transfer unit failed, or expected data was not found. Run the same
-command again: a repeated transfer overwrites the existing files.
+command again: a repeated transfer overwrites the existing files. To continue the download of a directory instead,
+add `--resume`, see [Other directories](#other-directories).
 
 ## Copy an N5 dataset, a directory or a file
 
@@ -74,6 +75,15 @@ A directory without top-level `setupN` directories, for example a folder with a 
   a different size again.
 - `--generic` forces this mode for an N5 dataset too. `--generic` and `--setup` are mutually exclusive.
 - File names with spaces work. Empty directories are not created again on download.
+- `--resume` continues an interrupted download, e.g. of `1_raw`:
+  - A local file with the size on the share counts as complete and is not copied again.
+  - A shorter local file continues where it stopped (`smbclient reget`).
+  - If the local directory exists, the command skips phase 1 and copies only the missing and incomplete files.
+    Without a local directory, the normal download runs.
+  - Use `--resume` only for data that does not change on the share, such as raw data. The command does not compare
+    the content of the local files.
+  - `--resume` does not work together with `--setup`. For an N5 dataset with many chunk files it is slow, because each
+    file needs its own `smbclient` session.
 
 ### Single files
 

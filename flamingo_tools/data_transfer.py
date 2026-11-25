@@ -25,7 +25,9 @@ When -d names a single file, a download continues an interrupted transfer where 
 (smbclient `reget`), and both directions compare the file size at the end.
 
 Pass --password-stdin to read the password from the first line of stdin instead of a prompt, e.g.
-from a driver process that holds it in memory.
+from a driver process that holds it in memory. Pass --resume to continue an interrupted
+download of a directory: it keeps the local files that have the remote size and continues
+shorter ones.
 """
 
 import argparse
@@ -617,6 +619,42 @@ def _looks_like_n5_remote(
     return any(re.match(r"^setup\d+$", d) for d in dirs)
 
 
+def _local_size(path: str) -> Optional[int]:
+    """Return the size of a local file in bytes, or None if it does not exist."""
+    return os.path.getsize(path) if os.path.isfile(path) else None
+
+
+def _fetch_file(
+    username: str,
+    password: str,
+    full_remote: str,
+    local_root: str,
+    rel: str,
+    remote_size: int,
+    resume: bool = False,
+    log_file: Optional[str] = None,
+    smb_server: str = SMB_SERVER,
+) -> None:
+    """Download one file of a tree. With resume, a shorter local file continues with `reget`.
+
+    `reget` trusts the bytes that are already local, so resume suits only data that does not
+    change on the share, such as raw acquisition data.
+    """
+    reldir, fname = posixpath.split(rel)
+    remote_cd = f"{full_remote}/{reldir}" if reldir else full_remote
+    local_cwd = os.path.join(local_root, *reldir.split("/")) if reldir else local_root
+    have = _local_size(os.path.join(local_cwd, fname))
+    if resume and have and have < remote_size:
+        resumable_download(username, password, remote_cd, fname, local_cwd, expected_size=remote_size,
+                           log_file=log_file, smb_server=smb_server)
+        return
+    transfer_path(
+        username, password,
+        remote_cd=remote_cd, mget_target=_smb_quote(fname), local_cwd=local_cwd,
+        log_file=log_file, smb_server=smb_server,
+    )
+
+
 def generic_iterative_download(
     username: str,
     password: str,
@@ -625,6 +663,7 @@ def generic_iterative_download(
     output_dir: str,
     log_file: Optional[str] = None,
     smb_server: str = SMB_SERVER,
+    resume: bool = False,
 ) -> None:
     """Download an arbitrary (non-N5) directory tree from the share, one file at a time.
 
@@ -639,6 +678,8 @@ def generic_iterative_download(
         output_dir: Local directory that receives the tree.
         log_file: File to log files which were not transferred.
         smb_server: SMB server to connect to.
+        resume: Skip a local file that has the remote size, and continue a shorter one.
+            Without it, every file is downloaded again.
     """
     remote_dir = remote_dir.replace("\\", "/")
     full_remote = f"{remote_dir}/{data_name}"
@@ -651,17 +692,16 @@ def generic_iterative_download(
         _log_warning(log_file, f"[warn] could not list the remote tree {full_remote} — nothing transferred")
         return
 
-    print(f"  Found {len(size_map)} file(s) to transfer")
-    for rel in sorted(size_map):
-        reldir, fname = posixpath.split(rel)
-        remote_cd = f"{full_remote}/{reldir}" if reldir else full_remote
-        local_cwd = os.path.join(local_root, *reldir.split("/")) if reldir else local_root
+    names = sorted(size_map)
+    if resume:
+        names = [rel for rel in names
+                 if _local_size(os.path.join(local_root, *rel.split("/"))) != size_map[rel]]
+        print(f"  {len(size_map) - len(names)} of {len(size_map)} file(s) are complete")
+    print(f"  Found {len(names)} file(s) to transfer")
+    for rel in names:
         print(f"    -> {rel}")
-        transfer_path(
-            username, password,
-            remote_cd=remote_cd, mget_target=_smb_quote(fname), local_cwd=local_cwd,
-            log_file=log_file, smb_server=smb_server,
-        )
+        _fetch_file(username, password, full_remote, local_root, rel, size_map[rel], resume=resume,
+                    log_file=log_file, smb_server=smb_server)
 
     print("\n=== Generic download complete ===")
 
@@ -675,6 +715,7 @@ def verify_and_repair_download_generic(
     log_file: Optional[str] = None,
     smb_server: str = SMB_SERVER,
     max_passes: int = 3,
+    resume: bool = False,
 ) -> None:
     """Verify a downloaded tree against remote file sizes and re-fetch mismatches.
 
@@ -691,28 +732,15 @@ def verify_and_repair_download_generic(
         log_file: File to log files that remain mismatched after all passes.
         smb_server: SMB server to connect to.
         max_passes: Maximum number of verify-and-repair rounds.
+        resume: Continue a shorter local file with `reget` instead of a new download.
     """
     remote_dir = remote_dir.replace("\\", "/")
     full_remote = f"{remote_dir}/{data_name}"
     local_root = os.path.join(output_dir, data_name)
 
-    def _refetch(rel):
-        reldir, fname = posixpath.split(rel)
-        transfer_path(
-            username, password,
-            remote_cd=f"{full_remote}/{reldir}" if reldir else full_remote,
-            mget_target=_smb_quote(fname),
-            local_cwd=os.path.join(local_root, *reldir.split("/")) if reldir else local_root,
-            log_file=log_file, smb_server=smb_server,
-        )
-
     def _bad_files(size_map):
-        bad = []
-        for rel, rsize in size_map.items():
-            lp = os.path.join(local_root, *rel.split("/"))
-            if not os.path.exists(lp) or os.path.getsize(lp) != rsize:
-                bad.append(rel)
-        return bad
+        return [rel for rel, rsize in size_map.items()
+                if _local_size(os.path.join(local_root, *rel.split("/"))) != rsize]
 
     listing_error = f"[error] could not list the remote tree {full_remote} for verification; file sizes not checked"
     for attempt in range(1, max_passes + 1):
@@ -729,7 +757,8 @@ def verify_and_repair_download_generic(
         print(f"\n=== Verification pass {attempt}: found {len(bad)} mismatched/missing file(s) ===")
         for rel in bad:
             print(f"  -> re-fetching {rel}")
-            _refetch(rel)
+            _fetch_file(username, password, full_remote, local_root, rel, size_map[rel], resume=resume,
+                        log_file=log_file, smb_server=smb_server)
 
     size_map = remote_size_map_with_retry(username, password, full_remote, output_dir, smb_server=smb_server)
     if size_map is None:
@@ -797,7 +826,8 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
 
     Detects N5 vs a generic tree once, so the Phase-1-success verify and the Phase-2 fallback
     both use the matching path. A generic tree is transferred and verified per file.
-    A single file is downloaded with resumable_download.
+    A single file is downloaded with resumable_download. With --resume, a generic tree keeps
+    the local files that have the remote size, and an existing local directory skips Phase 1.
     """
     full_remote = f"{remote_dir}/{n5_name}"
     entry = remote_entry(args.username, password, remote_dir, n5_name, output_dir,
@@ -813,6 +843,13 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
                            log_file=log_file, smb_server=args.smb_server)
         return
 
+    local_data = os.path.join(output_dir, n5_name)
+    if args.resume and os.path.isdir(local_data):
+        print(f"Resuming the download into {local_data}: only missing files and files with the wrong size.")
+        verify_and_repair_download_generic(args.username, password, remote_dir, n5_name, output_dir,
+                                           log_file=log_file, smb_server=args.smb_server, resume=True)
+        return
+
     is_n5 = not args.generic and (
         bool(setup_filter) or
         _looks_like_n5_remote(args.username, password, full_remote, output_dir,
@@ -825,7 +862,8 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
                                  log_file=log_file, smb_server=args.smb_server, setup_filter=setup_filter)
         else:
             verify_and_repair_download_generic(args.username, password, remote_dir, n5_name,
-                                               output_dir, log_file=log_file, smb_server=args.smb_server)
+                                               output_dir, log_file=log_file, smb_server=args.smb_server,
+                                               resume=args.resume)
 
     print("Connecting to SMB server and starting bulk transfer...")
     if setup_filter:
@@ -860,7 +898,7 @@ def _run_download(args, password, remote_dir, n5_name, output_dir, log_file, set
                               log_file=log_file, smb_server=args.smb_server, setup_filter=setup_filter)
     else:
         generic_iterative_download(args.username, password, remote_dir, n5_name, output_dir,
-                                   log_file=log_file, smb_server=args.smb_server)
+                                   log_file=log_file, smb_server=args.smb_server, resume=args.resume)
     _verify()
 
 
@@ -985,12 +1023,22 @@ def transfer_data_cli():
     parser.add_argument("--generic", action="store_true",
                         help="Force the generic per-file transfer, bypassing N5 detection. Suits "
                              "arbitrary directory trees. Non-N5 data is detected automatically too.")
+    parser.add_argument("--resume", action="store_true",
+                        help="Download only: continue an interrupted download of a directory. A local file "
+                             "with the remote size counts as complete, and a shorter local file continues "
+                             "where it stopped. If the local directory exists, the bulk transfer is skipped. "
+                             "Use it only for data that does not change on the share, such as 1_raw. It is "
+                             "slow for an N5 with many chunks, because it fetches one file at a time.")
     parser.add_argument("--password-stdin", action="store_true",
                         help="Read the password from the first line of stdin instead of a prompt.")
     args = parser.parse_args()
 
     if args.generic and args.setup:
         parser.error("--generic and --setup are mutually exclusive (--setup applies to N5 data only)")
+    if args.resume and args.ingest:
+        parser.error("--resume applies to a download only")
+    if args.resume and args.setup:
+        parser.error("--resume transfers the whole directory, so it cannot be combined with --setup")
 
     # The name is an mget/mput mask and a local folder name, so drop a trailing separator.
     n5_name = args.remote_data.rstrip("/\\")
