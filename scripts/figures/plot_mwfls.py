@@ -13,7 +13,7 @@ from util import (
     literature_reference_values, average_by_fraction, cochlea_label,
     VALUE_DICT, COCHLEA_DICT, COHORT_DICT, cohort_cochleae, OUTLIER_DICT,
 )
-from data import add_synapses_per_ihc, get_mapped_table
+from data import add_synapses_per_ihc, get_mapped_table, get_synapse_table
 from panel_style import (
     AXIS_LINE_WIDTH, COLORS, DATA_LINE_WIDTH, FONT_SIZE, MARKER_SIZE, MEAN_LINE_WIDTH, OUTLIER,
     box_plot, dot_plot, group_shades, label_points, new_panel, nice_upper, profile_plot, reference_band, save_panel,
@@ -25,7 +25,11 @@ COHORTS = ["mwfls", "idisco"]
 # The SGN segmentation of each cohort. The IHC segmentation and the synapse detection of a
 # cochlea come from SYNAPSE_DICT.
 SGN_VERSION = {"idisco": "SGN_v2", "mwfls": "SGN_v3"}
-STAINS = {"SGN": "PV", "IHC": "Vglut3"}
+STAINS = {"SGN": "PV", "IHC": "Vglut3", "synapse": "CTBP2"}
+# The spot measure that is the synapse intensity, see data.SPOT_MEASURES. The SGN and IHC intensity is
+# the object median minus the median of the regional background mask. The spot background is a local
+# shell, so no spot measure is the same quantity.
+SYNAPSE_INTENSITY = "net_signal"
 
 COHORT_MARKERS = {
     "idisco": "o",
@@ -50,21 +54,24 @@ COHORT_POSITIONS = [1, 2]
 COHORT_XLIM = (0.4, 2.6)
 
 
-def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
-    """Load the SGN and IHC instances of every cochlea of the cohorts.
+def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC", "synapse")):
+    """Load the SGNs, the IHCs and the synapses of every cochlea of the cohorts.
 
-    The tables are mapped again in memory, see data.get_mapped_table. The IHC tables get the
+    The SGN and IHC tables are mapped again in memory, see data.get_mapped_table. The synapses are
+    the ones that count for the mapped IHCs, see data.get_synapse_table. The IHC tables get the
     column 'syn_per_IHC'.
 
     Args:
         cohorts: Keys of COHORT_DICT.
-        intensity: Structures that get the column 'intensity' from the object measures of their stain.
+        intensity: Structures that get the column 'intensity' from the measures of their stain.
+            The synapse intensity is the spot measure SYNAPSE_INTENSITY, and the synapse table also
+            gets the other columns of data.SPOT_MEASURES.
 
     Returns:
-        Mapping of structure ("SGN" / "IHC") to a mapping of cochlea name to table.
+        Mapping of structure ("SGN" / "IHC" / "synapse") to a mapping of cochlea name to table.
     """
     s3 = create_s3_target()
-    tables = {"SGN": {}, "IHC": {}}
+    tables = {"SGN": {}, "IHC": {}, "synapse": {}}
     for cohort in cohorts:
         for cochlea in cohort_cochleae(cohort):
             versions = {"SGN": SGN_VERSION[cohort], "IHC": SYNAPSE_DICT[cochlea]["ihc_table_name"]}
@@ -78,9 +85,17 @@ def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
                         f"{cochlea} {version}: {len(table)} mapped instances, VALUE_DICT documents {expected}."
                     )
                 tables[structure][cochlea] = table
-            tables["IHC"][cochlea] = add_synapses_per_ihc(
-                s3, cochlea, tables["IHC"][cochlea], SYNAPSE_DICT[cochlea]["synapse_table_name"],
+
+            synapse_source = SYNAPSE_DICT[cochlea]["synapse_table_name"]
+            print("Loading", cochlea, synapse_source)
+            synapse_stain = STAINS["synapse"] if "synapse" in intensity else None
+            synapses = get_synapse_table(
+                s3, cochlea, synapse_source, tables["IHC"][cochlea]["label_id"], stain=synapse_stain,
             )
+            if synapse_stain is not None:
+                synapses = synapses.assign(intensity=synapses[SYNAPSE_INTENSITY])
+            tables["synapse"][cochlea] = synapses
+            tables["IHC"][cochlea] = add_synapses_per_ihc(tables["IHC"][cochlea], synapses)
     return tables
 
 

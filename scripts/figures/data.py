@@ -1,7 +1,8 @@
 """Loaders for the figure data: S3 segmentation tables, cluster measurement tables and their caches.
 
-Every loader keeps a pickle cache, because the S3 and cluster reads are slow. A loader reads the
-cache when it exists, unless force_download is set.
+A loader with the argument force_download keeps a pickle cache, because the S3 and cluster reads
+are slow. It reads the cache when it exists, unless force_download is set. The other loaders, e.g.
+get_mapped_table and get_synapse_table, read the data at each call.
 """
 import json
 import os
@@ -127,26 +128,78 @@ def get_mapped_table(s3, cochlea: str, structure: str, source_name: str, stain: 
     return table
 
 
-def add_synapses_per_ihc(
-    s3, cochlea: str, table: pd.DataFrame, synapse_source: str, max_distance: float = 3.0,
-) -> pd.DataFrame:
-    """Add the column 'syn_per_IHC' with the number of synapses matched to each IHC.
+# The spot measures that get_synapse_table adds, see flamingo_tools.synapse_detection.spot_intensity.
+SPOT_MEASURES = ("net_signal", "signal", "snr", "ratio")
+
+
+def counted_synapses(synapses: pd.DataFrame, ihc_ids, max_distance: float = 3.0) -> pd.DataFrame:
+    """Select the synapses that count for the IHCs.
 
     The rule is the one of scripts/measurements/measure_synapses.py: a synapse counts for its
-    matched IHC if it is at most `max_distance` micrometers away. An IHC without a synapse gets 0.
+    matched IHC if it is at most `max_distance` micrometers away.
+
+    Args:
+        synapses: Synapse table with the columns 'matched_ihc' and 'distance_to_ihc'.
+        ihc_ids: Label ids of the IHCs. The synapses of other IHCs are left out.
+        max_distance: Maximal distance of a synapse to its IHC in micrometers.
+
+    Returns:
+        The selected synapses.
+    """
+    keep = synapses["matched_ihc"].isin(ihc_ids) & (synapses["distance_to_ihc"] <= max_distance)
+    return synapses[keep]
+
+
+def get_synapse_table(
+    s3, cochlea: str, synapse_source: str, ihc_ids, max_distance: float = 3.0, stain: Optional[str] = None,
+) -> pd.DataFrame:
+    """Load the synapses that count for the IHCs, see counted_synapses.
 
     Args:
         s3: S3 file system, as returned by create_s3_target.
         cochlea: Name of the cochlea.
-        table: IHC table with the column 'label_id'.
         synapse_source: Name of the synapse spot source, e.g. "synapse_v3_ihc_v11".
+        ihc_ids: Label ids of the IHCs.
         max_distance: Maximal distance of a synapse to its IHC in micrometers.
+        stain: Optional stain, e.g. "CTBP2". The SPOT_MEASURES of its spot-intensity table are added
+            as columns with the bare measure names. A synapse without a signal keeps NaN in all of
+            them, and the fraction of these synapses is printed. The spot-intensity table has no row
+            for such a synapse, or the synapse is outside the volume. 'snr' and 'ratio' can also be
+            NaN for a synapse with a signal, see flamingo_tools.synapse_detection.spot_intensity.
+
+    Returns:
+        The selected synapses.
+    """
+    synapses = counted_synapses(read_source_table(s3, cochlea, synapse_source), ihc_ids, max_distance)
+    if stain is None:
+        return synapses
+
+    measure_name = f"{stain}_{synapse_source.replace('_', '-')}_spot-intensity.tsv"
+    measures = read_source_table(s3, cochlea, synapse_source, measure_name)
+    columns = {f"{stain}_{measure}": measure for measure in SPOT_MEASURES}
+    synapses = synapses.drop(columns=list(SPOT_MEASURES), errors="ignore").merge(
+        measures[["spot_id", *columns]].rename(columns=columns), on="spot_id", how="left",
+    )
+    n_missing = synapses["signal"].isna().sum()
+    if n_missing > 0:
+        print(f"{cochlea} {synapse_source}: {n_missing} / {len(synapses)} ({n_missing / len(synapses):.2%}) counted "
+              f"synapses have no signal in {measure_name}.")
+    return synapses
+
+
+def add_synapses_per_ihc(table: pd.DataFrame, synapses: pd.DataFrame) -> pd.DataFrame:
+    """Add the column 'syn_per_IHC' with the number of synapses matched to each IHC.
+
+    An IHC without a synapse gets 0.
+
+    Args:
+        table: IHC table with the column 'label_id'.
+        synapses: The synapses that count, see counted_synapses.
 
     Returns:
         A copy of the table with the column 'syn_per_IHC'.
     """
-    synapses = read_source_table(s3, cochlea, synapse_source)
-    counts = synapses.loc[synapses["distance_to_ihc"] <= max_distance, "matched_ihc"].value_counts()
+    counts = synapses["matched_ihc"].value_counts()
     return table.assign(syn_per_IHC=table["label_id"].map(counts).fillna(0).astype(int))
 
 
