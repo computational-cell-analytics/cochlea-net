@@ -1,5 +1,4 @@
 import math
-import multiprocessing as mp
 import os
 from concurrent import futures
 from typing import Callable, List, Optional, Sequence, Tuple, Union
@@ -12,6 +11,7 @@ import pandas as pd
 from bioimage_cpp.utils import Blocking
 
 from elf.io import open_file
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.json_util import archive_processing_params, load_processing_params
 from flamingo_tools.s3_utils import (default_table_path, read_table, MOBIE_FOLDER,
                                      table_name_prefix)
@@ -235,12 +235,12 @@ def filter_segmentation(
         output_dataset[volume_index] = data
 
     # Limit the number of cores for parallelization.
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     with futures.ThreadPoolExecutor(n_threads) as filter_pool:
         list(tqdm(filter_pool.map(filter_chunk, range(blocking.number_of_blocks)), total=blocking.number_of_blocks))
 
     seg_filtered, n_ids_filtered, _ = parallel.relabel_consecutive(
-        output_dataset, start_label=1, keep_zeros=True, block_shape=block_shape
+        output_dataset, start_label=1, keep_zeros=True, block_shape=block_shape, n_threads=n_threads
     )
 
     return n_ids, n_ids_filtered
