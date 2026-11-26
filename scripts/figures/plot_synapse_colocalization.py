@@ -12,8 +12,8 @@ import pandas as pd
 from matplotlib.offsetbox import AnnotationBbox, HPacker, TextArea, VPacker
 from matplotlib.ticker import MaxNLocator
 
-from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.postprocessing.label_components import label_components_ihc, refine_ihc_row
+from flamingo_tools.json_util import STEP_KEYS, load_processing_params
+from flamingo_tools.postprocessing.label_components import label_components_table
 from flamingo_tools.s3_utils import create_s3_target
 
 from data import read_source_table
@@ -45,8 +45,7 @@ PANEL_SIZE = (180, 40)
 def row_ihcs(table: pd.DataFrame, params: dict) -> np.ndarray:
     """Return the label ids of the IHC row that the label_components parameters of a processing file select.
 
-    The components are labeled in memory as flamingo_tools.label_components does it, with the refined row
-    if the parameters have 'refine_row'.
+    `label_components_table` labels the components in memory, as flamingo_tools.label_components does it.
 
     Args:
         table: IHC segmentation table.
@@ -55,17 +54,8 @@ def row_ihcs(table: pd.DataFrame, params: dict) -> np.ndarray:
     Returns:
         The label ids of the instances in the components of 'component_list'.
     """
-    # The defaults of label_components_single. refine_ihc_row has other defaults.
-    label_params = {"min_size": 1000, "min_component_length": 50, "max_edge_distance": 30}
-    label_params.update({key: params[key] for key in label_params if key in params})
-    labeled = label_components_ihc(table, **label_params)
-    if params.get("refine_row"):
-        path_components = params.get("component_list_path") or params["component_list"]
-        max_path_deviation = params.get("max_path_deviation")
-        labeled, _, _ = refine_ihc_row(
-            labeled, path_components, max_path_deviation=15.0 if max_path_deviation is None else max_path_deviation,
-            merge_components=params.get("merge_components", False), **label_params,
-        )
+    keys = STEP_KEYS["label_components"] | {"cell_type", "component_list"}
+    labeled = label_components_table(table, **{key: value for key, value in params.items() if key in keys}).table
     return labeled["label_id"][labeled["component_labels"].isin(params["component_list"])].values
 
 
