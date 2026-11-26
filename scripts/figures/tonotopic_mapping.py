@@ -171,6 +171,51 @@ def plot_frequency_colorbar(
     save_figure(save_path, plot, facecolor=fig.get_facecolor(), transparent=False)
 
 
+def add_frequency_axis(ax, tick_size: int, label_size: int, label: str = "Frequency [kHz]"):
+    """Add the mouse frequencies as a top x-axis to an axis over the length fraction.
+
+    Call it after the x-limits of `ax` are final.
+
+    Returns:
+        The twin axis with the frequencies.
+    """
+    ax_top = ax.twiny()
+    freq_ticks = np.array([2, 4, 8, 16, 32, 64])  # kHz
+    # Inverse of the mouse Greenwood mapping: length_fraction = log10(f / A) / a
+    var_A = 1.46
+    var_a = 1.77
+    length_positions = np.log10(freq_ticks / var_A) / var_a
+    ax_top.set_xticks(length_positions)
+    ax_top.set_xticklabels([f"{f}" for f in freq_ticks], fontsize=tick_size)
+    ax_top.set_xlabel(label, fontsize=label_size)
+    ax_top.set_xlim(ax.get_xlim())
+    # A style that hides the top spine would also hide the frequency axis line.
+    ax_top.spines["top"].set_visible(True)
+    return ax_top
+
+
+def meyer_synapse_profile(n_bins: int) -> Optional[pd.DataFrame]:
+    """Average the synapses per IHC of Meyer et al. 2009 in bins of the length fraction.
+
+    Args:
+        n_bins: Number of bins along the cochlea length.
+
+    Returns:
+        The output of average_by_fraction, or None if MEYER_DATA does not exist.
+    """
+    if not os.path.isfile(MEYER_DATA):
+        return None
+    table = pd.read_csv(MEYER_DATA, sep="\t")
+    table = table.reset_index()  # make sure indexes pair with number of rows
+    lf_meyer = []
+    syn_meyer = []
+    for index, row in table.iterrows():
+        if isinstance(row["Ribbons_Cell"], float):
+            lf_meyer.append(row["X__from_Apex"] / 100)
+            syn_meyer.append(row["Ribbons_Cell"])
+    return average_by_fraction(lf_meyer, syn_meyer, n_bins=n_bins)
+
+
 def plot_synapses_along_cochlea(
     tonotopic_data: dict,
     save_path: str,
@@ -246,16 +291,8 @@ def plot_synapses_along_cochlea(
         result["runlength"].extend(fraction)
         result["value"].extend(syn_per_IHC)
 
-    if os.path.isfile(MEYER_DATA):
-        table = pd.read_csv(MEYER_DATA, sep="\t")
-        table = table.reset_index()  # make sure indexes pair with number of rows
-        lf_meyer = []
-        syn_meyer = []
-        for index, row in table.iterrows():
-            if isinstance(row["Ribbons_Cell"], float):
-                lf_meyer.append(row["X__from_Apex"] / 100)
-                syn_meyer.append(row["Ribbons_Cell"])
-        avg_per_bin = average_by_fraction(lf_meyer, syn_meyer, n_bins=n_bins)
+    avg_per_bin = meyer_synapse_profile(n_bins)
+    if avg_per_bin is not None:
         fraction = avg_per_bin["fraction_midpoint"].values
         syn_per_IHC = avg_per_bin["mean_syn_per_IHC"].values
 
@@ -326,16 +363,7 @@ def plot_synapses_along_cochlea(
         _draw_trendline(ax, _build_trend_dict(non_meyer), "gray")
 
     if top_axis:
-        ax_top = ax.twiny()
-        freq_ticks = np.array([2, 4, 8, 16, 32, 64])  # kHz
-        # Inverse of the mouse Greenwood mapping: length_fraction = log10(f / A) / a
-        var_A = 1.46
-        var_a = 1.77
-        length_positions = np.log10(freq_ticks / var_A) / var_a
-        ax_top.set_xticks(length_positions)
-        ax_top.set_xticklabels([f"{f}" for f in freq_ticks], fontsize=tick_size)
-        ax_top.set_xlabel("Frequency [kHz]", fontsize=main_label_size)
-        ax_top.set_xlim(ax.get_xlim())
+        add_frequency_axis(ax, tick_size, main_label_size)
 
     ax.tick_params(axis='x', labelsize=tick_size)
     ax.tick_params(axis='y', labelsize=tick_size)

@@ -57,7 +57,7 @@
 			"PELCOfHC2longnoDCM": {
 				"label": "MWfLS",
 				"animal": "mouse",
-				"description": "Microwave-assisted hybrid clearing with long incubation and without dichloromethane. The 'mwfls' group holds the M_AMD_000126 and M_AMD_000127 cochleae of this protocol.",
+				"description": "Microwave-assisted hybrid clearing with long incubation and without dichloromethane. The 'mwfls' group holds all cochleae of this protocol.",
 				"cochleae": [
 					"M_AMD_000126_L",
 					"M_AMD_000126_R",
@@ -152,7 +152,9 @@
 					"M_AMD_000126_L",
 					"M_AMD_000126_R",
 					"M_AMD_000127_L",
-					"M_AMD_000127_R"
+					"M_AMD_000127_R",
+					"M_AMD_000137_L",
+					"M_AMD_000137_R"
 				]
 			},
 			"chreef_mouse": {

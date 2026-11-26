@@ -8,7 +8,7 @@
 # data files.
 SYNAPSE_DICT = {
     "M_LR_000226_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
-                      "component_list": [1, 3]},
+                      "component_list": [1, 2]},
     "M_LR_000226_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11"},
     "M_LR_000227_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11"},
     "M_LR_000227_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11"},
@@ -122,13 +122,17 @@ SYNAPSE_DICT = {
                        "component_list": [1, 2], "protocol": "fDISCO"},
 
     # PELCOfHC2longnoDCM
-    "M_AMD_000126_L": {"synapse_table_name": "synapse_v3_ihc_v9", "ihc_table_name": "IHC_v9",
+    "M_AMD_000126_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                        "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
-    "M_AMD_000126_R": {"synapse_table_name": "synapse_v3_ihc_v9", "ihc_table_name": "IHC_v9",
+    "M_AMD_000126_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                        "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
-    "M_AMD_000127_L": {"synapse_table_name": "synapse_v3_ihc_v9", "ihc_table_name": "IHC_v9",
+    "M_AMD_000127_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                        "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
-    "M_AMD_000127_R": {"synapse_table_name": "synapse_v3_ihc_v9", "ihc_table_name": "IHC_v9",
+    "M_AMD_000127_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
+                       "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
+    "M_AMD_000137_L": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
+                       "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
+    "M_AMD_000137_R": {"synapse_table_name": "synapse_v3_ihc_v11", "ihc_table_name": "IHC_v11",
                        "component_list": [1], "protocol": "PELCOfHC2longnoDCM"},
 
 }
