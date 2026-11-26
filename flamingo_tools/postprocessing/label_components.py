@@ -1,7 +1,7 @@
 import math
 import os
 from concurrent import futures
-from typing import Callable, List, Optional, Sequence, Tuple, Union
+from typing import Callable, List, NamedTuple, Optional, Sequence, Tuple, Union
 
 import elf.parallel as parallel
 import numpy as np
@@ -664,11 +664,15 @@ def ihc_row_path(centroids: np.ndarray) -> np.ndarray:
     return resample_path(centroids[nodes], 1.0)
 
 
+# The maximal distance in micrometers between a refined IHC row instance and the row path.
+DEFAULT_ROW_DEVIATION = 15.0
+
+
 def refine_ihc_row(
     table: pd.DataFrame,
     component_list: List[int],
     min_size: int = 10000,
-    max_path_deviation: float = 15.0,
+    max_path_deviation: float = DEFAULT_ROW_DEVIATION,
     max_edge_distance: float = 30,
     min_component_length: int = 50,
     merge_components: bool = False,
@@ -797,6 +801,115 @@ def label_custom_components(tsv_table, custom_dict):
     return tsv_table
 
 
+def _check_labeling_params(
+    cell_type: str,
+    max_path_deviation: Optional[float],
+    refine_row: bool,
+    merge_components: bool,
+):
+    if cell_type not in ("sgn", "ihc"):
+        raise ValueError(f"Choose a supported cell type. Either 'sgn' or 'ihc', not '{cell_type}'.")
+    if cell_type != "ihc" and (max_path_deviation is not None or refine_row or merge_components):
+        raise ValueError(
+            f"max_path_deviation, refine_row and merge_components require cell_type='ihc', not '{cell_type}'."
+        )
+
+
+def _row_path_table(row_path: np.ndarray) -> pd.DataFrame:
+    """Convert the path of a refined IHC row to a central path table."""
+    from flamingo_tools.postprocessing.cochlea_mapping import _path_dict_from_components, arc_length
+
+    length = arc_length(row_path)[-1]
+    return _central_path_table(_path_dict_from_components([row_path], length), length)
+
+
+class ComponentLabeling(NamedTuple):
+    """The result of `label_components_table`.
+
+    Attributes:
+        table: The table with the final 'component_labels'.
+        seed: The table with the graph components, before the IHC row refinement or the path deviation filter.
+            Without both, it is the same object as table.
+        path: The central IHC path table of the row refinement or of the path deviation filter, else None.
+        n_dropped: The number of refined row instances in components with less than `min_component_length`
+            instances.
+    """
+    table: pd.DataFrame
+    seed: pd.DataFrame
+    path: Optional[pd.DataFrame]
+    n_dropped: int
+
+
+def label_components_table(
+    table: pd.DataFrame,
+    cell_type: str = "sgn",
+    component_list: List[int] = [1],
+    component_list_path: Optional[List[int]] = None,
+    max_edge_distance: float = 30,
+    min_component_length: int = 50,
+    min_size: int = 1000,
+    custom_dic: Optional[dict] = None,
+    max_path_deviation: Optional[float] = None,
+    refine_row: bool = False,
+    merge_components: bool = False,
+) -> ComponentLabeling:
+    """Label the components of a segmentation table in memory, as `label_components_single` does.
+
+    The graph components come from `label_components_ihc`, or from `label_custom_components` with custom_dic.
+    For IHCs, `refine_ihc_row` or `filter_ihc_by_path_deviation` then selects the row. The input table does not
+    change. The arguments are the 'label_components' keys of a processing parameter file, together with
+    'cell_type' and 'component_list'.
+
+    Args:
+        table: Segmentation table.
+        cell_type: Cell type of the segmentation, either "sgn" or "ihc".
+        component_list: The components that the later processing steps select.
+        component_list_path: The components that form the central IHC path. Default: component_list.
+        max_edge_distance: Maximal distance in micrometers between two instances of the same component.
+        min_component_length: Minimal number of instances of a component.
+        min_size: Minimal number of pixels of an instance.
+        custom_dic: Several labeling configurations, which `label_custom_components` combines into the
+            components.
+        max_path_deviation: Maximal distance in micrometers between an IHC and the central IHC path. Without
+            refine_row, `filter_ihc_by_path_deviation` sets the farther instances to component 0. With
+            refine_row, the default is DEFAULT_ROW_DEVIATION.
+        refine_row: Refine the IHC row with `refine_ihc_row`. The components of component_list_path, in the order
+            of the cochlea, guide the path. The row splits into components 1, 2, ... at gaps larger than
+            max_edge_distance.
+        merge_components: Make the refined IHC row one component.
+
+    Returns:
+        The labeled table, the seed components, the central IHC path and the number of dropped row instances.
+
+    Raises:
+        ValueError: If the cell type is unknown, if max_path_deviation, refine_row or merge_components is set for
+            another cell type than "ihc", or if merge_components is set without refine_row.
+    """
+    _check_labeling_params(cell_type, max_path_deviation, refine_row, merge_components)
+    if merge_components and not refine_row:
+        raise ValueError("merge_components requires refine_row.")
+
+    if custom_dic is None:
+        seed = label_components_ihc(table, min_size=min_size, min_component_length=min_component_length,
+                                    max_edge_distance=max_edge_distance)
+    else:
+        seed = label_custom_components(table.copy(), custom_dic)
+
+    path_components = component_list_path or component_list
+    if refine_row:
+        deviation = DEFAULT_ROW_DEVIATION if max_path_deviation is None else max_path_deviation
+        refined, row_path, n_dropped = refine_ihc_row(
+            seed.copy(), path_components, min_size=min_size, max_path_deviation=deviation,
+            max_edge_distance=max_edge_distance, min_component_length=min_component_length,
+            merge_components=merge_components,
+        )
+        return ComponentLabeling(refined, seed, _row_path_table(row_path), n_dropped)
+    if max_path_deviation is not None:
+        filtered, path = filter_ihc_by_path_deviation(seed.copy(), max_path_deviation, path_components)
+        return ComponentLabeling(filtered, seed, path, 0)
+    return ComponentLabeling(seed, seed, None, 0)
+
+
 def _show_components(table: pd.DataFrame, scale_factor: int, layers: dict):
     """Show the down-scaled centroids in napari, with one label layer per entry of `layers`.
 
@@ -861,55 +974,34 @@ def label_components_single(
     archive: Optional[str] = None,
     **_
 ):
-    """Process a single cochlea using one set of parameters or a custom dictionary.
-    The cochlea is analyzed using graph-connected components
-    to label segmentation instances that are closer than a given maximal edge distance.
-    This process acts on an input segmentation table to which a "component_labels" column is added.
-    Each entry in this column refers to the index of a connected component.
-    The largest connected component has an index of 1; the others follow in decreasing order.
+    """Label the components of a segmentation table file and write the table with a "component_labels" column.
+
+    `label_components_table` labels the components. The labeling parameters, from cell_type to merge_components,
+    are the arguments of `label_components_table`. The instance counts are reported for the components of
+    component_list_path. merge_components requires refine_row or use_napari.
 
     Args:
         table_path: File path to segmentation table.
         out_path: Output path to segmentation table with new column "component_labels".
         force_overwrite: Forcefully overwrite existing output path.
-        cell_type: Cell type of the segmentation. Currently supports "sgn" and "ihc".
-        component_list: The components that the later processing steps select.
-        component_list_path: The components that form the central IHC path and that the instance counts are
-            reported for. Default: component_list.
-        max_edge_distance: Maximal edge distance between graph nodes to create an edge between nodes.
-        min_component_length: Minimal length of nodes of connected component. Filtered out if lower.
-        min_size: Minimal number of pixels for filtering small instances.
         s3: Use S3 bucket.
         s3_credentials:
         s3_bucket_name:
         s3_service_endpoint:
-        custom_dic: Custom dictionary which allows multiple post-processing configurations and combines the
-            results into final components.
         use_napari: Visualize component labels with napari viewer. A prompt after the view asks for the
-            components in the order of the cochlea: for IHCs the components of the row. Ctrl+C at a prompt
-            aborts the run before anything is written.
+            components in the order of the cochlea: for IHCs the components of the row, which then refine the
+            row as with refine_row, so a row can be chosen and checked without this flag. When the refinement
+            drops row instances in components with less than `min_component_length` instances, a prompt asks if
+            the row becomes one component. Ctrl+C at a prompt aborts the run before anything is written.
         scale_factor: Scale factor for down-scaling data for visualization in Napari.
         path_file: Output path for the central IHC path that the run used: the path of the refined row, of the
             deviation filter, or else the path through the components. Only used when cell_type='ihc'.
-        max_path_deviation: Maximum allowed deviation in µm from the central IHC path. Instances
-            farther than this are set to component_labels=0. Requires cell_type='ihc'.
-        refine_row: Refine the IHC row with `refine_ihc_row`. The components of `component_list_path`, in the
-            order of the cochlea, guide the path, and `max_path_deviation` (15 micrometers if None) limits the
-            distance to it. The row splits into components 1, 2, ... at gaps larger than `max_edge_distance`.
-            Requires cell_type='ihc'. With use_napari, a prompt after each view asks for the row components,
-            so a row can be chosen and checked without this flag.
-        merge_components: Make the refined IHC row one component. Requires refine_row or use_napari. With
-            use_napari, a prompt after the view asks for it when the refinement drops row instances in
-            components with less than `min_component_length` instances.
         dataset_name: Name of the cochlea. Required for archive.
         segmentation_channel: Name of the segmentation channel. Required for archive.
         archive: Processing parameter file, or a directory for it, that receives the parameters of the run.
             See `archive_processing_params`.
     """
-    if cell_type not in ("sgn", "ihc"):
-        raise ValueError(f"Choose a supported cell type. Either 'sgn' or 'ihc', not '{cell_type}'.")
-    if (refine_row or merge_components) and cell_type != "ihc":
-        raise ValueError(f"refine_row and merge_components require cell_type='ihc', not '{cell_type}'.")
+    _check_labeling_params(cell_type, max_path_deviation, refine_row, merge_components)
     if merge_components and not (refine_row or use_napari):
         raise ValueError("merge_components requires refine_row or use_napari.")
     if archive is not None and (dataset_name is None or segmentation_channel is None):
@@ -938,30 +1030,13 @@ def label_components_single(
         print(f"Skipping {out_path}. Table already exists.")
         return
 
-    if custom_dic is not None:
-        # use multiple post-processing configurations
-        tsv_table = label_custom_components(table, custom_dic)
-    else:
-        tsv_table = label_components_ihc(table, min_size=min_size, min_component_length=min_component_length,
-                                         max_edge_distance=max_edge_distance)
-
-    labeled = tsv_table.copy()
-    path_components = component_list_path or component_list
-    row_deviation = 15.0 if max_path_deviation is None else max_path_deviation
-    row_kwargs = dict(min_size=min_size, max_path_deviation=row_deviation,
-                      max_edge_distance=max_edge_distance, min_component_length=min_component_length)
-    path_df, n_dropped, merged = None, 0, merge_components
-
-    if cell_type == "ihc" and refine_row:
-        tsv_table, row_path, n_dropped = refine_ihc_row(labeled.copy(), path_components,
-                                                        merge_components=merge_components, **row_kwargs)
-    elif cell_type == "ihc" and max_path_deviation is not None:
-        tsv_table, path_df = filter_ihc_by_path_deviation(tsv_table, max_path_deviation, path_components)
-    elif cell_type == "ihc" and path_file is not None:
-        total_distance, path_dict = _compute_path_from_table(tsv_table, path_components)
-        path_df = _central_path_table(path_dict, total_distance)
-    elif max_path_deviation is not None:
-        print("Warning: --max_path_deviation is only supported for cell_type='ihc'. Skipping path filtering.")
+    params = dict(
+        cell_type=cell_type, component_list=component_list, component_list_path=component_list_path,
+        max_edge_distance=max_edge_distance, min_component_length=min_component_length, min_size=min_size,
+        custom_dic=custom_dic, max_path_deviation=max_path_deviation, refine_row=refine_row,
+        merge_components=merge_components and refine_row,
+    )
+    labeling = label_components_table(table, **params)
 
     if use_napari:
         # The tonotopic mapping and the IHC row path need the components in the order of the cochlea.
@@ -969,40 +1044,46 @@ def label_components_single(
         prompt = ("Enter IHC row components in order (space separated)" if cell_type == "ihc"
                   else "Enter SGN components in order (space separated)")
         prompt += ", Enter to accept the current mapping, Ctrl+C to abort: "
-        counts = labeled["component_labels"].value_counts()
+        counts = labeling.seed["component_labels"].value_counts()
         existing = {int(label) for label, count in counts.items() if label != 0 and count >= 2}
         while True:
-            if refine_row:
-                layers = {"components": labeled["component_labels"], "IHC row": tsv_table["component_labels"]}
+            if params["refine_row"]:
+                layers = {"components": labeling.seed["component_labels"],
+                          "IHC row": labeling.table["component_labels"]}
             else:
-                layers = {"components": tsv_table["component_labels"]}
-            _show_components(labeled, scale_factor, layers)
+                layers = {"components": labeling.table["component_labels"]}
+            _show_components(labeling.seed, scale_factor, layers)
             merge_prompt = "Merge the components into one row instead? [Y]es/[N]o: "
-            if n_dropped and _ask(merge_prompt).strip().lower().startswith("y"):
-                tsv_table, row_path, n_dropped = refine_ihc_row(labeled.copy(), path_components,
-                                                                merge_components=True, **row_kwargs)
-                merged = True
+            if labeling.n_dropped and _ask(merge_prompt).strip().lower().startswith("y"):
+                params["merge_components"] = True
+                labeling = label_components_table(table, **params)
                 continue
             components = _ask_components(prompt, existing)
             if not components:
                 break
             if cell_type == "sgn":
-                component_list = path_components = components
+                params.update(component_list=components, component_list_path=None)
                 break
-            path_components, refine_row, merged = components, True, merge_components
-            tsv_table, row_path, n_dropped = refine_ihc_row(labeled.copy(), path_components,
-                                                            merge_components=merge_components, **row_kwargs)
-        if custom_dic is None:
-            replay = f"--cell_type {cell_type}"
-            if refine_row:
-                replay += " --refine_row" + (" --merge_components" if merged else "")
-            replay += " -c " + " ".join(str(comp) for comp in path_components)
-            replay += (f" --min_size {min_size} --min_component_length {min_component_length}"
-                       f" --max_edge_distance {max_edge_distance}")
-            if refine_row or max_path_deviation is not None:
-                replay += f" --max_path_deviation {row_deviation}"
-            print("Replay with: " + replay)
+            params.update(component_list_path=components, refine_row=True, merge_components=merge_components)
+            labeling = label_components_table(table, **params)
 
+    component_list, component_list_path = params["component_list"], params["component_list_path"]
+    refine_row, merged = params["refine_row"], params["merge_components"]
+    path_components = component_list_path or component_list
+    row_deviation = DEFAULT_ROW_DEVIATION if max_path_deviation is None else max_path_deviation
+
+    if use_napari and custom_dic is None:
+        replay = f"--cell_type {cell_type}"
+        if refine_row:
+            replay += " --refine_row" + (" --merge_components" if merged else "")
+        replay += " -c " + " ".join(str(comp) for comp in path_components)
+        replay += (f" --min_size {min_size} --min_component_length {min_component_length}"
+                   f" --max_edge_distance {max_edge_distance}")
+        if refine_row or max_path_deviation is not None:
+            replay += f" --max_path_deviation {row_deviation}"
+        print("Replay with: " + replay)
+
+    tsv_table = labeling.table
     counted = path_components
     if refine_row:
         counted = list(range(1, int(tsv_table["component_labels"].max()) + 1))
@@ -1010,13 +1091,16 @@ def label_components_single(
             raise ValueError(f"The refined IHC row has no component with at least {min_component_length} instances. "
                              "Lower min_component_length or use merge_components.")
 
+    path_df = None
+    if cell_type == "ihc" and path_file is not None:
+        path_df = labeling.path
+        if path_df is None:
+            total_distance, path_dict = _compute_path_from_table(tsv_table, path_components)
+            path_df = _central_path_table(path_dict, total_distance)
+
     tsv_table.to_csv(out_path, sep="\t", index=False)
 
-    if cell_type == "ihc" and path_file is not None:
-        if refine_row:
-            from flamingo_tools.postprocessing.cochlea_mapping import _path_dict_from_components, arc_length
-            length = arc_length(row_path)[-1]
-            path_df = _central_path_table(_path_dict_from_components([row_path], length), length)
+    if path_df is not None:
         path_df.to_csv(path_file, sep="\t", index=False)
         print(f"Saved the central path to {path_file}.")
 
