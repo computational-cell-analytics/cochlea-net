@@ -56,6 +56,7 @@ class TestMeasureSpotIntensities(unittest.TestCase):
         self.assertTrue(np.all(result.stain_signal < AMPLITUDE + BACKGROUND))
         np.testing.assert_allclose(result.stain_background, BACKGROUND, atol=1.0)
         np.testing.assert_allclose(result.stain_ratio, result.stain_signal / result.stain_background)
+        np.testing.assert_allclose(result.stain_net_signal, result.stain_signal - result.stain_background)
 
         # The integrated intensity is the sum of the Gaussian over the core voxels.
         core = (0.8, 0.8, 1.0)
@@ -195,8 +196,18 @@ class TestSpotIntensityTable(unittest.TestCase):
             spot_intensity_table(table_path, [image_path], output_path, input_key=None, voxel_size=VOXEL_SIZE,
                                  signal_halo=0)
             result = pd.read_csv(output_path, sep="\t")
+            measures_path = os.path.join(tmp, "measures.tsv")
+            spot_intensity_table(table_path, [image_path], measures_path, id_column="spot_id", input_key=None,
+                                 voxel_size=VOXEL_SIZE, signal_halo=0)
+            measures = pd.read_csv(measures_path, sep="\t")
+            with self.assertRaises(ValueError):
+                spot_intensity_table(table_path, [image_path], id_column="label_id", input_key=None)
         self.assertIn("CTBP2_snr", result.columns)
         self.assertAlmostEqual(result.CTBP2_signal[0], AMPLITUDE + BACKGROUND, places=2)
+        # The id-only output has the layout of an object-measures table: no positions.
+        self.assertEqual(measures.columns[0], "spot_id")
+        self.assertFalse({"x", "y", "z"} & set(measures.columns))
+        self.assertEqual(list(measures.columns[1:]), [c for c in result.columns if c not in ("spot_id", "x", "y", "z")])
 
 
 if __name__ == "__main__":

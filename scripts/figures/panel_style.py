@@ -27,6 +27,7 @@ import numpy as np
 from cycler import cycler
 from matplotlib import colors as mcolors
 from matplotlib import rc_context
+from matplotlib.font_manager import FontProperties
 from matplotlib.lines import Line2D
 from matplotlib.ticker import MaxNLocator
 
@@ -381,6 +382,26 @@ def box_plot(ax, values, position: float, color, width: float = 0.5):
     )
 
 
+def _band_label(ax, label: str, lower: float, upper: float, side: str, end: str):
+    below = side == "below"
+    right = end == "right"
+    return ax.annotate(label, (1 if right else 0, lower if below else upper), xycoords=("axes fraction", "data"),
+                       xytext=(-1 if right else 1, -2 if below else 2), textcoords="offset points",
+                       ha="right" if right else "left", va="top" if below else "bottom", color=COLORS["dark_gray"])
+
+
+def _point_overlap(ax, box, renderer) -> float:
+    """Return the area of a display box that the scatter symbols of the axis cover, plus the area outside the axis."""
+    radius = MARKER_SIZE / 2 * ax.figure.dpi / 72
+    overlap = 0.0
+    for collection in ax.collections:
+        for x, y in collection.get_offset_transform().transform(collection.get_offsets()):
+            overlap += _overlap_area((box.x0, box.y0, box.x1, box.y1), (x - radius, y - radius, x + radius, y + radius))
+    axis_box = ax.get_window_extent(renderer)
+    inside = _overlap_area((box.x0, box.y0, box.x1, box.y1), (axis_box.x0, axis_box.y0, axis_box.x1, axis_box.y1))
+    return overlap + (box.width * box.height - inside)
+
+
 def reference_band(ax, lower: float, upper: float, label: str = None, label_side: str = "below"):
     """Draw a reference range, e.g. a literature range, as a gray band over the full axis width.
 
@@ -388,17 +409,40 @@ def reference_band(ax, lower: float, upper: float, label: str = None, label_side
         ax: The axis.
         lower: Lower bound of the range.
         upper: Upper bound of the range.
-        label: Text at the right end of the band.
-        label_side: Put the label "below" or "above" the band.
+        label: Text next to the band.
+        label_side: Put the label "below" or "above" the band, at its right end. With "auto", the
+            label takes the first free place of below and above the right end, then below and above
+            the left end. A free place lies inside the axis and covers no scatter symbol. If no place
+            is free, the label takes the place with the smallest overlap. Set the axis limits, the
+            axis titles and the scatter points first.
+
+    Returns:
+        The label, or None.
     """
     ax.axhspan(lower, upper, color=tint(REFERENCE_COLOR, 0.85), linewidth=0, zorder=0)
     for bound in (lower, upper):
         ax.axhline(bound, color=REFERENCE_COLOR, linewidth=AXIS_LINE_WIDTH, zorder=1)
-    if label is not None:
-        below = label_side == "below"
-        ax.annotate(label, (1, lower if below else upper), xycoords=("axes fraction", "data"),
-                    xytext=(-1, -2 if below else 2), textcoords="offset points", ha="right",
-                    va="top" if below else "bottom", color=COLORS["dark_gray"])
+    if label is None:
+        return None
+    if label_side != "auto":
+        return _band_label(ax, label, lower, upper, label_side, "right")
+
+    _axis_size_pt(ax)
+    renderer = ax.figure.canvas.get_renderer()
+    best = None
+    for end in ("right", "left"):
+        for side in ("below", "above"):
+            annotation = _band_label(ax, label, lower, upper, side, end)
+            overlap = _point_overlap(ax, annotation.get_window_extent(renderer), renderer)
+            if best is not None and overlap >= best[0]:
+                annotation.remove()
+                continue
+            if best is not None:
+                best[1].remove()
+            best = (overlap, annotation)
+            if overlap == 0:
+                return annotation
+    return best[1]
 
 
 def profile_plot(ax, samples, color, marker: str = "o", show_points: bool = True, show_sd: bool = True,
@@ -436,12 +480,39 @@ def _overlap_area(box_a, box_b) -> float:
     return max(width, 0) * max(height, 0)
 
 
-def label_points(ax, x, y, labels, pad: float = 2.0) -> list:
+def _box_in_axis_pt(ax, artist, renderer) -> tuple:
+    """Return the box of an artist in pt, relative to the lower left corner of the axis."""
+    scale = 72 / ax.figure.dpi
+    origin = ax.get_window_extent(renderer)
+    box = artist.get_window_extent(renderer)
+    corners = (box.x0 - origin.x0, box.y0 - origin.y0, box.x1 - origin.x0, box.y1 - origin.y0)
+    return tuple(scale * value for value in corners)
+
+
+def pin_legend(legend):
+    """Keep a legend at the place it has now, e.g. at the place that loc="best" chose.
+
+    A legend with loc="best" chooses its place again at each draw, and then also avoids texts
+    that were added later. Pin it before label_points places labels around it.
+
+    Args:
+        legend: A legend of an axis.
+    """
+    ax = legend.axes
+    _axis_size_pt(ax)
+    box = legend.get_window_extent(ax.figure.canvas.get_renderer()).transformed(ax.transAxes.inverted())
+    legend.set_loc((box.x0, box.y0))
+
+
+def label_points(ax, x, y, labels, pad: float = 2.0, avoid=()) -> list:
     """Label points with a text next to each, so that no label covers another label or a point.
 
     Each label takes the first free place of: right, left, above, below and the four diagonals
     of its point. A place outside the axis is not free. If no place is free, the label takes the
-    place with the smallest overlap. The test uses an estimated text width, so check the result.
+    place with the smallest overlap. If a label has no free place, the labels are placed again with
+    the fewest free places first, so that a point in a cluster gets its place before its neighbours
+    take it, and the order with the smaller total overlap is kept. The test uses the text width of
+    the renderer and a box height of 1.2 em.
 
     Set the axis limits, tick labels and axis titles first, because the test uses the axis size
     after the layout.
@@ -452,6 +523,8 @@ def label_points(ax, x, y, labels, pad: float = 2.0) -> list:
         y: The y values of the points.
         labels: One text per point.
         pad: Distance between a symbol and its label in pt.
+        avoid: Further artists that no label may cover, e.g. a legend. Pin a legend with
+            loc="best" first, see pin_legend.
 
     Returns:
         The annotations.
@@ -462,6 +535,11 @@ def label_points(ax, x, y, labels, pad: float = 2.0) -> list:
     px, py = (x - x0) / (x1 - x0) * width_pt, (y - y0) / (y1 - y0) * height_pt
     radius = MARKER_SIZE / 2
     boxes = [(a - radius, b - radius, a + radius, b + radius) for a, b in zip(px, py)]
+    renderer = ax.figure.canvas.get_renderer()
+    if avoid:
+        boxes += [_box_in_axis_pt(ax, artist, renderer) for artist in avoid]
+    font = FontProperties(size=FONT_SIZE)
+    pt_per_pixel = 72 / ax.figure.dpi
     offset = radius + pad
     places = [
         (offset, 0, "left", "center"), (-offset, 0, "right", "center"),
@@ -472,26 +550,50 @@ def label_points(ax, x, y, labels, pad: float = 2.0) -> list:
     # Part of the text box that lies left of or below the anchor, per alignment.
     left_share = {"left": 0.0, "center": 0.5, "right": 1.0}
     bottom_share = {"bottom": 0.0, "center": 0.5, "top": 1.0}
+    # The text box with ascent and descent is about 1.2 em high.
+    sizes = [
+        (renderer.get_text_width_height_descent(label, font, ismath=False)[0] * pt_per_pixel, 1.2 * FONT_SIZE)
+        for label in labels
+    ]
+
+    def score(i, place, occupied):
+        dx, dy, ha, va = place
+        text_width, text_height = sizes[i]
+        left = px[i] + dx - left_share[ha] * text_width
+        bottom = py[i] + dy - bottom_share[va] * text_height
+        box = (left, bottom, left + text_width, bottom + text_height)
+        inside = box[0] >= 0 and box[1] >= 0 and box[2] <= width_pt and box[3] <= height_pt
+        # The test box is 1 pt larger on each side, so that neighbouring texts keep a gap.
+        test_box = (box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1)
+        overlap = sum(_overlap_area(test_box, other) for other in occupied)
+        return overlap + (0 if inside else width_pt * height_pt), box
+
+    def place_all(order):
+        occupied = list(boxes)
+        chosen, total = {}, 0.0
+        for i in order:
+            best = None
+            for place in places:
+                overlap, box = score(i, place, occupied)
+                if best is None or overlap < best[0]:
+                    best = (overlap, place, box)
+                if overlap == 0:
+                    break
+            occupied.append(best[2])
+            chosen[i] = best[1]
+            total += best[0]
+        return total, chosen
+
+    total, chosen = place_all(range(len(labels)))
+    if total > 0:
+        n_free = [sum(score(i, place, boxes)[0] == 0 for place in places) for i in range(len(labels))]
+        retry = place_all(sorted(range(len(labels)), key=lambda i: n_free[i]))
+        if retry[0] < total:
+            total, chosen = retry
+
     annotations = []
     for i, label in enumerate(labels):
-        # The average glyph width of Arial is about 0.6 em. The text box with ascent and descent is
-        # about 1.2 em high.
-        text_width, text_height = 0.6 * FONT_SIZE * len(label), 1.2 * FONT_SIZE
-        best = None
-        for dx, dy, ha, va in places:
-            left = px[i] + dx - left_share[ha] * text_width
-            bottom = py[i] + dy - bottom_share[va] * text_height
-            box = (left, bottom, left + text_width, bottom + text_height)
-            inside = box[0] >= 0 and box[1] >= 0 and box[2] <= width_pt and box[3] <= height_pt
-            # The test box is 1 pt larger on each side, so that neighbouring texts keep a gap.
-            test_box = (box[0] - 1, box[1] - 1, box[2] + 1, box[3] + 1)
-            score = sum(_overlap_area(test_box, other) for other in boxes) + (0 if inside else width_pt * height_pt)
-            if best is None or score < best[0]:
-                best = (score, dx, dy, ha, va, box)
-            if score == 0:
-                break
-        _, dx, dy, ha, va, box = best
-        boxes.append(box)
+        dx, dy, ha, va = chosen[i]
         annotations.append(ax.annotate(label, (x[i], y[i]), xytext=(dx, dy), textcoords="offset points",
                                        ha=ha, va=va))
     return annotations

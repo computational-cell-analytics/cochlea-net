@@ -88,6 +88,107 @@ class TestPanelStyle(unittest.TestCase):
             for j in range(i + 1, len(boxes)):
                 self.assertFalse(boxes[i].overlaps(boxes[j]), f"labels {i} and {j} overlap")
 
+    def test_label_points_cluster_retry(self):
+        import matplotlib.pyplot as plt
+
+        # In the given order, the labels of this cluster overlap. Placed with the fewest free
+        # places first, they do not.
+        x, y = [4.1, 4.8, 3.5, 5.1, 4.6], [4.1, 4.2, 6.0, 5.4, 4.9]
+        with self.panel_style.style():
+            fig, ax = self.panel_style.new_panel(60, 40)
+            ax.scatter(x, y)
+            ax.set_xlim(0, 10)
+            ax.set_ylim(0, 10)
+            annotations = self.panel_style.label_points(ax, x, y, ["M_01L", "M_01R", "M_02L", "M_02R", "M_03L"])
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            boxes = [annotation.get_window_extent(renderer) for annotation in annotations]
+            points = ax.transData.transform(np.column_stack([x, y]))
+        plt.close(fig)
+        for i in range(len(boxes)):
+            for j in range(i + 1, len(boxes)):
+                self.assertFalse(boxes[i].overlaps(boxes[j]), f"labels {i} and {j} overlap")
+            for point in points:
+                self.assertFalse(boxes[i].contains(*point), f"label {i} covers a point")
+
+    def test_label_points_avoid_legend(self):
+        import matplotlib.pyplot as plt
+
+        ps = self.panel_style
+        # The label right of the first point would cover the legend in the upper right corner.
+        x, y = [6.5, 3.0], [9.0, 3.0]
+        with ps.style():
+            fig, ax = ps.new_panel(60, 40)
+            ax.scatter(x, y, label="points")
+            ax.set_xlim(0, 10)
+            ax.set_ylim(0, 10)
+            legend = ax.legend(loc="upper right")
+            annotations = ps.label_points(ax, x, y, ["M_01L", "M_02R"], avoid=[legend])
+            fig.canvas.draw()
+            renderer = fig.canvas.get_renderer()
+            legend_box = legend.get_window_extent(renderer)
+            boxes = [annotation.get_window_extent(renderer) for annotation in annotations]
+        plt.close(fig)
+        for box in boxes:
+            self.assertFalse(box.overlaps(legend_box))
+
+    def test_pin_legend(self):
+        import matplotlib.pyplot as plt
+
+        ps = self.panel_style
+        positions = {}
+        for pin in (False, True):
+            with ps.style():
+                fig, ax = ps.new_panel(60, 40)
+                ax.scatter([1.0, 2.0], [1.0, 2.0], label="points")
+                ax.set_xlim(0, 10)
+                ax.set_ylim(0, 10)
+                legend = ax.legend(loc="best")
+                if pin:
+                    ps.pin_legend(legend)
+                renderer = fig.canvas.get_renderer()
+                fig.get_layout_engine().execute(fig)
+                before = legend.get_window_extent(renderer).transformed(ax.transAxes.inverted())
+                # A text on the legend: loc="best" moves the legend away from it, unless it is pinned.
+                ax.text(before.x0 + before.width / 2, before.y0 + before.height / 2, "xxxxxx", transform=ax.transAxes,
+                        ha="center", va="center")
+                fig.canvas.draw()
+                after = legend.get_window_extent(renderer).transformed(ax.transAxes.inverted())
+            plt.close(fig)
+            positions[pin] = (before.bounds, after.bounds)
+        self.assertGreater(np.abs(np.subtract(*positions[False])).max(), 0.1)
+        np.testing.assert_allclose(*positions[True], atol=1e-3)
+
+    def test_reference_band_label_place(self):
+        import matplotlib.pyplot as plt
+
+        ps = self.panel_style
+        # Points just below and just above the right end of the band block the right places.
+        cases = {
+            "free": ([2.0], [2.0], ("right", "top")),
+            "below right blocked": ([9.5], [5.5], ("right", "bottom")),
+            "right blocked": ([9.5, 9.5], [5.5, 7.5], ("left", "top")),
+        }
+        for name, (x, y, expected) in cases.items():
+            with self.subTest(name), ps.style():
+                fig, ax = ps.new_panel(60, 40)
+                ax.scatter(x, y)
+                ax.set_xlim(0, 10)
+                ax.set_ylim(0, 10)
+                label = ps.reference_band(ax, 6, 7, label="literature", label_side="auto")
+                fig.canvas.draw()
+                renderer = fig.canvas.get_renderer()
+                box = label.get_window_extent(renderer)
+                axis_box = ax.get_window_extent(renderer)
+                points = ax.transData.transform(np.column_stack([x, y]))
+                plt.close(fig)
+                self.assertEqual((label.get_ha(), label.get_va()), expected)
+                self.assertEqual(len(ax.texts), 1)
+                self.assertTrue(axis_box.x0 <= box.x0 and box.x1 <= axis_box.x1)
+                self.assertTrue(axis_box.y0 <= box.y0 and box.y1 <= axis_box.y1)
+                for point in points:
+                    self.assertFalse(box.contains(*point))
+
     def test_text_colors(self):
         ps = self.panel_style
         self.assertEqual(ps.text_color_on(ps.COLORS["dark_gray"]), "#FFFFFF")

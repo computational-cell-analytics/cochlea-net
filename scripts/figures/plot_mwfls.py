@@ -13,11 +13,11 @@ from util import (
     literature_reference_values, average_by_fraction, cochlea_label,
     VALUE_DICT, COCHLEA_DICT, COHORT_DICT, cohort_cochleae, OUTLIER_DICT,
 )
-from data import add_synapses_per_ihc, get_mapped_table
+from data import add_synapses_per_ihc, get_mapped_table, get_synapse_table
 from panel_style import (
     AXIS_LINE_WIDTH, COLORS, DATA_LINE_WIDTH, FONT_SIZE, MARKER_SIZE, MEAN_LINE_WIDTH, OUTLIER,
-    box_plot, dot_plot, group_shades, label_points, new_panel, nice_upper, profile_plot, reference_band, save_panel,
-    style, text_key,
+    box_plot, dot_plot, group_shades, label_points, new_panel, nice_upper, pin_legend, profile_plot, reference_band,
+    save_panel, style, text_key,
 )
 from tonotopic_mapping import add_frequency_axis, meyer_synapse_profile
 
@@ -25,7 +25,38 @@ COHORTS = ["mwfls", "idisco"]
 # The SGN segmentation of each cohort. The IHC segmentation and the synapse detection of a
 # cochlea come from SYNAPSE_DICT.
 SGN_VERSION = {"idisco": "SGN_v2", "mwfls": "SGN_v3"}
-STAINS = {"SGN": "PV", "IHC": "Vglut3"}
+STAINS = {"SGN": "PV", "IHC": "Vglut3", "synapse": "CTBP2"}
+# The stain names of the axis titles.
+STAIN_LABELS = {"SGN": "PV", "IHC": "VGlut3", "synapse": "CtBP2"}
+# The SGN and IHC intensity is the median of the object minus the median of the regional background
+# mask: the tissue outside the segmented cells within 75 um of the object.
+#
+# The synapse intensity checks: one plot_intensity_check per spot measure, with the output file
+# synapse_intensity_check_<measure> and the end of its axis title. The measures come from the
+# spot-intensity tables, see data.SPOT_MEASURES and flamingo_tools.synapse_detection.spot_intensity.
+# The tables use its default radii:
+# - signal: the mean of the 3 x 3 x 3 voxels around the spot voxel, without a background correction.
+# - bg: the background of the spot, the median of a local shell from 2.5 to 4.5 um (x, y) and from
+#   3 to 5 um (z). The shell leaves out the cores of the other spots.
+# - noise: 1.4826 x the median absolute deviation in the shell, an estimate of the SD of one voxel.
+# The checks:
+# - net_signal = signal - bg: the local contrast. This is the synapse intensity, SYNAPSE_INTENSITY.
+# - signal: the raw signal. Compare it with net_signal to find if a difference comes from the spot
+#   or from the background.
+# - snr = (signal - bg) / noise: the contrast in units of the voxel noise.
+# - ratio = signal / bg: the relative contrast. 1 means no contrast.
+# The shell background is local, and the background mask of the SGNs and IHCs is regional. Thus the
+# synapse values are not comparable with the SGN and IHC values. See doc/analysis.md, "Synapse
+# intensity check".
+SYNAPSE_CHECKS = {
+    "net_signal": "signal - bg (a.u.)",
+    "signal": "raw signal (a.u.)",
+    "snr": "SNR",
+    "ratio": "signal / bg",
+}
+SYNAPSE_INTENSITY = "net_signal"
+# The axis title of cochlea_value.
+COUNT_LABELS = {"SGN": "SGN count", "IHC": "IHC count", "synapse": "Synapses per IHC"}
 
 COHORT_MARKERS = {
     "idisco": "o",
@@ -42,29 +73,28 @@ PANEL_SIZES = {
     "cohort_counts": (115, 50),  # 3A
     "synapses": (65, 50),  # 3B
     "synapses_legend": (120, 50),  # 3B with the cochlea legend
-    "sgn_intensity_check": (120, 50),
+    "intensity_check": (120, 50),
 }
 
-# The x positions of the cohorts in the panels that compare them, and the x range around them.
-COHORT_POSITIONS = [1, 2]
-COHORT_XLIM = (0.4, 2.6)
 
+def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC", "synapse")):
+    """Load the SGNs, the IHCs and the synapses of every cochlea of the cohorts.
 
-def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
-    """Load the SGN and IHC instances of every cochlea of the cohorts.
-
-    The tables are mapped again in memory, see data.get_mapped_table. The IHC tables get the
+    The SGN and IHC tables are mapped again in memory, see data.get_mapped_table. The synapses are
+    the ones that count for the mapped IHCs, see data.get_synapse_table. The IHC tables get the
     column 'syn_per_IHC'.
 
     Args:
         cohorts: Keys of COHORT_DICT.
-        intensity: Structures that get the column 'intensity' from the object measures of their stain.
+        intensity: Structures that get the column 'intensity' from the measures of their stain.
+            The synapse intensity is the spot measure SYNAPSE_INTENSITY, and the synapse table also
+            gets the other columns of data.SPOT_MEASURES.
 
     Returns:
-        Mapping of structure ("SGN" / "IHC") to a mapping of cochlea name to table.
+        Mapping of structure ("SGN" / "IHC" / "synapse") to a mapping of cochlea name to table.
     """
     s3 = create_s3_target()
-    tables = {"SGN": {}, "IHC": {}}
+    tables = {"SGN": {}, "IHC": {}, "synapse": {}}
     for cohort in cohorts:
         for cochlea in cohort_cochleae(cohort):
             versions = {"SGN": SGN_VERSION[cohort], "IHC": SYNAPSE_DICT[cochlea]["ihc_table_name"]}
@@ -78,9 +108,17 @@ def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
                         f"{cochlea} {version}: {len(table)} mapped instances, VALUE_DICT documents {expected}."
                     )
                 tables[structure][cochlea] = table
-            tables["IHC"][cochlea] = add_synapses_per_ihc(
-                s3, cochlea, tables["IHC"][cochlea], SYNAPSE_DICT[cochlea]["synapse_table_name"],
+
+            synapse_source = SYNAPSE_DICT[cochlea]["synapse_table_name"]
+            print("Loading", cochlea, synapse_source)
+            synapse_stain = STAINS["synapse"] if "synapse" in intensity else None
+            synapses = get_synapse_table(
+                s3, cochlea, synapse_source, tables["IHC"][cochlea]["label_id"], stain=synapse_stain,
             )
+            if synapse_stain is not None:
+                synapses = synapses.assign(intensity=synapses[SYNAPSE_INTENSITY])
+            tables["synapse"][cochlea] = synapses
+            tables["IHC"][cochlea] = add_synapses_per_ihc(tables["IHC"][cochlea], synapses)
     return tables
 
 
@@ -113,14 +151,24 @@ def print_cohort_averages(tables: dict):
         print(f"  Synapses per IHC, pooled over {len(pooled)} IHCs: {pooled.mean():.2f}")
 
 
-def _set_cohort_xaxis(ax, n_cochleae=None):
-    """Put the cohorts at COHORT_POSITIONS, with the number of cochleae below the cohort label if given."""
-    ax.set_xlim(*COHORT_XLIM)
-    ax.set_xticks(COHORT_POSITIONS)
-    labels = [COHORT_DICT[cohort]["label"] for cohort in COHORTS]
+def _cohort_positions(cohorts) -> list:
+    """Return the x positions of the cohorts in the panels that compare them."""
+    return list(range(1, len(cohorts) + 1))
+
+
+def _set_cohort_xaxis(ax, cohorts, n_cochleae=None):
+    """Put the cohorts at their positions, with the number of cochleae below the cohort label if given."""
+    positions = _cohort_positions(cohorts)
+    ax.set_xlim(positions[0] - 0.6, positions[-1] + 0.6)
+    ax.set_xticks(positions)
+    labels = [COHORT_DICT[cohort]["label"] for cohort in cohorts]
     if n_cochleae is not None:
         labels = [f"{label}\nn = {n}" for label, n in zip(labels, n_cochleae)]
     ax.set_xticklabels(labels)
+
+
+def _cohort_marker(cohort: str) -> str:
+    return COHORT_MARKERS.get(cohort, "o")
 
 
 def _draw_cohort_points(ax, values, position: float, cohort: str, outliers=()):
@@ -128,13 +176,26 @@ def _draw_cohort_points(ax, values, position: float, cohort: str, outliers=()):
 
     Set the axis limits first.
     """
-    dot_plot(ax, values, position, COHORT_DICT[cohort]["color"], COHORT_MARKERS[cohort], outliers)
+    dot_plot(ax, values, position, COHORT_DICT[cohort]["color"], _cohort_marker(cohort), outliers)
 
 
 def _set_cohort_ylim(ax, value_sets):
     """Set the y range from 0 to the next tick above the largest value or mean + SD of the value sets."""
     upper = max(max(np.max(values), np.mean(values) + np.std(values, ddof=1)) for values in value_sets)
     ax.set_ylim(0, nice_upper(upper))
+
+
+def cochlea_value(tables: dict, structure: str, cochlea: str):
+    """Return the SGN or IHC count of a cochlea, or its mean number of synapses per IHC for "synapse".
+
+    Args:
+        tables: Output of load_tables.
+        structure: "SGN", "IHC" or "synapse".
+        cochlea: Name of the cochlea.
+    """
+    if structure == "synapse":
+        return tables["IHC"][cochlea]["syn_per_IHC"].mean()
+    return len(tables[structure][cochlea])
 
 
 def cohort_values(tables: dict, structure: str, cohort: str, remove_outliers: bool = False):
@@ -151,10 +212,7 @@ def cohort_values(tables: dict, structure: str, cohort: str, remove_outliers: bo
     """
     values, outliers = [], []
     for cochlea in cohort_cochleae(cohort):
-        if structure == "synapse":
-            value = tables["IHC"][cochlea]["syn_per_IHC"].mean()
-        else:
-            value = len(tables[structure][cochlea])
+        value = cochlea_value(tables, structure, cochlea)
         is_outlier = remove_outliers and cochlea in OUTLIER_DICT.get(structure, [])
         (outliers if is_outlier else values).append(value)
     return values, outliers
@@ -182,11 +240,11 @@ def plot_counts_by_cohort(tables: dict, save_path: str, plot: bool = False, remo
         ("synapse", "Synapses per IHC", (-0.5, 20), range(0, 21, 5)),
     ]
     for ax, (structure, title, ylim, y_ticks) in zip(axes, panels):
-        _set_cohort_xaxis(ax, n_cochleae)
+        _set_cohort_xaxis(ax, COHORTS, n_cochleae)
         ax.set_yticks(list(y_ticks))
         ax.set_ylim(*ylim)
         ax.set_title(title)
-        for position, cohort in zip(COHORT_POSITIONS, COHORTS):
+        for position, cohort in zip(_cohort_positions(COHORTS), COHORTS):
             values, outliers = cohort_values(tables, structure, cohort, remove_outliers)
             _draw_cohort_points(ax, values, position, cohort, outliers)
         # The SGN label sits below the band at the right, where no SGN count is.
@@ -256,7 +314,7 @@ def plot_synapses_by_tonotopy(
             x = binned["fraction_midpoint"].values.astype(float)
             y = binned["mean_syn_per_IHC"].values
             if name in cochlea_colors:
-                handle = ax.scatter(x, y, s=point_size, color=cochlea_colors[name], marker=COHORT_MARKERS[cohort],
+                handle = ax.scatter(x, y, s=point_size, color=cochlea_colors[name], marker=_cohort_marker(cohort),
                                     linewidths=0, alpha=0.8, zorder=1)
                 profiles[name] = pd.Series(y, index=x)
             else:
@@ -271,6 +329,9 @@ def plot_synapses_by_tonotopy(
 
     meyer = meyer_synapse_profile(n_bins)
     if meyer is not None:
+        # Meyer et al. have no counts between 53 % and 66 % from the apex. The line connects the bins
+        # with data across the empty bins.
+        meyer = meyer.dropna(subset=["mean_syn_per_IHC"])
         line, = ax.plot(meyer["fraction_midpoint"].values.astype(float), meyer["mean_syn_per_IHC"].values,
                         color=COLORS["black"], marker="D", markersize=0.75 * MARKER_SIZE, linewidth=DATA_LINE_WIDTH,
                         zorder=3)
@@ -306,14 +367,14 @@ def plot_intensity_by_cohort(
     intensities = {
         cohort: [structure_tables[c]["intensity"].values for c in cohort_cochleae(cohort)] for cohort in COHORTS
     }
-    _set_cohort_xaxis(ax, [len(cohort_cochleae(cohort)) for cohort in COHORTS] if per_cochlea else None)
+    _set_cohort_xaxis(ax, COHORTS, [len(cohort_cochleae(cohort)) for cohort in COHORTS] if per_cochlea else None)
     if per_cochlea:
         means = {cohort: [values.mean() for values in intensities[cohort]] for cohort in COHORTS}
         _set_cohort_ylim(ax, means.values())
-        for position, cohort in zip(COHORT_POSITIONS, COHORTS):
+        for position, cohort in zip(_cohort_positions(COHORTS), COHORTS):
             _draw_cohort_points(ax, means[cohort], position, cohort)
     else:
-        for position, cohort in zip(COHORT_POSITIONS, COHORTS):
+        for position, cohort in zip(_cohort_positions(COHORTS), COHORTS):
             box_plot(ax, np.concatenate(intensities[cohort]), position, COHORT_DICT[cohort]["color"])
         ax.relim()
         ax.autoscale_view()
@@ -324,59 +385,108 @@ def plot_intensity_by_cohort(
     save_panel(fig, save_path, plot)
 
 
-@style()
-def plot_sgn_intensity_check(
-    sgn_tables: dict, measured_tables: dict, save_path: str, plot: bool = False,
-) -> pd.DataFrame:
-    """Plot the mean PV intensity of the SGNs of each cochlea, and the SGN count against it.
-
-    A cochlea with a weak PV stain can have a low SGN count, because the segmentation misses dim SGNs.
-    The left panel shows the mean intensity per cohort, the right panel the SGN count against the mean
-    intensity, with the literature band of the SGN count. Each point of the right panel is labeled
-    with the cochlea alias.
+def intensity_check_summary(tables: dict, structure: str, column: str = "intensity", cohorts=COHORTS) -> pd.DataFrame:
+    """Summarize the stain intensity and the count value of each cochlea for plot_intensity_check.
 
     Args:
-        sgn_tables: The SGN tables of load_tables. The count includes the SGNs without a measure.
-        measured_tables: The same tables without the SGNs that have no intensity.
+        tables: Output of load_tables.
+        structure: "SGN", "IHC" or "synapse".
+        column: Column of the intensity of each instance. Instances without a value are left out of
+            the mean and the median.
+        cohorts: Keys of COHORT_DICT.
+
+    Returns:
+        One row per cochlea with the alias, the cohort, the count (see cochlea_value), the mean and
+        median intensity and the share of the instances with an intensity.
+    """
+    rows = []
+    for cohort in cohorts:
+        for name in cohort_cochleae(cohort):
+            values = tables[structure][name][column]
+            rows.append({
+                "cochlea": name, "alias": cochlea_label(name, COCHLEA_DICT[name]), "cohort": cohort,
+                "count": cochlea_value(tables, structure, name), "mean_intensity": values.mean(),
+                "median_intensity": values.median(), "measured_share": values.notna().mean(),
+            })
+    return pd.DataFrame(rows)
+
+
+def _intensity_label(structure: str, column: str = "intensity") -> str:
+    stain = STAIN_LABELS[structure]
+    if structure != "synapse":
+        return f"Mean {stain} intensity (a.u.)"
+    measure = SYNAPSE_INTENSITY if column == "intensity" else column
+    return f"Mean {stain} {SYNAPSE_CHECKS[measure]}"
+
+
+@style()
+def plot_intensity_check(
+    tables: dict,
+    structure: str,
+    save_path: str,
+    column: str = "intensity",
+    cohorts=COHORTS,
+    plot: bool = False,
+) -> pd.DataFrame:
+    """Plot the mean stain intensity of each cochlea, and the count of the structure against it.
+
+    A cochlea with a weak stain can have a low count, because the segmentation or the detection misses
+    dim instances. The left panel shows the mean intensity per cohort. The right panel shows the count
+    against the mean intensity, with the literature band of the structure. Each point of the right
+    panel is labeled with the cochlea alias. A cochlea without an intensity is left out of the panels,
+    but not out of the returned summary. A cohort without such a cochlea shows n = 0.
+
+    Args:
+        tables: Output of load_tables.
+        structure: "SGN", "IHC" or "synapse". The count of "synapse" is the mean number of synapses per IHC.
         save_path: Output path without an extension.
+        column: Column of the intensity of each instance, see intensity_check_summary. For "synapse",
+            it is "intensity" (the measure SYNAPSE_INTENSITY) or a key of SYNAPSE_CHECKS. The column
+            selects the axis title.
+        cohorts: Keys of COHORT_DICT. They must have the same animal, because the literature band
+            depends on it.
         plot: Show interactive plot.
 
     Returns:
-        One row per cochlea with the alias, the SGN count, the mean and median intensity and the
-        share of the SGNs with a measure.
+        The output of intensity_check_summary.
     """
-    rows = []
-    for cohort in COHORTS:
-        for name in cohort_cochleae(cohort):
-            intensity = measured_tables[name]["intensity"]
-            count = len(sgn_tables[name])
-            rows.append({
-                "cochlea": name, "alias": cochlea_label(name, COCHLEA_DICT[name]), "cohort": cohort,
-                "sgn_count": count, "mean_intensity": intensity.mean(), "median_intensity": intensity.median(),
-                "measured_share": len(intensity) / count,
-            })
-    summary = pd.DataFrame(rows)
+    animals = {COHORT_DICT[cohort]["animal"] for cohort in cohorts}
+    if len(animals) != 1:
+        raise ValueError(f"The cohorts {cohorts} must have one animal, got {sorted(animals)}.")
+    intensity_label = _intensity_label(structure, column)
+    summary = intensity_check_summary(tables, structure, column, cohorts)
+    plotted = summary.dropna(subset=["mean_intensity"])
+    if len(plotted) == 0:
+        raise ValueError(f"No cochlea of the cohorts {cohorts} has a value in the {structure} column '{column}'.")
+    missing = summary.loc[summary["mean_intensity"].isna(), "cochlea"]
+    if len(missing) > 0:
+        print(f"{structure} {column}: no intensity for {', '.join(missing)}.")
 
-    fig, (ax_cohort, ax_count) = new_panel(*PANEL_SIZES["sgn_intensity_check"], ncols=2,
+    fig, (ax_cohort, ax_count) = new_panel(*PANEL_SIZES["intensity_check"], ncols=2,
                                            gridspec_kw={"width_ratios": [1, 2.4]})
-    means = {cohort: summary.loc[summary["cohort"] == cohort, "mean_intensity"].values for cohort in COHORTS}
-    _set_cohort_xaxis(ax_cohort, [len(cohort_cochleae(cohort)) for cohort in COHORTS])
-    _set_cohort_ylim(ax_cohort, means.values())
-    for position, cohort in zip(COHORT_POSITIONS, COHORTS):
-        _draw_cohort_points(ax_cohort, means[cohort], position, cohort)
-    ax_cohort.set_ylabel("Mean PV intensity (a.u.)")
+    means = {cohort: plotted.loc[plotted["cohort"] == cohort, "mean_intensity"].values for cohort in cohorts}
+    shown = [cohort for cohort in cohorts if len(means[cohort]) > 0]
+    _set_cohort_xaxis(ax_cohort, cohorts, [len(means[cohort]) for cohort in cohorts])
+    _set_cohort_ylim(ax_cohort, [means[cohort] for cohort in shown])
+    for position, cohort in zip(_cohort_positions(cohorts), cohorts):
+        if cohort in shown:
+            _draw_cohort_points(ax_cohort, means[cohort], position, cohort)
+    ax_cohort.set_ylabel(intensity_label)
 
-    for cohort in COHORTS:
-        cohort_rows = summary[summary["cohort"] == cohort]
-        ax_count.scatter(cohort_rows["mean_intensity"], cohort_rows["sgn_count"], color=COHORT_DICT[cohort]["color"],
-                         marker=COHORT_MARKERS[cohort], s=MARKER_SIZE ** 2, linewidths=0, zorder=3,
+    for cohort in shown:
+        cohort_rows = plotted[plotted["cohort"] == cohort]
+        ax_count.scatter(cohort_rows["mean_intensity"], cohort_rows["count"], color=COHORT_DICT[cohort]["color"],
+                         marker=_cohort_marker(cohort), s=MARKER_SIZE ** 2, linewidths=0, zorder=3,
                          label=COHORT_DICT[cohort]["label"])
-    ax_count.set_xlim(0, nice_upper(1.1 * summary["mean_intensity"].max()))
-    reference_band(ax_count, *literature_reference_values("SGN"), label="literature")
-    ax_count.set_xlabel("Mean PV intensity (a.u.)")
-    ax_count.set_ylabel("SGN count")
-    ax_count.legend(loc="lower right")
-    label_points(ax_count, summary["mean_intensity"], summary["sgn_count"], summary["alias"])
+    ax_count.set_xlim(0, nice_upper(1.1 * plotted["mean_intensity"].max()))
+    ax_count.set_xlabel(intensity_label)
+    ax_count.set_ylabel(COUNT_LABELS[structure])
+    band_label = reference_band(
+        ax_count, *literature_reference_values(structure, animals.pop()), label="literature", label_side="auto",
+    )
+    legend = ax_count.legend(loc="best")
+    pin_legend(legend)
+    label_points(ax_count, plotted["mean_intensity"], plotted["count"], plotted["alias"], avoid=[legend, band_label])
     save_panel(fig, save_path, plot)
     return summary
 
@@ -390,7 +500,7 @@ def _draw_cohort_profiles(ax, profiles: dict):
     """
     for cohort in COHORTS:
         samples = pd.DataFrame({name: profiles[name] for name in cohort_cochleae(cohort)})
-        profile_plot(ax, samples, COHORT_DICT[cohort]["color"], COHORT_MARKERS[cohort])
+        profile_plot(ax, samples, COHORT_DICT[cohort]["color"], _cohort_marker(cohort))
     text_key(ax, [(COHORT_DICT[cohort]["label"], COHORT_DICT[cohort]["color"]) for cohort in COHORTS])
     ax.set_ylabel("Intensity (a.u.)")
 
@@ -458,9 +568,9 @@ def main():
     parser.add_argument("--figure_dir", "-f", type=str, default="./panels/mwfls",
                         help="Output directory for plots.")
     parser.add_argument("--plot", action="store_true")
-    parser.add_argument("--intensity", nargs="*", choices=["SGN", "IHC"], default=["SGN", "IHC"],
+    parser.add_argument("--intensity", nargs="*", choices=["SGN", "IHC", "synapse"], default=["SGN", "IHC", "synapse"],
                         help="Structures whose intensity panels to plot. Leave out a structure whose object "
-                             "measures are not on S3.")
+                             "measures or spot-intensity tables are not on S3.")
     args = parser.parse_args()
 
     os.makedirs(args.figure_dir, exist_ok=True)
@@ -471,11 +581,11 @@ def main():
 
     tables = load_tables(intensity=args.intensity)
     print_cohort_averages(tables)
-    # The intensity panels leave out the instances without an object measure. The count and
+    # The SGN and IHC intensity panels leave out the instances without a measure. The count and
     # synapse panels keep them.
     measured = {
         structure: {name: table.dropna(subset=["intensity"]) for name, table in tables[structure].items()}
-        for structure in args.intensity
+        for structure in args.intensity if structure != "synapse"
     }
 
     if "SGN" in args.intensity:
@@ -485,9 +595,6 @@ def main():
             plot=args.plot,
         )
         plot_intensity_by_rc_offset(measured["SGN"], out("fig_02e_sgn_intensity_by_rc_offset"), plot=args.plot)
-        summary = plot_sgn_intensity_check(tables["SGN"], measured["SGN"], out("sgn_intensity_check"), plot=args.plot)
-        print("\nSGN count and PV intensity per cochlea")
-        print(summary.to_string(index=False, float_format="{:.2f}".format))
     if "IHC" in args.intensity:
         plot_intensity_by_cohort(
             measured["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort"), plot=args.plot,
@@ -497,6 +604,23 @@ def main():
             plot=args.plot,
         )
         plot_intensity_by_tonotopy(measured["IHC"], out("fig_02g_ihc_intensity_by_tonotopy"), plot=args.plot)
+
+    for structure in args.intensity:
+        if structure != "synapse":
+            summary = plot_intensity_check(
+                tables, structure, out(f"{structure.lower()}_intensity_check"), plot=args.plot,
+            )
+            print(f"\n{COUNT_LABELS[structure]} and {STAIN_LABELS[structure]} intensity per cochlea")
+            print(summary.to_string(index=False, float_format="{:.2f}".format))
+            continue
+        means = {}
+        for measure in SYNAPSE_CHECKS:
+            summary = plot_intensity_check(
+                tables, structure, out(f"synapse_intensity_check_{measure}"), column=measure, plot=args.plot,
+            )
+            means[measure] = summary["mean_intensity"]
+        print(f"\n{COUNT_LABELS[structure]} and mean {STAIN_LABELS[structure]} spot measures per cochlea")
+        print(summary[["alias", "count"]].assign(**means).to_string(index=False, float_format="{:.2f}".format))
 
     plot_counts_by_cohort(tables, out("fig_03a_counts_by_cohort"), plot=args.plot)
     plot_counts_by_cohort(tables, out("fig_03a_counts_by_cohort_outlier"), plot=args.plot, remove_outliers=True)
