@@ -15,6 +15,7 @@ from magicgui import magicgui
 from elf.parallel.distance_transform import distance_transform
 from elf.parallel.seeded_watershed import seeded_watershed
 
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.measurements import get_object_measures_from_table
 from flamingo_tools.s3_utils import get_s3_path, read_table
 
@@ -81,13 +82,14 @@ def _create_stat_widget(statistics, default_stat):
 def _extend_seg_simple(seg, dilation):
     block_shape = (128,) * 3
     halo = (dilation + 2,) * 3
+    n_threads = min(8, available_cpus())
 
-    distances = distance_transform(seg == 0, block_shape=block_shape, halo=halo, n_threads=8)
+    distances = distance_transform(seg == 0, block_shape=block_shape, halo=halo, n_threads=n_threads)
     mask = distances < dilation
 
     seg_extended = np.zeros_like(seg)
     seg_extended = seeded_watershed(
-        distances, seg, seg_extended, block_shape=block_shape, halo=halo, n_threads=8, mask=mask
+        distances, seg, seg_extended, block_shape=block_shape, halo=halo, n_threads=n_threads, mask=mask
     )
 
     return seg_extended
