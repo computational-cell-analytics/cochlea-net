@@ -29,6 +29,11 @@ _CENTERS_ONLY = "--json_info --find_centers without --output"
 _CENTER_OPTIONS = ("n_blocks", "cell_type", "component_list", "include_gap", "path_method")
 
 
+def _is_table_source(value: str) -> bool:
+    """A value of --point_tables without a path separator and without a file extension names a MoBIE table."""
+    return os.path.basename(value) == value and not os.path.splitext(value)[1]
+
+
 def extract_blocks():
     parser = argparse.ArgumentParser(
         description="Extract region of interest (ROI) blocks around center coordinates. "
@@ -87,8 +92,11 @@ def extract_blocks():
                         help="Voxel size of input in micrometer. A value in the JSON file wins. "
                         "Default: 0.38 0.38 0.38")
     parser.add_argument("--point_tables", type=str, nargs="+", default=None,
-                        help="Local point tables with 'x', 'y', 'z' in micrometer, e.g. synapse detections. "
-                        "The points of each crop are saved as a napari points file (CSV), named after the table.")
+                        help="Point tables with 'x', 'y', 'z' in micrometer, e.g. synapse detections. "
+                        "The points of each crop are saved as a napari points file (CSV), named after the table. "
+                        "A value with a path separator or a file extension is a local TSV file. "
+                        "For '--json_info', a plain name, e.g. synapse_v11_ihc_v11b, is the table "
+                        "<cochlea>/tables/<name>/default.tsv of each entry, from the S3 bucket or '--mobie_dir'.")
     parser.add_argument("-f", "--force", action="store_true", help="Forcefully overwrite output.")
 
     # options for S3 bucket
@@ -123,12 +131,18 @@ def extract_blocks():
     if mode != _CENTERS_ONLY and args.output is None:
         parser.error("the following arguments are required: -o/--output")
 
-    point_tables = args.point_tables
-    if point_tables is not None:
-        names = [os.path.splitext(os.path.basename(path))[0] for path in point_tables]
+    point_tables, point_sources = None, None
+    if args.point_tables is not None:
+        paths = [value for value in args.point_tables if not _is_table_source(value)]
+        point_sources = [value for value in args.point_tables if _is_table_source(value)]
+        if point_sources and mode == _INPUT:
+            parser.error(f"The table names {point_sources} of --point_tables require --json_info. "
+                         "Give a local TSV file for --input.")
+        file_names = [os.path.splitext(os.path.basename(path))[0] for path in paths]
+        names = file_names + point_sources
         if len(set(names)) != len(names):
-            parser.error(f"The point tables name the CSV files, so their file names must differ, got {names}.")
-        point_tables = {name: pd.read_csv(path, sep="\t") for name, path in zip(names, point_tables)}
+            parser.error(f"The point tables name the CSV files, so their names must differ, got {names}.")
+        point_tables = {name: pd.read_csv(path, sep="\t") for name, path in zip(file_names, paths)} or None
 
     s3_options = dict(
         s3=args.s3,
@@ -141,6 +155,7 @@ def extract_blocks():
         output_key=args.output_key,
         voxel_size=args.voxel_size,
         point_tables=point_tables,
+        point_sources=point_sources or None,
         force=args.force,
         **s3_options,
     )

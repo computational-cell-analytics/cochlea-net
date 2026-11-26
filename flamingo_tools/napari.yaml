@@ -14,6 +14,11 @@ contributions:
       python_name: flamingo_tools.plugin.detection_widget:DetectionWidget
       title: Detection
 
+    # Command for the reader.
+    - id: cochlea_net.get_csv_reader
+      python_name: flamingo_tools.plugin.reader:get_csv_reader
+      title: Read CSV files with small points
+
     # Add a measurement widget?
     # Add a labeling / classification widget?
 
@@ -33,6 +38,11 @@ contributions:
     - id: cochlea_net.sample_data_myo_lowres
       python_name: flamingo_tools.test_data:sample_data_myo_lowres
       title: Example MYO lowres data
+
+  readers:
+    - command: cochlea_net.get_csv_reader
+      filename_patterns: ["*.csv"]
+      accepts_directories: false
 
   widgets:
     - command: cochlea_net.segment

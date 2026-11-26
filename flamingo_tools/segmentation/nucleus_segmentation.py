@@ -1,5 +1,4 @@
 from concurrent import futures
-from multiprocessing import cpu_count
 from typing import Optional
 
 import numpy as np
@@ -10,6 +9,7 @@ from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label
 from tqdm import tqdm
 
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.measurements import _get_bounding_box_and_center
 from flamingo_tools.postprocessing.label_components import compute_table_on_the_fly
@@ -40,7 +40,7 @@ def _naive_nucleus_segmentation_impl(image, segmentation, table, output, n_threa
         nucleus_mask = binary_opening(nucleus_mask, iterations=opening_iterations)
         output[bb][nucleus_mask] = seg_id
 
-    n_threads = cpu_count() if n_threads is None else n_threads
+    n_threads = available_cpus() if n_threads is None else n_threads
     seg_ids = table.label_id.values
     with futures.ThreadPoolExecutor(n_threads) as tp:
         list(tqdm(tp.map(segment_nucleus, seg_ids), total=len(seg_ids), desc="Segment nuclei"))

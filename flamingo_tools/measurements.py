@@ -1,12 +1,10 @@
 """Functionality for measuring morphology and fluorescence intensities of segmented cells.
 """
 
-import multiprocessing as mp
 import os
 import warnings
 from concurrent import futures
 from functools import partial
-from multiprocessing import cpu_count
 from typing import List, Optional, Tuple
 
 import numpy as np
@@ -22,6 +20,7 @@ from skimage.transform import downscale_local_mean
 from scipy.ndimage import binary_dilation
 from tqdm import tqdm
 
+from .cpu_utils import available_cpus
 from .file_utils import read_image_data
 from .postprocessing.label_components import compute_table_on_the_fly
 import flamingo_tools.s3_utils as s3_utils
@@ -366,7 +365,7 @@ def compute_object_measures_impl(
     seg_ids = table.label_id.values
     assert len(seg_ids) > 0, "The segmentation table is empty."
     measure_function(seg_ids[0])
-    n_threads = mp.cpu_count() if n_threads is None else n_threads
+    n_threads = available_cpus() if n_threads is None else n_threads
 
     # For debugging.
     # measure_function(seg_ids[0])
@@ -554,7 +553,7 @@ def compute_sgn_background_mask(
 
         low_res_mask[bb] = this_mask
 
-    n_threads = mp.cpu_count() if n_threads is None else n_threads
+    n_threads = available_cpus() if n_threads is None else n_threads
     randomized_blocks = np.arange(0, n_blocks)
     np.random.shuffle(randomized_blocks)
     with futures.ThreadPoolExecutor(n_threads) as tp:
@@ -626,9 +625,8 @@ def object_measures_single(
             f"background mask path(s) for {len(image_paths)} image path(s)."
         )
 
+    n_threads = available_cpus()
     for (img_path, out_path, bg_cache_path) in zip(image_paths, out_paths, bg_cache_paths):
-        n_threads = int(os.environ.get("SLURM_CPUS_ON_NODE", cpu_count()))
-
         # overwrite input file
         if os.path.realpath(out_path) == os.path.realpath(table_path) and not s3:
             force_overwrite = True

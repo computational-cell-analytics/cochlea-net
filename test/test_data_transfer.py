@@ -5,6 +5,7 @@ smbclient binary nor a network connection.
 """
 
 import contextlib
+import io
 import os
 import tempfile
 import types
@@ -176,11 +177,37 @@ class TestIterativeUpload(unittest.TestCase):
         self.assertIn("setup0", joined)
         self.assertNotIn("setup1", joined)
 
+    def test_size_map_skips_complete_units(self):
+        # s0/0 and s4 are complete on the share, s0/1/0 is missing.
+        size_map = {"attributes.json": 50, "setup0/timepoint0/s0/attributes.json": 80,
+                    "setup0/timepoint0/s0/0/0": 1024, "setup0/timepoint0/s4/attributes.json": 60,
+                    "setup0/timepoint0/s4/0/0": 128}
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_n5(tmp)
+            rec = Recorder()
+            with patch_run_smbclient(rec):
+                smb.iterative_n5_upload("u", "p", remote_dir="P", n5_name="n5",
+                                        source_dir=tmp, base="P", size_map=size_map)
+        mputs = [cmds for cmds in rec.command_lists if any(c.startswith("mput") for c in cmds)]
+        self.assertEqual(mputs, [['cd "P/n5/setup0/timepoint0/s0"', "recurse", "prompt", "mput 1"]])
+        # The small attributes.json files are always put.
+        self.assertIn(['cd "P/n5"', "put attributes.json"], rec.command_lists)
+
+    def test_size_mismatch_uploads_the_unit(self):
+        size_map = {"setup0/timepoint0/s4/attributes.json": 60, "setup0/timepoint0/s4/0/0": 64}
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_n5(tmp)
+            rec = Recorder()
+            with patch_run_smbclient(rec):
+                smb.iterative_n5_upload("u", "p", remote_dir="P", n5_name="n5",
+                                        source_dir=tmp, base="P", size_map=size_map)
+        self.assertIn(['cd "P/n5/setup0/timepoint0"', "recurse", "prompt", "mput s4"], rec.command_lists)
+
 
 class TestPhase1Ingest(unittest.TestCase):
     def _args(self, create_parents=False):
         return types.SimpleNamespace(
-            username="u", smb_server=smb.SMB_SERVER, create_parents=create_parents, generic=False,
+            username="u", smb_server=smb.SMB_SERVER, create_parents=create_parents, generic=False, resume=False,
         )
 
     def test_bulk_non_filtered(self):
@@ -240,7 +267,7 @@ class TestRemoteSizeMap(unittest.TestCase):
     def test_parse(self):
         rec = Recorder([(self.FIXTURE, False, 0)])
         with patch_run_smbclient(rec):
-            size_map = smb.build_remote_size_map("u", "p", "P/n5", ".")
+            size_map = dtu.build_remote_size_map("u", "p", "P/n5", ".")
         self.assertEqual(size_map, {
             "attributes.json": 50,
             "setup0/timepoint0/s0/attributes.json": 80,
@@ -250,7 +277,7 @@ class TestRemoteSizeMap(unittest.TestCase):
     def test_disconnect_returns_none(self):
         rec = Recorder([([], True, 0)])
         with patch_run_smbclient(rec):
-            self.assertIsNone(smb.build_remote_size_map("u", "p", "P/n5", "."))
+            self.assertIsNone(dtu.build_remote_size_map("u", "p", "P/n5", "."))
 
 
 class TestVerifyAndRepairUpload(unittest.TestCase):
@@ -274,6 +301,16 @@ class TestVerifyAndRepairUpload(unittest.TestCase):
                 smb.verify_and_repair_upload("u", "p", "P", "n5", tmp)
         # The mismatched root attributes.json was re-uploaded via put.
         self.assertIn(['cd "P/n5"', "put attributes.json"], rec.command_lists)
+
+    def test_logs_failed_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _make_n5(tmp)
+            log_file = os.path.join(tmp, "log.txt")
+            with patch_run_smbclient(Recorder()), mock.patch.object(dtu.time, "sleep"), \
+                 patch_both("build_remote_size_map", return_value=None):
+                smb.verify_and_repair_upload("u", "p", "P", "n5", tmp, log_file=log_file)
+            with open(log_file) as f:
+                self.assertIn("could not list the remote tree P/n5 for verification", f.read())
 
 
 class TestRetryScaffold(unittest.TestCase):
@@ -412,6 +449,34 @@ class TestGenericDownload(unittest.TestCase):
             self.assertEqual(rec.command_lists[0],
                              ['cd "P/data"', "recurse", "prompt", 'mget "a b.txt"'])
 
+    def _partial_tree(self, tmp):
+        """top.txt is complete, sub/a.bin is short, sub/dir/big.bin is missing."""
+        _touch(os.path.join(tmp, "data", "top.txt"), 10)
+        _touch(os.path.join(tmp, "data", "sub", "a.bin"), 5)
+        return {"top.txt": 10, "sub/a.bin": 20, "sub/dir/big.bin": 30}
+
+    def test_resume_keeps_complete_files_and_continues_short_ones(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            size_map = self._partial_tree(tmp)
+            rec = Recorder()
+            with patch_run_smbclient(rec), patch_both("build_remote_size_map", return_value=size_map), \
+                 mock.patch.object(smb, "resumable_download") as reget:
+                smb.generic_iterative_download("u", "p", "P", "data", tmp, resume=True)
+            self.assertEqual(rec.command_lists, [['cd "P/data/sub/dir"', "recurse", "prompt", 'mget "big.bin"']])
+            reget.assert_called_once()
+            self.assertEqual(reget.call_args.args[2:5], ("P/data/sub", "a.bin", os.path.join(tmp, "data", "sub")))
+            self.assertEqual(reget.call_args.kwargs["expected_size"], 20)
+
+    def test_without_resume_every_file_is_fetched_again(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            size_map = self._partial_tree(tmp)
+            rec = Recorder()
+            with patch_run_smbclient(rec), patch_both("build_remote_size_map", return_value=size_map), \
+                 mock.patch.object(smb, "resumable_download") as reget:
+                smb.generic_iterative_download("u", "p", "P", "data", tmp)
+            self.assertEqual(len(rec.calls), 3)
+            reget.assert_not_called()
+
 
 class TestGenericDownloadVerify(unittest.TestCase):
     def test_refetches_size_mismatch(self):
@@ -424,6 +489,39 @@ class TestGenericDownloadVerify(unittest.TestCase):
                 smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp)
             self.assertIn(['cd "P/data/sub/dir"', "recurse", "prompt", 'mget "big.bin"'],
                           rec.command_lists)
+
+    def test_resume_continues_short_file(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _touch(os.path.join(tmp, "data", "big.bin"), 5)
+            rec = Recorder()
+            maps = [{"big.bin": 30}, {"big.bin": 5}]
+            with patch_run_smbclient(rec), patch_both("build_remote_size_map", side_effect=maps), \
+                 mock.patch.object(smb, "resumable_download") as reget:
+                smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp, resume=True)
+            self.assertEqual(rec.calls, [])
+            self.assertEqual(reget.call_args.args[2:4], ("P/data", "big.bin"))
+            self.assertEqual(reget.call_args.kwargs["expected_size"], 30)
+
+    def test_retries_dropped_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _touch(os.path.join(tmp, "data", "a.bin"), 5)
+            log_file = os.path.join(tmp, "log.txt")
+            with patch_run_smbclient(Recorder()), mock.patch.object(dtu.time, "sleep"), \
+                 patch_both("build_remote_size_map", side_effect=[None, {"a.bin": 5}]) as listing:
+                smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp, log_file=log_file)
+            self.assertEqual(listing.call_count, 2)
+            self.assertFalse(os.path.exists(log_file))
+
+    def test_logs_failed_listing(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            _touch(os.path.join(tmp, "data", "a.bin"), 5)
+            log_file = os.path.join(tmp, "log.txt")
+            with patch_run_smbclient(Recorder()), mock.patch.object(dtu.time, "sleep"), \
+                 patch_both("build_remote_size_map", return_value=None) as listing:
+                smb.verify_and_repair_download_generic("u", "p", "P", "data", tmp, log_file=log_file)
+            self.assertEqual(listing.call_count, dtu.MAX_RETRIES)
+            with open(log_file) as f:
+                self.assertIn("could not list the remote tree P/data for verification", f.read())
 
 
 class TestGenericUpload(unittest.TestCase):
@@ -455,8 +553,8 @@ def _patch_download(is_n5):
 
 
 class TestDownloadDispatch(unittest.TestCase):
-    def _args(self, generic=False):
-        return types.SimpleNamespace(username="u", smb_server=smb.SMB_SERVER, generic=generic)
+    def _args(self, generic=False, resume=False):
+        return types.SimpleNamespace(username="u", smb_server=smb.SMB_SERVER, generic=generic, resume=resume)
 
     def test_n5_success_uses_n5_verify(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -543,22 +641,158 @@ class TestDownloadDispatch(unittest.TestCase):
         it_gen.assert_called_once()
         it_n5.assert_not_called()
 
+    def test_resume_with_local_directory_skips_bulk_transfer(self):
+        rec = Recorder()
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "1_raw"))
+            with _patch_download(is_n5=True) as (it_n5, it_gen, v_n5, v_gen), patch_run_smbclient(rec):
+                smb._run_download(self._args(resume=True), "p", "P", "1_raw", tmp, "log", None)
+        # No bulk mget: the generic verify fetches only the missing files, also for an N5.
+        self.assertEqual(rec.calls, [])
+        v_gen.assert_called_once()
+        self.assertTrue(v_gen.call_args.kwargs["resume"])
+        v_n5.assert_not_called()
+        it_n5.assert_not_called()
+        it_gen.assert_not_called()
+
+    def test_resume_without_local_directory_runs_bulk_transfer(self):
+        probe = (["  1_raw                               D        0  Mon Jul 21 10:00:00 2025"], False, 0)
+        rec = Recorder([probe, ([], False, 0)])
+        with tempfile.TemporaryDirectory() as tmp, patch_run_smbclient(rec), \
+             mock.patch.object(smb, "verify_and_repair_download_generic") as v_gen:
+            smb._run_download(self._args(generic=True, resume=True), "p", "P", "1_raw", tmp, "log", None)
+        self.assertEqual(rec.command_lists[-1], ['cd "P"', "recurse", "prompt", "mget 1_raw"])
+        self.assertTrue(v_gen.call_args.kwargs["resume"])
+
+    def test_resume_reaches_the_generic_fallback(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with _patch_download(is_n5=False) as (it_n5, it_gen, v_n5, v_gen), \
+                 patch_run_smbclient(Recorder([([], True, 1)])):
+                smb._run_download(self._args(resume=True), "p", "P", "1_raw", tmp, "log", None)
+        self.assertTrue(it_gen.call_args.kwargs["resume"])
+        self.assertTrue(v_gen.call_args.kwargs["resume"])
+
+
+class TestTransferDataCli(unittest.TestCase):
+    def _run_cli(self, argv, stdin=""):
+        with tempfile.TemporaryDirectory() as tmp, \
+             mock.patch("sys.argv", ["transfer_data", "-u", "u", "-p", "P", "-d", "data", "-o", tmp] + argv), \
+             mock.patch("sys.stdin", io.StringIO(stdin)), \
+             mock.patch.object(smb.getpass, "getpass", return_value="prompted") as prompt, \
+             mock.patch.object(smb, "_run_download") as download:
+            smb.transfer_data_cli()
+        return prompt, download
+
+    def test_password_from_stdin(self):
+        prompt, download = self._run_cli(["--password-stdin"], stdin="pass word\nrest\n")
+        prompt.assert_not_called()
+        self.assertEqual(download.call_args.args[1], "pass word")
+
+    def test_password_from_prompt(self):
+        prompt, download = self._run_cli([])
+        prompt.assert_called_once()
+        self.assertEqual(download.call_args.args[1], "prompted")
+
+    def test_password_from_stdin_drops_crlf(self):
+        _, download = self._run_cli(["--password-stdin"], stdin="pass\r\n")
+        self.assertEqual(download.call_args.args[1], "pass")
+
+    def test_empty_stdin_stops(self):
+        with self.assertRaises(SystemExit):
+            self._run_cli(["--password-stdin"], stdin="\n")
+
+    def test_resume_rejects_setup(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self._run_cli(["--resume", "--setup", "0"])
+
+    def test_resume_applies_to_ingest(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            os.makedirs(os.path.join(tmp, "data"))
+            argv = ["transfer_data", "-u", "u", "-p", "P", "-d", "data", "-o", tmp, "--ingest", "--resume"]
+            with mock.patch("sys.argv", argv), \
+                 mock.patch.object(smb.getpass, "getpass", return_value="p"), \
+                 mock.patch.object(smb, "_run_ingest") as ingest:
+                smb.transfer_data_cli()
+        self.assertTrue(ingest.call_args.args[0].resume)
+
+    def test_check_looks_up_the_data_without_a_transfer(self):
+        with mock.patch.object(smb, "remote_entry", return_value=(True, 0)) as entry, \
+             contextlib.redirect_stdout(io.StringIO()) as out:
+            _, download = self._run_cli(["--check", "--password-stdin"], stdin="pw\n")
+        download.assert_not_called()
+        self.assertEqual(entry.call_args.args[1:4], ("pw", "P", "data"))
+        self.assertIn("Login OK: P/data is a directory", out.getvalue())
+
+    def test_check_stops_if_the_data_is_missing(self):
+        with mock.patch.object(smb, "remote_entry", return_value=None), \
+             self.assertRaises(SystemExit) as stop:
+            self._run_cli(["--check"])
+        self.assertIn("P/data was not found", str(stop.exception))
+
+    def test_check_rejects_ingest(self):
+        with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+            self._run_cli(["--check", "--ingest"])
+
+    def test_password_stdin_on_terminal_stops(self):
+        terminal = io.StringIO("visible\n")
+        terminal.isatty = lambda: True
+        with mock.patch("sys.stdin", terminal), self.assertRaises(SystemExit) as stop:
+            smb._read_password(True)
+        self.assertIn("pipe", str(stop.exception))
+
 
 class TestIngestDispatch(unittest.TestCase):
-    def _args(self, generic=False):
+    def _args(self, generic=False, resume=False):
         return types.SimpleNamespace(username="u", smb_server=smb.SMB_SERVER,
-                                     generic=generic, create_parents=False)
+                                     generic=generic, create_parents=False, resume=resume)
 
-    def _run(self, make_tree, name, generic=False):
+    def _run(self, make_tree, name, generic=False, resume=False, remote=None, disconnect=True):
+        """Run the ingest. `remote` is the remote_entry of the dataset; returns the mocks and the recorder."""
+        rec = Recorder([([], disconnect, 0)])
         with tempfile.TemporaryDirectory() as tmp:
             make_tree(tmp)
-            with patch_run_smbclient(Recorder([([], True, 0)])), \
+            with patch_run_smbclient(rec), \
                  mock.patch.object(smb, "require_remote_dir"), \
+                 mock.patch.object(smb, "remote_entry", return_value=remote), \
+                 mock.patch.object(smb, "remote_size_map_with_retry", return_value={"x": 1}) as listing, \
                  mock.patch.object(smb, "iterative_n5_upload") as up_n5, \
                  mock.patch.object(smb, "generic_iterative_upload") as up_gen, \
                  mock.patch.object(smb, "verify_and_repair_upload") as v_up:
-                smb._run_ingest(self._args(generic), "p", "P", name, tmp, "log", None)
-            return up_n5, up_gen, v_up
+                smb._run_ingest(self._args(generic, resume), "p", "P", name, tmp, "log", None)
+        self.listing = listing
+        self.mputs = [cmds for cmds in rec.command_lists if any(c.startswith("mput") for c in cmds)]
+        return up_n5, up_gen, v_up
+
+    def test_resume_with_remote_dataset_skips_bulk_ingest(self):
+        up_n5, up_gen, v_up = self._run(_make_n5, "n5", resume=True, remote=(True, 0))
+        self.assertEqual(self.mputs, [])
+        self.assertEqual(up_n5.call_args.kwargs["size_map"], {"x": 1})
+        up_gen.assert_not_called()
+        v_up.assert_called_once()
+
+    def test_resume_generic_goes_to_the_repair(self):
+        up_n5, up_gen, v_up = self._run(_make_generic_tree, "data", resume=True, remote=(True, 0))
+        self.assertEqual(self.mputs, [])
+        up_n5.assert_not_called()
+        up_gen.assert_not_called()
+        v_up.assert_called_once()
+
+    def test_resume_without_remote_dataset_runs_bulk_ingest(self):
+        up_n5, _, v_up = self._run(_make_n5, "n5", resume=True, remote=None, disconnect=False)
+        self.assertEqual(self.mputs, [['cd "P"', "recurse", "prompt", "mput n5"]])
+        self.listing.assert_not_called()
+        up_n5.assert_not_called()
+        v_up.assert_called_once()
+
+    def test_resume_fallback_skips_complete_units(self):
+        up_n5, up_gen, _ = self._run(_make_n5, "n5", resume=True, remote=None)
+        self.assertEqual(up_n5.call_args.kwargs["size_map"], {"x": 1})
+        up_gen.assert_not_called()
+
+    def test_fallback_without_resume_uploads_everything(self):
+        up_n5, _, _ = self._run(_make_n5, "n5")
+        self.assertIsNone(up_n5.call_args.kwargs["size_map"])
+        self.listing.assert_not_called()
 
     def test_n5_fallback_uses_n5_upload(self):
         up_n5, up_gen, v_up = self._run(_make_n5, "n5")

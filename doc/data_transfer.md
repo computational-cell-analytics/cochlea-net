@@ -10,7 +10,12 @@ UKON is the SMB storage of the UMG imaging data. The command `flamingo_tools.tra
 | UKON_spezial | `//wfs-medizin-spezial.top.gwdg.de/ukon-all$` |
 
 The tools connect to UKON_spezial. Select another share with `-s`.
-Each tool asks for your GWDG password and then starts.
+Each tool asks for your GWDG password and then starts. `flamingo_tools.transfer_data --password-stdin` reads the
+password from the first line of stdin instead, for a program that holds the password in memory, such as
+`slurm_wf.convert` of slurm-workflows.
+
+On the cluster, only the login nodes reach UKON. The compute nodes cannot open port 445, also not with
+`--constraint=inet` (tested on 2026-11-25).
 
 The connection to UKON is unstable. The tools retry each transfer unit after a disconnect, without a new password
 prompt.
@@ -35,7 +40,8 @@ The tools append each transfer unit that still fails after all retries to a log 
 `transfer_log.txt` in the output directory. Select another file with `-l`.
 
 A tool exits with code 1 when its log file grew: a transfer unit failed, or expected data was not found. Run the same
-command again: a repeated transfer overwrites the existing files.
+command again: a repeated transfer overwrites the existing files. To continue the transfer of a directory instead,
+add `--resume`, see [Other directories](#other-directories) and [Upload (ingest)](#upload-ingest).
 
 ## Copy an N5 dataset, a directory or a file
 
@@ -50,6 +56,10 @@ flamingo_tools.transfer_data \
 ```
 
 The data lands in `<output_dir>/<name>`. The default output directory is the current directory.
+
+`--check` logs in and checks that `<name>` exists in `-p` on the share, and then stops without a transfer. It exits with
+code 1 if the login fails or the data is not found. A program can use it to check the password before a long wait.
+`--check` applies to a download only.
 
 ### N5 datasets
 
@@ -69,6 +79,15 @@ A directory without top-level `setupN` directories, for example a folder with a 
   a different size again.
 - `--generic` forces this mode for an N5 dataset too. `--generic` and `--setup` are mutually exclusive.
 - File names with spaces work. Empty directories are not created again on download.
+- `--resume` continues an interrupted download, e.g. of `1_raw`:
+  - A local file with the size on the share counts as complete and is not copied again.
+  - A shorter local file continues where it stopped (`smbclient reget`).
+  - If the local directory exists, the command skips phase 1 and copies only the missing and incomplete files.
+    Without a local directory, the normal download runs.
+  - Use `--resume` only for data that does not change on the share, such as raw data. The command does not compare
+    the content of the local files.
+  - `--resume` does not work together with `--setup`. For an N5 dataset with many chunk files it is slow, because each
+    file needs its own `smbclient` session.
 
 ### Single files
 
@@ -94,6 +113,12 @@ flamingo_tools.transfer_data \
 - The upload of a directory uses the same two phases as the download. At the end, the command compares the size of
   each file with the local file, and uploads each missing file or each file with a different size again.
 - An upload of a single file always starts again after a disconnect. `smbclient` cannot continue an upload.
+- `--resume` continues an interrupted upload of a directory. A file with the same size on the share counts as
+  complete. If the directory exists on the share, the command skips phase 1:
+  - An N5 dataset uploads only the chunk directories (`s0`-`s3`) and scales (the other scales) that have a missing
+    file or a file with a different size.
+  - Another directory uploads only the missing files and the files with a different size, one file at a time.
+  - After a disconnect in phase 1, phase 2 also skips the complete pieces.
 - `-p` must exist on the share. The command stops otherwise, so a typo cannot create stray folders on the shared server.
   `--create-parents` creates the missing parent directories.
 - `--setup` and `--generic` work as for the download.

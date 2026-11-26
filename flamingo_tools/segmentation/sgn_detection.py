@@ -1,4 +1,3 @@
-import multiprocessing
 import os
 import threading
 from concurrent import futures
@@ -14,6 +13,7 @@ import zarr
 
 from elf.io import open_file
 from elf.parallel.local_maxima import find_local_maxima
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.segmentation.unet_prediction import prediction_impl
 from tqdm import tqdm
 
@@ -43,7 +43,7 @@ def distance_based_marker_extension(
         verbose:
         roi:
     """
-    n_threads = multiprocessing.cpu_count() if n_threads is None else n_threads
+    n_threads = available_cpus() if n_threads is None else n_threads
     blocking = get_blocking(output, block_shape, roi, n_threads)
 
     lock = threading.Lock()
@@ -131,6 +131,8 @@ def sgn_detection(
         block_shape = (12, 128, 128)
     if halo is None:
         halo = (10, 64, 64)
+    if n_threads is None:
+        n_threads = min(16, available_cpus())
 
     # Skip existing prediction, which is saved in output_folder/predictions.zarr
     skip_prediction = False
@@ -152,7 +154,7 @@ def sgn_detection(
         block_shape = (12, 128, 128)  # bigger block to avoid edge effects
         detections_maxima = find_local_maxima(
             input_, block_shape=block_shape, min_distance=min_distance, threshold_abs=threshold_abs,
-            verbose=True, n_threads=16,
+            verbose=True, n_threads=n_threads,
         )
 
         # Save the result in mobie compatible format.

@@ -4,7 +4,6 @@ Functions for the parallelization end with '_slurm'
 and divide the process into preprocessing, prediction, and segmentation.
 """
 import json
-import multiprocessing as mp
 import os
 from concurrent import futures
 from functools import partial
@@ -29,6 +28,7 @@ from torch_em.util.prediction import predict_with_halo_pipelined
 from tqdm import tqdm
 
 import flamingo_tools.s3_utils as s3_utils
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.file_utils import pyramid_key, read_image_data
 from flamingo_tools.model_utils import load_model_from_path
 
@@ -62,20 +62,6 @@ class SelectChannel(SimpleTransformationWrapper):
     @property
     def ndim(self):
         return self._volume.ndim - 1
-
-
-def _available_cpus():
-    """Return the number of cores this process may use.
-
-    `multiprocessing.cpu_count` reports the cores of the whole node, which oversubscribes
-    a job on a shared slurm partition. Prefer the slurm allocation and the CPU affinity mask.
-    """
-    n_slurm = os.environ.get("SLURM_CPUS_PER_TASK")
-    if n_slurm is not None:
-        return int(n_slurm)
-    if hasattr(os, "sched_getaffinity"):
-        return len(os.sched_getaffinity(0))
-    return mp.cpu_count()
 
 
 # Slurm sets these when the job holds a GPU allocation.
@@ -150,7 +136,7 @@ def prediction_impl(
     # The prefetch workers hide the block loading behind the GPU forward pass, so they only
     # help up to the number of cores the job actually has.
     if num_prefetch_workers is None:
-        num_prefetch_workers = max(1, min(8, _available_cpus() - 1))
+        num_prefetch_workers = max(1, min(8, available_cpus() - 1))
     else:
         num_prefetch_workers = int(num_prefetch_workers)
     batch_size = int(batch_size)
@@ -454,7 +440,7 @@ def compute_mask_blocks(
         raise ValueError(f"The mask rule needs seg_class 'sgn' or 'ihc', got {seg_class}.")
     rule = MASK_RULES[seg_class]
     factor = rule["background_factor"] if background_factor is None else float(background_factor)
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
 
     raw = read_image_data(input_path, input_key)
     lowres, source = _read_pyramid_level(input_path, input_key, raw.shape)
@@ -532,7 +518,7 @@ def _legacy_mask_blocks(raw, seg_class, relative_threshold, absolute_threshold):
         if np.percentile(raw[bb], upper_percentile) > min_intensity:
             keep[tuple(beg // bs for beg, bs in zip(block.begin, block_shape))] = True
 
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     with futures.ThreadPoolExecutor(n_threads) as tp:
         list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
 
@@ -618,7 +604,7 @@ def find_mask(
     def write_block(index):
         mask[tuple(slice(i * bs, min((i + 1) * bs, sh)) for i, bs, sh in zip(index, block_shape, raw.shape))] = 1
 
-    with futures.ThreadPoolExecutor(min(16, mp.cpu_count())) as tp:
+    with futures.ThreadPoolExecutor(min(16, available_cpus())) as tp:
         list(tp.map(write_block, map(tuple, np.argwhere(keep))))
 
     if output_folder is None:
@@ -678,7 +664,7 @@ def distance_watershed_implementation(
     print(f"Using distance smoothing: {distance_smoothing}")
 
     # Limit the number of cores for parallelization.
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
 
     # Get the foreground mask.
     mask = ThresholdWrapper(SelectChannel(input_, 0), threshold=fg_threshold)
@@ -808,7 +794,7 @@ def calc_mean_and_std(input_path: str, input_key: str, output_folder: str) -> No
         image_mask = None
 
     # Compute the global mean and standard deviation.
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     mean, std = parallel.mean_and_std(
         input_, block_shape=tuple([2 * i for i in chunks]), n_threads=n_threads, verbose=True, mask=image_mask
     )
