@@ -72,7 +72,7 @@ def row_ihcs(table: pd.DataFrame, params: dict) -> np.ndarray:
 def load_colocalization(max_dist: float = 2.0, read_table=None) -> dict:
     """Match the co-stain synapses of each COLOCALIZATION cochlea against its CtBP2 synapses.
 
-    The IHC components are labeled in memory with the parameters of the processing file, see row_ihcs.
+    The IHC components are labeled in memory with the IHC_v11 entry of the processing file, see row_ihcs.
     Only the synapses of the IHCs in its 'component_list' count.
 
     Args:
@@ -90,7 +90,8 @@ def load_colocalization(max_dist: float = 2.0, read_table=None) -> dict:
         read_table = partial(read_source_table, create_s3_target())
     colocalization = {}
     for cochlea, stain in COLOCALIZATION.items():
-        params, = load_processing_params(os.path.join(PROCESSING_DIR, f"{cochlea}_IHC.json"), "label_components")
+        entries = load_processing_params(os.path.join(PROCESSING_DIR, f"{cochlea}_IHC.json"), "label_components")
+        params, = [entry for entry in entries if entry["segmentation_channel"] == "IHC_v11"]
         valid_ihcs = row_ihcs(read_table(cochlea, "IHC_v11"), params)
         reference = read_table(cochlea, "synapse_v3_ihc_v11")
         test = read_table(cochlea, f"{stain}_synapse_v3_ihc_v11")
