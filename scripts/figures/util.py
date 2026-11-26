@@ -147,30 +147,6 @@ VALUE_DICT = {
 }
 
 
-def ax_prism_boxplot(ax, data, positions=None, color="tab:blue"):
-    """
-    Draw a Prism-style boxplot on the given Axes.
-    """
-    bp = ax.boxplot(
-        data,
-        positions=positions,
-        widths=0.6,
-        patch_artist=True,     # to allow facecolor
-        boxprops=dict(color="black", linewidth=1.2),
-        whiskerprops=dict(color="black", linewidth=1.2),
-        capprops=dict(color="black", linewidth=1.2),
-        medianprops=dict(color="black", linewidth=1.2),
-        flierprops=dict(marker="o", markersize=4, markerfacecolor="black", alpha=0.5)
-    )
-
-    # Optional: light fill color (like Prism pastels)
-    for patch in bp["boxes"]:
-        patch.set_facecolor(color)
-        patch.set_alpha(0.2)
-
-    return bp
-
-
 prism_palette = [
     "#4E79A7",  # blue
     "#F28E2B",  # orange
@@ -453,6 +429,7 @@ def get_trendline_handle(linestyle, linewidth):
 
 
 def prism_style():
+    """Set the global style of the published CochleaNet panels. New panels use panel_style.style."""
     plt.style.use("default")  # reset any active styles
     plt.rcParams.update({
         # Fonts
@@ -733,18 +710,20 @@ def literature_reference_values(structure, animal="mouse"):
 # on a plot, and "animal" selects the Greenwood parameters and the octave bands. The keys are the
 # --cohort values of plot_sgn_density_profile.py. Read the member list through cohort_cochleae();
 # "label" and "animal" are single level, so indexing them directly is fine. "color" is optional,
-# because not every cohort is drawn as one group.
+# because not every cohort is drawn as one group. The iDISCO and MWfLS colors are the green and
+# blue of panel_style.COLORS. This module does not import panel_style, because the tests load it
+# by its file path.
 # reproducibility/cohorts.json documents the membership of every cochlea, including the cohorts
 # that no figure draws. test/test_cohorts.py fails if the two disagree.
 # TODO: populate "cochleae" from reproducibility/cohorts.json, which is repo local and therefore
 # readable from here, and keep only the presentation keys in this dict.
 COHORT_DICT = {
     "idisco": {
-        "label": "iDISCO", "animal": "mouse", "color": "#10CC17",
+        "label": "iDISCO", "animal": "mouse", "color": "#33A02C",
         "cochleae": ["M_LR_000226_L", "M_LR_000226_R", "M_LR_000227_L", "M_LR_000227_R"],
     },
     "mwfls": {
-        "label": "MWfLS", "animal": "mouse", "color": "#3F69FF",
+        "label": "MWfLS", "animal": "mouse", "color": "#1F78B4",
         "cochleae": [
             "M_AMD_000126_L", "M_AMD_000126_R", "M_AMD_000127_L", "M_AMD_000127_R",
             "M_AMD_000137_L", "M_AMD_000137_R",

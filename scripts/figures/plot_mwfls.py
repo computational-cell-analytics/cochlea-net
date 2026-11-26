@@ -3,9 +3,9 @@ import os
 import sys
 from functools import partial
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.lines import Line2D
 from matplotlib.offsetbox import AnnotationBbox, HPacker, TextArea, VPacker
 from matplotlib.ticker import MaxNLocator
 
@@ -16,15 +16,17 @@ from flamingo_tools.postprocessing.synapse_per_ihc_utils import SYNAPSE_DICT
 from flamingo_tools.s3_utils import create_s3_target
 
 from util import (
-    literature_reference_values,
-    prism_style, prism_cleanup_axes,
-    ax_prism_boxplot, average_by_fraction, cochlea_label, save_figure,
-    VALUE_DICT, COCHLEA_DICT, COHORT_DICT, cohort_cochleae, cochleae_for, OUTLIER_DICT,
+    literature_reference_values, average_by_fraction, cochlea_label,
+    VALUE_DICT, COCHLEA_DICT, COHORT_DICT, cohort_cochleae, OUTLIER_DICT,
 )
 from data import add_synapses_per_ihc, get_mapped_table, read_source_table
-from tonotopic_mapping import add_frequency_axis, plot_synapses_along_cochlea
+from panel_style import (
+    AXIS_LINE_WIDTH, COLORS, DATA_LINE_WIDTH, FONT_SIZE, MARKER_SIZE, MEAN_LINE_WIDTH, OUTLIER,
+    box_plot, dot_plot, group_shades, label_points, new_panel, nice_upper, profile_plot, readable, reference_band,
+    save_panel, style, text_color_on, text_key,
+)
+from tonotopic_mapping import add_frequency_axis, meyer_synapse_profile
 
-FILE_EXTENSION = "png"
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 PROCESSING_DIR = os.path.join(SCRIPT_DIR, "..", "..", "reproducibility", "processing")
 
@@ -34,36 +36,43 @@ COHORTS = ["mwfls", "idisco"]
 SGN_VERSION = {"idisco": "SGN_v2", "mwfls": "SGN_v3"}
 STAINS = {"SGN": "PV", "IHC": "Vglut3"}
 
-COLOR_LITERATURE = "#9C2E53"
-COLOR_OUTLIER = "red"
 COHORT_MARKERS = {
     "idisco": "o",
     "mwfls": "s",
 }
-MEYER_COLORS = ["#10CC96", "#10CC56", "#57CC10", "#A6CC10"]
+# The hue turn of the per-cochlea shades, away from the other cohort: MWfLS toward violet,
+# iDISCO toward yellow-green. See panel_style.group_shades.
+SHADE_HUE_RANGE = {"mwfls": 0.06, "idisco": -0.06}
 
 # The co-stain of each cosynapse cochlea. CtBP2 is the reference stain of both.
 COLOCALIZATION = {"M_AMD_000117_L": "Homer1", "M_AMD_000118_L": "Bsn"}
 # The segments of a co-localization bar: the score key of evaluate_colocalization, the label and the color.
+# Blue and green stand for the cohorts, so the segments use other colors.
 COLOCALIZATION_SEGMENTS = [
-    ("fn", "CtBP2 only", "#2a78d6"), ("tp", "Co-localized", "#1baf7a"), ("fp", "Co-stain only", "#eb6834"),
+    ("fn", "CtBP2 only", COLORS["purple"]), ("tp", "Co-localized", COLORS["dark_gray"]),
+    ("fp", "Co-stain only", COLORS["orange"]),
 ]
-# Darker shades of the segment colors for text on white, with a contrast of at least 4.5:1.
-COLOCALIZATION_TEXT_COLORS = {"reference": "#1f5fae", "matched": "#12805a", "test": "#b8461a"}
-COLOR_TEXT = "black"
-COLOR_TEXT_MUTED = "#52514e"
+COLOCALIZATION_TEXT_COLORS = {
+    "reference": readable(COLORS["purple"]), "matched": readable(COLORS["dark_gray"]),
+    "test": readable(COLORS["orange"]),
+}
+COLOR_TEXT = COLORS["black"]
+COLOR_TEXT_MUTED = COLORS["dark_gray"]
 
-MAIN_LABEL_SIZE = 20
-MAIN_TICK_SIZE = 16
-SUB_LABEL_SIZE = 16
+# The print size of each panel type in mm (width, height). Fig 2D-G fill one 180 mm row.
+PANEL_SIZES = {
+    "cohort": (40, 45),  # 2D, 2F
+    "profile": (50, 45),  # 2E, 2G
+    "cohort_counts": (115, 50),  # 3A
+    "synapses": (65, 50),  # 3B
+    "synapses_legend": (120, 50),  # 3B with the cochlea legend
+    "colocalization": (180, 40),
+    "sgn_intensity_check": (120, 50),
+}
 
 # The x positions of the cohorts in the panels that compare them, and the x range around them.
 COHORT_POSITIONS = [1, 2]
 COHORT_XLIM = (0.4, 2.6)
-# One point per cochlea: the offset of a point from its cohort position and the half width of the mean bar.
-POINT_OFFSET = 0.09
-POINT_SIZE = 60
-MEAN_BAR_HALF_WIDTH = 0.3
 
 
 def load_tables(cohorts=COHORTS, intensity=("SGN", "IHC")):
@@ -104,7 +113,7 @@ def print_cohort_averages(tables: dict):
     """Print the mean and the sample SD over the cochleae of each cohort.
 
     A cochlea contributes its SGN count, its IHC count and its mean number of synapses per IHC, as in
-    fig_cohort_counts. The pooled mean weights every IHC equally.
+    plot_counts_by_cohort. The pooled mean weights every IHC equally.
 
     Args:
         tables: Output of load_tables.
@@ -187,13 +196,14 @@ def load_colocalization(max_dist: float = 2.0, read_table=None) -> dict:
     return colocalization
 
 
-def _colored_text(parts, fontsize: float, fontweight: str = "normal") -> HPacker:
+def _colored_text(parts, fontweight: str = "normal") -> HPacker:
     """Return one line of text from (text, color) parts."""
     return HPacker(children=[
-        TextArea(text, textprops=dict(color=color, fontsize=fontsize, fontweight=fontweight)) for text, color in parts
+        TextArea(text, textprops=dict(color=color, fontsize=FONT_SIZE, fontweight=fontweight)) for text, color in parts
     ], align="baseline", pad=0, sep=0)
 
 
+@style()
 def plot_synapse_colocalization(colocalization: dict, save_path: str, plot: bool = False):
     """Plot how the CtBP2 synapses and the co-stain synapses of each cochlea co-localize.
 
@@ -206,19 +216,15 @@ def plot_synapse_colocalization(colocalization: dict, save_path: str, plot: bool
 
     Args:
         colocalization: Output of load_colocalization.
-        save_path: Output file path.
+        save_path: Output path without an extension.
         plot: Show interactive plot.
     """
-    prism_style()
-    fontsize = SUB_LABEL_SIZE - 2
     names = list(colocalization)
     scores = {name: colocalization[name][0] for name in names}
     max_dist, = {scores[name]["max_dist"] for name in names}
 
-    fig = plt.figure(figsize=(13, 3.8))
-    grid = fig.add_gridspec(1, 2, width_ratios=[3, 1.7], wspace=0.1)
-    ax = fig.add_subplot(grid[0])
-    ax_table = fig.add_subplot(grid[1], sharey=ax)
+    fig, (ax, ax_table) = new_panel(*PANEL_SIZES["colocalization"], ncols=2, sharey=True,
+                                    gridspec_kw={"width_ratios": [3, 1.7]})
     ax_table.axis("off")
     # The right edge of the share column of the table, in axes fraction.
     share_x = 0.5
@@ -228,22 +234,22 @@ def plot_synapse_colocalization(colocalization: dict, save_path: str, plot: bool
         left = 0
         for key, label, color in COLOCALIZATION_SEGMENTS:
             width = scores[name][key]
-            ax.barh(y, width, left=left, height=0.6, color=color, edgecolor="white", linewidth=2,
+            ax.barh(y, width, left=left, height=0.6, color=color, edgecolor="white", linewidth=1,
                     label=label if y == 0 else None)
             # A count goes into its segment only if it fits.
             if width >= 0.06 * x_max:
-                ax.text(left + width / 2, y, f"{width}", ha="center", va="center", color="white", fontsize=fontsize)
+                ax.text(left + width / 2, y, f"{width}", ha="center", va="center", color=text_color_on(color))
             left += width
 
         stain = COLOCALIZATION[name]
         y_label = VPacker(children=[
-            _colored_text([(name, COLOR_TEXT)], fontsize),
+            _colored_text([(name, COLOR_TEXT)]),
             _colored_text([("CtBP2", COLOCALIZATION_TEXT_COLORS["reference"]), (" / ", COLOR_TEXT),
-                           (stain, COLOCALIZATION_TEXT_COLORS["test"])], fontsize),
-        ], align="right", pad=0, sep=4)
+                           (stain, COLOCALIZATION_TEXT_COLORS["test"])]),
+        ], align="right", pad=0, sep=2)
         # The offset clears the tick mark and its pad.
         ax.add_artist(AnnotationBbox(
-            y_label, (0, y), xycoords=ax.get_yaxis_transform(), xybox=(-10, 0), boxcoords="offset points",
+            y_label, (0, y), xycoords=ax.get_yaxis_transform(), xybox=(-5, 0), boxcoords="offset points",
             box_alignment=(1, 0.5), frameon=False, annotation_clip=False,
         ))
 
@@ -258,13 +264,13 @@ def plot_synapse_colocalization(colocalization: dict, save_path: str, plot: bool
                 (share_x, "right", f"{tp / n_synapses:.0%}", COLOR_TEXT),
                 (1, "right", f"{tp} / {n_synapses}", COLOR_TEXT),
             ]:
-                ax_table.text(x, y + dy, text, ha=ha, va="center", color=color, fontsize=fontsize)
+                ax_table.text(x, y + dy, text, ha=ha, va="center", color=color)
 
     for x, ha, label in [(0, "left", "stain"), (share_x, "right", "share"), (1, "right", "pairs / synapses")]:
-        ax_table.text(x, -0.5, label, ha=ha, va="bottom", color=COLOR_TEXT_MUTED, fontsize=fontsize - 2)
+        ax_table.text(x, -0.5, label, ha=ha, va="bottom", color=COLOR_TEXT_MUTED)
     ax_table.annotate(
-        f"Co-localized (within {max_dist:g} µm)", (0, 1), xycoords="axes fraction", xytext=(0, 22),
-        textcoords="offset points", ha="left", va="bottom", fontsize=fontsize, fontweight="bold",
+        f"Co-localized (within {max_dist:g} µm)", (0, 1), xycoords="axes fraction", xytext=(0, 12),
+        textcoords="offset points", ha="left", va="bottom", fontweight="bold",
         color=COLOCALIZATION_TEXT_COLORS["matched"],
     )
 
@@ -273,12 +279,9 @@ def plot_synapse_colocalization(colocalization: dict, save_path: str, plot: bool
     ax.set_ylim(len(names) - 0.5, -0.5)
     ax.set_xlim(0, 1.02 * x_max)
     ax.xaxis.set_major_locator(MaxNLocator(nbins=4, steps=[1, 2.5, 5, 10]))
-    ax.tick_params(axis="x", labelsize=MAIN_TICK_SIZE)
-    ax.set_xlabel("Synapses on the IHC row", fontsize=MAIN_LABEL_SIZE)
-    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02), ncol=3, frameon=False, fontsize=fontsize,
-              handlelength=1.5, columnspacing=1.2)
-    prism_cleanup_axes(ax)
-    save_figure(save_path, plot)
+    ax.set_xlabel("Synapses on the IHC row")
+    ax.legend(loc="lower left", bbox_to_anchor=(0, 1.02), ncol=3)
+    save_panel(fig, save_path, plot)
 
 
 def colocalization_table(colocalization: dict) -> pd.DataFrame:
@@ -398,36 +401,25 @@ def _set_cohort_xaxis(ax, n_cochleae=None):
     labels = [COHORT_DICT[cohort]["label"] for cohort in COHORTS]
     if n_cochleae is not None:
         labels = [f"{label}\nn = {n}" for label, n in zip(labels, n_cochleae)]
-    ax.set_xticklabels(labels, fontsize=SUB_LABEL_SIZE)
-    ax.tick_params(axis="x", which="major", pad=8)
+    ax.set_xticklabels(labels)
 
 
 def _draw_cohort_points(ax, values, position: float, cohort: str, outliers=()):
-    """Draw one value per cochlea as a point and the mean of the values as a bar.
+    """Draw one value per cochlea as a dot plot with the mean and the sample SD, see panel_style.dot_plot.
 
-    The sorted values alternate between the two sides of the position, so that close values do not
-    overlap. The outliers are red crosses at the position and are not part of the mean.
-
-    Args:
-        ax: The axis.
-        values: The values of the cochleae.
-        position: The x position of the cohort.
-        cohort: Key of COHORT_DICT, for the color and the marker.
-        outliers: The values of the outlier cochleae.
+    Set the axis limits first.
     """
-    values = np.sort(values)
-    offsets = POINT_OFFSET * (-1) ** (np.arange(len(values)) + 1)
-    ax.scatter(position + offsets, values, color=COHORT_DICT[cohort]["color"], marker=COHORT_MARKERS[cohort],
-               s=POINT_SIZE, edgecolors="black", linewidths=0.8, alpha=0.85, zorder=3)
-    ax.hlines(np.mean(values), position - MEAN_BAR_HALF_WIDTH, position + MEAN_BAR_HALF_WIDTH, color="black",
-              linewidth=2.5, zorder=2)
-    if len(outliers) > 0:
-        ax.scatter([position] * len(outliers), outliers, color=COLOR_OUTLIER, marker="x", s=POINT_SIZE,
-                   linewidths=2, zorder=3)
+    dot_plot(ax, values, position, COHORT_DICT[cohort]["color"], COHORT_MARKERS[cohort], outliers)
+
+
+def _set_cohort_ylim(ax, value_sets):
+    """Set the y range from 0 to the next tick above the largest value or mean + SD of the value sets."""
+    upper = max(max(np.max(values), np.mean(values) + np.std(values, ddof=1)) for values in value_sets)
+    ax.set_ylim(0, nice_upper(upper))
 
 
 def cohort_values(tables: dict, structure: str, cohort: str, remove_outliers: bool = False):
-    """Return one value per cochlea of a cohort for a panel of fig_cohort_counts.
+    """Return one value per cochlea of a cohort for a panel of plot_counts_by_cohort.
 
     Args:
         tables: Output of load_tables.
@@ -449,150 +441,171 @@ def cohort_values(tables: dict, structure: str, cohort: str, remove_outliers: bo
     return values, outliers
 
 
-def fig_cohort_counts(tables: dict, save_path: str, plot: bool = False, remove_outliers: bool = False):
+@style()
+def plot_counts_by_cohort(tables: dict, save_path: str, plot: bool = False, remove_outliers: bool = False):
     """Compare the cohorts in the SGN count, the IHC count and the mean number of synapses per IHC.
 
-    Each point is one cochlea. The bar is the mean of the cohort. The SGN and IHC counts are the
-    counts that load_tables checks against VALUE_DICT.
+    Each point is one cochlea, with the mean and the sample SD of the cohort. The SGN and IHC
+    counts are the counts that load_tables checks against VALUE_DICT.
 
     Args:
         tables: Output of load_tables.
-        save_path: Output file path.
+        save_path: Output path without an extension.
         plot: Show interactive plot.
-        remove_outliers: Draw the cochleae of OUTLIER_DICT as a red cross and leave them out of the mean.
+        remove_outliers: Draw the cochleae of OUTLIER_DICT as an outlier cross and leave them out
+            of the mean and the SD.
     """
-    prism_style()
     n_cochleae = [len(cohort_cochleae(cohort)) for cohort in COHORTS]
-    fig, axes = plt.subplots(1, 3, figsize=(10, 4.8))
+    fig, axes = new_panel(*PANEL_SIZES["cohort_counts"], ncols=3)
     panels = [
-        ("SGN", "SGN", (5000, 12500), range(6000, 12001, 2000)),
+        ("SGN", "SGN", (4000, 12000), range(4000, 12001, 2000)),
         ("IHC", "IHC", (400, 800), range(400, 801, 100)),
         ("synapse", "Synapses per IHC", (-0.5, 20), range(0, 21, 5)),
     ]
     for ax, (structure, title, ylim, y_ticks) in zip(axes, panels):
+        _set_cohort_xaxis(ax, n_cochleae)
+        ax.set_yticks(list(y_ticks))
+        ax.set_ylim(*ylim)
+        ax.set_title(title)
         for position, cohort in zip(COHORT_POSITIONS, COHORTS):
             values, outliers = cohort_values(tables, structure, cohort, remove_outliers)
             _draw_cohort_points(ax, values, position, cohort, outliers)
+        # The SGN label sits below the band at the right, where no SGN count is.
+        reference_band(ax, *literature_reference_values(structure), label="literature" if structure == "SGN" else None)
 
-        lower_y, upper_y = literature_reference_values(structure)
-        ax.hlines([lower_y, upper_y], *COHORT_XLIM, color=COLOR_LITERATURE)
-        ax.fill_between(COHORT_XLIM, lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05, interpolate=True)
-        _set_cohort_xaxis(ax, n_cochleae)
-        ax.set_yticks(list(y_ticks))
-        ax.tick_params(axis="y", labelsize=MAIN_TICK_SIZE)
-        ax.set_ylim(*ylim)
-        ax.set_title(title, fontsize=MAIN_LABEL_SIZE, pad=10)
-
-    # The label sits below the band at the right, where no SGN count is.
-    axes[0].text(COHORT_XLIM[1], literature_reference_values("SGN")[0] - 150, "literature", color=COLOR_LITERATURE,
-                 fontsize=SUB_LABEL_SIZE, ha="right", va="top", clip_on=True)
-    axes[0].set_ylabel("Count per cochlea", fontsize=MAIN_LABEL_SIZE)
-    axes[2].set_ylabel("Mean per cochlea", fontsize=MAIN_LABEL_SIZE)
-    prism_cleanup_axes(axes)
-    plt.tight_layout()
-    save_figure(save_path, plot)
+    axes[0].set_ylabel("Count per cochlea")
+    axes[2].set_ylabel("Mean per cochlea")
+    save_panel(fig, save_path, plot)
 
 
-def fig_mwfls_synapses(
+def _grouped_legend(fig, groups):
+    """Add a legend right of the axes with one column per group and a bold group heading.
+
+    Args:
+        fig: The figure.
+        groups: Pairs of a heading and a list of (handle, label) pairs.
+    """
+    n_rows = 1 + max(len(entries) for _, entries in groups)
+    handles, labels, headings = [], [], []
+    for heading, entries in groups:
+        headings.append(len(labels))
+        column = [(Line2D([], [], linestyle="none"), heading)] + entries
+        # Blank entries fill the column, so that the next group starts a new column.
+        column += [(Line2D([], [], linestyle="none"), "")] * (n_rows - len(column))
+        handles += [handle for handle, _ in column]
+        labels += [label for _, label in column]
+    legend = fig.legend(handles, labels, loc="outside right upper", ncol=len(groups), handletextpad=0.3)
+    for index in headings:
+        legend.get_texts()[index].set_fontweight("bold")
+
+
+@style()
+def plot_synapses_by_tonotopy(
     tables: dict,
     save_path: str,
     n_bins: int = 25,
-    top_axis: bool = False,
     trendline: bool = False,
-    trendline_std: bool = False,
-    errorbar: bool = False,
     plot: bool = False,
     show_legend: bool = False,
 ):
-    """Synapse-per-IHC vs. length-fraction for both iDISCO and MWfLS cohorts.
+    """Plot the synapses per IHC along the cochlea for the cochleae of both cohorts.
 
-    iDISCO cochleae are shown with marker 'o'; MWfLS with marker 's'. Colors differ within each
-    cohort (per cochlea). The synapse outliers of OUTLIER_DICT are drawn as a red cross and stay
-    out of the cohort trendline.
+    Each cochlea has a shade of its cohort color and the cohort symbol. The synapse outliers of
+    OUTLIER_DICT are drawn as outlier crosses and stay out of the cohort mean. The counts of
+    Meyer et al. 2009 are the black line.
 
     Args:
         tables: Output of load_tables.
-        save_path: Output file path.
-        n_bins: Number of fractional bins along the cochlea length.
-        top_axis: Add frequency axis on top.
-        trendline: Overlay the mean trendline of each cohort.
-        trendline_std: Also show ±1 SD band around the trendline.
-        errorbar: Show errorbar instead of trendline fill.
+        save_path: Output path without an extension.
+        n_bins: Number of bins along the cochlea length.
+        trendline: Draw the mean over the cochleae of each cohort as dashed line.
         plot: Show interactive plot.
-        show_legend: Show legend within plot.
+        show_legend: Add a legend with one column per cohort right of the plot.
     """
-    cohort_dict = {}
+    fig, ax = new_panel(*PANEL_SIZES["synapses_legend" if show_legend else "synapses"])
+    point_size = (0.75 * MARKER_SIZE) ** 2
+    legend_groups = []
     for cohort in COHORTS:
-        for num, name in enumerate(cohort_cochleae(cohort)):
-            entry = cochleae_for([name], "IHC", SYNAPSE_DICT[name]["ihc_table_name"])[name]
-            entry["marker"] = COHORT_MARKERS[cohort]
-            entry["cohort"] = COHORT_DICT[cohort]["label"]
-            if cohort == "idisco":
-                entry["color"] = MEYER_COLORS[num % len(MEYER_COLORS)]
-            if name in OUTLIER_DICT["synapse"]:
-                # A cohort name outside trendline_colors keeps the cochlea out of every trendline.
-                entry.update(color=COLOR_OUTLIER, marker="x", cohort="outlier")
-            cohort_dict[name] = entry
+        color = COHORT_DICT[cohort]["color"]
+        cochleae = cohort_cochleae(cohort)
+        included = [name for name in cochleae if name not in OUTLIER_DICT["synapse"]]
+        cochlea_colors = dict(zip(included, group_shades(color, len(included), hue_range=SHADE_HUE_RANGE[cohort])))
+        profiles, entries = {}, []
+        for name in cochleae:
+            table = tables["IHC"][name]
+            binned = average_by_fraction(table["length_fraction"].values, table["syn_per_IHC"].values, n_bins=n_bins)
+            x = binned["fraction_midpoint"].values.astype(float)
+            y = binned["mean_syn_per_IHC"].values
+            if name in cochlea_colors:
+                handle = ax.scatter(x, y, s=point_size, color=cochlea_colors[name], marker=COHORT_MARKERS[cohort],
+                                    linewidths=0, alpha=0.8, zorder=1)
+                profiles[name] = pd.Series(y, index=x)
+            else:
+                handle = ax.scatter(x, y, s=point_size, color=OUTLIER["color"], marker=OUTLIER["marker"],
+                                    linewidths=AXIS_LINE_WIDTH, zorder=1)
+            entries.append((handle, cochlea_label(name, COCHLEA_DICT[name])))
+        if trendline:
+            mean = pd.DataFrame(profiles).mean(axis=1)
+            line, = ax.plot(mean.index, mean.values, color=color, linestyle="--", linewidth=MEAN_LINE_WIDTH, zorder=2)
+            entries.insert(0, (line, "Mean"))
+        legend_groups.append((COHORT_DICT[cohort]["label"], entries))
 
-    plot_synapses_along_cochlea(
-        tonotopic_data={name: tables["IHC"][name] for name in cohort_dict},
-        save_path=save_path,
-        cohort_dict=cohort_dict,
-        trendline_colors={COHORT_DICT[c]["label"]: COHORT_DICT[c]["color"] for c in COHORTS},
-        use_alias=True,
-        plot=plot,
-        n_bins=n_bins,
-        top_axis=top_axis,
-        trendline=trendline,
-        trendline_std=trendline_std,
-        errorbar=errorbar,
-        show_legend=show_legend,
-        ylabel="Synapses per IHC",
-    )
+    meyer = meyer_synapse_profile(n_bins)
+    if meyer is not None:
+        line, = ax.plot(meyer["fraction_midpoint"].values.astype(float), meyer["mean_syn_per_IHC"].values,
+                        color=COLORS["black"], marker="D", markersize=0.75 * MARKER_SIZE, linewidth=DATA_LINE_WIDTH,
+                        zorder=3)
+        legend_groups.append(("Literature", [(line, "Meyer et al. 2009")]))
+
+    ax.set_xlim(0, 1)
+    ax.set_xlabel("Length fraction")
+    ax.set_ylabel("Synapses per IHC")
+    add_frequency_axis(ax, FONT_SIZE, FONT_SIZE, label="Frequency (kHz)")
+    if show_legend:
+        _grouped_legend(fig, legend_groups)
+    save_panel(fig, save_path, plot)
 
 
+@style()
 def plot_intensity_by_cohort(
     structure_tables: dict, title: str, save_path: str, per_cochlea: bool = True, plot: bool = False,
 ):
     """Compare the stain intensity of the cohorts.
 
-    By default, each point is the mean intensity of one cochlea and the bar is the mean of the cohort.
-    Without per_cochlea, a box plot pools all instances of all cochleae of the cohort. Its fliers are
-    hidden, because a box holds thousands of instances.
+    By default, each point is the mean intensity of one cochlea, with the mean and the sample SD of
+    the cohort. Without per_cochlea, a box plot pools all instances of all cochleae of the cohort.
+    Its fliers are hidden, because a box holds thousands of instances.
 
     Args:
         structure_tables: Tables of one structure, a value of load_tables.
         title: Title of the plot.
-        save_path: Output file path.
+        save_path: Output path without an extension.
         per_cochlea: Use the mean intensity of each cochlea instead of every instance.
         plot: Show interactive plot.
     """
-    prism_style()
-    fig, ax = plt.subplots(figsize=(3.6, 4.8))
-    for position, cohort in zip(COHORT_POSITIONS, COHORTS):
-        intensities = [structure_tables[c]["intensity"].values for c in cohort_cochleae(cohort)]
-        if per_cochlea:
-            _draw_cohort_points(ax, [i.mean() for i in intensities], position, cohort)
-        else:
-            box = ax_prism_boxplot(ax, np.concatenate(intensities), positions=[position],
-                                   color=COHORT_DICT[cohort]["color"])
-            for flier in box["fliers"]:
-                flier.set_visible(False)
-    if not per_cochlea:
-        # relim ignores the scatter points, so it only runs for the box plot, to drop the hidden fliers.
-        ax.relim(visible_only=True)
-        ax.autoscale_view()
-    ax.set_ylim(bottom=0)
-
+    fig, ax = new_panel(*PANEL_SIZES["cohort"])
+    intensities = {
+        cohort: [structure_tables[c]["intensity"].values for c in cohort_cochleae(cohort)] for cohort in COHORTS
+    }
     _set_cohort_xaxis(ax, [len(cohort_cochleae(cohort)) for cohort in COHORTS] if per_cochlea else None)
-    ax.tick_params(axis="y", labelsize=MAIN_TICK_SIZE)
-    ax.set_ylabel("Mean intensity [a.u.]" if per_cochlea else "Intensity [a.u.]", fontsize=MAIN_LABEL_SIZE)
-    ax.set_title(title, fontsize=MAIN_LABEL_SIZE, pad=10)
-    prism_cleanup_axes(ax)
-    plt.tight_layout()
-    save_figure(save_path, plot)
+    if per_cochlea:
+        means = {cohort: [values.mean() for values in intensities[cohort]] for cohort in COHORTS}
+        _set_cohort_ylim(ax, means.values())
+        for position, cohort in zip(COHORT_POSITIONS, COHORTS):
+            _draw_cohort_points(ax, means[cohort], position, cohort)
+    else:
+        for position, cohort in zip(COHORT_POSITIONS, COHORTS):
+            box_plot(ax, np.concatenate(intensities[cohort]), position, COHORT_DICT[cohort]["color"])
+        ax.relim()
+        ax.autoscale_view()
+        ax.set_ylim(0, nice_upper(ax.get_ylim()[1]))
+
+    ax.set_ylabel("Mean intensity (a.u.)" if per_cochlea else "Intensity (a.u.)")
+    ax.set_title(title)
+    save_panel(fig, save_path, plot)
 
 
+@style()
 def plot_sgn_intensity_check(
     sgn_tables: dict, measured_tables: dict, save_path: str, plot: bool = False,
 ) -> pd.DataFrame:
@@ -600,12 +613,13 @@ def plot_sgn_intensity_check(
 
     A cochlea with a weak PV stain can have a low SGN count, because the segmentation misses dim SGNs.
     The left panel shows the mean intensity per cohort, the right panel the SGN count against the mean
-    intensity, with the literature band of the SGN count. Each point is labeled with the cochlea alias.
+    intensity, with the literature band of the SGN count. Each point of the right panel is labeled
+    with the cochlea alias.
 
     Args:
         sgn_tables: The SGN tables of load_tables. The count includes the SGNs without a measure.
         measured_tables: The same tables without the SGNs that have no intensity.
-        save_path: Output file path.
+        save_path: Output path without an extension.
         plot: Show interactive plot.
 
     Returns:
@@ -624,52 +638,31 @@ def plot_sgn_intensity_check(
             })
     summary = pd.DataFrame(rows)
 
-    prism_style()
-    fig, (ax_cohort, ax_count) = plt.subplots(1, 2, figsize=(11, 4.8), gridspec_kw={"width_ratios": [1, 1.7]})
-    for position, cohort in zip(COHORT_POSITIONS, COHORTS):
-        cohort_rows = summary[summary["cohort"] == cohort].sort_values("mean_intensity")
-        _draw_cohort_points(ax_cohort, cohort_rows["mean_intensity"].values, position, cohort)
-        # _draw_cohort_points puts the sorted values left, right, left, ... of the position.
-        for rank, row in enumerate(cohort_rows.itertuples()):
-            side = -1 if rank % 2 == 0 else 1
-            ax_cohort.annotate(
-                row.alias, (position + side * POINT_OFFSET, row.mean_intensity), xytext=(side * 8, 0),
-                textcoords="offset points", ha="left" if side > 0 else "right", va="center", fontsize=11,
-            )
+    fig, (ax_cohort, ax_count) = new_panel(*PANEL_SIZES["sgn_intensity_check"], ncols=2,
+                                           gridspec_kw={"width_ratios": [1, 2.4]})
+    means = {cohort: summary.loc[summary["cohort"] == cohort, "mean_intensity"].values for cohort in COHORTS}
     _set_cohort_xaxis(ax_cohort, [len(cohort_cochleae(cohort)) for cohort in COHORTS])
-    ax_cohort.set_ylim(bottom=0)
-    ax_cohort.set_ylabel("Mean PV intensity [a.u.]", fontsize=MAIN_LABEL_SIZE)
+    _set_cohort_ylim(ax_cohort, means.values())
+    for position, cohort in zip(COHORT_POSITIONS, COHORTS):
+        _draw_cohort_points(ax_cohort, means[cohort], position, cohort)
+    ax_cohort.set_ylabel("Mean PV intensity (a.u.)")
 
     for cohort in COHORTS:
         cohort_rows = summary[summary["cohort"] == cohort]
         ax_count.scatter(cohort_rows["mean_intensity"], cohort_rows["sgn_count"], color=COHORT_DICT[cohort]["color"],
-                         marker=COHORT_MARKERS[cohort], s=POINT_SIZE, edgecolors="black", linewidths=0.8,
-                         alpha=0.85, zorder=3, label=COHORT_DICT[cohort]["label"])
-    xmax = 1.1 * summary["mean_intensity"].max()
-    for row in summary.itertuples():
-        # The labels of the bright cochleae go left, so that they stay inside the axis.
-        side = -1 if row.mean_intensity > 0.7 * xmax else 1
-        ax_count.annotate(row.alias, (row.mean_intensity, row.sgn_count), xytext=(side * 8, 0),
-                          textcoords="offset points", ha="left" if side > 0 else "right", va="center", fontsize=11)
-    ax_count.set_xlim(0, xmax)
-    lower_y, upper_y = literature_reference_values("SGN")
-    ax_count.hlines([lower_y, upper_y], 0, xmax, color=COLOR_LITERATURE)
-    ax_count.fill_between([0, xmax], lower_y, upper_y, color=COLOR_LITERATURE, alpha=0.05)
-    ax_count.text(0.01 * xmax, lower_y - 100, "literature", color=COLOR_LITERATURE, fontsize=SUB_LABEL_SIZE,
-                  ha="left", va="top")
-    ax_count.set_xlabel("Mean PV intensity [a.u.]", fontsize=MAIN_LABEL_SIZE)
-    ax_count.set_ylabel("SGN count", fontsize=MAIN_LABEL_SIZE)
-    ax_count.legend(frameon=False, fontsize=SUB_LABEL_SIZE, loc="lower right")
-    for ax in (ax_cohort, ax_count):
-        ax.tick_params(axis="y", labelsize=MAIN_TICK_SIZE)
-    ax_count.tick_params(axis="x", labelsize=MAIN_TICK_SIZE)
-    prism_cleanup_axes([ax_cohort, ax_count])
-    plt.tight_layout()
-    save_figure(save_path, plot)
+                         marker=COHORT_MARKERS[cohort], s=MARKER_SIZE ** 2, linewidths=0, zorder=3,
+                         label=COHORT_DICT[cohort]["label"])
+    ax_count.set_xlim(0, nice_upper(1.1 * summary["mean_intensity"].max()))
+    reference_band(ax_count, *literature_reference_values("SGN"), label="literature")
+    ax_count.set_xlabel("Mean PV intensity (a.u.)")
+    ax_count.set_ylabel("SGN count")
+    ax_count.legend(loc="lower right")
+    label_points(ax_count, summary["mean_intensity"], summary["sgn_count"], summary["alias"])
+    save_panel(fig, save_path, plot)
     return summary
 
 
-def _plot_cohort_profiles(ax, profiles: dict):
+def _draw_cohort_profiles(ax, profiles: dict):
     """Draw the per-cochlea profiles as points and the cohort mean +/- 1 sample SD over the cochleae as a line.
 
     Args:
@@ -677,19 +670,14 @@ def _plot_cohort_profiles(ax, profiles: dict):
         profiles: Mapping of cochlea name to a series of the value per x position.
     """
     for cohort in COHORTS:
-        color = COHORT_DICT[cohort]["color"]
-        values = pd.DataFrame({name: profiles[name] for name in cohort_cochleae(cohort)})
-        for name in values:
-            ax.scatter(values.index, values[name], color=color, marker=COHORT_MARKERS[cohort], alpha=0.4, s=20)
-        mean, std = values.mean(axis=1), values.std(axis=1)
-        ax.plot(values.index, mean, color=color, linewidth=3, label=COHORT_DICT[cohort]["label"])
-        ax.fill_between(values.index, mean - std, mean + std, color=color, alpha=0.15)
-    ax.tick_params(axis="both", labelsize=MAIN_TICK_SIZE)
-    ax.set_ylabel("Intensity [a.u.]", fontsize=MAIN_LABEL_SIZE)
-    ax.legend(frameon=False, fontsize=SUB_LABEL_SIZE)
+        samples = pd.DataFrame({name: profiles[name] for name in cohort_cochleae(cohort)})
+        profile_plot(ax, samples, COHORT_DICT[cohort]["color"], COHORT_MARKERS[cohort])
+    text_key(ax, [(COHORT_DICT[cohort]["label"], COHORT_DICT[cohort]["color"]) for cohort in COHORTS])
+    ax.set_ylabel("Intensity (a.u.)")
 
 
-def plot_intensity_by_offset(
+@style()
+def plot_intensity_by_rc_offset(
     structure_tables: dict, save_path: str, offset_step: float = 10.0, max_offset: float = 100.0,
     min_count: int = 10, plot: bool = False,
 ):
@@ -700,7 +688,7 @@ def plot_intensity_by_offset(
 
     Args:
         structure_tables: Tables of one structure, a value of load_tables.
-        save_path: Output file path.
+        save_path: Output path without an extension.
         offset_step: Width of an offset bin in micrometers.
         max_offset: Lower edge of the last, open offset bin in micrometers.
         min_count: Minimal number of instances of a cochlea in a bin.
@@ -714,22 +702,20 @@ def plot_intensity_by_offset(
             binned["intensity"].values, index=binned["offset_bin"].astype(float).values + offset_step / 2,
         )
 
-    prism_style()
-    fig, ax = plt.subplots(figsize=(6.7, 5))
-    _plot_cohort_profiles(ax, profiles)
+    fig, ax = new_panel(*PANEL_SIZES["profile"])
+    _draw_cohort_profiles(ax, profiles)
     ax.set_xlim(0, max_offset + offset_step)
-    ax.set_xlabel("Offset to RC center [µm]", fontsize=MAIN_LABEL_SIZE)
-    prism_cleanup_axes(ax)
-    plt.tight_layout()
-    save_figure(save_path, plot)
+    ax.set_xlabel("Offset to RC center (µm)")
+    save_panel(fig, save_path, plot)
 
 
-def plot_intensity_along_cochlea(structure_tables: dict, save_path: str, n_bins: int = 20, plot: bool = False):
+@style()
+def plot_intensity_by_tonotopy(structure_tables: dict, save_path: str, n_bins: int = 20, plot: bool = False):
     """Plot the mean stain intensity against the length fraction, with the frequency as top axis.
 
     Args:
         structure_tables: Tables of one structure, a value of load_tables.
-        save_path: Output file path.
+        save_path: Output path without an extension.
         n_bins: Number of fractional bins along the cochlea length.
         plot: Show interactive plot.
     """
@@ -740,15 +726,12 @@ def plot_intensity_along_cochlea(structure_tables: dict, save_path: str, n_bins:
             binned["mean_syn_per_IHC"].values, index=binned["fraction_midpoint"].values.astype(float),
         )
 
-    prism_style()
-    fig, ax = plt.subplots(figsize=(6.7, 5))
-    _plot_cohort_profiles(ax, profiles)
+    fig, ax = new_panel(*PANEL_SIZES["profile"])
+    _draw_cohort_profiles(ax, profiles)
     ax.set_xlim(0, 1)
-    ax.set_xlabel("Length fraction", fontsize=MAIN_LABEL_SIZE)
-    add_frequency_axis(ax, MAIN_TICK_SIZE, MAIN_LABEL_SIZE)
-    prism_cleanup_axes(ax)
-    plt.tight_layout()
-    save_figure(save_path, plot)
+    ax.set_xlabel("Length fraction")
+    add_frequency_axis(ax, FONT_SIZE, FONT_SIZE, label="Frequency (kHz)")
+    save_panel(fig, save_path, plot)
 
 
 def main():
@@ -764,7 +747,8 @@ def main():
     os.makedirs(args.figure_dir, exist_ok=True)
 
     def out(name):
-        return os.path.join(args.figure_dir, f"{name}.{FILE_EXTENSION}")
+        # save_panel writes a PDF and a PNG preview.
+        return os.path.join(args.figure_dir, name)
 
     tables = load_tables(intensity=args.intensity)
     print_cohort_averages(tables)
@@ -781,7 +765,7 @@ def main():
             measured["SGN"], "PV@SGNs", out("fig_02d_sgn_intensity_by_cohort_all_instances"), per_cochlea=False,
             plot=args.plot,
         )
-        plot_intensity_by_offset(measured["SGN"], out("fig_02e_sgn_intensity_by_rc_offset"), plot=args.plot)
+        plot_intensity_by_rc_offset(measured["SGN"], out("fig_02e_sgn_intensity_by_rc_offset"), plot=args.plot)
         summary = plot_sgn_intensity_check(tables["SGN"], measured["SGN"], out("sgn_intensity_check"), plot=args.plot)
         print("\nSGN count and PV intensity per cochlea")
         print(summary.to_string(index=False, float_format="{:.2f}".format))
@@ -793,17 +777,15 @@ def main():
             measured["IHC"], "VGlut3@IHCs", out("fig_02f_ihc_intensity_by_cohort_all_instances"), per_cochlea=False,
             plot=args.plot,
         )
-        plot_intensity_along_cochlea(measured["IHC"], out("fig_02g_ihc_intensity_by_tonotopy"), plot=args.plot)
+        plot_intensity_by_tonotopy(measured["IHC"], out("fig_02g_ihc_intensity_by_tonotopy"), plot=args.plot)
 
-    fig_cohort_counts(tables, out("fig_03a_counts_by_cohort"), plot=args.plot)
-    fig_cohort_counts(tables, out("fig_03a_counts_by_cohort_outlier"), plot=args.plot, remove_outliers=True)
-    fig_mwfls_synapses(tables, out("fig_03b_synapses_by_tonotopy"), plot=args.plot, top_axis=True)
-    fig_mwfls_synapses(
-        tables, out("fig_03b_synapses_by_tonotopy_trendline"), plot=args.plot, trendline=True, top_axis=True,
-    )
-    fig_mwfls_synapses(
+    plot_counts_by_cohort(tables, out("fig_03a_counts_by_cohort"), plot=args.plot)
+    plot_counts_by_cohort(tables, out("fig_03a_counts_by_cohort_outlier"), plot=args.plot, remove_outliers=True)
+    plot_synapses_by_tonotopy(tables, out("fig_03b_synapses_by_tonotopy"), plot=args.plot)
+    plot_synapses_by_tonotopy(tables, out("fig_03b_synapses_by_tonotopy_trendline"), plot=args.plot, trendline=True)
+    plot_synapses_by_tonotopy(
         tables, out("fig_03b_synapses_by_tonotopy_trendline_legend"), plot=args.plot, trendline=True,
-        top_axis=True, show_legend=True,
+        show_legend=True,
     )
     colocalization = load_colocalization()
     plot_synapse_colocalization(colocalization, out("synapse_colocalization"), plot=args.plot)

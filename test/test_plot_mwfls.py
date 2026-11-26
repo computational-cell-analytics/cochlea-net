@@ -62,6 +62,12 @@ class TestPlotMwfls(unittest.TestCase):
         self.assertEqual(outliers, [outlier_mean])
         self.assertEqual(values, [mean for mean in means if mean != outlier_mean])
 
+    def test_cohort_colors_are_panel_colors(self):
+        # util.COHORT_DICT holds the hex values, because util does not import panel_style.
+        plot_mwfls = self.plot_mwfls
+        self.assertEqual(plot_mwfls.COHORT_DICT["mwfls"]["color"], plot_mwfls.COLORS["blue"])
+        self.assertEqual(plot_mwfls.COHORT_DICT["idisco"]["color"], plot_mwfls.COLORS["green"])
+
     def test_row_ihcs(self):
         # 100 IHC positions, 9 um apart on an arc with a radius of 300 um. Cells 41-47 are missing, so the
         # labeling gives component 1 = labels 48-100 and component 2 = labels 1-40. Label 21 has 2000 pixels:
