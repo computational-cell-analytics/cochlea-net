@@ -633,6 +633,31 @@ The shell of a spot leaves out only the cores of the detected spots.
 In a dense synapse row, it also holds the stain of the IHC, undetected spots and the edges of neighboring spots.
 Thus `net_signal` is a local contrast.
 
+### Synapse intensity check
+
+`scripts/figures/plot_mwfls.py` compares the synapse count of each cochlea with its CtBP2 spot intensity.
+The check shows if a weak stain can explain a low synapse count.
+It uses the synapses that count for an IHC: a synapse counts if it is at most 3 µm from its matched IHC.
+The mean of a measure is the mean over these synapses of one cochlea.
+
+Each check has two panels:
+- The left panel shows the mean of one measure per cochlea, grouped by cohort.
+- The right panel shows the mean number of synapses per IHC against the same mean, with the literature range.
+
+There is one check per measure of the spot-intensity table.
+In the axis titles, `bg` is the `background` of the spot, the median of its local shell.
+
+| Output file | Measure | Axis title | Meaning |
+|---|---|---|---|
+| `synapse_intensity_check_net_signal` | `net_signal` = `signal` - `background` | Mean CtBP2 signal - bg (a.u.) | Local contrast in gray values. This is the synapse intensity of `plot_mwfls.py`. |
+| `synapse_intensity_check_signal` | `signal` | Mean CtBP2 raw signal (a.u.) | Stain at the spot without a background correction. Compare it with `net_signal` to find if a difference comes from the spot or from the background. |
+| `synapse_intensity_check_snr` | `snr` = (`signal` - `background`) / `noise` | Mean CtBP2 SNR | Contrast in units of the voxel noise of the shell. |
+| `synapse_intensity_check_ratio` | `ratio` = `signal` / `background` | Mean CtBP2 signal / bg | Relative contrast. A value of 1 means no contrast. |
+
+`sgn_intensity_check` and `ihc_intensity_check` use the PV and VGlut3 object measures with the background mask.
+Their intensity is the median of the object minus the median of the regional background, see above.
+Thus the synapse values are not comparable with the SGN and IHC values.
+
 ## Synapse crops
 
 `reproducibility/block_extraction` has crops for the stains CTBP2, Homer1 and Vglut3 and the IHC segmentation.
