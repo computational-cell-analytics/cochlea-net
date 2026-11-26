@@ -54,7 +54,7 @@ class TestPlotSynapseColocalization(unittest.TestCase):
             "anchor_x": 500 + 300 * np.cos(angles), "anchor_y": 500 + 300 * np.sin(angles), "anchor_z": 100.0,
             "n_pixels": np.where(present == 20, 2000, 20000),
         })
-        plain = {"component_list": [1], "min_component_length": 5, "max_edge_distance": 30}
+        plain = {"cell_type": "ihc", "component_list": [1], "min_component_length": 5, "max_edge_distance": 30}
         np.testing.assert_array_equal(np.sort(self.module.row_ihcs(table, plain)), np.arange(48, 101))
 
         refined = {**plain, "component_list_path": [2, 1], "refine_row": True, "merge_components": True}

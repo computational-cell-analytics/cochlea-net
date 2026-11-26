@@ -5,7 +5,7 @@ reference is the refined annotation (common.annotation_cells). The variants of t
 evaluate_planes.py:
 - 'objects': all IHC_v11 instances, without the row filter;
 - 'components': the IHC_v11 row components of the processing file of the cochlea in reproducibility/processing,
-  replayed with `label_components_ihc`. For a file with 'refine_row', these are the seed components of the
+  replayed with `label_components_table`. For a file with 'refine_row', these are the seed components of the
   refinement ('component_list_path');
 - 'refined_5000': `refine_ihc_row`, seeded with the same components, with min_size 5000, max_path_deviation
   15 um and the row merged into one component. For a file with 'refine_row', this is the archived row;
@@ -25,8 +25,8 @@ import pandas as pd
 from elf.evaluation import matching
 from skimage.segmentation import relabel_sequential
 
-from flamingo_tools.json_util import load_processing_params
-from flamingo_tools.postprocessing.label_components import label_components_ihc
+from flamingo_tools.json_util import STEP_KEYS, load_processing_params
+from flamingo_tools.postprocessing.label_components import label_components_table
 from flamingo_tools.s3_utils import default_table_path, read_table
 
 from common import (
@@ -41,7 +41,7 @@ CORRECTED = ["components", "refined_5000"]
 
 
 def row_labeling(cochlea):
-    """The IHC_v11 components of the processing file of a cochlea, with the parameters of `label_components_single`.
+    """The IHC_v11 components of the processing file of a cochlea, replayed with `label_components_table`.
 
     Returns the table with the component labels and the row components, or None without an IHC_v11 entry.
     """
@@ -52,17 +52,19 @@ def row_labeling(cochlea):
     if not entries:
         return None
     entry = entries[0]
-    params = {"min_size": entry.get("min_size", 1000), "min_component_length": entry.get("min_component_length", 50),
-              "max_edge_distance": entry.get("max_edge_distance", 30)}
-    table = label_components_ihc(read_table(default_table_path(cochlea, SEGMENTATION, s3=True), s3=True), **params)
-    if not entry.get("refine_row"):
-        if entry.get("max_path_deviation") is not None:
-            raise NotImplementedError(f"{cochlea}: the path deviation filter without refine_row is not replayed.")
-        return table, entry.get("component_list", [1])
-    refinement = (params["min_size"], entry.get("max_path_deviation"), entry.get("merge_components"))
-    if refinement != (REFINED_MIN_SIZE, MAX_PATH_DEVIATION, True):
+    # The variants refine the row from the components, so a filtered row cannot be their seed.
+    if not entry.get("refine_row") and entry.get("max_path_deviation") is not None:
+        raise NotImplementedError(f"{cochlea}: the path deviation filter without refine_row is not replayed.")
+    refinement = (entry.get("min_size"), entry.get("max_path_deviation"), entry.get("merge_components"))
+    if entry.get("refine_row") and refinement != (REFINED_MIN_SIZE, MAX_PATH_DEVIATION, True):
         raise NotImplementedError(f"{cochlea}: the archived refinement {refinement} is not 'refined_5000'.")
-    return table, entry.get("component_list_path") or entry.get("component_list", [1])
+
+    keys = STEP_KEYS["label_components"] | {"cell_type", "component_list"}
+    table = read_table(default_table_path(cochlea, SEGMENTATION, s3=True), s3=True)
+    labeling = label_components_table(table, **{key: value for key, value in entry.items() if key in keys})
+    if not entry.get("refine_row"):
+        return labeling.table, entry.get("component_list", [1])
+    return labeling.seed, entry.get("component_list_path") or entry.get("component_list", [1])
 
 
 def read_crop(cochlea, start, shape, volume, cache_folder):

@@ -242,19 +242,21 @@ class TestLoadProcessingParams(unittest.TestCase):
         from flamingo_tools.json_util import COMMON_KEYS, STEP_KEYS
         from flamingo_tools.measurements import object_measures_single
         from flamingo_tools.postprocessing.cochlea_mapping import tonotopic_mapping_single
-        from flamingo_tools.postprocessing.label_components import label_components_single
+        from flamingo_tools.postprocessing.label_components import label_components_single, label_components_table
 
+        # label_components_table replays a 'label_components' section in memory.
         functions = {
-            "label_components": label_components_single,
-            "tonotopic_mapping": tonotopic_mapping_single,
-            "object_measures": object_measures_single,
+            "label_components": [label_components_single, label_components_table],
+            "tonotopic_mapping": [tonotopic_mapping_single],
+            "object_measures": [object_measures_single],
         }
         self.assertEqual(set(functions), set(STEP_KEYS))
-        for step, function in functions.items():
-            accepted = set(inspect.signature(function).parameters)
-            for key in STEP_KEYS[step]:
-                self.assertIn(key, accepted,
-                              f"{step} section key {key!r} is not a parameter of {function.__name__}")
+        for step, step_functions in functions.items():
+            for function in step_functions:
+                accepted = set(inspect.signature(function).parameters)
+                for key in STEP_KEYS[step]:
+                    self.assertIn(key, accepted,
+                                  f"{step} section key {key!r} is not a parameter of {function.__name__}")
         # No section may claim a common key, which would make the source of a value ambiguous.
         for step, keys in STEP_KEYS.items():
             overlap = keys & COMMON_KEYS

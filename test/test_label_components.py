@@ -8,31 +8,38 @@ import numpy as np
 import pandas as pd
 
 
+def _arc_row():
+    """An IHC row with a gap, and the label ids of its large instances.
+
+    100 IHC positions, 9 µm apart on an arc with a radius of 300 µm. Cells 0-39 are component 1 and
+    cells 50-99 component 2. In the gap, cells 40-46 and 49 are missing, cell 47 is in no component
+    and cell 48 is small. Label 101 is a large object 40 µm outside the arc in component 1, and
+    labels 102-106 a component 200 µm away from the row.
+    """
+    angles = np.arange(100) * 9.0 / 300.0
+    present = [i for i in range(100) if not 40 <= i <= 46 and i != 49]
+    rows = []
+    for i in present:
+        component = 1 if i < 40 else (2 if i >= 50 else 0)
+        rows.append((i + 1, 300.0, angles[i], 500 if i == 48 else 20000, component))
+    rows.append((101, 340.0, angles[20], 20000, 1))
+    rows += [(102 + j, 100.0, angles[60] + 0.03 * j, 20000, 3) for j in range(5)]
+    label_ids, radii, phis, sizes, components = map(np.array, zip(*rows))
+    table = pd.DataFrame({
+        "label_id": label_ids,
+        "anchor_x": 500 + radii * np.cos(phis),
+        "anchor_y": 500 + radii * np.sin(phis),
+        "anchor_z": 100.0,
+        "n_pixels": sizes,
+        "component_labels": components,
+    })
+    return table, {i + 1 for i in present if i != 48}
+
+
 class TestRefineIhcRow(unittest.TestCase):
 
     def setUp(self):
-        # 100 IHC positions, 9 µm apart on an arc with a radius of 300 µm. Cells 0-39 are component 1 and
-        # cells 50-99 component 2. In the gap, cells 40-46 and 49 are missing, cell 47 is in no component
-        # and cell 48 is small. Label 101 is a large object 40 µm outside the arc in component 1, and
-        # labels 102-106 a component 200 µm away from the row.
-        angles = np.arange(100) * 9.0 / 300.0
-        present = [i for i in range(100) if not 40 <= i <= 46 and i != 49]
-        rows = []
-        for i in present:
-            component = 1 if i < 40 else (2 if i >= 50 else 0)
-            rows.append((i + 1, 300.0, angles[i], 500 if i == 48 else 20000, component))
-        rows.append((101, 340.0, angles[20], 20000, 1))
-        rows += [(102 + j, 100.0, angles[60] + 0.03 * j, 20000, 3) for j in range(5)]
-        label_ids, radii, phis, sizes, components = map(np.array, zip(*rows))
-        self.table = pd.DataFrame({
-            "label_id": label_ids,
-            "anchor_x": 500 + radii * np.cos(phis),
-            "anchor_y": 500 + radii * np.sin(phis),
-            "anchor_z": 100.0,
-            "n_pixels": sizes,
-            "component_labels": components,
-        })
-        self.expected_row = {i + 1 for i in present if i != 48}
+        self.table, self.expected_row = _arc_row()
 
     def _refine(self, table=None, **kwargs):
         from flamingo_tools.postprocessing.label_components import refine_ihc_row
@@ -208,6 +215,91 @@ class TestRefineIhcRow(unittest.TestCase):
             after = load_processing_params(path, "label_components")[0]
             self.assertEqual(after, {**before, "max_edge_distance": 30})
             self.assertEqual(load_processing_params(path, "tonotopic_mapping")[0]["component_list"], [1])
+
+
+class TestLabelComponentsTable(unittest.TestCase):
+
+    def setUp(self):
+        self.table = _arc_row()[0].drop(columns="component_labels")
+        self.kwargs = {"cell_type": "ihc", "min_size": 10000, "min_component_length": 3}
+
+    def test_components(self):
+        from flamingo_tools.postprocessing.label_components import label_components_ihc, label_components_table
+
+        before = self.table.copy()
+        labeling = label_components_table(self.table, **self.kwargs)
+        pd.testing.assert_frame_equal(self.table, before)
+        pd.testing.assert_frame_equal(labeling.table,
+                                      label_components_ihc(self.table, min_size=10000, min_component_length=3))
+        self.assertIs(labeling.seed, labeling.table)
+        self.assertIsNone(labeling.path)
+        self.assertEqual(labeling.n_dropped, 0)
+
+    def test_refine_row(self):
+        from flamingo_tools.postprocessing.label_components import label_components_table, refine_ihc_row
+
+        # The seed components are 1 = labels 48 and 51-100, 2 = labels 1-40, so [2, 1] is the order of the row.
+        labeling = label_components_table(self.table, component_list_path=[2, 1], refine_row=True, **self.kwargs)
+        pd.testing.assert_frame_equal(labeling.seed, label_components_table(self.table, **self.kwargs).table)
+        expected, row_path, n_dropped = refine_ihc_row(labeling.seed.copy(), [2, 1], min_size=10000,
+                                                       max_path_deviation=15.0, min_component_length=3)
+        pd.testing.assert_frame_equal(labeling.table, expected)
+        self.assertEqual(labeling.n_dropped, n_dropped)
+        self.assertEqual(len(labeling.path), len(row_path))
+        self.assertEqual(labeling.path["length_fraction"].iloc[[0, -1]].tolist(), [0, 1])
+
+    def test_path_deviation_filter(self):
+        from flamingo_tools.postprocessing.label_components import (
+            filter_ihc_by_path_deviation, label_components_table,
+        )
+
+        # At 45 µm, label 101 joins the component of labels 1-40, but it is 40 µm away from the row path.
+        kwargs = {**self.kwargs, "max_edge_distance": 45, "component_list_path": [2, 1]}
+        labeling = label_components_table(self.table, max_path_deviation=15.0, **kwargs)
+        seed = label_components_table(self.table, **kwargs).table
+        pd.testing.assert_frame_equal(labeling.seed, seed)
+        expected, path = filter_ihc_by_path_deviation(seed.copy(), 15.0, [2, 1])
+        pd.testing.assert_frame_equal(labeling.table, expected)
+        pd.testing.assert_frame_equal(labeling.path, path)
+        label_101 = labeling.table["label_id"] == 101
+        self.assertEqual(labeling.seed.loc[label_101, "component_labels"].item(), 2)
+        self.assertEqual(labeling.table.loc[label_101, "component_labels"].item(), 0)
+
+    def test_custom_dic(self):
+        from flamingo_tools.postprocessing.label_components import label_components_table, label_custom_components
+
+        custom_dic = {"min_size_global": 10000, "label_dicts": {
+            "1": {"label_params": [{"min_size": 10000, "min_component_length": 3}], "components": [[1, 2]]},
+        }}
+        labeling = label_components_table(self.table, cell_type="ihc", custom_dic=custom_dic)
+        self.assertNotIn("component_labels", self.table)
+        pd.testing.assert_frame_equal(labeling.table, label_custom_components(self.table.copy(), custom_dic))
+
+    def test_invalid_parameters(self):
+        from flamingo_tools.postprocessing.label_components import label_components_table
+
+        invalid = [{"cell_type": "hair_cell"}, {"cell_type": "sgn", "refine_row": True},
+                   {"cell_type": "sgn", "max_path_deviation": 15.0}, {"cell_type": "ihc", "merge_components": True}]
+        for kwargs in invalid:
+            with self.subTest(**kwargs), self.assertRaises(ValueError):
+                label_components_table(self.table, **kwargs)
+
+    def test_label_components_single_writes_the_labeling(self):
+        from flamingo_tools.postprocessing.label_components import label_components_single, label_components_table
+
+        for refine_row in (False, True):
+            with self.subTest(refine_row=refine_row), TemporaryDirectory() as tmp_dir:
+                table_path, out_path = os.path.join(tmp_dir, "default.tsv"), os.path.join(tmp_dir, "out.tsv")
+                path_file = os.path.join(tmp_dir, "path.tsv")
+                self.table.to_csv(table_path, sep="\t", index=False)
+                kwargs = {**self.kwargs, "component_list": [2, 1], "refine_row": refine_row}
+                label_components_single(table_path, out_path, path_file=path_file, **kwargs)
+                labeling = label_components_table(self.table, **kwargs)
+                pd.testing.assert_frame_equal(pd.read_csv(out_path, sep="\t"), labeling.table)
+                path = pd.read_csv(path_file, sep="\t")
+                if refine_row:
+                    pd.testing.assert_frame_equal(path, labeling.path)
+                self.assertEqual(path["length_fraction"].iloc[[0, -1]].tolist(), [0, 1])
 
 
 if __name__ == "__main__":
