@@ -1,5 +1,4 @@
 import os
-from multiprocessing import cpu_count
 from pathlib import Path
 from typing import Optional
 
@@ -18,6 +17,7 @@ try:
 except ImportError:
     micro_sam = None
 
+from ..cpu_utils import available_cpus
 from ..measurements import compute_object_measures_impl
 
 IMAGE_LAYER_NAME = None
@@ -51,7 +51,7 @@ def _train_and_predict_rf_widget(viewer: "napari.viewer.Viewer") -> None:
         FEATURES, SEG_IDS = _compute_features(segmentation, image)
 
     print("Training random forest ...")
-    rf = classifier_util._train_rf(FEATURES, labels, n_estimators=200, max_depth=10, n_jobs=cpu_count())
+    rf = classifier_util._train_rf(FEATURES, labels, n_estimators=200, max_depth=10, n_jobs=available_cpus())
     CLASSIFIER = rf
 
     # Run and set the prediction.

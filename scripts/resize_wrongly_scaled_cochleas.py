@@ -1,7 +1,6 @@
 import argparse
 import os
 
-import multiprocessing as mp
 from concurrent import futures
 
 from bioimage_cpp.utils import Blocking
@@ -9,6 +8,7 @@ from tqdm import tqdm
 
 from elf.wrapper.resized_volume import ResizedVolume
 from elf.io import open_file
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.file_utils import read_tif
 
 
@@ -48,7 +48,7 @@ def main(
     ndim = len(shape)
 
     # Limit the number of cores for parallelization.
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
 
     shape = input_.shape
     new_shape = tuple(

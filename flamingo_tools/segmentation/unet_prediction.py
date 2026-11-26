@@ -4,7 +4,6 @@ Functions for the parallelization end with '_slurm'
 and divide the process into preprocessing, prediction, and segmentation.
 """
 import json
-import multiprocessing as mp
 import os
 from concurrent import futures
 from functools import partial
@@ -441,7 +440,7 @@ def compute_mask_blocks(
         raise ValueError(f"The mask rule needs seg_class 'sgn' or 'ihc', got {seg_class}.")
     rule = MASK_RULES[seg_class]
     factor = rule["background_factor"] if background_factor is None else float(background_factor)
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
 
     raw = read_image_data(input_path, input_key)
     lowres, source = _read_pyramid_level(input_path, input_key, raw.shape)
@@ -519,7 +518,7 @@ def _legacy_mask_blocks(raw, seg_class, relative_threshold, absolute_threshold):
         if np.percentile(raw[bb], upper_percentile) > min_intensity:
             keep[tuple(beg // bs for beg, bs in zip(block.begin, block_shape))] = True
 
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     with futures.ThreadPoolExecutor(n_threads) as tp:
         list(tqdm(tp.map(find_mask_block, range(n_blocks)), total=n_blocks))
 
@@ -605,7 +604,7 @@ def find_mask(
     def write_block(index):
         mask[tuple(slice(i * bs, min((i + 1) * bs, sh)) for i, bs, sh in zip(index, block_shape, raw.shape))] = 1
 
-    with futures.ThreadPoolExecutor(min(16, mp.cpu_count())) as tp:
+    with futures.ThreadPoolExecutor(min(16, available_cpus())) as tp:
         list(tp.map(write_block, map(tuple, np.argwhere(keep))))
 
     if output_folder is None:
@@ -665,7 +664,7 @@ def distance_watershed_implementation(
     print(f"Using distance smoothing: {distance_smoothing}")
 
     # Limit the number of cores for parallelization.
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
 
     # Get the foreground mask.
     mask = ThresholdWrapper(SelectChannel(input_, 0), threshold=fg_threshold)
@@ -795,7 +794,7 @@ def calc_mean_and_std(input_path: str, input_key: str, output_folder: str) -> No
         image_mask = None
 
     # Compute the global mean and standard deviation.
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     mean, std = parallel.mean_and_std(
         input_, block_shape=tuple([2 * i for i in chunks]), n_threads=n_threads, verbose=True, mask=image_mask
     )

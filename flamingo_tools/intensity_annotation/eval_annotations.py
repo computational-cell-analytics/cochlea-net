@@ -1,5 +1,4 @@
 import os
-import multiprocessing as mp
 import re
 from concurrent import futures
 from typing import Dict, List, Optional, Tuple
@@ -9,6 +8,7 @@ import pandas as pd
 import tifffile
 from tqdm import tqdm
 
+from ..cpu_utils import available_cpus
 from ..export_data_utils import normalize_voxel_size
 
 # Label values used by the napari annotation layer, see `annotation_utils.annotation_napari`.
@@ -183,7 +183,7 @@ def find_overlapping_masks(
         else:
             return None
 
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     print(f"Finding overlapping masks with {n_threads} Threads.")
     with futures.ThreadPoolExecutor(n_threads) as pool:
         results = list(tqdm(pool.map(check_overlap, ref_ids), total=len(ref_ids)))

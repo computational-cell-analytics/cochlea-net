@@ -1,6 +1,5 @@
 import argparse
 import json
-import multiprocessing as mp
 import os
 from concurrent import futures
 from typing import List
@@ -8,6 +7,8 @@ from typing import List
 import numpy as np
 import tifffile
 from tqdm import tqdm
+
+from flamingo_tools.cpu_utils import available_cpus
 
 GT_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/training_data/nucleus/2025-07_NIS3D/test"
 PRED_DIR = "/mnt/vast-nhr/projects/nim00007/data/moser/cochlea-lightsheet/predictions/val_nucleus/distance_unet_NIS3D"
@@ -81,7 +82,7 @@ def find_matching_masks(arr_gt, arr_ref, out_path, labels_undefined_mask=[]):
         else:
             return None
 
-    n_threads = min(16, mp.cpu_count())
+    n_threads = min(16, available_cpus())
     print(f"Parallelizing with {n_threads} Threads.")
     with futures.ThreadPoolExecutor(n_threads) as pool:
         results = list(tqdm(pool.map(compute_overlap, seg_ids_ref), total=len(seg_ids_ref)))

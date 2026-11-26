@@ -7,6 +7,7 @@ import numpy as np
 import pandas as pd
 from elf.parallel import isin
 
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.export_data_utils import (
     cochlea_table, crop_filter_volume, export_bounding_box, export_name, export_output_path,
     filter_volume_downscale_factors, normalize_scales, normalize_voxel_size, write_volume,
@@ -52,7 +53,9 @@ def filter_label_ids(segmentation: np.ndarray, table: pd.DataFrame, components: 
     keep_ids = table.label_id.values[np.isin(table.component_labels.values, components)]
     keep_ids = keep_ids.astype(segmentation.dtype)
     outside = np.zeros(segmentation.shape, dtype="bool")
-    outside = ~isin(segmentation, keep_ids, out=outside, verbose=True, block_shape=(128, 128, 128))
+    outside = ~isin(
+        segmentation, keep_ids, out=outside, verbose=True, block_shape=(128, 128, 128), n_threads=available_cpus()
+    )
     segmentation[outside] = 0
     return segmentation
 

@@ -219,6 +219,7 @@ def map_and_filter_detections(
     # (x, y, z) voxel size.
     voxel_size_zyx = tuple(voxel_size)[::-1]
     halo = tuple(2 + int(np.ceil(max_distance / vs)) for vs in voxel_size_zyx)
+    n_threads = min(16, available_cpus()) if n_threads is None else n_threads
 
     # Map the detections to the objects in the (IHC) segmentation.
     object_ids, object_distances = map_points_to_objects(
