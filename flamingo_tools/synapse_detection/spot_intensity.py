@@ -32,13 +32,16 @@ DEFAULT_CORE_RADIUS = (0.8, 0.8, 1.0)
 DEFAULT_BACKGROUND_RADII = ((2.5, 2.5, 3.0), (4.5, 4.5, 5.0))
 DEFAULT_SIGNAL_HALO = 1
 
-INTENSITY_MEASURES = ("signal", "mean", "background", "noise", "ratio", "snr", "integrated", "n_saturated")
+INTENSITY_MEASURES = (
+    "signal", "mean", "background", "noise", "net_signal", "ratio", "snr", "integrated", "n_saturated",
+)
 """The per-channel columns `<channel>_<measure>` of `measure_spot_intensities`:
 - 'signal': mean in the (2 x signal_halo + 1)^3 voxels around the spot voxel.
 - 'mean': mean in the core ellipsoid.
 - 'background': median in the background shell.
 - 'noise': 1.4826 x the median absolute deviation in the shell, which estimates the standard deviation
   of one voxel.
+- 'net_signal': signal - background.
 - 'ratio': signal / background.
 - 'snr': (signal - background) / noise.
 - 'integrated': sum of (intensity - background) over the core, in intensity x voxels.
@@ -191,6 +194,7 @@ def measure_spot_intensities(
                     result.update({
                         "background": background,
                         "noise": noise,
+                        "net_signal": signal - background,
                         "ratio": signal / background if background > 0 else np.nan,
                         "snr": (signal - background) / noise if noise > 0 else np.nan,
                         "integrated": float(np.sum(core_values - background)),
@@ -223,6 +227,7 @@ def spot_intensity_table(
     image_paths: Sequence[str],
     output_path: Optional[str] = None,
     channel_names: Optional[Sequence[str]] = None,
+    id_column: Optional[str] = None,
     input_key: Optional[str] = "s0",
     voxel_size: Sequence[float] = (0.38, 0.38, 0.38),
     s3_images: bool = False,
@@ -239,6 +244,8 @@ def spot_intensity_table(
         image_paths: The image volumes, in zarr or n5 format, or as tif files with `input_key=None`.
         output_path: The output TSV file. Nothing is written if None.
         channel_names: The channel names for the output columns. Default: derived from the image paths.
+        id_column: Keep only this column of the spot table, e.g. 'spot_id', next to the measures.
+            The output then has the layout of an object-measures table. Default: keep all columns.
         input_key: The key of the image data in the containers.
         voxel_size: The voxel size in micrometer, in (x, y, z) order.
         s3_images: Read the images from the S3 bucket.
@@ -249,7 +256,7 @@ def spot_intensity_table(
         measure_kwargs: Further arguments for `measure_spot_intensities`.
 
     Returns:
-        The spot table with the intensity measures.
+        The spot table with the intensity measures, or only its id column with the measures.
     """
     if channel_names is None:
         channel_names = [channel_name_from_path(path) for path in image_paths]
@@ -260,11 +267,15 @@ def spot_intensity_table(
 
     s3_kwargs = dict(bucket_name=s3_bucket_name, service_endpoint=s3_service_endpoint, credential_file=s3_credentials)
     spots = read_table(table_path, s3_table, **s3_kwargs)
+    if id_column is not None and id_column not in spots.columns:
+        raise ValueError(f"The spot table has no column '{id_column}'.")
     images = {
         name: read_image_data(path, input_key, from_s3=s3_images, **s3_kwargs)
         for name, path in zip(channel_names, image_paths)
     }
     result = measure_spot_intensities(images, spots, voxel_size=voxel_size, **measure_kwargs)
+    if id_column is not None:
+        result = result[[id_column] + [column for column in result.columns if column not in spots.columns]]
     if output_path is not None:
         result.to_csv(output_path, sep="\t", index=False)
     return result
@@ -281,6 +292,9 @@ def main():
     parser.add_argument("-o", "--output", required=True, help="Output TSV file.")
     parser.add_argument("--channel_names", nargs="+", default=None,
                         help="Column prefixes for the channels. Default: the image file names.")
+    parser.add_argument("--id_column", default=None,
+                        help="Write only this column of the spot table, e.g. spot_id, and the measures. "
+                        "Default: write all columns of the spot table.")
     parser.add_argument("-k", "--input_key", default="s0", help="Key of the image data. Default: s0")
     parser.add_argument("--voxel_size", type=float, nargs=3, default=[0.38, 0.38, 0.38],
                         help="Voxel size in micrometer (x, y, z).")
@@ -306,7 +320,8 @@ def main():
 
     spot_intensity_table(
         table_path=args.table, image_paths=args.image_paths, output_path=args.output,
-        channel_names=args.channel_names, input_key=args.input_key, voxel_size=args.voxel_size,
+        channel_names=args.channel_names, id_column=args.id_column, input_key=args.input_key,
+        voxel_size=args.voxel_size,
         s3_images=args.s3_images, s3_table=args.s3_table, s3_credentials=args.s3_credentials,
         s3_bucket_name=args.s3_bucket_name, s3_service_endpoint=args.s3_service_endpoint,
         signal_halo=args.signal_halo, core_radius=args.core_radius,

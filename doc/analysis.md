@@ -563,6 +563,7 @@ A change of the shell by 0.5 µm changes the median background by less than 4 %.
 | `integrated` | absolute | Sum of (intensity - background) in the core |
 | `background` | absolute | Median in the shell |
 | `noise` | absolute | 1.4826 x the median absolute deviation in the shell |
+| `net_signal` | absolute | `signal` - `background` |
 | `ratio` | relative | `signal` / `background` |
 | `snr` | relative | (`signal` - `background`) / `noise` |
 | `n_saturated` | quality | Voxels of the core or the signal cube at the maximum of the data type, for example 65535 |
@@ -608,6 +609,29 @@ The output folder holds:
   Spots without a value, for example at the end of the stack, are kept at every threshold. `n_missing` counts them.
 - `summary.json`, with the matching scores, the medians and the fraction of saturated spots.
   It also records the names and the channels of the comparison.
+
+### Spot-intensity tables on S3
+
+`--id_column spot_id` writes only the spot id and the measures, without the positions.
+This is the layout of an object-measures table.
+
+The S3 spot-intensity tables use this layout.
+They are in the table folder of the synapse source, next to `default.tsv`, with the name `<stain>_<source>_spot-intensity.tsv`.
+The underscores of the source name become hyphens, for example `CTBP2_synapse-v3-ihc-v11_spot-intensity.tsv`.
+`scripts/figures/data.py` (`get_synapse_table`) reads them.
+For example, measure the synapses of `M_AMD_000126_L`:
+```bash
+python -m flamingo_tools.synapse_detection.spot_intensity \
+    -t M_AMD_000126_L/tables/synapse_v3_ihc_v11/default.tsv --s3_table \
+    -i M_AMD_000126_L/images/ome-zarr/CTBP2.ome.zarr --s3_images --id_column spot_id \
+    -o CTBP2_synapse-v3-ihc-v11_spot-intensity.tsv
+```
+
+The background of a spot is local, so it differs from the background of the object measures of SGNs and IHCs.
+There, the background is the median of the tissue outside the segmented cells within 75 µm of the object.
+The shell of a spot leaves out only the cores of the detected spots.
+In a dense synapse row, it also holds the stain of the IHC, undetected spots and the edges of neighboring spots.
+Thus `net_signal` is a local contrast.
 
 ## Synapse crops
 
