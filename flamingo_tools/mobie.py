@@ -2,13 +2,14 @@
 """
 
 import os
-import multiprocessing as mp
 import tempfile
 from typing import Optional, Tuple
 
 from elf.io import open_file
 from mobie import add_bdv_image, add_image, add_segmentation
 from mobie.metadata.dataset_metadata import read_dataset_metadata
+
+from flamingo_tools.cpu_utils import available_cpus
 
 DEFAULT_VOXEL_SIZE = (0.38, 0.38, 0.38)
 DEFAULT_SCALE_FACTORS = [[2, 2, 2]] * 5
@@ -80,7 +81,7 @@ def add_raw_to_mobie(
     elif have_source:
         raise NotImplementedError
 
-    max_jobs = min(16, mp.cpu_count())
+    max_jobs = min(16, available_cpus())
     with tempfile.TemporaryDirectory() as tmpdir:
         if input_path.endswith(".xml"):
             add_bdv_image(
@@ -157,7 +158,7 @@ def add_segmentation_to_mobie(
         voxel_size, scale_factors, chunks, segmentation_path, segmentation_key
     )
 
-    max_jobs = min(16, mp.cpu_count())
+    max_jobs = min(16, available_cpus())
     with tempfile.TemporaryDirectory() as tmpdir:
         add_segmentation(
             input_path=segmentation_path, input_key=segmentation_key,

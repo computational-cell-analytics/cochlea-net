@@ -12,13 +12,13 @@ Run `python -m flamingo_tools.synapse_detection.spot_intensity -h` for the comma
 import argparse
 import os
 from concurrent import futures
-from multiprocessing import cpu_count
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 
 import numpy as np
 import pandas as pd
 from scipy.spatial import cKDTree
 
+from flamingo_tools.cpu_utils import available_cpus
 from flamingo_tools.file_utils import read_image_data
 from flamingo_tools.s3_utils import read_table
 
@@ -202,7 +202,7 @@ def measure_spot_intensities(
 
     groups = _group_by_block(centers[inside], block_shape) if inside.any() else []
     inside_indices = np.flatnonzero(inside)
-    n_threads = cpu_count() if n_threads is None else n_threads
+    n_threads = available_cpus() if n_threads is None else n_threads
     with futures.ThreadPoolExecutor(n_threads) as pool:
         list(pool.map(measure_group, [inside_indices[group] for group in groups]))
 

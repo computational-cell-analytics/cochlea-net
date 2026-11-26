@@ -1,4 +1,3 @@
-import multiprocessing as mp
 from typing import Optional, Sequence
 
 import h5py
@@ -7,6 +6,7 @@ import pandas as pd
 from joblib import dump, load
 from sklearn.ensemble import RandomForestClassifier
 
+from ..cpu_utils import available_cpus
 from ..measurements import compute_object_measures
 
 
@@ -80,7 +80,7 @@ def predict_classifier(
     features = features.drop(columns=["label_id"]).values
 
     rf = load(rf_path)
-    n_threads = mp.cpu_count() if n_threads is None else n_threads
+    n_threads = available_cpus() if n_threads is None else n_threads
     rf.n_jobs_ = n_threads
 
     probs = rf.predict_proba(features)
