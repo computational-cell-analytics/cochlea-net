@@ -271,6 +271,9 @@ def plot_synapses_by_tonotopy(
 
     meyer = meyer_synapse_profile(n_bins)
     if meyer is not None:
+        # Meyer et al. have no counts between 53 % and 66 % from the apex. The line connects the bins
+        # with data across the empty bins.
+        meyer = meyer.dropna(subset=["mean_syn_per_IHC"])
         line, = ax.plot(meyer["fraction_midpoint"].values.astype(float), meyer["mean_syn_per_IHC"].values,
                         color=COLORS["black"], marker="D", markersize=0.75 * MARKER_SIZE, linewidth=DATA_LINE_WIDTH,
                         zorder=3)
